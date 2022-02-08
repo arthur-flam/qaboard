@@ -13,7 +13,7 @@
   <a href="https://github.com/samsung/qaboard/actions?query=workflow%3ACI"><img src="https://github.com/samsung/qaboard/workflows/CI/badge.svg" alt="CI"/></a>
 </p>
 
-> [Take a look at SIRC's live server](https://qa) 😊👓
+> [Take a look at the live server](http://qaboard) 😊👓
 >
 > It's an open-source project: https://github.com/samsung/qaboard
 

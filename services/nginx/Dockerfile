@@ -4,7 +4,7 @@ FROM debian:buster-slim
 # SIRC proxy configuration [debian/ubuntu]
 # Copied from http://gitlab-srv/docker/drun/snippets/11/edit
 # if you still run into network issues, try building the image on a different server :_)
-ENV PROXY_HOST=webproxy.transchip.com \
+ENV PROXY_HOST=12.26.204.100 \
     PROXY_PORT=8080 \
     PROXY_PROTOCOL=http
 ENV PROXY $PROXY_PROTOCOL://$PROXY_HOST:$PROXY_PORT

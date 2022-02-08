@@ -1,8 +1,7 @@
 FROM node:latest
 WORKDIR /webapp
 
-# ENV PROXY_HOST=webproxy.transchip.com \
-ENV PROXY_HOST=dlp2-wcg01 \
+ENV PROXY_HOST=12.26.204.100 \
     PROXY_PORT=8080 \
     PROXY_PROTOCOL=http
 ENV PROXY $PROXY_PROTOCOL://$PROXY_HOST:$PROXY_PORT

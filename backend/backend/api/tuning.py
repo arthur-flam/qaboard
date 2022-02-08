@@ -323,6 +323,17 @@ def start_tuning(hexsha):
             f"export RESERVED_ANDROID_DEVICE='{data['android_device']}';\n" if not use_openstf else "",
             f"export OPENSTF_STORAGE_QUOTA=12;\n" if not use_openstf else "",
 
+            # FIXME:
+            # In the host server's /etc/host we mapped qaboard=>localhost.
+            # from within the backend container it's problematic as nothing listens to port 80
+            # At SIRC this script it executed from a different server, so we don't have this issue at all...
+            # When we use DNS to qaboard->IP, we'll be able to remove this...
+            "export QABOARD_PROTOCOL=http\n",
+            # "export QABOARD_HOST=proxy\n", # when the task is picked up in a worker outside the compose network, won't work
+            "export QABOARD_HOST=12.36.168.155\n",
+            "export CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//\n",
+            "export no_proxy=12.36.168.155,proxy,rabbitmq,qaboard\n",
+
             # Make sure QA-Board doesn't complain about not being in a git repository and knows where to save results
             f"\nexport CI=true;\n",
             f"\nexport GIT_COMMIT='{ci_commit.hexsha}';\n",

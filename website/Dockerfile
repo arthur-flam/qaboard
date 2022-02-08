@@ -1,8 +1,7 @@
 FROM node:lts-alpine
 WORKDIR /website
 
-
-ENV PROXY_HOST=webproxy.transchip.com \
+ENV PROXY_HOST=12.26.204.100 \
     PROXY_PORT=8080 \
     PROXY_PROTOCOL=http
 ENV PROXY $PROXY_PROTOCOL://$PROXY_HOST:$PROXY_PORT

@@ -31,21 +31,21 @@ services:
     - FLASK_ENV=development
     - FLASK_DEBUG=1
     # Connect to the production database
-    - QABOARD_DB_HOST=qa
+    # - QABOARD_DB_HOST=qaboard
     # Start a flask debug server instead of the full uwsgi
     working_dir: /qaboard/backend
     # With what's just below, everything works except being able to delete files owned by other users
     # We wish we could do this, then remove sudo from the dockerfile, and use this command...
     # command: flask run --host 0.0.0.0 --with-threads --port 5152
-    # user: "11611:10"
+    # user: "1001:1001"
     # cap_add:
     #   - SETUID
     #   - SETGID
     # But non-root users don't gain capabilities...
     command: >
       bash -c "
-      echo 'arthurf ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-      && su arthurf -c 'flask run --host 0.0.0.0 --with-threads --port 5152'
+      echo 'qaboard ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+      && su qaboard -c 'flask run --host 0.0.0.0 --with-threads --port 5152'
       "
     ports:
     - "${QABOARD_DEV_BACKEND_PORT:-5152}:5152"

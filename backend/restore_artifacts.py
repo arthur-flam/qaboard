@@ -2,14 +2,12 @@ import os
 import requests
 
 # the script assumes you'll work in a git working directory exactly at
-repo_path = "/home/ispq" # under "/CDE-Users/HW_ALG"
+repo_path = "/some/path/to/HW_ALG"
 
-r = requests.get('http://qa/api/v1/projects')
+r = requests.get('http://qaboard/api/v1/projects')
 projects = r.json()
 for project, data in projects.items():
     if 'product' not in project:
-        continue
-    if 'HM1' in project:
         continue
     print(project)
     milestones = data.get('data').get('milestones', {})

@@ -5,7 +5,7 @@ LABEL maintainer="arthurf.flam@samsung.com"
 # SIRC proxy configuration [debian/ubuntu]
 # Copied from http://gitlab-srv/docker/drun/snippets/11/edit
 # if you still run into network issues, try building the image on a different server :_)
-ENV PROXY_HOST=webproxy.transchip.com \
+ENV PROXY_HOST=12.26.204.100 \
         PROXY_PORT=8080 \
         PROXY_PROTOCOL=http
 ENV PROXY $PROXY_PROTOCOL://$PROXY_HOST:$PROXY_PORT
@@ -17,7 +17,7 @@ ENV HTTP_PROXY=$PROXY \
     HTTPS_PROXY=$PROXY \
     https_proxy=$PROXY \
     NO_PROXY='gitlab-srv,gitlab-srv.transchip.com,localhost,aospt-dt'
-
+RUN echo "[global]\ntrusted-host = pypi.python.org\n               pypi.org\n               files.pythonhosted.org" >> /etc/pip.conf
 
     # Keeps Python from generating .pyc files for 1-time use in the container's unionFS
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -72,6 +72,7 @@ COPY backend/pyproject.toml backend/poetry.lock ./
 # https://github.com/python-poetry/poetry/issues/1579
 # https://github.com/python-poetry/poetry/issues/214 
 RUN poetry config virtualenvs.create false
+ENV CURL_CA_BUNDLE=
 RUN poetry install --no-root
 ENV QA_NO_CHECK_FOR_UPDATES=1
 
@@ -98,7 +99,7 @@ RUN poetry install --extras qaboard
 
 # SIRC-only, installs cde-python, used to read hex/raw images for the auto-ROI feature
 COPY third_party/cde-python /cde-python
-RUN pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org /cde-python
+RUN pip install /cde-python
 # --ssh is not supported by docker-compose at this point
 # so the simplest option is vendoring...!
 # https://pythonspeed.com/articles/build-secrets-docker-compose/

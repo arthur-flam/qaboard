@@ -6,7 +6,7 @@ WORKDIR /tmp
 # SIRC proxy configuration [debian/ubuntu]
 # Copied from http://gitlab-srv/docker/drun/snippets/11/edit
 # if you still run into network issues, try building the image on a different server :_)
-ENV PROXY_HOST=webproxy.transchip.com \
+ENV PROXY_HOST=12.26.204.100 \
         PROXY_PORT=8080 \
         PROXY_PROTOCOL=http
 ENV PROXY $PROXY_PROTOCOL://$PROXY_HOST:$PROXY_PORT
@@ -51,7 +51,7 @@ RUN apk --no-cache add openjdk11 wget openjpeg-tools \
   # && update-ms-fonts \
   # && fc-cache -f \
   # See https://github.com/exo-docker/exo/blob/master/Dockerfile#L99
-  && wget -nv -q --no-cookies \
+  && wget --no-check-certificate -nv -q --no-cookies \
   --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" \
   -O "/tmp/jai.tar.gz" "http://download.oracle.com/otn-pub/java/jai/1.1.2_01-fcs/jai-1_1_2_01-lib-linux-i586.tar.gz" \
   && tar -xzpf jai.tar.gz \
@@ -60,7 +60,7 @@ RUN apk --no-cache add openjdk11 wget openjpeg-tools \
 
 # https://github.com/crkn-rcdr/cihm-cantaloupe/issues/15
 RUN cd /tmp && apk add --no-cache --virtual build-dependencies cmake g++ make nasm \
-  && wget https://github.com/libjpeg-turbo/libjpeg-turbo/archive/2.0.4.tar.gz -O libjpeg-turbo-2.0.4.tar.gz \
+  && wget --no-check-certificate https://github.com/libjpeg-turbo/libjpeg-turbo/archive/2.0.4.tar.gz -O libjpeg-turbo-2.0.4.tar.gz \
   && tar -xpf libjpeg-turbo-2.0.4.tar.gz \
   && cd libjpeg-turbo-2.0.4 \
   && cmake \
@@ -84,7 +84,7 @@ ARG user=cantaloupe
 ARG uid=8182
 ARG group=cantaloupe
 ARG gid=8182
-RUN wget -nv "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
+RUN wget -nv --no-check-certificate "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \
   && cd /usr/local \
   && unzip /tmp/Cantaloupe-$VERSION.zip \

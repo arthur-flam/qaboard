@@ -45,7 +45,6 @@ import hashlib
 
 from backend.config import qaboard_data_dir
 image_cache_dir = qaboard_data_dir / 'cache' / 'images'
-image_cache_dir = Path('/algo/qa_db/image_cache') # TODO: remove for the open-source version
 image_cache_dir.mkdir(exist_ok=True, parents=True)
 
 def clear_memmapped_cache_dir():
