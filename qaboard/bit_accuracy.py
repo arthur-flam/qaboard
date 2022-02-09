@@ -17,7 +17,36 @@ from .config import commit_id, project, subproject, outputs_commit_root, outputs
 from .config import user, default_batches_files
 
 
-def cmpfiles(dir_1=Path(), dir_2=Path(), patterns=None, ignore=None):
+def default_cmp(file_1, file_2):
+    filecmp.cmp(str(file_1), str(file_2), shallow=False)
+
+# In some cases you want to implement your own file comparaison.
+# It can be useful if e.g. you want to allow a file-format change, but still fail in case of semantic changes
+# To do this, write some/file.py implemented a "cmp(file_1, file_2)" function.
+# It should return True if the files are "the same", False otherwise
+# To use this file, set as environment variable QA_BITACCURACY_CMP=/your/file.py
+custom_cmp = os.environ.get("QA_BITACCURACY_CMP")
+if custom_cmp:
+  try:
+    import sys
+    cmp_source = Path(custom_cmp).resolve()
+    # https://docs.python.org/3/library/importlib.html#importing-a-source-file-directly
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('custom-cmp', str(cmp_source))
+    assert spec
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(cmp_source.parent))
+    spec.loader.exec_module(module) # type: ignore
+    cmp_func = module.cmp # type: ignore
+  except Exception as e:
+    import traceback
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    click.secho(f'ERROR: Error importing the custom cmp function.', fg='red', err=True, bold=True)
+    click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
+
+
+
+def cmpfiles(dir_1=Path(), dir_2=Path(), patterns=None, ignore=None, cmp=default_cmp):
   """Bit-accuracy test between two directories. We usually use cmpmanifest only...
   Almost like https://docs.python.org/3/library/filecmp.html
   """
