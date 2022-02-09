@@ -357,57 +357,10 @@ def start_tuning(hexsha):
     with qa_batch_path.open("w") as f:
         f.write(qa_batch_script)
 
-    qatools_config = ci_commit.project.data["qatools_config"]
-    lsf_config = qatools_config.get('runners', qatools_config).get("lsf", {})
-    queue = lsf_config.get("fast_queue", lsf_config['queue'])
-    #     - QA_RUNNERS_LSF_BRIDGE='LC_ALL=en_US.utf8 LANG=en_US.utf8 ssh -q -tt -i /home/arthurf/.ssh/ispq.id_rsa ispq@ispq-vdi bsub_su {user} -I {bsub_command}'
-    # print("QA_RUNNERS_LSF_BRIDGE", os.environ['QA_RUNNERS_LSF_BRIDGE'])
-    start_script = "\n".join(
-        [
-            "#!/bin/bash",
-            "set -xe",
-            "",
-            f'mkdir -p "{batch_dir}"',
-            # highest priority for manual runs
-            f'bsub_su "{user}" -q "{queue}" -sp 4000 '
-            f"'bash \"{qa_batch_path}\" &>> \"{batch_dir}/log.txt\"'",
-        ]
-    )
-    print(start_script)
-
-
-    start_path = batch_dir / f"start.sh"
-    with start_path.open("w") as f:
-        f.write(start_script)
-
-    # Wraps and execute the script that starts the batch
-    current_user = getpass.getuser()
-    if True: # current_user != 'ispq':
-        # We need to be ispq on its VDI in order to have access to bsub_su
-        cmd = " ".join(
-            [
-                # there is only C.utf8 on our container, but it is not available on LSF
-                "LC_ALL=en_US.utf8 LANG=en_US.utf8",
-                "ssh",
-                # quiet to avoid the welcome banner
-                "-q",
-                # ask, and force a TTY, otherwise bsub->su will complain
-                "-tt",
-                # make sure we OK the server key during the first-connection
-                "-o StrictHostKeyChecking=no",
-                # ispq is the only user that can use bsub_su, an alias for sudo -i -u {0} {1:}.
-                # "-i /some/id_rsa",
-                "ispq@ispq-vdi",
-                f'\'bash "{start_path}"\'',
-            ]
-        )
-    else:
-        # but bsub_su is not in the container! :|
-        cmd = f"bash '{start_path}'"
+    cmd = ['bash', '-c', f'bash "{qa_batch_path}" &>> "{batch_dir}/log.txt"']
     print(cmd)
-
     try:
-        out = subprocess.run(cmd, shell=True, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        out = subprocess.run(cmd, encoding='utf-8')
         out.check_returncode()
     except:
         return jsonify({"error": (batch.batch_dir/'log.txt').read_text(), "cmd": str(cmd)}), 500
