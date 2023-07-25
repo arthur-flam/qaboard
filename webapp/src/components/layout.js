@@ -26,6 +26,19 @@ const Container = styled.div`
 const Section = styled.div`
   margin-bottom: 40px;
   margin-top: 30px;
+  width: fit-content;
+  @media (max-width: 1400px) {
+    min-width: 850px;
+  }
+  @media (min-width: 1400px) {
+    min-width: 1000px;
+  }
+  @media (min-width: 1800px) {
+    min-width: 1400px;
+  }
+  @media (min-width: 2400px) {
+    min-width: 2000px;
+  }
 `;
 
 

@@ -1,6 +1,7 @@
 """
 Deprecation warnings, backward compatibility, Windows compatibility
 """
+import re
 import os
 import sys
 import click
@@ -78,37 +79,53 @@ def escaped_for_cli(string):
     return 
 
 mappings = (
-  ('\\\\netapp\\algo_data\\', '/stage/algo_data/'),
-  ('\\\\netapp2\\algo_data\\', '/stage/algo_data/'),
-  ('\\\\f2\\algo_archive\\', '/stage/algo_archive/'),
-  ('\\\\mars\\stage\\jenkins_ws\\', '/stage/jenkins_ws/'),
-  ('\\\\mars\\stage\\algo_jenkins_ws\\', '/stage/algo_jenkins_ws/'),
+  ('\\\\netapp\\algo_data', '/stage/algo_data'),
+  ('\\\\netapp2\\algo_data', '/stage/algo_data'),
+  ('\\\\f2\\algo_archive', '/stage/algo_archive'),
+  ('\\\\mars\\stage\\jenkins_ws', '/stage/jenkins_ws'),
+  ('\\\\mars\\stage\\algo_jenkins_ws', '/stage/algo_jenkins_ws'),
   ('\\\\mars\\raid\\data\\DATASYNC', '/raid/data/DATASYNC'),
   ('\\\\netapp\\algo_ws', '/algo/ws'),
-  ('\\\\mars\\raid\\algo\\', '/algo/'),
-  ('\\\\mars\\algo\\', '/algo/'),
-  ('\\\\mars\\raid\\', '/raid'),
-  ('\\\\mars\\stage\\algo_db\\', '/stage/algo_db/'),
-  ('\\\\netapp\\raid\\users\\', '/home/'),
-  ('\\\\netapp\\QA-Data\\', '/stage/qa_data/'),
-  ('\\\\f2\\algo-datasets\\', '/stage/algo-datasets/'),
-  ('\\\\mars\\data', '/data/'),
-  ('\\\\netapp\\Joint\\', '/net/netapp/vol/home_nt/Joint/'),
+  ('\\\\netapp\\vol23_algo', '/algo'),
+  ('\\\\netapp\\vol24_algo', '/algo'),
+  ('\\\\mars\\algo', '/algo'),
+  ('\\\\mars\\raid\\algo', '/algo'),
+  ('\\\\mars\\raid', '/raid'),
+  ('\\\\mars\\stage\\algo_db', '/stage/algo_db'),
+  ('\\\\netapp\\raid\\users', '/home'),
+  ('\\\\netapp\\QA-Data', '/stage/qa_data'),
+  ('\\\\f2\\algo-datasets', '/stage/algo-datasets'),
+  ('\\\\mars\\data', '/data'),
+  ('\\\\netapp\\Joint', '/net/netapp/vol/home_nt/Joint'),
+  ('\\\\mars\\sim', '/sim'),
+  ('\\\\mars\\stage', '/stage'),
+  ('\\\\netapp\\vol19_data', '/net/netapp/vol/vol19_data'),
   ('\\\\qaboard\\s', '/mnt/qaboard'),
 )
+re_algo_inputs = re.compile(r"\\\\netapp\\vol23_algo\\([^\\]+)[\\_]inputs")
 
 
 def windows_to_linux(path : str) -> str:
+  path = path.replace('/', '\\')
   for path_windows, path_linux in mappings:
-    if path.startswith(path_windows):
-      path = path.replace(path_windows, path_linux)
+    path_windows_re = re.escape(path_windows)
+    if re.match(path_windows_re, path, re.IGNORECASE):
+      path = re.sub(path_windows_re, path_linux, path, count=1, flags=re.IGNORECASE)
+      break
   return path.replace('\\', '/')
 
 def linux_to_windows(path : str) -> str:
   for path_windows, path_linux in mappings:
     if path.startswith(path_linux):
       path = path.replace(path_linux, path_windows)
-  return path.replace('/', '\\')
+      break
+  path = path.replace('/', '\\')
+  match_algo_inputs = re_algo_inputs.match(path)
+  if match_algo_inputs:
+    # /algo/CIS/inputs is a symlink to /algo/CIS_inputs, we prefer the later
+    # /algo is split into multiple volumes, it is not as transparent on windows as on linux
+    path = rf"\\netapp\vol24_algo\{match_algo_inputs.group(1)}_inputs{path[match_algo_inputs.end():]}"
+  return path
 
 
 def windows_to_linux_path(path : Path) -> Path:

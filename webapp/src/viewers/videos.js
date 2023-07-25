@@ -4,6 +4,8 @@ import {
   Tag,
 } from "@blueprintjs/core";
 
+import { is_same_data } from "../utils"
+
 class SyncedVideos extends React.Component {
   constructor(props) {
     super(props);
@@ -25,7 +27,6 @@ class SyncedVideos extends React.Component {
   };
 
   componentDidMount() { 
-    this.viewRefR.current.addEventListener("canplay", this.canplay_ref);
     this.viewNewR.current.addEventListener("play", this.play_ref);
     this.viewNewR.current.addEventListener("pause", this.pause_ref);
 
@@ -33,6 +34,16 @@ class SyncedVideos extends React.Component {
     this.viewNewR.current.addEventListener("seeked", this.syncReferenceVideoTwice);
     this.viewNewR.current.addEventListener('seeking', this.syncReferenceVideoTwice);
     this.viewNewR.current.addEventListener("waiting", this.syncReferenceVideoTwice);
+
+    if(!!this.viewRefR.current)
+      this.viewRefR.current.addEventListener("canplay", this.canplay_ref);
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    const has_same_data = is_same_data(this.props.path, this.props.manifests?.new?.[this.props.path], this.props.manifests?.reference?.[this.props.path])
+    const was_same_data = is_same_data(prevProps.path, prevProps.manifests?.new?.[prevProps.path], prevProps.manifests?.reference?.[prevProps.path])
+    if(was_same_data && !has_same_data && !!this.viewRefR.current)
+      this.viewRefR.current.addEventListener("canplay", this.canplay_ref);
   }
 
   componentWillUnmount() {
@@ -70,7 +81,7 @@ class SyncedVideos extends React.Component {
 
   render() {
     const { output_new, output_ref, path, poster='poster.jpg', type, manifests } = this.props;
-    const is_same_data = manifests?.new?.[path]?.md5 === manifests?.reference?.[path]?.md5
+    const has_same_data = is_same_data(path, manifests?.new?.[path], manifests?.reference?.[path])
     let width = parseFloat(((this.props.style || {}).width || '390px').replace(/[^\d]+/, ''))
     const single_video_width = (width - 10) / 2
 
@@ -94,9 +105,9 @@ class SyncedVideos extends React.Component {
         {!!output_ref ? (
           <div>
             <div>
-              <Tag intent="warning">{!is_same_data ? "reference" : 'reference (same-video)'}</Tag>
+              <Tag intent="warning">{!has_same_data ? "reference" : 'reference (same-video)'}</Tag>
             </div>
-            {!is_same_data && <video
+            {!has_same_data && <video
               ref={this.viewRefR}
               controls
               preload="none"

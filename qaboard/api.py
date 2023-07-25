@@ -100,11 +100,11 @@ def serialize_path(path):
 def serialize_paths(data):
   """Serialize recursively Path to strings"""
   if issubclass(type(data), Path):
-  	data = serialize_path(data)
+    data = serialize_path(data)
   elif isinstance(data, dict):
-	  data = {key: serialize_paths(value) for key, value in data.items()}
+    data = {key: serialize_paths(value) for key, value in data.items()}
   elif isinstance(data, list):
-  	data = [serialize_paths(value) for value in data]
+    data = [serialize_paths(value) for value in data]
   return data
 
 
@@ -192,25 +192,34 @@ def get_output(output_id):
 
 # We used to use a cache but now we want to check run statuses before/after the batch
 # @lru_cache()
-def batch_info(reference, batch, is_branch=False, project=project):
+def batch_info(reference, batch, is_branch=False, project=project, metrics: Optional[List[str]]=None, ignore_errors=False):
   """Get data about a batch of outputs in the database"""
   import requests
   params = {
     "project": str(project),
     "batch": batch,
     # the format is metric: target.... not great.
-    "metrics": json.dumps({metric: 0 for metric in available_metrics.keys()}),
+    "metrics": json.dumps({m: 0 for m in (metrics or available_metrics.keys())}),
   }
   if is_branch:
     params["branch"] = reference
   commit_id = reference if not is_branch else ''
   url = f'{api_prefix}/commit/{commit_id}'
   r = requests.get(url, params=params)
-  if 'batches' not in r.json():
+  try:
+    data = r.json()
+  except Exception as e:
+    if ignore_errors:
+      return {}
+    click.secho(r.text, fg='red')
+    click.secho(f'[ERROR]: Failed to get info from QA-Board. ({url} | {params})', fg='red', bold=True, err=True)
+    raise e
+  if 'batches' not in data:
     raise ValueError(f'We could not get the results for {batch} batch {reference}')
-  if batch not in r.json()["batches"]:
-    raise ValueError(f'We could not get the results for {batch} batch {reference}. Available: {list(b for b in r.json()["batches"])}')
-  return r.json()['batches'][batch]
+  batches = data["batches"]
+  if batch not in batches:
+    raise ValueError(f'We could not get the results for {batch} batch {reference}. Available: {list(b for b in batches)}')
+  return batches[batch]
 
 
 def get_outputs(qa_context: Optional[Dict[str, Any]]) -> Dict[int, Any]:
@@ -220,14 +229,20 @@ def get_outputs(qa_context: Optional[Dict[str, Any]]) -> Dict[int, Any]:
   if not should_notify_qa_database:
     return {}
   try:
-    return batch_info(reference=commit_id, batch=qa_context['batch_label'])['outputs']
+    return batch_info(
+      reference=commit_id,
+      batch=qa_context['batch_label'],
+      # we don't need any metric when calling this function from "qa batch", just the output dirs / configs 
+      metrics=["none-required"],
+      ignore_errors=True, # if the commit does not exist let's just return empty data
+    )['outputs']
   except:
     return {}
 
 
 @lru_cache()
-def aggregated_metrics(batch_label):
-  info = batch_info(reference=commit_id, is_branch=False, batch=batch_label)
+def aggregated_metrics(batch_label, metrics=None):
+  info = batch_info(reference=commit_id, is_branch=False, batch=batch_label, metrics=metrics)
   # We also always return the aggregated metrics from the API,
   # it helps understand how metrics evolved during the optimization, irrelative of the objective function
   # Note: we could do the aggregation ourselves...

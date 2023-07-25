@@ -17,26 +17,40 @@ services:
     - /sim:/var/www/localhost/images/sim:shared
 
   db:
+    # postgres needs a file owned by postgres, and we cannot chown on our shared storage
+    # the default entrypoint changes user from root to postgres and inits the database,
+    # but only if the command starts with "postgres"... so we need to wrap it
+    entrypoint: /init.sh
+    volumes:
+    - ./services/db/init.sh:/init.sh
+    - ./services/db/postgres.conf:/postgres.host.conf
+    - /home/ispq/qaboard_data_prod/database_backups:/backups
     ports:
       - ${QABOARD_EXPOSED_DB_PORT:-5432}:5432
-    volumes:
-    - /home/ispq/qaboard_data_prod/database_backups:/backups
-      
-
   backend:
     image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:backend"
+    # deploy: # supported with swarm
+    #   resources:
+    #     limits:
+    #       memory: 16000M
     environment:
     - GITLAB_HOST=http://gitlab-srv
     - UWSGI_UID=ispq
     - UWSGI_GID=uucp
     - QABOARD_DATA_SHARED_DIR=/home/ispq/qaboard/shared
+    - QABOARD_DATA_GIT_DIR=/algo/ws/ispq/qaboard_prod_data_git
     - QA_RUNNERS_LSF_BRIDGE=ssh ispq@ispq-vdi 'bsub_su {user} -I {bsub_command}'
-    - QABOARD_LDAP_ENABLED=true
+    - QABOARD_LOGIN_TYPE=LDAP
     - QABOARD_LDAP_USER_BASE=REDACTED_LDAP_BASE
     - QABOARD_LDAP_BIND_DN=cn=Ldap Query,ou=IT,ou=SIRC Users,REDACTED_LDAP_BASE
     - QABOARD_LDAP_PASSWORD=REDACTED_LDAP_PASSWORD
     - QABOARD_LDAP_HOST=REDACTED_LDAP_HOST
     - QABOARD_LDAP_USER_FILTER=(&(objectClass=user)(sAMAccountName={login}))
+    - QABOARD_SAML_DIR=/qaboard/backend/backend/api/saml
+    - QABOARD_SAML_ATTRIBUTE_EMAIL=http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress
+    - QABOARD_SAML_ATTRIBUTE_USER_NAME=http://schemas.sec.com/2018/05/identity/claims/LoginId
+    - QABOARD_SAML_ATTRIBUTE_COMMON_NAME=http://schemas.sec.com/2018/05/identity/claims/Username
+    - SENTRY_DSN=https://REDACTED_SENTRY_KEY@sentry.transchip.com/5
 
     volumes:
     - ./services/backend/passwd:/etc/passwd
@@ -73,8 +87,9 @@ services:
     volumes:
     - /home/ispq/qaboard_prod/services/nginx/ssl/qa/qa.key:/ssl/cert.key
     - /home/ispq/qaboard_prod/services/nginx/ssl/qa/cert.cer:/ssl/cert.cer
-    - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.key:/ssl/publish.key
     - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.cer:/ssl/publish.cer
+    - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.pem:/ssl/publish.pem
+    - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.key:/ssl/publish.key
     - ./services/nginx/passwd:/etc/passwd
     - /opt/dockermounts/home:/home
     - /opt/dockermounts/raid:/raid
@@ -88,29 +103,32 @@ services:
     - /sim:/sim:shared
     - /data:/data:shared
 
-  cantaloupe:
-    image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:cantaloupe"
-    user: "1411:10" # FIXME: ==ispq, so remove after a 1st rebuild..
-    # user: ispq
-    build:
-      args:
-        user: ispq
-        uid: 1411
-        group: uucp
-        gid: 10
-    volumes:
-      - /opt/dockermounts/stage/algo_data:/repository/stage/algo_data
-      - /algo/CIS/outputs:/repository/algo/CIS/outputs
-      - /algo/CIS_artifacts:/repository/algo/CIS_artifacts
-      - /algo/ws/sircdevops/qaboard_data/cantaloupe:/var/cache/cantaloupe
-      - /sim:/repository/sim:shared
-      - /data:/data:shared
-    environment:
-      CANTALOUPE_MEM_START: 4g
-      CANTALOUPE_MEM_MAX: 8g
+  # cantaloupe:
+  #   image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:cantaloupe"
+  #   user: "1411:10" # FIXME: ==ispq, so remove after a 1st rebuild..
+  #   # user: ispq
+  #   build:
+  #     args:
+  #       user: ispq
+  #       uid: 1411
+  #       group: uucp
+  #       gid: 10
+  #   volumes:
+  #     - /opt/dockermounts/stage/algo_data:/repository/stage/algo_data
+  #     - /algo/CIS/outputs:/repository/algo/CIS/outputs
+  #     - /algo/CIS_artifacts:/repository/algo/CIS_artifacts
+  #     - /algo/ws/sircdevops/qaboard_data/cantaloupe:/var/cache/cantaloupe
+  #     - /sim:/repository/sim:shared
+  #     - /data:/data:shared
+  #   environment:
+  #     CANTALOUPE_MEM_START: 4g
+  #     CANTALOUPE_MEM_MAX: 8g
   
   frontend:
     image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:frontend"
+    build:
+      args:
+        REACT_APP_SENTRY_DSN: https://REDACTED_SENTRY_FE_KEY@sentry.transchip.com/2
 
   website:
     image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:website"
@@ -136,7 +154,7 @@ services:
       MB_QUERY_CACHING_MIN_TTL: 1
       # SMTP
       MB_EMAIL_FROM_ADDRESS: auto_delivery@samsung.com
-      MB_EMAIL_SMTP_HOST: EX01.transchip.com
+      MB_EMAIL_SMTP_HOST: dag.sirc.co.il
       # MB_EMAIL_SMTP_PASSWORD
       # MB_EMAIL_SMTP_USERNAME
       MB_LDAP_ENABLED: "true"

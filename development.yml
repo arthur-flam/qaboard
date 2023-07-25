@@ -17,6 +17,8 @@ services:
   proxy:
     environment:
     - NGINX_BIN=nginx-debug
+    ports:
+    - 5001:5001
 
   backend:
     volumes:
@@ -54,9 +56,13 @@ services:
 
 
   frontend:
+    build:
+      target: dev
     volumes:
-    - ./webapp:/webapp
+    - ./webapp:/app
     environment:
+    - HOME=/app
+    - NPM_CONFIG_USERCONFIG=/app
     # Should we comment it out by default?
     - HOST=0.0.0.0
     - DANGEROUSLY_DISABLE_HOST_CHECK=true
@@ -69,7 +75,7 @@ services:
     - HTTP_PROXY=
     - http_proxy=
     - REACT_APP_QABOARD_HOST=http://proxy
-    command: npm start
+    user: "1001:1001"
     ports:
     - "${QABOARD_DEV_FRONTEND_PORT:-3000}:3000"
     depends_on:

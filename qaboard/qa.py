@@ -117,6 +117,10 @@ def qa(ctx, platform, configurations, label, tuning, tuning_filepath, dryrun, sh
   ctx.obj['batch_conf_dir'] = make_batch_conf_dir(outputs_commit, ctx.obj['batch_label'], platform, ctx.obj['configurations'], ctx.obj['extra_parameters'], share)
   ctx.obj['batch_dir'] = make_batch_dir(outputs_commit, ctx.obj['batch_label'], platform, ctx.obj['configurations'], ctx.obj['extra_parameters'], share)
 
+  os.environ.update({
+    "QA_LABEL": ctx.obj['raw_batch_label'],
+  })
+
   # For convenience, we allow users to change environment variables using {ENV: {VAR: value}}
   # in configurations or tuning parameters
   environment_variables = {}
@@ -214,7 +218,9 @@ def run(ctx, input_path, output_path, keep_previous, no_postprocess, forwarded_a
       print_url(ctx)
 
       if not ctx.obj['offline']:
-          notify_qa_database(**ctx.obj, is_pending=True, is_running=True)
+          qa_run_data = notify_qa_database(**ctx.obj, is_pending=True, is_running=True)
+          if qa_run_data:
+            run_context.id = qa_run_data["id"]
 
       start = time.time()
       cwd = os.getcwd() 
@@ -310,7 +316,7 @@ def postprocess_(runtime_metrics, run_context, skip=False, save_manifests_in_dat
       input_files.update({windows_to_linux_path(manifest_input).as_posix(): file_info(manifest_input, config=config)})
     try:
       with (run_context.output_dir / 'manifest.inputs.json').open('w') as f:
-        json.dump(input_files, f, indent=2)
+        json.dump(input_files, f, sort_keys=True, indent=2)
     except Exception as e:
       click.secho(f'WARNING: When writing the input manifest:', fg="yellow", bold=True, err=True)
       click.secho(str(e), fg="yellow", err=True)
@@ -407,7 +413,7 @@ def wait(ctx, output_id):
     exit(0 if not output["is_failed"] else 1)
 
 
-lsf_config = config['lsf'] if 'lsf' in config else config.get('runners', {}).get('lsf', {}) 
+lsf_config = config['lsf'] if 'lsf' in config else config.get('runners', {}).get('lsf', {})
 runners_config = config.get('runners', {})
 if 'default' in runners_config:
   default_runner = runners_config['default']
@@ -432,18 +438,19 @@ local_config = config.get('runners', {}).get('local', {})
 @click.option('--list-inputs', is_flag=True, help="Print to stdout a JSON with a list of the inputs we would call qa run on.")
 @click.option('--runner', default=default_runner, help="Run runs locally or using a task queue like Celery, LSF...")
 @click.option('--local-concurrency', default=os.environ.get('QA_BATCH_CONCURRENCY', local_config.get('concurrency')), type=int, help="joblib's n_jobs: 0=unlimited, 2=2 at a time, -1=#cpu-1")
-@click.option('--lsf-threads', default=lsf_config.get('threads', 0), type=int, help="restrict number of lsf threads to use. 0=no restriction")
+@click.option('--lsf-max-threads', default=lsf_config.get('max_threads', 0), type=int, help="restrict number of lsf threads to use. 0=no restriction")
 @click.option('--lsf-max-memory', default=lsf_config.get('max_memory', lsf_config.get('memory', 0)), help="restrict memory (MB) to use. 0=no restriction")
 @click.option('--lsf-queue', default=lsf_config.get('queue'), help="LSF queue (-q)")
 @click.option('--lsf-fast-queue', default=lsf_config.get('fast_queue', lsf_config.get('queue')), help="Fast LSF queue, for interactive jobs")
 @click.option('--lsf-resources', default=lsf_config.get('resources', None), help="LSF resources restrictions (-R)")
-@click.option('--lsf-priority', default=lsf_config.get('priority', 0), type=int, help="LSF priority (-sp)")
+@click.option('--lsf-priority', default=lsf_config.get('priority'), type=int, help="LSF priority (-sp)")
+@click.option('--lsf-options', default=lsf_config.get('options'), help="Other LSF options (as 1 string, like '-W 24:00') that bsub can understand. Will be added after all other CLI flags.")
 @click.option('--action-on-existing', default=config.get('outputs', {}).get('action_on_existing', "run"), help="When there are already finished successful runs, whether to do run / postprocess (only) / sync (re-read metrics from output dir) / skip / assert-exists")
 @click.option('--action-on-pending', default=config.get('outputs', {}).get('action_on_pending', "wait"), help="When there are already pending runs, whether to do wait (then run) / sync (use those runs' results) / skip (don't run) / run (run as usual, can cause races)")
 @click.option('--prefix-outputs-path', type=PathType(), default=None, help='Custom prefix for the outputs; they will be at $prefix/$output_path')
 @click.argument('forwarded_args', nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def batch(ctx, batches, batches_files, tuning_search_dict, tuning_search_file, no_wait, list_contexts, list_output_dirs, list_inputs, runner, local_concurrency, lsf_threads, lsf_max_memory, lsf_queue, lsf_fast_queue, lsf_resources, lsf_priority, action_on_existing, action_on_pending, prefix_outputs_path, forwarded_args):
+def batch(ctx, batches, batches_files, tuning_search_dict, tuning_search_file, no_wait, list_contexts, list_output_dirs, list_inputs, runner, local_concurrency, lsf_max_threads, lsf_max_memory, lsf_queue, lsf_fast_queue, lsf_resources, lsf_priority, lsf_options, action_on_existing, action_on_pending, prefix_outputs_path, forwarded_args):
   """Run on all the inputs/tests/recordings in a given batch using the LSF cluster."""
   if not batches_files:
     click.secho(f'WARNING: Could not find how to identify input tests.', fg='red', err=True, bold=True)
@@ -462,6 +469,10 @@ def batch(ctx, batches, batches_files, tuning_search_dict, tuning_search_file, n
   print_url(ctx)
   existing_outputs = get_outputs(ctx.obj)
   command_id = os.environ.get('QA_BATCH_COMMAND_ID', str(uuid.uuid4())) # unique IDs for triggered runs makes it easier to wait/cancel them 
+  if 'QA_BATCH_COMMAND_ID' in os.environ:
+    # some projects have run() trigger further "qa batch" commands, notably in "pipelines"
+    # so if we keep it defined we'll end up with deadlocks as those batch wait for the current batch to end...
+    del os.environ['QA_BATCH_COMMAND_ID']
 
   os.environ['QA_BATCH']= 'true' # triggered runs will be less verbose than with just `qa run` 
   os.environ['QA_BATCHES_FILES'] = json.dumps([str(b) for b in batches_files])
@@ -492,11 +503,13 @@ def batch(ctx, batches, batches_files, tuning_search_dict, tuning_search_file, n
   if runner == 'lsf':
     default_runner_options.update({
       "project": lsf_config.get('project', str(project) if project else "qaboard"),
-      "max_threads": lsf_threads,
-      "max_memory": lsf_max_memory,
-      'resources': lsf_resources,
       "queue": lsf_queue,
       "fast_queue": lsf_fast_queue,
+      'priority': lsf_priority,
+      "max_threads": lsf_max_threads,
+      "max_memory": lsf_max_memory,
+      'resources': lsf_resources,
+      'options': lsf_options,
       "user": ctx.obj['user'],
     })
   if runner == "local":
@@ -700,8 +713,7 @@ def batch(ctx, batches, batches_files, tuning_search_dict, tuning_search_file, n
 
 
 @qa.command()
-# Do we want this? we could simply use groups not defined in qatools.yaml:artifacts as paths
-@click.option('--file', '-f', 'files', multiple=True, help="Save specific files instead of artifacts indicated by yaml file")
+@click.option('--file', '-f', 'files', multiple=True, help="Save specific files instead of artifacts indicated by yaml file. Supports python-glob-style wildcards - if calling from a shell wrap with single quotes.")
 @click.option('--exclude', 'excluded_groups', multiple=True, help="Exclude specific artifact groups")
 # Do we use this? yes in the API, but let's deprecate and remove for other uses...
 @click.option('--out', '-o', 'artifacts_path', default='', help="Path to save artifacts in case of specified files")

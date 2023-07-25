@@ -30,14 +30,14 @@ def cache(minutes=1440, func_skip_cache=None):
   return cache_ttl_decorator
 
 
-@cache(minutes=60)
+@cache(minutes=600)
 def get_users_per_name(search_filter):
   """Retrievies users from Gitlab"""
   if 'GITLAB_ACCESS_TOKEN' not in os.environ:
     return {}
 
   headers = {'Private-Token': os.environ['GITLAB_ACCESS_TOKEN']}
-  gitlab_api = "http://gitlab-srv/api/v4"
+  gitlab_api = "http://gitlab-srv.transchip.com/api/v4"
   users_db = {} # tries to matche a name/fullname/firstname/id to a gitlab user
 
   # gitlab paginates each 100 users

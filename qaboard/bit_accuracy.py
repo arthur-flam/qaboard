@@ -2,6 +2,7 @@
 """
 Bit-accuracy test between 2 results folders
 """
+import os
 import json
 import filecmp
 import fnmatch
@@ -10,9 +11,9 @@ from pathlib import Path
 import click
 from click import secho
 
-from .conventions import make_batch_conf_dir, output_dirs_for_input_part
+from .conventions import make_batch_conf_dir, output_dirs_for_input_part, slugify_hash
 from .iterators import iter_inputs
-from .utils import PathType
+from .utils import PathType, checked_cde_attrs
 from .config import commit_id, project, subproject, outputs_commit_root, outputs_commit, is_ci, default_platform, config
 from .config import user, default_batches_files
 
@@ -20,6 +21,7 @@ from .config import user, default_batches_files
 def default_cmp(file_1, file_2):
     filecmp.cmp(str(file_1), str(file_2), shallow=False)
 
+cmp_func = default_cmp
 # In some cases you want to implement your own file comparaison.
 # It can be useful if e.g. you want to allow a file-format change, but still fail in case of semantic changes
 # To do this, write some/file.py implemented a "cmp(file_1, file_2)" function.
@@ -45,11 +47,26 @@ if custom_cmp:
     click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
 
 
+def is_same_content(filename, meta_1, meta_2):
+  # we allow changes in hex files' footers or raw imgprops, provided same critical attributes don't change
+  if filename.endswith('.hex') or filename.endswith('.raw'):
+    return all(
+      meta_1[attr] == meta_2[attr]
+      for attr in checked_cde_attrs
+      if attr in meta_1 and attr in meta_2
+    )
+  else:
+    return meta_1['md5'] == meta_2['md5']
+
+
 
 def cmpfiles(dir_1=Path(), dir_2=Path(), patterns=None, ignore=None, cmp=default_cmp):
   """Bit-accuracy test between two directories. We usually use cmpmanifest only...
   Almost like https://docs.python.org/3/library/filecmp.html
   """
+  if not cmp:
+    cmp = default_cmp
+
   if not patterns:
     patterns = ['*']
   if not ignore:
@@ -80,7 +97,7 @@ def cmpfiles(dir_1=Path(), dir_2=Path(), patterns=None, ignore=None, cmp=default
       file_2 = dir_2 / rel_path
       if file_2.is_file():
         try:
-          is_same = filecmp.cmp(str(file_1), str(file_2), shallow=False)
+          is_same = cmp(file_1, file_2)
           if not is_same:
             mismatch.add(rel_path)
           else:
@@ -147,7 +164,7 @@ def cmpmanifests(manifest_path_1, manifest_path_2, patterns=None, ignore=None):
       if any(fnmatch.fnmatch(file_1, f"{i}*") for i in ignore):
         continue
       if file_1_str in manifest_2:
-        is_same = meta_1['md5'] == manifest_2[file_1_str]['md5']
+        is_same = is_same_content(file_1_str, meta_1, manifest_2[file_1_str])
         if not is_same:
           mismatch.add(file_1)
         else:
@@ -165,10 +182,12 @@ def cmpmanifests(manifest_path_1, manifest_path_2, patterns=None, ignore=None):
 
 
 
-def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, reference_platform=None, manifest_name='manifest.outputs.json'):
+def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, manifest_name='manifest.outputs.json'):
     """Compares the results of the current output directory versus a reference"""
-    output_dir_suffix = ba_context["output_dir_suffix"]
-    rel_input_path = ba_context["rel_input_path"]
+    run_identifier = ba_context["rel_input_path"]
+    if ba_context.get("configurations"):
+      configurations_str = json.dumps(ba_context["configurations"])
+      run_identifier = f"{run_identifier}  {configurations_str}" 
 
     from .config import config
     patterns = config.get("bit_accuracy", {}).get("patterns", [])
@@ -193,19 +212,25 @@ def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, reference_platfo
     #       but not anymore, so this code is broken..!
     #       We'd need a smart refactoring, and pass RunContexts instead of output directories...
     #       then it would be simple to compare to runs with any attribute changed.
-    if reference_platform:
+    if ba_context['reference_platform']:
       from .config import platform
-      dir_ref = Path(str(dir_ref).replace(platform, reference_platform))
+      dir_ref = Path(str(dir_ref).replace(platform, ba_context['reference_platform']))
+    if ba_context['reference_label']:
+      label_slub = slugify_hash(ba_context['batch_label'])
+      label_slub_ref = slugify_hash(ba_context['reference_label'])
 
+      dir_ref = Path(str(dir_ref).replace(label_slub, label_slub_ref))
     # print('dir_new', dir_new) # (dir_new / "manifest.outputs.json").resolve())
     # print('dir_ref', dir_ref) # (dir_ref / "manifest.outputs.json").resolve())
     if not dir_ref.exists():
-      click.secho(f"ERROR: No reference for '{rel_input_path}'", fg='red')
+      click.secho(f"ERROR: No reference for {run_identifier}", fg='red')
       missing_runs = True
     if not dir_new.exists():
-      click.secho(f"ERROR: Missing run for '{rel_input_path}'", fg='red')
+      click.secho(f"ERROR: Missing run for {run_identifier}", fg='red')
       missing_runs = True
-    if (dir_new / manifest_name).exists() and (dir_ref / manifest_name).exists():
+
+
+    if (dir_new / manifest_name).exists() and (dir_ref / manifest_name).exists() and not custom_cmp:
       comparison = cmpmanifests(
         manifest_path_1 = dir_new / manifest_name,
         manifest_path_2 = dir_ref / manifest_name,
@@ -218,24 +243,27 @@ def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, reference_platfo
         dir_2=dir_ref,
         patterns=patterns,
         ignore=ignore,
+        cmp=cmp_func,
       )
       # print(dir_1)
       # print(dir_ref)
-      # print(comparaison)
+      # print(comparison)
+
+    run_identifier = f"{run_identifier}  @{manifest_name}"
 
     if missing_runs:
       return False
     bit_accurate = True
     if strict:
       if comparison['only_in_1']:
-        click.secho(f'{rel_input_path} {manifest_name}', fg='red', bold=True, err=True)
+        click.secho(run_identifier, fg='red', bold=True, err=True)
         click.secho(f'{dir_new}', fg='red', err=True, dim=True)        
         click.secho(f"ERROR: ({len(comparison['only_in_1'])}) file(s) are not present in the reference run:", fg='red')
         for p in comparison['only_in_1']:
           click.secho(f'➖ {p}', fg='red', dim=True)
         bit_accurate = False
       if comparison['only_in_2']:
-        click.secho(f'{rel_input_path} {manifest_name}', fg='red', bold=True, err=True)
+        click.secho(run_identifier, fg='red', bold=True, err=True)
         click.secho(f'{dir_new}', fg='red', err=True, dim=True)
         click.secho(f"ERROR: {len(comparison['only_in_2'])} file(s) existing in the reference run are not present:", fg='red')
         for p in comparison['only_in_2']:
@@ -247,25 +275,25 @@ def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, reference_platfo
     # print(comparisons['mismatch'])
     nothing_was_compared = not (len(comparison['match']) + len(comparison['mismatch']) + len(comparison['errors']) )
     if nothing_was_compared and bit_accurate:
-      click.echo(click.style(f'🤔  {rel_input_path} {manifest_name}', fg='yellow') + click.style(' 0 files compared', fg='yellow', dim=True), err=True)
+      click.echo(click.style(f'🤔  {run_identifier}', fg='yellow') + click.style(' 0 files compared', fg='yellow', dim=True), err=True)
 
     if comparison['errors']:
       bit_accurate = False
       click.secho("ERROR: While trying to read those files:", fg='red', bold=True)
       click.secho(f'{dir_new}', fg='red', err=True, dim=True)
-      for p in comparison['error']:
+      for p in comparison['errors']:
         click.secho(f"⚠️  {p}", fg='red')
 
     if comparison['mismatch']:
       bit_accurate = False
-      click.secho(f'{rel_input_path} {manifest_name}', fg='red', bold=True, err=True)
+      click.secho(run_identifier, fg='red', bold=True, err=True)
       click.secho(f'{dir_new}', fg='red', err=True, dim=True)
       click.secho(f"ERROR: Mismatch for:", fg='red')
       for p in comparison['mismatch']:
         click.secho(f'❌  {p}', fg='red', dim=True)
 
     if bit_accurate and not nothing_was_compared:
-      click.secho(f"✔️  {rel_input_path} {manifest_name}", fg='green', err=True)
+      click.secho(f"✔️  {run_identifier}", fg='green', err=True)
     return bit_accurate
 
 
@@ -302,7 +330,7 @@ def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
       batch_conf_dir = make_batch_conf_dir(Path(), ctx.obj['batch_label'], ctx.obj["platform"], run_context.configurations, ctx.obj['extra_parameters'], ctx.obj['share'])
       output_dir_suffix = output_dirs_for_input_part(run_context.rel_input_path, run_context.database, config)
       batch_suffixes = batch_conf_dir / output_dir_suffix
-      ba_context = {"output_dir_suffix": output_dir_suffix, "rel_input_path": run_context.rel_input_path}
+      ba_context = {"output_dir_suffix": output_dir_suffix, "rel_input_path": run_context.rel_input_path, "reference_platform":None, "reference_label":None}
       if user in commit_dir.parts:
         commit_dir_ = Path(str(commit_dir).replace(user, '*'))
         start, *end = commit_dir_.parts
@@ -362,8 +390,10 @@ def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
 @click.option('--batch', '-b', 'batches', multiple=True, help="Only check bit-accuracy for those batches of inputs+configs+database.")
 @click.option('--batches-file', 'batches_files', type=PathType(),  default=default_batches_files, multiple=True, help="YAML file listing batches of inputs+config+database selected from the database.")
 @click.option('--strict', is_flag=True, help="By default only files existing in current/ref runs are checked. This files ensure we fail if some files exist in one run and not the other.")
+@click.option('--reference-label', default = None, help="Compare against another label on the same batch")
 @click.option('--reference-platform', help="Compare against a difference platform.")
-def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference_platform):
+
+def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference_label, reference_platform):
     """
     Checks the bit accuracy of the results in the current output directory
     versus the latest commit on origin/develop.
@@ -402,8 +432,12 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
     # This where the new results are located
     commit_dir = outputs_commit_root if (is_ci or ctx.obj['share']) else Path()
 
+    # We do bit-accuracy checks on directories, but we need some meta-data to print useful error messages
+    # currently we only print messages about what the input and config were,
+    # disregarding e.g. tuning params and platform. We might want to fix this.
+    # The workaround is using --label to split bit-accuracy checks into groups...  
     ba_contexts = []
-    if not batches:
+    if not batches: # backward-compat for DVS, can likely be removed at the next refactoring
       output_dirs = list(p.parent.relative_to(commit_dir) for p in (commit_dir / subproject / 'output').rglob('manifest.outputs.json'))
       for output_dir in output_dirs:
         run_path = commit_dir / output_dir / "run.json"
@@ -414,7 +448,10 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
         run_info = json.loads(run_path.read_text())
         ba_contexts.append({
           "rel_input_path": run_info["input_path"],
+          "configurations": run_info["configurations"],
           "output_dir_suffix": output_dir,
+          "reference_platform": reference_platform,
+          "batch_label":ctx.obj["raw_batch_label"]
         })
     else:
       for run_context in iter_inputs(batches, batches_files, ctx.obj['database'], ctx.obj['configurations'], default_platform, {}, config, ctx.obj['inputs_settings']):
@@ -428,7 +465,11 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
         output_directory = batch_conf_dir / output_dirs_for_input_part(run_context.rel_input_path, run_context.database, config)
         ba_contexts.append({
           "rel_input_path": run_context.rel_input_path,
+          "configurations": run_context.configurations,
           "output_dir_suffix": output_directory,
+          "reference_label": reference_label,
+          "reference_platform": reference_platform,
+          "batch_label":ctx.obj["raw_batch_label"]
         })
 
 
@@ -450,8 +491,8 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
             dir_ref = reference_rootproject_ci_dir / ba_context["output_dir_suffix"]
             if dir_ref.exists():
               missing_run = False
-              all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], dir_ref, ba_context, strict=strict, reference_platform=reference_platform) and all_bit_accurate
-              all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], dir_ref, ba_context, strict=strict, reference_platform=reference_platform, manifest_name='manifest.inputs.json') and all_bit_accurate
+              all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], dir_ref, ba_context, strict=strict) and all_bit_accurate
+              all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], dir_ref, ba_context, strict=strict, manifest_name='manifest.inputs.json') and all_bit_accurate
           if missing_run:
             click.secho(f"ERROR: No reference for '{ba_context['rel_input_path']}'", fg='red')
             all_bit_accurate = False
@@ -459,12 +500,15 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
         click.secho(f"Reference directory: {reference_rootproject_ci_dir}", fg='cyan', bold=True, err=True)
         all_bit_accurate = True
         for ba_context in ba_contexts:
-          all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], reference_rootproject_ci_dir / ba_context["output_dir_suffix"], ba_context, strict=strict, reference_platform=reference_platform) and all_bit_accurate
-          all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], reference_rootproject_ci_dir / ba_context["output_dir_suffix"], ba_context, strict=strict, reference_platform=reference_platform, manifest_name='manifest.inputs.json') and all_bit_accurate
+          all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], reference_rootproject_ci_dir / ba_context["output_dir_suffix"], ba_context, strict=strict) and all_bit_accurate
+          all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], reference_rootproject_ci_dir / ba_context["output_dir_suffix"], ba_context, strict=strict, manifest_name='manifest.inputs.json') and all_bit_accurate
     if not all_bit_accurate:
       click.secho(f"\nERROR: results are not bit-accurate to {reference_commits}.", bg='red', bold=True)
       if is_ci:
         click.secho(f"\nTo investigate, go to", fg='red', underline=True)
         for reference_commit in reference_commits:
-          click.secho(f"{qaboard_url}/{project.as_posix()}/commit/{commit_id}?reference={reference_commit}&selected_views=bit_accuracy", fg='red')
+          url = f"{qaboard_url}/{project.as_posix()}/commit/{commit_id}?reference={reference_commit}&selected_views=bit_accuracy"
+          if batches:
+            url = f"{url}&batch={batches[0]}"
+          click.secho(url, fg='red')
       exit(1)

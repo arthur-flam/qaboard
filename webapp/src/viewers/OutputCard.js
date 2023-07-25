@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { InView } from 'react-intersection-observer'
 import { get, all, CancelToken, isCancel } from "axios";
 import { matchPath } from 'react-router'
-import pathToRegexp from 'path-to-regexp'
+import { parse, compile } from 'path-to-regexp'
+// TODO: check we use the correct {delimiter: '/'} maybe ?
+// https://github.com/pillarjs/path-to-regexp
 import { DateTime } from 'luxon';
 import { FullScreen, useFullScreenHandle } from "react-full-screen";
 
@@ -31,7 +33,8 @@ import { OutputTags, ExtraParametersTags, StatusTag, RunBadges, style_skeleton }
 import { humanFileSize } from "./bit_accuracy/utils";
 
 import { updateSelected } from "../actions/selected";
-import { linux_to_windows } from '../utils'
+import { linux_to_windows, is_same_data } from '../utils'
+import { is_image } from "./images/utils"
 
 export const toaster = Toaster.create();
 
@@ -48,7 +51,6 @@ const on_copy = e => {
 
 
 const SlimCard = styled(Card)`
-  padding: 5px !important;
   overflow: "auto";
 `;
 
@@ -67,7 +69,7 @@ const FullScreenableSlimCard = props => {
   </SlimCard>
 }
 
-const OutputHeader = ({ project, commit, output, output_ref, type, dispatch, style, prefix, tags_first=false }) => {
+const OutputHeader = ({ project, commit, output, output_ref, type, dispatch, manifests, style, prefix, viewable, tags_first=false }) => {
   const has_metadata = !!output.test_input_metadata && (Object.keys(output.test_input_metadata).length > 0)
   const has_label = has_metadata && !!output.test_input_metadata.label
   const tags = <OutputTags
@@ -75,6 +77,7 @@ const OutputHeader = ({ project, commit, output, output_ref, type, dispatch, sty
     project={project}
     output_ref={output_ref}
     mismatch={output.reference_mismatch}
+    manifests={manifests}
     dispatch={dispatch}
     commit={commit}
     style={{marginLeft: '5px', marginRight: '5px'}}
@@ -82,11 +85,13 @@ const OutputHeader = ({ project, commit, output, output_ref, type, dispatch, sty
 
   const input_over_time_url = `/${project}/history/${!!commit ? commit.branch : ''}${window.location.search}`
   // output.params.badges = [{text: "training", icon: "settings", href: "https://example.com"}]
+  const run_path = has_label ? output.test_input_metadata.label : `${output.test_input_database === '/' ? '/' : ''}${output.test_input_path}`
   return <>
     <h5 className={Classes.HEADING} style={style} >
       {prefix}   
-      {tags_first && tags}
-      {output.output_type !== "batch" && <Popover hoverCloseDelay={1000} interactionKind={PopoverInteractionKind.HOVER}>
+      {tags_first && viewable && tags}
+      {output.output_type !== "batch" && !viewable ?
+        <span>{run_path}</span> : <Popover hoverCloseDelay={1000} interactionKind={PopoverInteractionKind.HOVER}>
         <span>
           <Link
             to={input_over_time_url}
@@ -103,7 +108,7 @@ const OutputHeader = ({ project, commit, output, output_ref, type, dispatch, sty
             }}
             style={{ color: 'inherit' }}
           >
-            {has_label ? output.test_input_metadata.label : `${output.test_input_database === '/' ? '/' : ''}${output.test_input_path}`}
+            {run_path}
           </Link>
         </span>
         <Menu>
@@ -128,7 +133,7 @@ const OutputHeader = ({ project, commit, output, output_ref, type, dispatch, sty
           {!!output?.data?.storage && <MenuItem key="storage" text={humanFileSize(output.data.storage, true)} icon="folder-close" />}
         </Menu>
       </Popover>}
-      {!tags_first && tags}
+      {!tags_first && viewable && tags}
     </h5>
     <p style={{maxWidth: '600px'}}>
       <RunBadges output={output}></RunBadges>
@@ -142,8 +147,8 @@ const OutputHeader = ({ project, commit, output, output_ref, type, dispatch, sty
 const condensed_header_style = {
   fontSize: ".7rem",
   fontWeight: 500,
-  lineHeight: 1.6,
   letterSpacing: "-1px",
+  lineHeight: 1.6,
 };
 
 
@@ -238,6 +243,8 @@ class OutputCard extends React.Component {
               { load_data: {} },
               thrown,
             )
+          else if (!update_manifest)
+            this.fetchData(label, update_manifest=true)
         });
     }).map(f => f()))
       // now we loaded and parsed all the data
@@ -263,14 +270,21 @@ class OutputCard extends React.Component {
       return;
     const has_new = this.props.output_new !== undefined && this.props.output_new !== null;
     const has_ref = this.props.output_ref !== undefined && this.props.output_ref !== null;
-    let updated_new = has_new && (prevProps.output_new === null || prevProps.output_new === undefined || prevProps.output_new.id !== this.props.output_new.id || prevProps.output_new.is_running !== this.props.output_new.is_running);
-    let updated_ref = has_ref && (prevProps.output_ref === null || prevProps.output_ref === undefined || prevProps.output_ref.id !== this.props.output_ref.id || prevProps.output_ref.is_running !== this.props.output_ref.is_running);
+    const had_new = prevProps.output_new !== undefined && prevProps.output_new !== null;
+    const had_ref = prevProps.output_ref !== undefined && prevProps.output_ref !== null;
+
+    let updated_new = has_new && (!had_new || prevProps.output_new.id !== this.props.output_new.id || prevProps.output_new.is_running !== this.props.output_new.is_running);
+    let updated_ref = has_ref && (!had_ref || prevProps.output_ref.id !== this.props.output_ref.id || prevProps.output_ref.is_running !== this.props.output_ref.is_running);
+    updated_ref = updated_ref || had_ref && !has_ref
     if (updated_new) {
       if (!!this.state.cancel_source.new.token)
         this.state.cancel_source.new.cancel("Changed new output");
       this.fetchData('new');
     }
     if (updated_ref) {
+      this.setState({
+        manifests: {...this.state.manifests, reference: undefined},
+      })
       if (!!this.state.cancel_source.reference.token) {
         this.state.cancel_source.reference.cancel("Changed reference output");
         this.setState({
@@ -311,10 +325,17 @@ class OutputCard extends React.Component {
     const outputs = this.props.config.outputs || {}
     const views = [...(outputs.visualizations || []), ...(outputs.detailed_views || [])]; // we allow both for some leeway with half updated projects
     var options = {}
+    let parse_errors = []
     views.forEach((view, idx) => {
       if (view.path === undefined) return
       // FIXME: be glob-friendly? view.path.replace(/[^\.]\*/g, '(.*)')
-      let view_options = pathToRegexp.parse(view.path)
+      let view_options
+      try {
+        view_options = parse(view.path)
+      } catch (error) {
+        parse_errors.push({path: view.path, message:error.message})
+        return
+      }
       view_options.forEach(token => {
         // console.log(token)
         if (token.name === undefined) // static part
@@ -333,6 +354,21 @@ class OutputCard extends React.Component {
       })
     })
 
+    if (parse_errors.length > 0) {
+      this.setState((previous_state, props) => ({
+        error: {
+          ...previous_state.error,
+          "parse": parse_errors,
+        }
+      }))
+    } else if (!!this.state.error?.parse) {
+      this.setState((previous_state, props) => ({
+        error: {
+          ...previous_state.error,
+          "parse": undefined,
+        }
+      }))
+    }
     const selected = {}
     const paths = Object.keys(this.state.manifests.new)
     // TODO: Ideally, as we iterate over options, we should select values
@@ -388,11 +424,14 @@ class OutputCard extends React.Component {
       } else {
         selected_value = option.values[all_numbers ? option.values.length-1 : 0]
       }
-
-      const is_without_previous_value = !this.state.options[option.name] || !this.state.options[option.name].selected
+      let current_option = this.state.options?.[option.name] ?? {}
+      const is_without_previous_value = current_option.selected == null  
       if (is_without_previous_value) {
         selected[option.name] = [selected_value]
         option.selected = [selected_value]
+      } else {
+        selected[option.name] = current_option.selected
+        option.selected = current_option.selected
       }
     })
     this.setState({
@@ -403,12 +442,12 @@ class OutputCard extends React.Component {
 
 
   render() {
-    const { is_loaded, error } = this.state;
+    const { is_loaded, error, viewable } = this.state;
     const { output_new, output_ref, config } = this.props;
 
     const has_output_new = output_new !== undefined && output_new !== null
     if (!has_output_new || (output_new.is_pending && !output_new.is_running))
-      return <span />
+      return <span key="loading" />
 
     const style = {
       ...(config?.outputs?.style || {}),
@@ -418,7 +457,7 @@ class OutputCard extends React.Component {
 
     var content;
     if (!is_loaded && !has_output_new) {
-      content = <span />;
+      content = <span key="loading" />;
     } else {
       const { main_metrics, available_metrics } = this.props.metrics;
 
@@ -427,7 +466,7 @@ class OutputCard extends React.Component {
 
       var controls = this.props.controls || {};
       var views = config.outputs?.visualizations || [];
-      let viewers = views.map((view, idx) => {
+      let viewers = !viewable ? null : views.map((view, idx) => {
         let hidden = view.default_hidden === true && !(!!controls.show && controls.show[view.name] === true)
         if (hidden)
           return <span key={idx} />
@@ -468,7 +507,9 @@ class OutputCard extends React.Component {
         if (!(view.display === 'viewer') && view_options.length > 0) {
           if (view.display === undefined || view.display === 'single') {
             const view_options_selected = view_options.map(o => [o.unnamed_group !== undefined ? o.unnamed_group : o.name, o.selected[0]])
-            var paths = [compilePath(view.path)(Object.fromEntries(view_options_selected))].map(p => decodeURIComponent(p))
+            // path used to be urlencoded, changed in https://github.com/pillarjs/path-to-regexp/releases/tag/v5.0.0
+            // can be opted-in via   { encode: encodeURIComponent } https://github.com/pillarjs/path-to-regexp#compile-reverse-path-to-regexp
+            var paths = [compilePath(view.path)(Object.fromEntries(view_options_selected))] // .map(p => decodeURIComponent(p)) // not needed anymore
             // Note: before we had a path with / and other characters, and now it's url encoded
           } else if (view.display === 'all') {
             paths = Object.keys(this.state.manifests.new).filter(path => matchPath(path, { path: view.path }))
@@ -480,17 +521,14 @@ class OutputCard extends React.Component {
         }
 
         let show_ref_if_available = controls.show_reference === undefined || controls.show_reference
+        show_ref_if_available = show_ref_if_available || is_image(view)
         const viewers = paths.map(
           (path, path_idx) => {
             let new_available = path === undefined || (!!this.state.manifests.new && !!this.state.manifests.new[path])
             if (!new_available)
-              return <span/>
+              return <span key={`${idx}-${path_idx}`}/>
             let ref_available = path === undefined || (!!this.state.manifests.reference && !!this.state.manifests.reference[path])
-            const hash = {
-              new: this.state.manifests?.new?.[path]?.md5,
-              reference: this.state.manifests?.reference?.[path]?.md5,
-            }
-            const has_same_data = !!hash.new && hash.new === hash.reference
+            const has_same_data = is_same_data(path, this.state.manifests.manifests?.new?.[filename], this.state.manifests.manifests?.reference?.[filename])
             return <div key={`${idx}-${path_idx}`} id={`${idx}-${path_idx}`}>
               {paths.length > 1 && <h3 style={{ marginBottom: '0px' }}>{path}</h3>}
               {has_same_data && <div><Tag style={{marginTop: "5px"}} minimal icon="duplicate">same-data-compared</Tag></div>}
@@ -498,7 +536,7 @@ class OutputCard extends React.Component {
                 key={`${idx}-${path_idx}`}
                 id={`${idx}-${path_idx}`}
                 output_new={output_new}
-                output_ref={(ref_available && show_ref_if_available && output_ref?.id !== output_new?.id) ? output_ref : undefined}
+                output_ref={(ref_available && show_ref_if_available) ? output_ref : undefined}
                 manifests={this.state.manifests}
                 {...view}
                 {...controls}
@@ -514,7 +552,9 @@ class OutputCard extends React.Component {
         </>
       })
 
-      if (this.props.type === 'bit_accuracy') {
+      if (!viewable) {
+        content = <span/>
+      } else if (this.props.type === 'bit_accuracy') {
         content = <OutputViewer
           key="bit-accuracy"
           type="files/bit-accuracy"
@@ -526,17 +566,18 @@ class OutputCard extends React.Component {
           style={style}
           show_all_files={this.props.show_all_files}
           expand_all={this.props.expand_all}
+          color_blind_friendly={this.props.color_blind_friendly}
           files_filter={this.props.files_filter}
         />
       } else {
         content = <>
-          {!output_new.is_failed && <MetricsTags
+          <MetricsTags
             key="content"
             selected_metrics={main_metrics}
             available_metrics={available_metrics}
-            metrics_new={output_new.metrics ? output_new.metrics : {}}
-            metrics_ref={output_ref && output_ref.metrics && output_ref.id !== output_new.id ? output_ref.metrics : {}}
-          />}
+            metrics_new={output_new.metrics ?? {}}
+            metrics_ref={output_ref?.metrics && output_ref.id !== output_new.id ? output_ref.metrics : {}}
+          />
           {viewers}
         </>
       }
@@ -548,17 +589,21 @@ class OutputCard extends React.Component {
 
     let container_style = {
       flex: "0 0 auto",
-      width: style.width || '840px',
-      marginBottom: "20px"
+      width: style.width || '1500px',
+      marginBottom: "250px !important",
     }
     const maybe_style_skeleton = output_new.is_running ? style_skeleton : {};
     // console.log(content)
     // console.log(this.state.manifests)
 
     return <div style={container_style}>
-      <FullScreenableSlimCard updateFullscreen={this.updateFullscreen} className="output-card" style={maybe_style_skeleton}>
+      <FullScreenableSlimCard updateFullscreen={this.updateFullscreen} className="output-card" style={{...maybe_style_skeleton, paddingBottom: !viewable && "100px"}}>
         {error.new && <Tooltip key="error-new"><Tag style={{ margin: '5px' }} intent={Intent.DANGER}>Download error @new</Tag><span dangerouslySetInnerHTML={{ __html: !!error.new.response ? error.new.response.data : error.new }} /></Tooltip>}
         {error.reference && <Tooltip key="error-ref"><Tag style={{ margin: '5px' }} intent={Intent.DANGER}>Download error @reference</Tag><span dangerouslySetInnerHTML={{ __html: !!error.reference.response ? error.reference.response.data : error.reference }} /></Tooltip>}
+        {error.parse && <Tooltip key="error-parse">
+          <Tag style={{ margin: '5px' }} intent={Intent.DANGER}>Parsing Error</Tag>
+          <ul>{error.parse.map(e => <li><strong>{e.path}:</strong> {e.message}</li>)}</ul>
+        </Tooltip>}
 
         {!this.props.no_header && <OutputHeader
           key="header"
@@ -566,6 +611,8 @@ class OutputCard extends React.Component {
           commit={this.props.commit}
           output={output_new}
           output_ref={output_ref}
+          viewable={viewable}
+          manifests={this.state.manifests}
           type={this.props.type}
           dispatch={this.props.dispatch}
           style={condensed_header_style}
@@ -576,7 +623,7 @@ class OutputCard extends React.Component {
         {output_new.deleted && <Tag key="new-deleted" intent={Intent.DANGER}>Deleted</Tag>}
         {output_ref && output_ref.deleted && <Tag key="ref-deleted" intent={Intent.WARNING}>Reference deleted</Tag>}
 
-        {!this.state.viewable && <InView key="unviewable" threshold={0.1} margin='150%' /*triggerOnce*/ onChange={inView => this.becameViewable(inView)}>
+        {!viewable && <InView key="unviewable" threshold={0.1} margin='100%' /*triggerOnce*/ onChange={inView => this.becameViewable(inView)}>
           <span key="viewable"></span>
         </InView>}
         {(is_loaded || has_output_new) && content}
@@ -594,7 +641,7 @@ const cacheLimit = 10000;
 let cacheCount = 0;
 function compilePath(path) {
   if (cache[path]) return cache[path];
-  const regexp = pathToRegexp.compile(path);
+  const regexp = compile(path);
   if (cacheCount < cacheLimit) {
     cache[path] = regexp;
     cacheCount++;

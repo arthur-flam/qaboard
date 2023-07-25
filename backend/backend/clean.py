@@ -43,7 +43,6 @@ from click import secho
 from sqlalchemy import func, and_, asc, or_, not_
 
 from .database import db_session, Session
-from .fs_utils import rmtree
 from .models import Project, CiCommit, Batch, Output
 
 
@@ -109,12 +108,16 @@ def clean_untracked_hwalg_artifacts(clean_untracked_artifacts, artifacts_roots, 
         for hexsha, artifact_dir in iter_hashsha_dir():
             try:
                 commit = hwalg.repo.commit(hexsha)
-                created_datetime = commit.authored_datetime
+                hexsha = commit.hexsha
             except: # force pushes, rebases... some commits won't be fetched
+                commit = None
+            try:
+                created_datetime = commit.authored_datetime
+            except:
                 ctime = artifact_dir.stat().st_ctime
                 created_datetime = datetime.datetime.fromtimestamp(ctime).astimezone()
             is_old = created_datetime < now.astimezone() - parse_time('3weeks')
-            if is_old and not any([c.startswith(commit.hexsha) for c in milestone_commits]):
+            if is_old and not any([c.startswith(hexsha) for c in milestone_commits]):
                 print('DELETE', artifact_dir, created_datetime)
                 ci_commit = CiCommit(
                     hexsha=hexsha,
@@ -163,7 +166,10 @@ def clean(project_ids, before, can_delete_reference_branch, can_delete_outputs, 
             # return
             continue
 
-        gc_config = project.data.get("qatools_config", {}).get("storage", {}).get('garbage', {})
+        try:
+            gc_config = project.data.get("qatools_config", {}).get("storage", {}).get('garbage', {})
+        except: # e.g. storage is defined as a single string
+            gc_config = {}
         can_delete_reference_branch = can_delete_reference_branch or gc_config.get('can_delete_reference_branch')
         before = gc_config.get('after', '1month') if not before else before
         old_treshold = now - parse_time(before)
@@ -185,7 +191,7 @@ def clean(project_ids, before, can_delete_reference_branch, can_delete_outputs, 
         if not can_delete_reference_branch:
             commits = commits.filter(CiCommit.branch.notin_(project.protected_refs))
 
-        for commit in commits.all():
+        for commit in commits.yield_per(1000):
             # if '/algo/' not in str(commit.artifacts_dir):
             #     continue
             # print(commit.artifacts_dir)
@@ -216,20 +222,33 @@ def clean(project_ids, before, can_delete_reference_branch, can_delete_outputs, 
                 except:
                     pass
             gc_config_artifacts = gc_config.get('artifacts', {})
+            deleted_artifacts = False
             if gc_config_artifacts.get('delete') == True or can_delete_artifacts:
+                undeleted_commits_from_subprojects = (
+                    db_session.query(CiCommit)
+                    .filter(CiCommit.project_id.startswith(commit.project_id))
+                    .filter(CiCommit.deleted == False)
+                    .filter(CiCommit.hexsha == commit.hexsha)
+                )
+                if undeleted_commits_from_subprojects:
+                    print(f"> skippping {commit}: undeleted_commits_from_subprojects")
+                    continue
+
                 secho(f"  Deleting artifacts", fg='cyan', dim=True)
                 try:
                     commit.delete(keep=gc_config_artifacts.get('keep', []), dryrun=dryrun)
+                    deleted_artifacts = True
                 except Exception as e:
                     print(e)
                     continue
             if not dryrun:
-              if nb_outputs_deleted:
+              if nb_outputs_deleted or deleted_artifacts:
                 db_session.add(commit)
-              if not nb_outputs and can_delete_outputs:
+              if not nb_outputs and deleted_artifacts and can_delete_outputs:
                 print(f"DELETE {commit}")
                 db_session.delete(commit)
-              db_session.commit()
+
+        db_session.commit()
 
 
 

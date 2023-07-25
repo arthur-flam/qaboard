@@ -87,7 +87,7 @@ for hostname, auth in gitlab_credentials.items():
     json.dump(gitlab_cookies, f)
 
 
-jenkins_credentials = json.loads(os.environ['JENKINS_AUTH'])
+jenkins_credentials = json.loads(os.environ.get('JENKINS_AUTH', '{}'))
 def jenkins_hostname_credentials(build_url):
   hostname = urlparse(build_url).hostname
   if hostname not in jenkins_credentials:
@@ -293,18 +293,49 @@ def jenkins_build():
   Get the status of a Jenkins build.
   """
   data = request.get_json()
-  if "build_url" in data:
-    url = f"{data['build_url']}/api/json"
-  elif "web_url" in data:
-    url = f"{data['web_url']}/api/json"
+  if "build_url" in data or "web_url" in data:
+    if "build_url" in data:
+      url = data['build_url']
+    else:
+      url = data['web_url']
+    if not url.endswith("/api/json"):
+      url += "/api/json"
   else:
     url = data['url']
   jenkins_credentials = jenkins_hostname_credentials(url)
   if not jenkins_credentials:
     return f"ERROR: No credentials for {url}", "403"
   try:
-    # https://docs.python-requests.org/en/master/user/advanced/#timeouts
-    r = requests.get(url, timeout=(60, 3.5*60), **jenkins_credentials)
+    # TODO: add something proper to do retriess
+    # https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry
+    # from requests.adapters import Retry, HTTPAdapter
+    # s = requests.Session()
+    # retries = Retry(total=5, backoff_factor=1, status_forcelist=[ 502, 503, 504 ])
+    # s.mount('http://', HTTPAdapter(max_retries=retries))
+    # s.get("http://httpstat.us/503")
+
+    # @retry(tries=3) # pip install retry...
+    def fetch():
+      # https://docs.python-requests.org/en/master/user/advanced/#timeouts
+      return requests.get(url, timeout=(60, 3.5*60), **jenkins_credentials)
+    # LOL Jenkins is super unstable... WIP until we add something proper...
+    import time
+    try:
+      r = fetch()
+    except:
+      try:
+        time.sleep(1)
+        r = fetch()
+      except:
+        try:
+          time.sleep(1)
+          r = fetch()
+        except:
+          try:
+            time.sleep(1)
+            r = fetch()
+          except:
+            r = fetch()
   except Exception as e:
     print(e)
     return jsonify({"error": f"ERROR: checking the build status: {e}"}), 500
@@ -342,7 +373,7 @@ def jenkins_build():
   return jsonify({
     "status": status,
     "allow_failure": allow_failure,
-    "web_url": data['web_url'],
+    "web_url": url,
   })
 
 
@@ -382,14 +413,14 @@ def jenkins_build_trigger():
 
   if 'location' not in r_build.headers:
       return jsonify({"error": f"ERROR: the jenkins response is missing a `location` header. {r_build.text}"}), 500
-  build_queue_location = f"{r_build.headers['location']}/api/json"
+  build_queue_location = f"{r_build.headers['location']}/api/json".replace("//api/json", "/api/json")
 
   def ensure_absolute(url):
     # in some cases jenkins will return a relative location
-    if '://' not in build_queue_location:
+    if '://' not in url:
       url_info = urlparse(build_url)
-      if not build_queue_location.startswith('/'):
-        url = f"/{build_queue_location}" 
+      if not url.startswith('/'):
+        url = f"/{url}" 
       url = f"{url_info.scheme}://{url_info.netloc}{url}"
     return url
 
@@ -411,8 +442,11 @@ def jenkins_build_trigger():
     try:
       web_url = r_get.json()['executable']['url']
     except Exception as e:
-      print(r_get.json())
       print(f"INFO: When reading build queue info, no build URL given at: {build_queue_location}. {e}")
+      try:
+        print(r_get.json())
+      except Exception as ee:
+        print(f"WARNING: could not print the response: {ee}")
     time.sleep(0.5)
     sleep_total = sleep_total + 0.5
   if error:

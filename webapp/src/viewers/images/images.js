@@ -20,10 +20,12 @@ import "./image-canvas.css";
 import { histogram_traces } from './histogram';
 import { CropSelection } from "./crops";
 import { iiif_url } from "./utils";
-import MultiSelectTags from './MultiselectCrops'
+
+import { RoiViewer } from './roi_viewer'
 
 import { unregister_filter_sync } from "./filters"
 
+import { is_same_data } from "../../utils"
 var OpenSeadragon = require('openseadragon')
 require('./selection')
 require('./rgb')
@@ -154,7 +156,8 @@ class ImgViewer extends React.PureComponent {
     // https://codepen.io/iangilman/pen/BWKKxQ
     const { viewer_new, viewer_ref } = this;
     const { image_width, image_height } = this.state;
-    const sync_key = `${this.props.output_new.test_input_path}-${image_height}x${image_width}`;
+    // const sync_key = `${this.props.output_new.test_input_path}-${image_height}x${image_width}`;
+    const sync_key = `${this.props.output_new.test_input_path}-${(image_height/image_width).toFixed(3)}`;
     // console.log("sync_key", sync_key)
 
     if (synced_viewers[sync_key] === undefined) {
@@ -250,7 +253,7 @@ class ImgViewer extends React.PureComponent {
       const { viewer_new, viewer_ref } = this;
       const { path, output_new, output_ref } = this.props;
 
-      const has_reference = !!output_ref && !!output_ref.output_dir_url && this.props.manifests.reference[path] !== undefined;
+      const has_reference = !!output_ref && !output_ref.deleted && !!output_ref.output_dir_url && this.props.manifests.reference[path] !== undefined;
       this.setState({has_reference})
 
       let requests = [get(`${iiif_url(output_new.output_dir_url, path)}/info.json`, { cancelToken: this.state.cancel_source.token })]
@@ -574,19 +577,22 @@ class ImgViewer extends React.PureComponent {
   render() {
     const { output_new, output_ref, diff, label, path, manifests } = this.props;
     const { first_image, width, image_height, image_width, error, hide_labels, has_reference } = this.state;
-
-    const is_same_data = manifests?.new?.[path]?.md5 === manifests?.reference?.[path]?.md5
+    
+    const has_same_data = is_same_data(path, manifests?.new?.[path], manifests?.reference?.[path])
 
     const has_error = !!error && Object.keys(error).length > 0;
-    const error_messages = !has_error ? <span/> : <Popover inheritDarkTheme portalClassName={Classes.DARK} hoverCloseDelay={500} interactionKind={"hover"}>
-        <Tag intent={Intent.DANGER}>Image Dowload Error</Tag>
-        <div style={{ padding: '5px' }}>
-          {!!error.message && <p>{JSON.stringify(error.message)}</p>}
-          {!!error.request && <p>You may <a href={error.config.url}>find why here</a>.</p>}
-          {!!error.response && !!error.response.data && <p>response.data: {JSON.stringify(error.response.data)}</p>}
-          {!!error.data && <p>data: {JSON.stringify(error.data)}</p>}
-        </div>
-    </Popover>;
+    const error_messages = !has_error ? <span/> : <>
+      {manifests?.new?.[path]?.st_size == 0 && <Tag style={{marginRight: "5px"}} intent={Intent.DANGER}>Empty Image</Tag>}
+      <Popover inheritDarkTheme portalClassName={Classes.DARK} hoverCloseDelay={500} interactionKind={"hover"}>
+          <Tag intent={Intent.DANGER}>Image Dowload Error</Tag>
+          <div style={{ padding: '5px' }}>
+            {!!error.message && <p>{JSON.stringify(error.message)}</p>}
+            {!!error.request && <p>You may <a href={error.config.url}>find why here</a>.</p>}
+            {!!error.response && !!error.response.data && <p>response.data: {JSON.stringify(error.response.data)}</p>}
+            {!!error.data && <p>data: {JSON.stringify(error.data)}</p>}
+          </div>
+      </Popover>
+    </>;
 
     const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0)
     const available_width = this.props.fullscreen ? (has_reference ? vw : 2*vw) : width
@@ -609,7 +615,7 @@ class ImgViewer extends React.PureComponent {
       {has_reference && <div style={{ minHeight: (diff ? '40px' : undefined) }}>
         {!hide_labels ? <Tooltip><Tag
           interactive
-          intent="warning"
+          style={{backgroundColor: Colors.CERULEAN4}}
           rightIcon="exchange"
           onClick={this.switch_images}
         >new</Tag>{switch_help_label}</Tooltip> : switch_label}
@@ -620,13 +626,12 @@ class ImgViewer extends React.PureComponent {
       {has_reference && <div style={{ minHeight: (diff ? '40px' : undefined) }}>
         {!hide_labels ? <Tooltip><Tag
           interactive
-          intent="primary"
           rightIcon="exchange"
           title="Switch New/Reference with the keyboard shortcut <code>t</code>. Hide labels with <h>"
           onClick={this.switch_images}
-        >{!is_same_data ? "reference" : 'reference (same-image)'}</Tag>{switch_help_label}</Tooltip> : switch_label}
+        >{!has_same_data ? "reference" : 'reference (same-image)'}</Tag>{switch_help_label}</Tooltip> : switch_label}
       </div>}
-      <div style={single_image_size} id={this.viewer_ref.id} key={this.viewer_ref.id} hidden={!has_reference || is_same_data} />
+      <div style={single_image_size} id={this.viewer_ref.id} key={this.viewer_ref.id} hidden={!has_reference || has_same_data} />
     </div>
 
 
@@ -644,7 +649,7 @@ class ImgViewer extends React.PureComponent {
       <Plot data={[...(this.histo_ref || []), ...(this.histo_new || [])]} layout={histo_layout} style={histogram_size_tight} />
     </div> : <></>
 
-    const diff_info = !is_same_data && single_image_height > 0 ? <div hidden={!diff || !has_reference} style={flex}>
+    const diff_info = !has_same_data && single_image_height > 0 ? <div hidden={!diff || !has_reference} style={flex}>
       <div style={{ minHeight: '40px' }}>
         <MultiSlider
           defaultTrackIntent={Intent.WARNING}
@@ -682,18 +687,35 @@ class ImgViewer extends React.PureComponent {
     //       {/* <canvas hidden={!diff || !has_reference} ref={this.canvas_diff_ssim} /> */}
 
     // const empty_image = <canvas key="empty-image" {...single_image_size} />
-    return <>
+    let current_roi = {
+      x: 0,
+      y: 0,
+      width: this.viewer_new?.source?.width,
+      height: this.viewer_new?.source?.height,
+    } 
+    if (!!this.viewer_new && !!this.viewer_new.viewport) {
+      var viewportBounds = this.viewer_new.viewport.getBounds();
+      let top_left = viewportBounds.getTopLeft()
+      let bottom_right = viewportBounds.getBottomRight()
+      top_left = this.viewer_new.viewport.viewportToImageCoordinates(top_left.x, top_left.y)
+      bottom_right = this.viewer_new.viewport.viewportToImageCoordinates(bottom_right.x, bottom_right.y)
+      current_roi.x = top_left.x
+      current_roi.y = top_left.y
+      current_roi.w = bottom_right.x - top_left.x
+      current_roi.h = bottom_right.y - top_left.y
+    }
+
+    return <div style={{dispay: "inline"}}>
       {error_messages}
       {!has_error && <>
         {this.state.ready &&
-          <MultiSelectTags
+          <RoiViewer
             output_new={output_new}
-            output_ref={output_ref}
-            viewer_new={this.viewer_new}
-            viewer_ref={this.viewer_ref}
+            output_ref={!has_same_data ? output_ref : undefined}
             path={path}
-            qatools_config={this.props.qatools_config}
-          />}
+            viewer={this.viewer_new}
+            current_roi={current_roi}
+         />}
         <span>
           {this.show_histogram && <Tooltip>
             <Icon icon="info-sign" style={{ color: Colors.GRAY2 }} />
@@ -701,11 +723,6 @@ class ImgViewer extends React.PureComponent {
               <li>Histograms (RGB+Y) are computed on the rendered low-resolution image.</li>
             </ul>
           </Tooltip>}
-          {this.show_histogram && !!this.imageCoords && <CropSelection
-            image_width={this.viewer_new?.source?.width}
-            image_height={this.viewer_new?.source?.height}
-            roiCoords={this.imageCoords}
-          />}
           <Tooltips
             x={this.state.x}
             y={this.state.y}
@@ -729,7 +746,7 @@ class ImgViewer extends React.PureComponent {
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center"}} hidden={has_error}>
         {hist_info}
       </div>
-    </>
+    </div>
   }
 
   switch_images = e => {

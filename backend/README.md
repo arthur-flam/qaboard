@@ -8,13 +8,16 @@ git clone git@gitlab-srv:common-infrastructure/qaboard.git
 cd qaboard
 ```
 
-2. If you want to run a frontend, [go to the README](../webapp/README.md) and without docker run `npm install`.
+2. If you want to run a frontend, [go to the README](../webapp/README.md) and without docker run `cd webapp; npm install`.
 
 3. Edit at the top-level of the repository _development.yml_, and replace `arthurf` with your user. Edit _services/backend/passwd_ and add a line with  your user, looking like `arthurf:*:11611:10:Arthur Flam:/home/arthurf:/bin/tcsh`. You can get  it  with `getent passwd | grep arthurf`.
 
 4. Start the server:
 
 ```bash
+# At SIRC we need to make sure important folders are mounted before starting containers...
+./at-sirc-before-up.py
+
 docker-compose -f docker-compose.yml -f development.yml -f sirc.yml up  -d 
 
 # for more build logs
@@ -63,14 +66,28 @@ Flask helps us create an HTTP server. It exposes API endpoints defined in the [a
 
 
 ## SQL performance
+### Custom database config
+Get a sample config:
+
+```bash
+docker run -i --rm postgres:12-alpine cat  /usr/local/share/postgresql/postgresql.conf.sample > services/db/postgres.conf
+```
+
+And add it to your `db` container:
+```yaml
+  db:
+    volumes:
+    - ./services/db/postgres.conf:/var/lib/postgresql/data/postgresql.conf
+```
+
+### Tuning
 Queries:
-- Enable `QABOARD_DB_ECHO=true` to see all SQL queries
+- In the backend, set `QABOARD_DB_ECHO=true` to see all SQL queries
 - Get an SQL prompt with `docker-compose exec db psql -U qaboard` and play with `EXPLAIN ANALYZE my-query`.
-- We now also ship `pgadmin` with QA-Board, on port 5050.
+- `pgadmin` is available by default  on port 5050.
 
 Tuning:
 - [Read here](https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server) about how to investigate the database's performance.
-- Since we moved to `docker-compose` we went back to the default `postgreSQL` config (at */etc/postgresql/XXXX/main/postgresql.conf*). Time to document how to change them!
 
 ```bash
 # Check performance issues with
@@ -91,3 +108,10 @@ with profiled():
   ... # code to be profiled
 ```
 
+### SENTRY (Application Monitoring and Error Tracking Software)
+To integrate with SENTRY server, add an environment variable __SENTRY_DSN__ to _\<local\>.yml_, for example:
+```yml
+  backend:
+    environment:
+    - SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+```

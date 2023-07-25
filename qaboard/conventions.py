@@ -97,7 +97,7 @@ def slugify_hash(s, maxlength=32):
   else:
     s_to_slugify = s
   if len(s_to_slugify) < maxlength:
-    return slugify(s_to_slugify)
+    return slugify(s_to_slugify, maxlength)
   s_hash = make_hash(s)[:8]
   return f"{s_hash}-{slugify(s_to_slugify[-(maxlength-8):], maxlength=None)}"
 
@@ -151,7 +151,7 @@ def serialize_config(configurations: List) -> str:
     return '-'
   if isinstance(configurations, str):
     return configurations
-  configurations = [json.dumps(c, sort_keys=True) if isinstance(c, dict) else c for c in configurations]
+  configurations = [json.dumps(c, sort_keys=True) if isinstance(c, dict) else (c if c is not None else "null") for c in configurations]
   # print("[serialize] during", configurations)
   configuration = ":".join(configurations)
   # print("[serialize] after: ", configuration)
@@ -207,16 +207,20 @@ def get_commit_dirs(commit, repo_root: Optional[Path]=None) -> Path:
     if repo_root is None:
       raise ValueError("Not enough information about the commit to know where to store its data.")
     return repo_root.resolve()
-  if isinstance(commit, str): # commit hexsha
-    try:
-      commit_id = git_show(format='%H', reference=commit)
-    except:
-      if repo_root is None:
-        raise ValueError("Not enough information about the commit to know where to store its data.")
-      # if we run within an artifact directory, we're not in a git repo, so "git show" will fail.
-      click.secho(f"WARNING: Could not resolve the commit locally ({commit}). Not enough information to know where to store artifacts/runs.", fg='yellow', err=True)
-      return repo_root.resolve()
-  else:
+  if isinstance(commit, str): # commit hexsha passed as string
+    # we want to resolve the full hash if we weren't passed it already
+    if re.match(r"[0-9a-f]{40}", commit):
+      commit_id = commit
+    else:
+      try:
+        commit_id = git_show(format='%H', reference=commit)
+      except:
+        if repo_root is None:
+          raise ValueError("Not enough information about the commit to know where to store its data.")
+        # if we run within an artifact directory, we're not in a git repo, so "git show" will fail.
+        click.secho(f"WARNING: Could not resolve the commit locally ({commit}). Not enough information to know where to store artifacts/runs.", fg='yellow', err=True)
+        return repo_root.resolve()
+  else: # likely a gitpython Commit object...
     commit_id = commit.hexsha
   # git hex hashes are size 40. For us 16 should be plenty enough...
   dir_name = f'{commit_id[:2]}/{commit_id[2:16]}'
@@ -251,11 +255,10 @@ def make_batch_conf_dir(outputs_commit, batch_label, platform, configurations, e
 
 def output_dirs_for_input_part(input_path, database, config):
     input_dir = input_path.with_suffix('')
+    input_dir = Path(slugify_hash(input_dir.as_posix(), maxlength=70))
     if config.get('outputs', {}).get('output_dir_uses_database'):
         if not database.is_absolute():
             input_dir = database / input_dir
         else:
             input_dir = database.relative_to(database.root) / input_dir
-    if len(input_dir.as_posix()) > 70:
-        input_dir = Path(slugify_hash(input_dir.as_posix(), maxlength=70))
     return input_dir

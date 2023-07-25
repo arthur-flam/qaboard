@@ -3,7 +3,7 @@ import React from "react";
 import { Tree, Classes, Colors, Tag, Icon, Tooltip } from "@blueprintjs/core";
 import { OutputViewer } from "../OutputViewer"
 import { getNodeById, forEachNode, visitDepthFirst, copyNodeData, filterNodes, updateMissingFrom, humanFileSize } from "./utils"
-import { match_query } from "../../utils"
+import { match_query, is_same_data } from "../../utils"
 
 
 // Turns a flat file manifest into a proper tree
@@ -55,7 +55,7 @@ const updateMatch = tree_reference => node => {
     if (node_reference === undefined)
       node.nodeData.match = true;
     else
-      node.nodeData.match = node.nodeData.md5 === node_reference.nodeData.md5;
+      node.nodeData.match = is_same_data(node.id, node.nodeData, node_reference.nodeData)
 }
 
 
@@ -74,41 +74,70 @@ const icon_style = {
   marginRight: '10px',
 }
 
-const applyStyle = node => {
+const applyStyle = (has_reference, color_blind_friendly) => node => {
     const { match, missing_from_reference, missing_from_new} = node.nodeData;
     const is_folder = node.childNodes !== undefined;
 
     let color = Colors.GREY1;
     if (is_folder) {
       // console.log(node.id, node, !match, missing_from_new, missing_from_reference)
-      if (!match && missing_from_new && missing_from_reference) {
-        color = Colors.SEPIA1;
-      } else if (!match && missing_from_new) {
-        color = Colors.ROSE1;
-      } else if (!match && missing_from_reference) {
-        color = Colors.TURQUOISE1;
-      } else if (!match) {
-        color = Colors.ORANGE1;
-      } else if (missing_from_new) {
-        color = Colors.RED1;
-      } else if (missing_from_reference) {
-        color = Colors.GREEN1;
+      if (has_reference) {
+        if (!match && missing_from_new && missing_from_reference) {
+          color = Colors.SEPIA1;
+        } else if (!match && missing_from_new) {
+          color = Colors.ROSE1;
+        } else if (!match && missing_from_reference) {
+          color = Colors.TURQUOISE1;
+        } else if (!match) {
+          color = Colors.ORANGE1;
+        } else if (missing_from_new) {
+          color = Colors.RED1;
+        } else if (missing_from_reference) {
+          color = Colors.GREEN1;
+        }
       }
       node.icon = <Icon icon='folder-close' style={{color, ...icon_style}}/>;
       return;
     }
 
-    let icon = 'duplicate';
-    if (missing_from_reference) {
-      color = Colors.GREEN1;
-      icon = 'plus'
-    } else if (missing_from_new) {
-      color = Colors.RED1;
-      icon = 'minus'
-    } else if (!match) {
-      color = Colors.ORANGE1;
-      icon = 'cross'
+    let icon = 'document'
+    if (node.id.match(/(hex|bmp|raw|jpg|jpeg|mp4|imgprops)$/)) {
+      icon = 'media'
+    } else if (node.id.match(/\.(xml|html)$/)) {
+      icon = 'code'
+    } else if (node.id.match(/(\.cde|set|\.yaml|\.yml)$/)) {
+      icon = 'numerical'
+    } else if (node.id.match(/\.(bat|sh|exe|ps1)$/)) {
+      icon = 'console'
+    } else if (node.id.match(/\.plotly.json$/)) {
+      icon = 'area-chart'
+    } else if (node.id.match(/\.(csv)$/)) {
+      icon = 'th-list'
+    } else if (node.id.match(/\.json$/)) {
+      icon = 'database'
     }
+
+    if (color_blind_friendly) {
+      icon = 'duplicate';
+      if (missing_from_reference) {
+        icon = 'plus'
+      } else if (missing_from_new) {
+        icon = 'minus'
+      } else if (!match) {
+        icon = 'cross'
+      }
+    }
+
+    if (has_reference) {
+      if (missing_from_reference) {
+        color = Colors.GREEN1;
+      } else if (missing_from_new) {
+        color = Colors.RED1;
+      } else if (!match) {
+        color = Colors.ORANGE1;
+      }
+    }
+
     node.icon = <Icon icon={icon} style={{color, ...icon_style}}/>
     let has_size = node.nodeData.st_size !== undefined && node.nodeData.st_size !== null
     let size_real = has_size ? node.nodeData.st_size.toLocaleString('fr-FR') : '?'
@@ -153,12 +182,8 @@ class BitAccuracyViewer extends React.Component {
        onNodeExpand={this.handleNodeExpand}
       />
       {selected.map( filename => {
-        const hash = {
-          new: this.props.manifests?.new?.[filename]?.md5,
-          reference: this.props.manifests?.reference?.[filename]?.md5,
-        }
-        const has_same_data = !!hash.new && hash.new === hash.reference
-        return <>
+        const has_same_data = is_same_data(filename, this.props.manifests?.new?.[filename], this.props.manifests?.reference?.[filename])
+        return <div key={filename}>
           {has_same_data && <Tag style={{marginTop: "5px"}} key={`same-${filename}`} minimal icon="duplicate">same-data</Tag>}
           <OutputViewer
               key={filename}
@@ -166,7 +191,7 @@ class BitAccuracyViewer extends React.Component {
               max_lines={30}
               {...props}
           />
-        </>
+        </div>
       })}
 
     </div>
@@ -179,7 +204,6 @@ class BitAccuracyViewer extends React.Component {
 
     // make a deep copy
     var tree_compared = JSON.parse(JSON.stringify(tree_new))
-    // console.log(tree_compared)
     // find the nodes that are missing in the reference tree
     visitDepthFirst(tree_compared, updateMissingFrom(tree_ref, 'reference'))
 
@@ -211,8 +235,9 @@ class BitAccuracyViewer extends React.Component {
     // the root is a "chilNodes" array, not a real root...
     tree_compared = tree_compared.sort( (a, b) => a.label.localeCompare(b.label) )
 
-    forEachNode(tree_compared, applyStyle)
-    forEachNode(tree_compared, node => {if (((this.state || {}).opened || []).includes(node.id)) {node.isExpanded = true}} )
+    const has_ref = tree_ref !== null && tree_ref !== undefined
+    forEachNode(tree_compared, applyStyle(has_ref, has_ref && props.color_blind_friendly))
+    forEachNode(tree_compared, node => {if ((this.state?.opened || []).includes(node.id)) {node.isExpanded = true}} )
 
     if (props.expand_all !== undefined && !!props.expand_all) {
       forEachNode(tree_compared, node => {node.isExpanded = true} )    	
@@ -293,7 +318,8 @@ class BitAccuracyViewer extends React.Component {
         let change_show_all_files = prevProps.show_all_files !== this.props.show_all_files && !!this.state.tree.new;
         let change_files_filter = prevProps.files_filter !== this.props.files_filter && !!this.state.tree.new;
         let change_expand_all = prevProps.expand_all !== this.props.expand_all && !!this.state.tree.new;
-        if (change_show_all_files || change_files_filter || change_expand_all)
+        let change_color_blind_friendly = prevProps.color_blind_friendly !== this.props.color_blind_friendly && !!this.state.tree.new;
+        if (change_show_all_files || change_files_filter || change_expand_all || change_color_blind_friendly)
           this.setState({
             tree: {
               ...this.state.tree,

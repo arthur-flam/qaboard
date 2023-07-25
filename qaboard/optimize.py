@@ -3,8 +3,11 @@ import sys
 import uuid
 import yaml
 import json
+import numbers
 import datetime
 import subprocess
+from pathlib import Path
+from collections.abc import Iterable
 
 import click
 from joblib import Parallel, delayed
@@ -15,6 +18,7 @@ from .conventions import batch_dir
 from .utils import PathType, getenvs
 from .run import RunContext
 
+seed = int(os.environ.get('QA_SEED', 101))
 
 
 @click.command(context_settings=dict(
@@ -23,12 +27,15 @@ from .run import RunContext
 @click.option('--batch', '-b', 'batches', required=True, multiple=True, help="Use the inputs+configs+database in those batches")
 @click.option('--batches-file', 'batches_files', default=default_batches_files, multiple=True, help="YAML file listing batches of inputs+config+database selected from the database.")
 @click.option('--config-file', required=True, type=PathType(), help="YAML search space configuration file.")
+@click.option('--checkpoint', type=PathType(), help="Will save/load from this checkpoint to restart interrupted optimizations.")
 @click.option('--parallel-param-sampling', type=int, help="Parallel paramater sampling.")
 @click.argument('forwarded_args', nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def optimize(ctx, batches, batches_files, config_file, parallel_param_sampling, forwarded_args):
+def optimize(ctx, batches, batches_files, config_file, checkpoint, parallel_param_sampling, forwarded_args):
+  import random
+  random.seed(seed)
   import numpy as np
-  np.random.seed(int(os.environ.get('QA_SEED', 101)))
+  np.random.seed(seed)
 
   command_id = os.environ.get('QA_BATCH_COMMAND_ID', str(uuid.uuid4())) # unique IDs for triggered runs makes it easier to wait/cancel them 
   command_data = {
@@ -44,6 +51,7 @@ def optimize(ctx, batches, batches_files, config_file, parallel_param_sampling, 
   batch_dir_for = lambda label: batch_dir(outputs_commit, label, save_with_ci=True)
   optim_dir = batch_dir_for(ctx.obj['batch_label'])
   optim_dir.mkdir(parents=True, exist_ok=True)
+  os.environ["QA_OPTIM_DIR"] = optim_dir
 
   ctx.obj['batches'] = batches
   ctx.obj['batches_files'] = batches_files
@@ -52,14 +60,25 @@ def optimize(ctx, batches, batches_files, config_file, parallel_param_sampling, 
 
   from shutil import rmtree
   from .api import aggregated_metrics
-  objective, optimizer, optim_config, dim_mapping = init_optimization(config_file, ctx)
+  from skopt.utils import dump
+  objective, optimizer, optim_config, dim_mapping = init_optimization(config_file, checkpoint, ctx)
+  previous_iterations = len(optimizer.yi)
   if not parallel_param_sampling:
     parallel_param_sampling = optim_config.get('parallel_sampling', 1)
 
-  # TODO: warm-start
-  #   load and "tell" existing results (if there are any)
-  #   (or use a checkpoint?)
-  for iteration in range(optim_config['evaluations']):
+  assert previous_iterations+1 < optim_config['evaluations'], f"Already done {previous_iterations} iterations, more than the evaluation budget ({optim_config['evaluations']})"
+
+  notify_qa_database(
+    object_type='batch',
+    command=command,
+    **ctx.obj,
+    **{"data": {
+        "optimization": True,
+        "iteration": previous_iterations+1,
+        "iterations": optim_config['evaluations'],
+    }},
+  )
+  for iteration in range(previous_iterations, optim_config['evaluations'], parallel_param_sampling):
       click.secho(f"Starting iteration {iteration}", fg='blue')
       if parallel_param_sampling == 1:
         suggested = optimizer.ask()
@@ -71,10 +90,12 @@ def optimize(ctx, batches, batches_files, config_file, parallel_param_sampling, 
       if parallel_param_sampling == 1:
         y = objective([*suggested, iteration])
       else:
-        y = Parallel(n_jobs=parallel_param_sampling)(delayed(objective)([*s, iteration+idx]) for idx, s in enumerate(suggested))
+        y = Parallel(n_jobs=parallel_param_sampling, prefer='threads')(delayed(objective)([*s, iteration+idx]) for idx, s in enumerate(suggested))
+
       # print(f"y={y}", suggested)
       click.secho(f"Updating optimizer", fg='blue')
       results = optimizer.tell(suggested, y)
+      dump(results, checkpoint, compress=9)
 
       click.secho(f"Updating QA-Board", fg='blue')
       if parallel_param_sampling == 1:
@@ -83,7 +104,8 @@ def optimize(ctx, batches, batches_files, config_file, parallel_param_sampling, 
       for idx, y_iter in enumerate(y): 
         iteration_batch_label = f"{ctx.obj['batch_label']}|iter{iteration+idx+1}"
         iteration_batch_dir = batch_dir_for(iteration_batch_label)
-        aggregated_metrics_ = aggregated_metrics(iteration_batch_label)
+        metrics = tuple([m for m in optim_config['objective'].keys() if m != 'target'])
+        aggregated_metrics_ = aggregated_metrics(iteration_batch_label, metrics=metrics)
         notify_qa_database(**{
           **ctx.obj,
           **{
@@ -120,6 +142,7 @@ def optimize(ctx, batches, batches_files, config_file, parallel_param_sampling, 
         is_best_data = {
           "is_best_iter": True,
           "best_params": dim_mapping(suggested[idx]),
+          "keep_all_best_iters": optim_config.get("keep_all_best_iters"),
           "best_metrics": {
             "objective": y_iter,
             **aggregated_metrics_,
@@ -160,7 +183,7 @@ def optimize(ctx, batches, batches_files, config_file, parallel_param_sampling, 
 
 
 
-def init_optimization(optim_config_file, ctx):
+def init_optimization(optim_config_file, checkpoint, ctx):
   with optim_config_file.open('r') as f:
     optim_config = yaml.load(f, Loader=yaml.SafeLoader)
 
@@ -177,9 +200,14 @@ def init_optimization(optim_config_file, ctx):
   }
   optim_config['solver'] = {
     "name": "scikit-optimize",
-    "random_state": 42,
+    "random_state": seed,
     **optim_config.get('solver', {}),
   }
+  for dimension in optim_config['search_space']:
+    if 'Categorical' in dimension:
+      values = dimension['Categorical']['categories']
+      assert len(values) == len(set(values)), f"Repeated categorical values in {dimension['Categorical']['name']}: {values}"
+
   from skopt.utils import Space
   space = Space.from_yaml(optim_config_file, namespace='search_space')
   preset_params = optim_config.get('preset_params', {})
@@ -237,11 +265,52 @@ def init_optimization(optim_config_file, ctx):
     shared_batch_label = f"{ctx.obj['batch_label']}|iter{opt_params['iteration']+1}"
     return batch_objective(project, commit_id, shared_batch_label, optim_config['objective'])
 
-  # For the full list of options, refer to:
-  # https://scikit-optimize.github.io/stable/modules/generated/skopt.optimizer.Optimizer.html#skopt.optimizer.Optimizer
   from skopt import Optimizer
   del optim_config['solver']['name']
-  optimizer = Optimizer(space, **optim_config['solver'])
+  # For the full list of options, refer to:
+  # https://scikit-optimize.github.io/stable/modules/generated/skopt.optimizer.Optimizer.html#skopt.optimizer.Optimizer
+  optimizer = Optimizer(
+    space,
+    **optim_config['solver'],
+  )
+
+  if Path(checkpoint).exists():
+    from skopt.utils import load
+    print(f"Loading {checkpoint}")
+    res = load(checkpoint)
+    x0 = res.x_iters
+    y0 = res.func_vals
+    # same checks as in https://github.com/scikit-optimize/scikit-optimize/blob/de32b5f/skopt/optimizer/base.py#L223
+    # check x0: list-like, requirement of minimal points
+    if x0 is None:
+        x0 = []
+    elif not isinstance(x0[0], (list, tuple)):
+        x0 = [x0]
+    if not isinstance(x0, list):
+        raise ValueError("`x0` should be a list, but got %s" % type(x0))
+    # check y0: list-like, requirement of maximal calls
+    if isinstance(y0, Iterable):
+        y0 = list(y0)
+    elif isinstance(y0, numbers.Number):
+        y0 = [y0]
+    # check x0: element-wise data type, dimensionality
+    assert all(isinstance(p, Iterable) for p in x0)
+
+    if not all(len(p) == optimizer.space.n_dims for p in x0):
+        raise RuntimeError("Optimization space (%s) and initial points in x0 "
+                           "use inconsistent dimensions." % optimizer.space)
+    # record through tell function
+    if x0:
+        if not (isinstance(y0, Iterable) or isinstance(y0, numbers.Number)):
+            raise ValueError(
+                "`y0` should be an iterable or a scalar, got %s" % type(y0))
+        if len(x0) != len(y0):
+            raise ValueError("`x0` and `y0` should have the same length")
+        result = optimizer.tell(x0, y0)
+        # result.specs = specs
+
+    n_calls = len(y0)
+    print(f"Using {n_calls} previous iterations")
 
   # in the optimization loop, `ask` gives us an array of values
   # this wrapper converts it back to the actual named parameters
@@ -293,7 +362,14 @@ def make_reduce(options):
     return lambda x: norm(x, ord=int(reduce_type[1])) / len(x)
 
 def batch_objective(project, commit_id, batch_label, config_objective):
-  this_batch_info = batch_info(reference=commit_id, is_branch=False, batch=batch_label, project=project)
+  metrics = [m for m in config_objective.keys() if m != 'target']
+  this_batch_info = batch_info(
+    reference=commit_id,
+    is_branch=False,
+    batch=batch_label,
+    project=project,
+    metrics=metrics,
+  )
   # We can compare to KPI quality target defined
   if 'target' in config_objective and config_objective['target']:
     target = config_objective['target']
@@ -306,6 +382,7 @@ def batch_objective(project, commit_id, batch_label, config_objective):
         is_branch='branch' in target, # for tag we need special care...
         # the working directory changed...
         project=project,
+        metrics=metrics,
       )
   else:
     use_default_targets = True
@@ -339,6 +416,8 @@ def batch_objective(project, commit_id, batch_label, config_objective):
         except:
           click.secho(f'Could not find {metric}', fg='red')        
           click.secho(output['output_dir_url'][2:], fg='red')
+    if not losses:
+      raise ValueError(f"Could not compute the loss function!")
     partial_objective = make_reduce(options)(losses)
     objective += options.get('weight', 1) * partial_objective
   return objective

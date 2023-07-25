@@ -9,7 +9,7 @@ ENV HTTP_PROXY=$PROXY \
     http_proxy=$PROXY \
     HTTPS_PROXY=$PROXY \
     https_proxy=$PROXY \
-    NO_PROXY='gitlab-srv,gitlab-srv.transchip.com,localhost,aospt-dt'
+    NO_PROXY='gitlab-srv,gitlab-srv.transchip.com,localhost,aospt-dt,sentry'
 ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 
 # Thanks to our proxies...
@@ -36,7 +36,10 @@ COPY . ./
 
 # On the website we have algolia for the search, but the baseURL (/qaboard) is different than
 # when running from the application (/docs). So we don't use algolia for the app...
-RUN yarn run swizzle docusaurus-lunr-search SearchBar
+# RUN yarn run swizzle docusaurus-lunr-search SearchBar
+ENV QABOARD_DOCS_FOR_WEBAPP true
+ARG QABOARD_URL
+ENV QABOARD_URL=$QABOARD_URL
 RUN yarn build
 
 # When upgrading, we want to enable clients to continue using a previous bundle

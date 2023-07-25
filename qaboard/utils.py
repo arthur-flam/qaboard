@@ -17,7 +17,7 @@ import yaml
 import click
 from click._compat import isatty #, strip_ansi
 
-from cde.image.read import hex_attributes
+from cde.image.read import hex_attributes, read_imgprops
 
 
 
@@ -283,26 +283,49 @@ def md5_hex(path, length=None):
   return md5.hexdigest()
 
 
+# we want to allow new hex attributes, but some are critical 
+checked_cde_attrs = ("width", "height", "format", "imageType", "md5_data")
+
 def _file_info(path : Path, compute_hashes=True):
     info: Dict[str, Union[int, str]] = {
       "st_size": os.stat(path).st_size
     }
-
     if compute_hashes:
         info['md5'] = md5_hex(path)
+        image_meta = None
         if path.suffix == '.hex':
           hex_attr = hex_attributes(path)
           hash_length = hex_attr.get('footer_start_pos')
+          # FIXME: we should not see empty hex files, so why do we do this check?
           if hash_length: # exclude the footer from the image data hash
             info['md5_data'] = md5_hex(path, hash_length)
-            info['md5_footer'] = hashlib.md5(json.dumps(hex_attr, sort_keys=True).encode('utf-8')).hexdigest()
+            image_meta = hex_attr
+        if path.suffix == '.raw':
+          image_meta = read_imgprops(path)
+        if image_meta:
+          for attr in checked_cde_attrs:
+            if attr in image_meta:
+              info[attr] = image_meta[attr]
     return info
 
 
 def outputs_manifest(output_directory: Path, config=None, compute_hashes=True) -> Dict:
   def should_be_in_manifest(path):
+    # backward-compat with manifests created by run_tv.py,
+    # which doesn't copy the TV folder in the output directory
+    if config.get("project", {}).get("name", "").startswith("CDE-Users/HW_ALG"):
+      if path.name in ("run.json", "metrics.json", "manifest.ouputs.json", "runme_csg.bat") or "Config" in path.parts:
+        return False
     # avoid logs with timestamps and temporary NFS files
-    return path.is_file() and path.name != 'log.txt' and not path.name.startswith('.nfs00000')
+    illegal_file = path.name == 'log.txt' or path.name.startswith('.nfs00000')
+    # avoid source-controled files and logs in HW_ALG
+    if config.get("project", {}).get("name", "").startswith("CDE-Users/HW_ALG"):
+      illegal_file = illegal_file or \
+                      path.name in ("run.json", "metrics.json", "manifest.outputs.json", "manifest.inputs.json",  "runme_csg.bat", "cde.log") \
+                      or "Config" in path.parts \
+                      or path.parent.name == "outputs"
+    return path.is_file() and not illegal_file
+
   return {
     path.relative_to(output_directory).as_posix(): file_info(path, config=config, compute_hashes=compute_hashes)
     for path in output_directory.rglob('*')
@@ -313,7 +336,7 @@ def save_outputs_manifest(output_directory: Path, config=None, compute_hashes=Tr
   """Save a manifest of all the files from the directory. It helps QA-Board list them quickly."""
   manifest = outputs_manifest(output_directory, config, compute_hashes)
   with (output_directory / 'manifest.outputs.json').open('w') as f:
-    json.dump(manifest, f, indent=2)
+    json.dump(manifest, f, sort_keys=True, indent=2)
   return manifest
 
 

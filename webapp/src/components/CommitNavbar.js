@@ -22,7 +22,7 @@ import {
   Switch,
   Toaster,
 } from "@blueprintjs/core";
-
+import { MultiSelect } from "@blueprintjs/select";
 
 import { CommitAvatar } from "./avatars";
 import { DoneAtTag } from "./DoneAtTag";
@@ -108,8 +108,12 @@ class CommitNavbar extends React.Component {
       soft_delete: false,
       show_rename_dialog: false,
       show_move_dialog: false,
+      show_delete_batches_dialog: false,
+      show_delete_batches_query: '',
+      show_delete_batches_values: [],
       dst_batch_label: '',
       project_input: null,
+      files_delete_filter: null,
     };
   }
 
@@ -150,21 +154,20 @@ class CommitNavbar extends React.Component {
 
   render() {
     const { project, project_data, commit, batch, selected, type, dispatch, update } = this.props;
-    const { project_input, soft_delete } = this.state;
+    const { project_input, soft_delete, files_delete_filter } = this.state;
     const project_attr = `${type}_project`
     const filter = selected[`filter_batch_${type}`]
 
     const qatools_config = project_data?.data?.qatools_config
-    const reference_branch = qatools_config?.project?.reference_branch || 'master';
+    const reference_branch = qatools_config?.project?.reference_branch ?? 'master';
 
     // in qaboard.yaml users specify milestones as arrays, but here we handle them as a mapping...
-    const qatools_milestones_array = qatools_config?.project?.milestones || []
+    const qatools_milestones_array = qatools_config?.project?.milestones ?? []
     const qatools_milestones = Object.fromEntries(Object.entries(qatools_milestones_array).map( ([key, branch])=> [key, {branch}] ))
-    const shared_milestones = project_data?.data?.milestones || {}
-    const private_milestones = project_data.milestones || {}
+    const shared_milestones = project_data?.data?.milestones ?? {}
+    const private_milestones = project_data.milestones ?? {}
 
-
-    let commit_has_milestones = has_milestones({commit, project, project_data})
+    let is_milestone = has_milestones({commit, project, project_data, batch})
     const milestones_menu = <Menu style={{maxHeight: '500px', overflowY: 'scroll'}}>
       <MenuDivider title="Change Project"/>
       <ControlGroup>
@@ -433,7 +436,9 @@ class CommitNavbar extends React.Component {
                 onClick={() => {
                   this.setState({waiting: true})
                   toaster.show({message: "Delete requested for failed outputs."});
-                  axios.delete(`/api/v1/batch/${batch.id}/?only_failed=true&soft=${soft_delete}`)
+                  axios.delete(`/api/v1/batch/${batch.id}/`, {
+                    params: {only_failed: true, soft: soft_delete, filter: files_delete_filter}
+                  })
                     .then(response => {
                       this.setState({waiting: false})
                       toaster.show({message: `Deleted ${batch.label}.`, intent: Intent.PRIMARY});
@@ -448,15 +453,17 @@ class CommitNavbar extends React.Component {
                 }}
               />
               <MenuItem
-                icon="trash"
+                icon={!is_milestone ? "trash" : "crown"}
                 text={`Delete All Outputs${soft_delete ? "' Files" : ''}`}
                 intent={Intent.DANGER}
                 minimal
-                disabled={this.state.waiting || commit_has_milestones}
+                disabled={this.state.waiting || (is_milestone && !soft_delete)}
                 onClick={() => {
                   this.setState({waiting: true})
                   toaster.show({message: "Delete requested."});
-                  axios.delete(`/api/v1/batch/${batch.id}/?soft=${soft_delete}`)
+                  axios.delete(`/api/v1/batch/${batch.id}/`, {
+                    params: {soft: soft_delete, filter: files_delete_filter}
+                  })
                     .then(response => {
                       this.setState({waiting: false})
                       toaster.show({message: `Deleted ${batch.label}.`, intent: Intent.PRIMARY});
@@ -474,15 +481,160 @@ class CommitNavbar extends React.Component {
                   text={<em>Delete files, keep metadata</em>}
                   shouldDismissPopover={false}
                   labelElement={<Switch checked={soft_delete} innerLabelChecked="soft" onChange={() => this.setState({soft_delete: !soft_delete})} />}
-              />  
+              />
+              <MenuItem
+                icon="trash"
+                text={"Delete multiple batches"}
+                intent={Intent.DANGER}
+                minimal
+                disabled={this.state.waiting}
+                shouldDismissPopover={false}
+                onClick={() => this.setState({show_delete_batches_dialog: true})}
+              />
+              {soft_delete && <InputGroup
+                placeholder="Delete patterns (*.png, **/*.py)"
+                leftIcon="filter"
+                value={files_delete_filter}
+                className={filter === '' ? undefined : Intent.PRIMARY}
+                onChange={e => {
+                  this.setState({files_delete_filter: e.target.value})
+                }}
+                fill
+              />
+              }
             </>}
             </Menu>
           </Popover>
         </>}
+          <Dialog
+            isOpen={this.state.show_delete_batches_dialog}
+            onOpening={() => this.setState({show_delete_batches_values: []})}
+            onClose={() => this.setState({show_delete_batches_dialog: false})}
+            title={"Delete all runs in multiple batches" }
+            icon="trash"
+            intent={Intent.DANGER}
+          >
+            <div className={Classes.DIALOG_BODY}>
+              <MultiSelect
+                items={Object.keys(commit?.batches ?? {})}
+                itemRenderer={this.renderBatchItem}
+                tagRenderer={batch => batch}
+                query={this.state.show_delete_batches_query}
+                onQueryChange={show_delete_batches_query => this.setState({show_delete_batches_query})}
+                selectedItems={this.state.show_delete_batches_values}
+                itemPredicate={(query, batch) => batch.toLowerCase().includes(query.toLowerCase())}
+                onChange={event => this.setState({show_delete_batches_values: event.target.value})}
+                tagInputProps={{
+                  tagProps: {minimal: true},
+                  onRemove: this.handleTagRemove,
+                  rightElement: this.state.show_delete_batches_values.length > 0 ? <Button icon="cross" minimal={true} onClick={this.handleClear} /> : undefined
+                }}
+                placeholder="Select batches to delete..."
+                noResults={<MenuItem disabled text="No batch matches." />}
+                onItemSelect={this.handleDeleteBatchSelect}
+                onItemsPaste={this.handleDeleteBatchesPaste}
+              >
+              </MultiSelect>
+              <p><Tag interactive onClick={() => this.setState({show_delete_batches_values: Object.keys(commit?.batches ?? {})})}>Select All Batches</Tag></p>
+              <p>We won't delete batches defined as milestones.</p>
+            </div>
+            <div className={Classes.DIALOG_FOOTER}>
+              <div className={Classes.DIALOG_FOOTER_ACTIONS}>
+                <Button onClick={() => this.setState({show_delete_batches_dialog: false})}>Close</Button>
+                <Button disabled={this.state.waiting} onClick={this.deleteBatches} intent={Intent.DANGER}>Delete</Button>
+              </div>
+            </div>
+          </Dialog>
       </NavbarGroup>
-
     </>;
   }
+
+  deleteBatches = () => {
+    const { show_delete_batches_values, files_delete_filter, soft_delete } = this.state;
+    const { commit, project, project_data } = this.props;
+    this.setState({waiting: true})
+    toaster.show({message: `Deleting ${show_delete_batches_values.length} batches.`, intent: Intent.PRIMARY});
+    let requests = []
+    show_delete_batches_values.forEach(b => {
+      let batch = commit.batches[b]
+      let is_milestone = has_milestones({commit, project, project_data, batch})
+      if (is_milestone) {
+        toaster.show({message: `Cannot delete ${b} because it is a milestone`}, intent=Intent.WARNING);
+      }
+      requests.push(axios.delete(`/api/v1/batch/${batch.id}/`, {
+        params: {soft: soft_delete, filter: files_delete_filter}
+      }))
+    })
+    Promise.all(requests).then( responses => {
+        this.setState({waiting: false})
+        toaster.show({message: `Deleted.`, intent: Intent.PRIMARY});
+        this.refresh()
+        if (isDeleteBatchSelected(this.state.selected.selected_batch_new)) {
+          update(`selected_batch_${type}`)('default')
+        }
+        this.setState({waiting: false, show_delete_batches_dialog: false });
+      })
+      .catch(error => {
+        this.setState({waiting: false, show_delete_batches_dialog: false });
+        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+        this.refresh()
+      });
+  }
+
+  renderBatchItem = (batch, { modifiers, handleClick }) => {
+    if (!modifiers.matchesPredicate)
+      return null;
+    return (
+      <MenuItem
+        active={modifiers.active}
+        icon={this.isDeleteBatchSelected(batch) ? "tick" : "blank"}
+        key={batch}
+        onClick={(handleClick)}
+        text={batch}
+        shouldDismissPopover={false}
+      />
+    );
+  };
+
+  handleTagRemove = (_tag, index) => {
+    this.deselectDeleteBatches(index);
+  };
+
+  getSelectedDeleteBatchIndex(batch) {
+    return this.state.show_delete_batches_values.indexOf(batch);
+  }
+  isDeleteBatchSelected(batch) {
+    return this.getSelectedDeleteBatchIndex(batch) !== -1;
+  }
+  selectDeleteBatch(batch) {
+    this.selectDeleteBatches([batch]);
+  }
+  selectDeleteBatches(batches) {
+    const { show_delete_batches_values } = this.state;
+    let next_show_delete_batches_values = show_delete_batches_values.slice();
+    batches.forEach(batch => {
+      next_show_delete_batches_values = [...next_show_delete_batches_values, batch];
+    });
+    this.setState({
+      show_delete_batches_values: next_show_delete_batches_values,
+    });
+  }
+  deselectDeleteBatches(index) {
+    this.setState({
+      show_delete_batches_values: this.state.show_delete_batches_values.filter((_, i) => i !== index),
+    });
+  }
+  handleDeleteBatchSelect = batch => {
+    if (!this.isDeleteBatchSelected(batch))
+      this.selectDeleteBatch(batch);
+    else
+      this.deselectDeleteBatches(this.getSelectedDeleteBatchIndex(batch));
+  };
+  handleDeleteBatchesPaste = batches => {
+    this.selectDeleteBatches(batches);
+  };
+  handleClear = () => this.setState({ show_delete_batches_values: [] });
+
 
   refresh = () => {
     const { project, type, selected, commit, dispatch } = this.props;

@@ -1,5 +1,5 @@
 # https://pythonspeed.com/articles/base-image-python-docker-images/
-FROM python:3.8-slim-buster
+FROM python:3.11-slim-bullseye
 LABEL maintainer="arthurf.flam@samsung.com"
 
 # SIRC proxy configuration [debian/ubuntu]
@@ -16,7 +16,7 @@ ENV HTTP_PROXY=$PROXY \
     http_proxy=$PROXY \
     HTTPS_PROXY=$PROXY \
     https_proxy=$PROXY \
-    NO_PROXY='gitlab-srv,gitlab-srv.transchip.com,localhost,aospt-dt'
+    NO_PROXY='gitlab-srv,gitlab-srv.transchip.com,localhost,aospt-dt,sentry,sentry.transchip.com'
 RUN echo "[global]\ntrusted-host = pypi.python.org\n               pypi.org\n               files.pythonhosted.org" >> /etc/pip.conf
 
     # Keeps Python from generating .pyc files for 1-time use in the container's unionFS
@@ -32,26 +32,37 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # If we ran into scale issues, we could look into a service like Gitlab's gitaly.
 # Note: if we didn't have proxy issues we would just
 #       add-apt-repository -y ppa:git-core/ppa
-RUN apt-get update && apt-get install -y gnupg2 && \
+RUN apt-get update -qq && \
+    apt-get install -y gpg
+    # This should work but doesn't because of proxy issues
+    # apt-get install -y software-properties-common && \
+    # add-apt-repository ppa:git-core/ppa && \
+RUN echo start && \
     echo "deb http://ppa.launchpad.net/git-core/ppa/ubuntu trusty main" >> /etc/apt/sources.list && \
     echo "deb-src http://ppa.launchpad.net/git-core/ppa/ubuntu trusty main" >> /etc/apt/sources.list && \
+    # this should work but gpg seems to not be found
+    # gpg --batch --keyserver hkp://keyserver.ubuntu.com:80 --keyserver-options http-proxy=$HTTP_PROXY --recv-keys A1715D88E1DF1F24 && \
     apt-key adv --keyserver-options http-proxy=$HTTP_PROXY --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys A1715D88E1DF1F24 && \
     apt-get update -qq && apt-get install -y git && \
     git config --global http.proxy $PROXY
 
 
-# https://www.psycopg.org/docs/install.html#install-from-source
-# https://www.psycopg.org/docs/faq.html#faq-compile
-RUN apt-get update && apt-get install -y libpq-dev gcc
-# for Ldap Authentication
-RUN apt-get update && apt-get install libsasl2-dev libldap2-dev -y
-
-# At SIRC we need to be able to turn into any user to delete their output files
-RUN apt-get update && apt-get install -y sudo
-
-# If we want uwsgi's routing support
-# https://uwsgi-docs.readthedocs.io/en/latest/InternalRouting.html
-# RUN sudo apt-get install libpcre3 libpcre3-dev
+RUN apt-get update -qq && \
+    apt-get install -y \
+    # https://www.psycopg.org/docs/install.html#install-from-source
+    # https://www.psycopg.org/docs/faq.html#faq-compile
+    libpq-dev build-essential \
+    # for Ldap Authentication
+    libsasl2-dev libldap2-dev \
+    # At SIRC we need to be able to turn into any user to delete their output files
+    sudo \
+    # procps is a set of command line and full-screen utilities that
+    # provide information out of the pseudo-filesystem.
+    # https://github.com/warmchang/procps
+    procps \
+    # If we want uwsgi's routing support
+    # https://uwsgi-docs.readthedocs.io/en/latest/InternalRouting.html
+    libpcre3 libpcre3-dev
 
 # we want /qaboard to "look" like a package for poetry not to fail 
 WORKDIR /qaboard
@@ -63,6 +74,13 @@ COPY setup.py fastentrypoints.py  ./
 #   https://github.com/python-poetry/poetry/issues/1301
 #   https://github.com/python-poetry/poetry/issues/856
 RUN pip install poetry
+# required to build python-scipy from source, since we use python3.11
+# and they are not available pre-built yet...
+RUN apt-get install -y gfortran pkg-config libopenblas-dev liblapack-dev
+# required for python3-saml for python-xmlsec https://xmlsec.readthedocs.io/en/stable/install.html
+RUN apt-get update -qq && \
+    apt-get install -y libxml2-dev libxmlsec1-dev libxmlsec1-openssl
+
 WORKDIR /qaboard/backend
 COPY backend/pyproject.toml backend/poetry.lock ./
 # Inside the docker container we don't care about isolating virtual environment
@@ -72,8 +90,13 @@ COPY backend/pyproject.toml backend/poetry.lock ./
 # https://github.com/python-poetry/poetry/issues/1579
 # https://github.com/python-poetry/poetry/issues/214 
 RUN poetry config virtualenvs.create false
+# [SIRC] We ran into strange host-key verification issues when downloading packages via poetry
+RUN git config --global http.sslVerify false
+# https://github.com/jelmer/dulwich/issues/698
+# https://github.com/jelmer/dulwich/issues/879
+# https://github.com/jelmer/dulwich/issues/1025
 ENV CURL_CA_BUNDLE=
-RUN poetry install --no-root
+RUN poetry install -vvv --no-root
 ENV QA_NO_CHECK_FOR_UPDATES=1
 
 # Copy-in everything else:
@@ -94,10 +117,6 @@ WORKDIR /qaboard
 WORKDIR /qaboard/backend
 COPY backend/wait-for-it.sh backend/init.sh backend/uwsgi.ini ./
 RUN poetry install --extras qaboard
-
-# TODO: "poetry add" it 
-RUN pip install celery
-
 
 # SIRC-only, installs cde-python, used to read hex/raw images for the auto-ROI feature
 COPY third_party/cde-python /cde-python

@@ -1,4 +1,5 @@
 import React from "react";
+import { InView } from 'react-intersection-observer'
 import { get } from "axios";
 
 import { DateTime } from 'luxon';
@@ -37,7 +38,12 @@ class OutputLog extends React.Component {
       error: null,
       logs: null,
       logs_html: null,
+      viewable: false || props.viewable,
     };
+  }
+
+  becameViewable = inView => {
+    this.setState({viewable: true})
   }
 
   componentDidUpdate(prevProps) {
@@ -85,11 +91,13 @@ class OutputLog extends React.Component {
 
     get(`${output.output_dir_url}/${log_file || 'log.txt'}`)
       .then(response => {
-        const logs = response.data;
+        var logs = response.data;
+        logs = logs.replaceAll("<?", "??") // avoid issues wih tqdm prints being stripped
         // https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
         // https://github.com/rburns/ansi-to-html/blob/master/test/ansi_to_html.js
         // https://github.com/rburns/ansi-to-html/blob/master/src/ansi_to_html.js
         const sanitizeHtml_options = {
+          disallowedTagsMode: "recursiveEscape",
           // allowedTags: ['b', 'i', 'em', 'strong', 'a'],
           // allowedAttributes: {
           //   a: ['href', 'target']
@@ -136,8 +144,8 @@ class OutputLog extends React.Component {
   }
 
   render() {
-    const { output } = this.props;
-    const { is_open, is_loaded, error, logs_html_safe } = this.state;
+    const { output, commit, project, dispatch } = this.props;
+    const { is_open, is_loaded, error, logs_html_safe, viewable } = this.state;
     // console.log(`[logs] render ${output.test_input_path}`)
     // console.log(sanitizeHtml("<Config>test</Config>"));
 
@@ -154,14 +162,18 @@ class OutputLog extends React.Component {
     </>
     return (
       <div>
+        {!viewable && <InView key="unviewable" threshold={0.1} margin='150%' /*triggerOnce*/ onChange={inView => this.becameViewable(inView)}>
+          <span key="viewable"></span>
+        </InView>}
         <OutputHeader
-          project={this.props.project}
-          commit={this.props.commit}
+          project={project}
+          commit={commit}
           output={output}
           mismatch={output.reference_mismatch}
-          dispatch={this.props.dispatch}
+          dispatch={dispatch}
           prefix={header_prefix}
           tags_first
+          viewable={viewable}
         />
         <Collapse isOpen={is_open}>
           {error ? 
@@ -181,6 +193,7 @@ class OutputLog extends React.Component {
                 }}
                 style={{
                   maxHeight: '500px',
+                  maxWidth: '1400px',
                   overflow: 'scroll',
                   ...(output.is_pending ? style_skeleton : {}),
                 }}

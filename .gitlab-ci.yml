@@ -1,10 +1,20 @@
+default:
+  tags: [lsf]
+
+variables:
+  SIRC_LSF_QUEUE: alg_isp_q
+  SIRC_USER: ispq
+  # https://docs.gitlab.com/ee/ci/yaml/#git-clean-flags
+  GIT_CLEAN_FLAGS: -ffdx --exclude=webapp/node_modules/
+  GIT_SUBMODULE_STRATEGY: recursive
+
 stages:
   - test
   - deploy  # Internally
   - publish # To Pypi
 
 before_script:
-  - source .envrc
+  - source ./.envrc
   # Use ssh-agent to build container images that access private repositories
   - eval $(ssh-agent -s)
   - ssh-add $HOME/.ssh/id_rsa
@@ -54,10 +64,10 @@ publish:PyPi:
   - ssh arthurf@planet31 'cd qaboard; twine upload --verbose -u __token__ dist/*'
 
 
-variables:
-  # https://docs.gitlab.com/ee/ci/yaml/#git-clean-flags
-  GIT_CLEAN_FLAGS: -ffdx --exclude=webapp/node_modules/
-  GIT_SUBMODULE_STRATEGY: recursive
+#variables:
+#  # https://docs.gitlab.com/ee/ci/yaml/#git-clean-flags
+#  GIT_CLEAN_FLAGS: -ffdx --exclude=webapp/node_modules/
+#  GIT_SUBMODULE_STRATEGY: recursive
 
 # CI for the web application and the backend
 # TODO: enable it, make it work...

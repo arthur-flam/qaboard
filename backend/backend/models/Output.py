@@ -20,7 +20,7 @@ from qaboard.utils import save_outputs_manifest
 from qaboard.api import dir_to_url
 
 from backend.models import Base
-from backend.fs_utils import rmtree
+from backend.fs_utils import rm_empty_parents, rmtree
 
 
 
@@ -206,7 +206,7 @@ class Output(Base):
     # in case it was deleted without QA-Board being made aware
     if not self.batch.ci_commit.artifacts_dir.exists():
       print("Restoring artifacts")
-      self.ci_commit.save_artifacts()
+      self.batch.ci_commit.save_artifacts()
 
     if not command_id:
       command_id = uuid.uuid4()
@@ -241,15 +241,18 @@ class Output(Base):
       f'"{self.test_input.path}"',
       # FIXME: if forwarded_args in parsed(self.configuration), add it..
     ])
+
+    user = self.data.get("user", "ispq")
+    outputs_dir_prefix = str(self.batch.ci_commit.outputs_dir).replace('/outputs/ispq/', f'/outputs/{user}/')
     script = '\n'.join([
       '#!/bin/bash',
       'set -ex',
       # needed...
       f"export CI=true;",
       f"export GIT_COMMIT='{self.batch.ci_commit.hexsha}';",
-      f"export QA_OUTPUTS_COMMIT='{self.batch.ci_commit.outputs_dir}'",
+      f"export QA_OUTPUTS_COMMIT='{outputs_dir_prefix}'",
       # backward compatibility with previous qa versions, remove later...
-      f"export QATOOLS_CI_COMMIT_DIR='{self.batch.ci_commit.outputs_dir}'",
+      f"export QATOOLS_CI_COMMIT_DIR='{outputs_dir_prefix}'",
       f"export QABOARD_TUNING=true;",
       f'export QA_BATCH_COMMAND_ID={command_id}',
       "",
@@ -272,12 +275,13 @@ class Output(Base):
     with script_path.open('w') as f:
       f.write(script)
     print(f'"{script_path}"')
-    p = subprocess.run(f'ssh ispq@ispq-vdi \'bash "{script_path}"\' > "{logs_path}" 2>&1', shell=True)
+    script_exec = "bash" if user == "ispq" else f'bsub_su {user} -I bash'
+    p = subprocess.run(f'ssh ispq@ispq-vdi \'{script_exec} "{script_path}"\' > "{logs_path}" 2>&1', shell=True)
     success = p.returncode == 0
     return success
 
 
-  def delete(self, soft=True, ignore=None, dryrun=False):
+  def delete(self, soft=True, ignore=None, filter=None, dryrun=False):
     """
     Delete the output's output files.
     It's soft by default, in that we still keep the metadata.
@@ -292,6 +296,7 @@ class Output(Base):
     if not soft:
       print(output_dir)
       rmtree(output_dir)
+      rm_empty_parents(output_dir)
     else:
       # If a run crashes, or in case of network issues, the manifests may not be updated...
       manifest_path = output_dir / 'manifest.outputs.json'
@@ -300,8 +305,9 @@ class Output(Base):
           with manifest_path.open() as f:
             files = json.load(f)
         except Exception as e:
-            print("{e}: corrupted manifest {manifest_path}")
+            print(f"{e}: corrupted manifest {manifest_path}")
             rmtree(output_dir)
+            rm_empty_parents(output_dir)            
             self.deleted = True
             return
         for file in files.keys():
@@ -310,13 +316,17 @@ class Output(Base):
           if ignore:
             if any([fnmatch.fnmatch(file, i) for i in ignore]):
               continue
+          if filter and not fnmatch.fnmatch(file, filter):
+            continue
           output_file = output_dir / file
           if not output_file.exists():
             continue
           print(f'{output_file}')
           if not dryrun:
             rmtree(output_file)
-    self.deleted = True
+            rm_empty_parents(output_dir)
+    if not filter: # better not TODO: update .data.storage at least
+      self.deleted = True
 
 
   def update_manifest(self, compute_hashes=True):

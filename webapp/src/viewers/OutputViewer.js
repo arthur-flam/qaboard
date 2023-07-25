@@ -25,7 +25,7 @@ const OutputViewer = props_ => {
     if (is_image(props_)) {
       if (props_.path.endsWith('hex')) {
         viewer = <>
-          <div><Tag minimal interactive icon={image_viewer === 'image' ? 'media' : 'align-justify'} onClick={() => setImageViewer(image_viewer === 'image' ? 'text' : 'image')}>toggle image/text</Tag></div>
+          <div><Tag minimal interactive icon={image_viewer === 'image' ? 'numerical' : 'media'} onClick={() => setImageViewer(image_viewer === 'image' ? 'text' : 'image')}>Toggle image/text</Tag></div>
           <div>
           {image_viewer === 'text' ? 
               <LoadableTextViewer renderSideBySide={false} {...props} type={type} output_ref={output_ref}/>
@@ -42,7 +42,7 @@ const OutputViewer = props_ => {
         viewer =  <LoadableSlamViewer {...props} output_ref={maybe_output_ref}/>
       else if (type === "pointcloud/txt")
         viewer = <LoadableTofViewer {...props} output_ref={maybe_output_ref}/>
-      else if (type === "plotly/json")
+      else if (type === "plotly/json" || type === "plotly/html")
         viewer = <LoadablePlotlyViewer {...props} output_ref={maybe_output_ref}/>
       else if (type.startsWith('video'))
         viewer = <LoadableVideoViewer {...props} type={type} output_ref={maybe_output_ref}/>
@@ -59,7 +59,7 @@ const OutputViewer = props_ => {
       else viewer = <span>No viewer is defined for type: {type}</span>;
     } else {
       const { path='' } = props_;
-      if (path.endsWith('plotly.json')) {
+      if (path.endsWith('plotly.json') || path.endsWith('plotly.html')) {
         viewer = <LoadablePlotlyViewer {...props} type={type} output_ref={maybe_output_ref}/>
       } else if (path.endsWith('flame.json')) {
         viewer = <LoadableFlameGraphViewer {...props} type={type} output_ref={maybe_output_ref}/>

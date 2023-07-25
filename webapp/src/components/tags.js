@@ -15,6 +15,7 @@ import {
   Intent,
   Tooltip,
   Toaster,
+  Button,
 } from "@blueprintjs/core";
 
 import { fetchCommit } from "../actions/commit";
@@ -146,13 +147,25 @@ const MismatchTags = ({mismatch}) => {
 
 const RunBadges = ({output}) => {
   return (output.params?.badges ?? []).map( (badge, idx) => {
-      const tag = <Tag icon={badge.icon} minimal={badge.minimal} large={badge.large} rightIcon={badge.href && "share"} style={badge.style} intent={badge.intent}>{badge.text}</Tag>
       return <span key={idx} style={{marginRight: '5px'}}>
-        {!!badge.href ? <a rel="noopener noreferrer" target="_blank" href={badge.href}>
-          {tag}
-        </a> : tag}
+        <RunBadge badge={badge} key={idx}/>
       </span>
   })
+}
+const RunBadge = ({badge}) => {
+  const tag = <Tag
+    icon={badge.icon}
+    minimal={badge.minimal}
+    large={badge.large}
+    rightIcon={badge.href && "share"}
+    style={badge.style}
+    intent={badge.intent}>
+      {badge.text ?? (typeof badge==="string" ? badge : JSON.stringify(badge))}
+  </Tag>
+  return <>{!!badge.href ? <a rel="noopener noreferrer" target="_blank" href={badge.href}>
+    {tag}
+    </a> : tag}
+  </>
 }
 
 
@@ -193,7 +206,7 @@ class OutputTags extends React.Component {
             onClick={() => {
               this.setState({waiting: true})
               toaster.show({message: "Requested to mark as 'Finished'."});
-              axios.put(`/api/v1/output/${id}/`, {is_pending: false, is_running: false})
+              axios.put(`/api/v1/output/${id}/`, {is_pending: false, is_running: false, is_failed: true})
                 .then(() => {
                   this.setState({waiting: false})
                   toaster.show({message: "Marked as finished.", intent: Intent.PRIMARY});
@@ -300,31 +313,79 @@ class OutputTags extends React.Component {
         <span>View the output directory in the browser</span>
       </Tooltip>
 
-      <Tooltip>
-        <CopyToClipboard
-          text={linux_to_windows(output_dir_url)}
-          onCopy={() => {
-            toaster.show({
-              message: "Copied the output directory's path to the clipboard!",
-              intent: Intent.PRIMARY
-            });
+      <Popover hoverCloseDelay={500} interactionKind={"hover"}>
+        <span style={{marginLeft: "5px", marginRight: '5px', color: Colors.GRAY1}}>
+          <Icon
+            title="Copy-to-Clipboard"
+            iconSize={Icon.SIZE_SMALL}
+            icon="duplicate"
+            onClick={() => {toaster.show({message: "Linux path copied to clipboard!", intent: Intent.PRIMARY}); copy(decodeURI(output_dir_url).slice(2))}}
+          />
+        </span>
+        <Menu>
+          <MenuItem text="Copy output directory" label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Linux path copied to clipboard!", intent: Intent.PRIMARY}); copy(decodeURI(output_dir_url).slice(2))}} />
+          <MenuItem text="Copy output directory" label={<Tag minimal>windows</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Windows path copied to clipboard!", intent: Intent.PRIMARY}); copy(linux_to_windows(output_dir_url))}} />
+        </Menu>
+      </Popover>
+      {this.props.manifests?.new?.["cde.sh"] && <Tooltip>
+      <Button
+          outlined={true}
+          style={{margin: "5px"}}
+          disabled={this.state.waiting}
+          icon="send-to"
+          text="WebCDE"
+          onClick={() => {
+            this.setState({waiting: true})
+            // TODO: look for all cde.sh files and let users choose which one to use
+            if(this.props && this.props.manifests && this.props.manifests.new && this.props.manifests.new["cde.sh"]) {
+              fetch(`${output_dir_url}/cde.sh`)
+              .then(r => r.text())
+              .then(text => {
+                let command = text.replace(/"/g, '').trim();
+                let name = this.props.output.test_input_path.split(".")[0]
+                axios.post(
+                  `http://localhost:2020/CDE/Launch?WebCDE`, {
+                    os: platform, 
+                    command: command, 
+                    wd: `${decodeURIComponent(linux_to_windows(output_dir_url))}\\` , 
+                    commit: this.props.commit.id.slice(0, 8), 
+                    name: name 
+                })
+                .then(() => {
+                  this.setState({waiting: false})
+                  toaster.show({message: "sent to WebCDE", intent: Intent.PRIMARY});
+                  this.refresh()
+                })
+                .catch(error => {
+                  this.setState({waiting: false})
+                  const error_str = error.response?.data?.error ?? JSON.stringify(error)
+                  if (error.message == "Network Error") {
+                    const help_text = "Sorry we could not connect to CDEWebService. Please start WebCDE.exe (download from \\\\netapp\\Joint\\WebCDE\\WebCDE_Setup.exe)"
+                    toaster.show({
+                      message: `${help_text}`,
+                      intent: Intent.DANGER});
+                  } else {
+                    toaster.show({
+                      message: error_str,
+                      intent: Intent.DANGER});
+                  }
+                  this.refresh()
+                });
+              })
+            } else {
+              // file was not created. what to do?
+              this.setState({waiting: false})
+              toaster.show({message: "Something went wrong", intent: Intent.DANGER});
+              this.refresh()
+            }
           }}
-        >
-          <span style={{marginLeft: "5px", marginRight: '5px', color: Colors.GRAY1}}>
-            <Icon
-             title="Copy-to-Clipboard"
-             iconSize={Icon.SIZE_SMALL}
-             icon="duplicate"
-            />
-          </span>
-        </CopyToClipboard>
-        <span>Copy-to-Clipboard the Windows directory</span>
-      </Tooltip>
-
+        > </Button>
+        <span>Open in WebCDE</span>
+      </Tooltip>}
       <MismatchTags mismatch={mismatch}/>
     </span>
   }
 }
 
 
-export { StatusTag, PlatformTag, ConfigurationsTags, ExtraParametersTags, MismatchTags, OutputTags, RunBadges, style_skeleton };
+export { StatusTag, PlatformTag, ConfigurationsTags, ExtraParametersTags, MismatchTags, OutputTags, RunBadge, RunBadges, style_skeleton };

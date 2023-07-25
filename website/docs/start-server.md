@@ -23,7 +23,7 @@ chmod -R 777 /mnt/qabaord
 ```
 
 :::tip
-If you want to use a different folder, replace */mnt/qaboard* with your path in `docker-compose.yml` and *services/nginx/conf.d/qaboard.conf*.
+If you want to use a different folder, find-and-replace */mnt/qaboard* with your path in `docker-compose.yml` and *services/nginx/conf.d/qaboard.conf*.
 :::
 
 :::note Shared Storage?
@@ -44,10 +44,14 @@ To resolve auto-mount issues causing "too many levels of symbolic links", run `.
 1. You need Linux, [`docker`](https://docs.docker.com/engine/install/), [`docker-compose`](https://docs.docker.com/compose/install/) and `git`.
 2. To start the QA-Board server:
 ```bash
-git clone https://github.com/Samsung/qaboard.git
+git clone https://gitlab-srv/common-infrastructure/qaboard.git
 cd qaboard
 
 docker-compose -f docker-compose.yml -f sirc.yml pull
+
+# At SIRC we need to make sure important folders are mounted before starting containers...
+./at-sirc-before-up.py
+
 docker-compose -f docker-compose.yml -f sirc.yml up -d
 #=> the application is live at localhost:8080
 ```
@@ -63,6 +67,21 @@ docker-compose -f docker-compose.yml -f production.yml -f sirc.yml up -d
 Want to install from a Kubernetes helm chart, CloudFormation or Terraform plans? <a href="mailto:arthur.flam@gmail.com">Get in touch</a>.
 :::
 
+## User Management
+qaboard supports `user sign-in` to allow different levels of access and user-features such as Tuning.
+
+Supported sign-in systems:
+- Local - users that are created by qaboard. \
+To register a new user, add an entry to the database under `users` table. \
+Or enable http requests of the _signup()_ function at _backend/backend/api/auth.py_ , then use the curl command:
+  ```bash
+  curl -d "username=<user_name>&password=<password>&email=<user_email>&full_name=<user_full_name>" -X POST '<qaboard_url>/api/v1/user/signup/
+  ```
+- LDAP
+- SSO via SAML
+
+The login policy is set via environment variables such as `QABOARD_LOGIN_TYPE`, `QABOARD_LOGIN_REQIRED`, `QABOARD_LDAP_`, `QABOARD_SAML_`, as describred in the Environment Variables section.
+
 ## (Optional) Environment variables
 > To configure your installation, you can either edit [an `.env` file](https://docs.docker.com/compose/environment-variables/#the-env-file) or `services.backend.environment` in one of the `docker-compose` files (*docker-compose.yml*, *development.yml*, *production.yml*...).
 
@@ -76,7 +95,8 @@ Want to install from a Kubernetes helm chart, CloudFormation or Terraform plans?
 | `QABOARD_DB_PORT`      | 5432    | Connect to a non-default database port               |
 | `JENKINS_AUTH`         | _none_  | Credentials used to [trigger jenkins jobs](/docs/triggering-third-party-tool) on 1 or many jenkins servers. The format is a JSON string looking like `{"hostname_1": {"user": "jenkinsuser", "token": "xxxxx", "crumb": "yyy"}}` ([how-to-get-the-token-crumb?](/docs/triggering-| `GITLAB_AUTH`         | _none_  | Credentials used to forward private project avatars from Gitlab. The format is a JSON string looking like `{"hostname": {"user": "username", "password": "xxxxx", "type": "user"}}`. `type` is optionnal and can also be `ldap_user`. Asking for a password is not great but [the API is not sufficient](https://docs.gitlab.com/ce/api/#session-cookie)... You can use `"http": true` if needed. |
 third-party-tools#example-jenkins-integration-via-webhooks))               |
-| `QABOARD_LDAP_ENABLED`   | _none_  | If set to `true` LDAP is enabled                   |
+| `QABOARD_LOGIN_TYPE`   | _LOCAL_  | Set to `LOCAL/LDAP/SAML`                   |
+| `QABOARD_LOGIN_REQUIRED`   | _false_  | Set to `true` to block anonymous users                   |
 | `QABOARD_LDAP_HOST`   | _none_  | Server hostname (including port)                   |
 | `QABOARD_LDAP_PORT`   | _389_  | Server port, usually 389 (or 636 if SSL is used / **not supported yet!**). |
 | `QABOARD_LDAP_USER_BASE`   | _none_  | Search base for users. |
@@ -85,9 +105,17 @@ third-party-tools#example-jenkins-integration-via-webhooks))               |
 | `QABOARD_LDAP_USER_FILTER` | _none_  | User lookup filter, the placeholder `{login}` will be replaced by the user supplied login. (e.g. `(&(objectClass=inetOrgPerson)(|(uid={login})(mail={login})))`, or `(&(objectClass=user)(|(sAMAccountName={login})))`) |
 | `QABOARD_LDAP_ATTRIBUTE_EMAIL`         | _mail_  |                                            |
 | `QABOARD_LDAP_ATTRIBUTE_COMMON_NAME`   | _cn_    |                                            |
+| `QABOARD_SAML_DIR`   | _none_  | The path to the directory with the SAML configuration files, as in the [python-saml](https://github.com/SAML-Toolkits/python-saml) docs |
+| `QABOARD_SAML_ATTRIBUTE_EMAIL`         | _none_  |                                            |
+| `QABOARD_SAML_ATTRIBUTE_COMMON_NAME`         | _none_  |                                            |
+| `QABOARD_SAML_ATTRIBUTE_USER_NAME`   | _none_    |                                            |
+| `QABOARD_SAML_ATTRIBUTE_ID`   | _none_    |                                            |
 | `CANTALOUPE_MEM_START` | 1g      | Starting memory for the image server                 |
 | `CANTALOUPE_MEM_MAX`   | 2g      | Max memory for the image server                      |
 | `UWSGI_PROCESSS`       | 1       | default: 1g                                          |
+| `SENTRY_DSN`           | _none_  | monitor crashes with sentry.io. Example: https://xxxxxxxxxxx@sentry.io/000 |
+| `SENTRY_SAMPLE_RATE`           | 0.2  | sample for perf monitoring |
+
 
 :::note
 In the future we plan to introduce a proper "secret" store, per user and per project.

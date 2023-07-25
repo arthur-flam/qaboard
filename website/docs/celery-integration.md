@@ -23,22 +23,7 @@ pip install celery qaboard
 celery -A qaboard.runners.celery_app worker --concurrency=10 --loglevel=info
 ```
 
-:::note
-Ideally we should run workers as daemons to handle failures, reboots... [Read the docs](https://docs.celeryproject.org/en/stable/userguide/daemonizing.html) to do it nicely... Currently we just use `screen`:
-
-```bash
-sudo apt-get install screen
-screen -dmS qaboard-worker-01 <celery-command>
-```
-
-:::
-
-3. To have `qa batch` use Celery runners, just  configure:
-
-```yaml title="qaboard.yaml"
-runners:
-  default: celery
-```
+3. Next, use QA-Board's Celery runner:
 
 :::tip
 You can choose on the CLI what runner you want: 
@@ -92,5 +77,3 @@ Read [Celery's tutorial](http://docs.celeryproject.org/en/latest/getting-started
 :::
 
 Celery's [worker user guide](https://docs.celeryproject.org/en/stable/userguide/workers.html) has lots of information on how to run [worker in the background](https://docs.celeryproject.org/en/stable/userguide/daemonizing.html#daemonizing), set [concurrency](https://docs.celeryproject.org/en/stable/userguide/workers.html#concurrency)... Check it out too as needed!
-
-If you need worker monitoring, read the [docs](http://docs.celeryproject.org/en/latest/userguide/monitoring.html).

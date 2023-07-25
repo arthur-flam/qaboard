@@ -67,27 +67,49 @@ def api_ci_commit(commit_id=None):
                      CiCommit.project_id==project_id,
                      CiCommit.hexsha.startswith(commit_id),
                    )
-                   .one()
+                   .all()
                   )
-    except NoResultFound:
+      # fixme: some commits appear twice, one with a short hash...
+      # http://alginfra1:6001/CDE-Users/HW_ALG/CIS/tests/products/HM3/commit/2861963a2216816252660bfdd2d9f459ae80b547?reference=ae720d287&batch=default&filter=01_S5KRM1_Nona_12BIT_OUTD02_6576x4992_EIT1.40ms_AGx1_DGx1.ra&selected_views=bit_accuracy
+      # for commit in ci_commit:
+      #   print(commit, commit.hexsha)
+      ci_commit = ci_commit[0]
+    except (NoResultFound, IndexError):
       try:
-        # TODO: This is a valid use case for having read-rights to the repo,
-        #       we can identify a commit by the tag/branch
-        #       To replace this without read rights, we should listen for push events and build a database
-        project = Project.query.filter(Project.id==project_id).one()
-        commit = project.repo.tags[commit_id].commit
+        ci_commit = (db_session
+                    .query(CiCommit)
+                    .options(
+                      joinedload(CiCommit.batches).
+                      joinedload(Batch.outputs)
+                      )
+                    .filter(
+                      CiCommit.project_id==project_id,
+                      CiCommit.branch==commit_id,
+                    )
+                    .order_by(CiCommit.authored_datetime.desc())
+                    .first()
+                    )
+        assert ci_commit
+      except Exception as e:
         try:
-          commit = project.repo.commit(commit_id)
-        except:
+          # TODO: This is a valid use case for having read-rights to the repo,
+          #       we can identify a commit by the tag/branch
+          #       To replace this without read rights, we should listen for push events and build a database
+          project = Project.query.filter(Project.id==project_id).one()
           try:
-            commit = project.repo.refs[commit_id].commit
+            commit = project.repo.commit(commit_id)
           except:
-            commit = project.repo.tags[commit_id].commit
-        ci_commit = CiCommit(commit, project=project)
-        db_session.add(ci_commit)
-        db_session.commit()
-      except:
-        return jsonify({'error': f'Sorry, we could not find any data on commit {commit_id} in project {project_id}.'}), 404
+            try:
+              commit = project.repo.refs[commit_id].commit
+            except:
+              commit = project.repo.tags[commit_id].commit
+          if not commit:
+            return jsonify({'error': f'Sorry, we could not find any data on commit {commit_id} in project {project_id}.'}), 404
+          ci_commit = CiCommit(commit, project=project)
+          db_session.add(ci_commit)
+          db_session.commit()
+        except:
+          return jsonify({'error': f'Sorry, we could not find any data on commit {commit_id} in project {project_id}.'}), 404
     except BadName:
       return jsonify({f'error': f'Sorry, we could not understand the commid ID {commit_id} for project {project_id}.'}), 404
     except Exception as e:
@@ -115,7 +137,7 @@ def commit_save_artifacts():
                   )
   except:
     return f"404 ERROR:\n ({request.json['project']}): There is an issue with your commit id ({hexsha})", 404
-  for ci_commit in ci_commits.all():
+  for ci_commit in ci_commits.yield_per(1000):
     if not request.json['project'].startswith(ci_commit.project_id):
       print(f'skip {ci_commit.project_id}')
       continue

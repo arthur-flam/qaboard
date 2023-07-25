@@ -1,6 +1,18 @@
 import { interpolateRainbow } from "d3-scale-chromatic";
-import { median as mathjs_median } from "mathjs/number";
 import md5 from "js-md5";
+
+// https://mathjs.org/docs/custom_bundling.html
+import {
+  create,
+  medianDependencies,
+  formatDependencies
+} from 'mathjs/number'
+const { median: mathjs_median, format } = create({
+  medianDependencies,
+  formatDependencies,
+})
+
+import {  } from "mathjs/number";
 
 import { levenshtein } from "./levenshtein";
 
@@ -67,9 +79,6 @@ const matching_output = ({ output, batch }) => {
     2 * ((o.platform !== output.platform) | 0) +
     1 * ((o.extra_parameters_str !== output.extra_parameters_str) | 0);
 
-    output.extra_parameters_str = JSON.stringify(output.extra_parameters)
-    output.configurations_str = JSON.stringify(output.configurations)
-
   // console.log('MATCHING')
   // const t0 = performance.now();
 
@@ -78,8 +87,8 @@ const matching_output = ({ output, batch }) => {
     .filter(o => o.test_input_path === output.test_input_path || (output.test_input_metadata.id && o.test_input_metadata.id && o.test_input_metadata.id === output.test_input_metadata.id) )
     // We prefer to compare an ouput versus a similar one
     .map(o => {
-      o.dist_configurations = levenshtein(o.configurations_str, output.configurations_str)
-      o.dist_extra_parameters = levenshtein(o.extra_parameters_str, output.extra_parameters_str)
+      o.dist_configurations = levenshtein(o.configurations_str ?? '', output.configurations_str ?? '')
+      o.dist_extra_parameters = levenshtein(o.extra_parameters_str  ?? '', output.extra_parameters_str  ?? '')
       return o;
     })
     // .sort((a, b) => match_score(a) - match_score(b));
@@ -406,10 +415,23 @@ const metrics_fill_defaults = available_metrics => {
   return available_metrics || {}
 }
 
+const checked_cde_attrs = ["width", "height", "format", "imageType", "md5_data"]
+const is_same_data = (path, meta_1, meta_2) => {
+  if (meta_1 === undefined || meta_1 === null || meta_2 === undefined || meta_2 === null)
+    return false
+  if (path.match(/\.(hex|raw)$/)) {
+    return checked_cde_attrs.filter(attr => meta_1[attr] !== undefined && meta_2[attr] !== undefined)
+                            .every(attr => meta_1[attr] === meta_2[attr])
+  } else {
+    return meta_1.md5 === meta_2.md5
+  }
+}
+
 
 export {
   average,
   median,
+  format,
   groupBy,
   groupByObject,
   matching_output,
@@ -427,4 +449,5 @@ export {
   linux_to_windows,
   make_eval_templates_recursively,
   metrics_fill_defaults,
+  is_same_data,
 };

@@ -116,7 +116,7 @@ export const configSelector = createSelector([batchSelectorPreFilter, commitSele
   return {
     git: project_data.data?.git,
     project_config,
-    config: batch_config || commit_config || project_config,
+    config: batch_config ?? commit_config ?? project_config,
     project_metrics: {
       summary_metrics: [],
       available_metrics: {},
@@ -139,8 +139,8 @@ const makeSortOutputs = (sort_by, sort_order, outputs) => {
   return (ka, kb) => {
     const a = outputs[ka]
     const b = outputs[kb]
-    const a_value = a.metrics[sort_by] ?? a.params[sort_by] ?? _get(a.params, sort_by) ?? a[sort_by] ?? ka;
-    const b_value = b.metrics[sort_by] ?? b.params[sort_by] ?? _get(b.params, sort_by) ?? b[sort_by] ?? kb;
+    const a_value = a.metrics[sort_by] ?? a.params[sort_by] ?? _get(a.params, sort_by) ?? _get(a, sort_by) ?? ka;
+    const b_value = b.metrics[sort_by] ?? b.params[sort_by] ?? _get(b.params, sort_by) ?? _get(b, sort_by) ?? kb;
     if (a_value === undefined || a_value === null) return 1;
     // console.log(a_value, b_value)
     if (a_value > b_value) {

@@ -69,7 +69,7 @@ services:
   backend:
     image: "arthurflam/qaboard:backend"
     build:
-      cache_from: ["arthurflam/qaboard:backend"]
+      # cache_from: ["arthurflam/qaboard:backend"]
       context: .
       dockerfile: backend/Dockerfile
     # Wait for the database to be ready - https://docs.docker.com/compose/startup-order/
@@ -90,11 +90,12 @@ services:
     - JENKINS_AUTH
     - GITLAB_AUTH
     - GITLAB_ACCESS_TOKEN
+    - QABOARD_LOGIN_TYPE=${QABOARD_LOGIN_TYPE:-LOCAL} # LOCAL/LDAP/SAML
 
   frontend:
     image: "arthurflam/qaboard:frontend"
     build:
-      cache_from: ["arthurflam/qaboard:frontend"]
+      # cache_from: ["arthurflam/qaboard:frontend"]
       context: webapp
       shm_size: 6gb
       args:
@@ -104,6 +105,8 @@ services:
     # by default we assume you run the QA-Board on localhost, but will want to change this
     environment:
     - REACT_APP_QABOARD_HOST=http://localhost:5151
+    - REACT_APP_QABOARD_LOGIN_TYPE=${QABOARD_LOGIN_TYPE:-LOCAL} # LOCAL/LDAP/SAML
+    - REACT_APP_QABOARD_LOGIN_REQUIRED=${QABOARD_LOGIN_REQUIRED}
 
   # Message broker used by the celery task scheduler
   # https://hub.docker.com/_/rabbitmq
@@ -117,15 +120,34 @@ services:
     - ${QABOARD_PORT_RABBITMQ:-5672}:5672
     - ${QABOARD_PORT_RABBITMQ_MNGT:-15672}:15672
 
+  # https://flower.readthedocs.io/en/latest/config.html#options
+  flower:  
+    image: mher/flower
+    environment:
+      - CELERY_BROKER_URL=pyamqp://guest@rabbitmq//
+      - CELERY_BROKER_API=http://guest:guest@rabbitmq:15672/api/
+      - FLOWER_PORT=8888
+      - FLOWER_URL_PREFIX=flower
+    ports:
+      - "8888:8888"  
+    depends_on: 
+        - rabbitmq
+
+  # Message broker used by the celery task scheduler
+  # https://hub.docker.com/_/rabbitmq
+
   website:
     image: "arthurflam/qaboard:website"
     build:
-      cache_from: ["arthurflam/qaboard:website"]
+      # cache_from: ["arthurflam/qaboard:website"]
       context: website
       shm_size: 4gb
+      # by default we assume you run the QA-Board on localhost, but will want to change this
+      args:
+        - QABOARD_URL=${QABOARD_URL:-http://localhost:5151}
     volumes:
     - website_builds:/builds
-  
+
 
   # nginx as reverse-proxy
   # https://hub.docker.com/_/nginx
@@ -155,6 +177,7 @@ services:
     depends_on:
     - backend
     - cantaloupe
+    - flower
 
   # IIIF image server to serve images as tiles
   cantaloupe:

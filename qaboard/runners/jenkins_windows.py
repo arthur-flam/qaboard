@@ -45,6 +45,7 @@ from typing import List, Dict, Any
 
 from click import secho
 import requests
+from requests.adapters import HTTPAdapter, Retry
 
 from .base import BaseRunner
 from .job import Job
@@ -55,22 +56,32 @@ from ..config import config
 from ..api import api_prefix
 
 
+def get_jenkins_config():
+    jenkins_config = {}
+    error = None
+    if "QA_RUNNERS_JENKINS_BUILD_URL" in os.environ:
+        jenkins_config["build_url"] = os.environ["QA_RUNNERS_JENKINS_BUILD_URL"]
+    if "QA_RUNNERS_JENKINS_TOKEN" in os.environ:
+        jenkins_config["token"] = os.environ["QA_RUNNERS_JENKINS_TOKEN"]
+    if not jenkins_config:
+        if 'runners' not in config or 'jenkins' not in config['runners']:
+            error = "You must configure your Jenkins runner in qaboard.yaml"
+        jenkins_config.update(config['runners']['jenkins'])
+    if "build_url" not in jenkins_config:
+          error = "You must configure your Jenkins runner in qaboard.yaml with build_url (and usually a token)"
+    if error:
+        secho(f"ERROR: {error}", fg='red', bold=True)
+        secho("     See https://samsung.github.io/qaboard/docs/jenkins-integration", fg='red')
+        raise ValueError(error)
+    return jenkins_config
+
 
 def trigger_run(task: str) -> Dict:
-    config_error = False
-    if 'runners' not in config or 'jenkins' not in config['runners']:
-      secho("ERROR: you must configure your Jenkins runner in qaboard.yaml", fg='red')
-      config_error = True
-    jenkins_config = config['runners']['jenkins']
-    print(jenkins_config)
-    if any([k not in jenkins_config for k in ('build_url', 'token')]):
-      secho("ERROR: you must configure your Jenkins runner in qaboard.yaml with build_url/token", fg='red')
-    if config_error:
-      raise ValueError("Missing config in qaboard.yaml")
+    jenkins_config = get_jenkins_config()
     data = {
         "build_url": jenkins_config["build_url"],
-        "token": jenkins_config["token"],
-        "cause": "qa run",
+        "token": jenkins_config.get("token"),
+        "cause": "Triggered by QA-Board",
         "params": {
             "task": task,
         }
@@ -92,8 +103,40 @@ def trigger_run(task: str) -> Dict:
     return r.json()
 
 
+
+# Adding callback function on each retry attempt using requests/urllib3
+# https://stackoverflow.com/questions/51188661/adding-callback-function-on-each-retry-attempt-using-requests-urllib3
+class CallbackRetry(Retry):
+    def __init__(self, *args, **kwargs):
+        self._callback = kwargs.pop('callback', None)
+        super(CallbackRetry, self).__init__(*args, **kwargs)
+    def new(self, **kw):
+        kw['callback'] = self._callback
+        return super(CallbackRetry, self).new(**kw)
+    def increment(self, method, url, *args, **kwargs):
+        if self._callback:
+          self._callback(url)
+        return super(CallbackRetry, self).increment(method, url, *args, **kwargs)
+
+
 def build_status(build_info):
-  r = requests.post(f"{api_prefix}/jenkins/build/", json=build_info)
+  session = requests.Session()
+  adapter = HTTPAdapter(
+    # https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry.
+    max_retries=CallbackRetry(
+      connect=5, read=5, status=5, total=10,
+      status_forcelist=[500, 502, 503, 504],
+      backoff_factor=1,
+      # by default won't retry non-idempotent requests like POST
+      # but it's not an issue for us, we retry everything
+      # allowed_methods=None, # replaces the option below in new versions...
+      method_whitelist=None,
+      callback=lambda url: secho(f'Retrying {url}', fg='yellow'),
+    )
+  )
+  session.mount('https://', adapter)
+  session.mount('http://', adapter)
+  r = session.post(f"{api_prefix}/jenkins/build/", json=build_info)
   try:
       r.raise_for_status()
       if r.json().get('error'):
