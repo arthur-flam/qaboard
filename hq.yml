@@ -15,7 +15,7 @@ services:
       - ${QABOARD_EXPOSED_DB_PORT:-5432}:5432
     volumes:
     - /var/qaboard/data/backups:/backups
-      
+
 
   backend:
     # image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:backend"
@@ -27,17 +27,17 @@ services:
     - UWSGI_UID=qaboard
     - UWSGI_GID=qaboard
     - QABOARD_DATA_SHARED_DIR=/var/qaboard/data
-    # - QABOARD_LDAP_ENABLED=true
-    # - QABOARD_LDAP_USER_BASE=REDACTED_LDAP_BASE
-    # - QABOARD_LDAP_BIND_DN=cn=Ldap Query,ou=IT,ou=SIRC Users,REDACTED_LDAP_BASE
-    # - QABOARD_LDAP_PASSWORD=REDACTED_LDAP_PASSWORD
-    # - QABOARD_LDAP_HOST=REDACTED_LDAP_HOST
-    # - QABOARD_LDAP_USER_FILTER=(&(objectClass=user)(sAMAccountName={login}))
+    - QABOARD_LOGIN_TYPE=SAML
+    - QABOARD_SAML_DIR=${QABOARD_SAML_DIR:-/etc/saml}
+    - QABOARD_SAML_ATTRIBUTE_EMAIL=http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress
+    - QABOARD_SAML_ATTRIBUTE_USER_NAME=http://schemas.sec.com/2018/05/identity/claims/LoginId
+    - QABOARD_SAML_ATTRIBUTE_COMMON_NAME=http://schemas.sec.com/2018/05/identity/claims/Username
     volumes:
     - /mnt/qaboard:/mnt/qaboard
     - /algo:/algo
     - /stage:/stage
     - ./services/backend/passwd:/etc/passwd
+    - ./services/backend/saml:/etc/saml
     # we use a shared location to avoid using ~10G of local storage
     # but root can't write to it, so it's painful..
     # - /algo/ws/ispq/qaboard_data/_data:/var/qaboard
@@ -76,9 +76,12 @@ services:
     environment:
       CANTALOUPE_MEM_START: 4g
       CANTALOUPE_MEM_MAX: 8g
-  
+
   frontend:
     image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:frontend"
+  environment:
+    - REACT_APP_QABOARD_LOGIN_TYPE=SAML
+    - REACT_APP_QABOARD_LOGIN_REQUIRED=true
 
   website:
     image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:website"
