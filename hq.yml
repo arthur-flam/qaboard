@@ -79,7 +79,7 @@ services:
 
   frontend:
     image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:frontend"
-  environment:
+    environment:
     - REACT_APP_QABOARD_LOGIN_TYPE=SAML
     - REACT_APP_QABOARD_LOGIN_REQUIRED=true
 
