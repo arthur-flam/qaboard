@@ -74,6 +74,9 @@ COPY setup.py fastentrypoints.py  ./
 #   https://github.com/python-poetry/poetry/issues/1301
 #   https://github.com/python-poetry/poetry/issues/856
 RUN pip install poetry
+# poetry doesn't seem to respect 'poetry config certificates.pypi.cert false' 
+# https://github.com/orgs/python-poetry/discussions/6681
+RUN pip install pip-system-certs
 # required to build python-scipy from source, since we use python3.11
 # and they are not available pre-built yet...
 RUN apt-get install -y gfortran pkg-config libopenblas-dev liblapack-dev
@@ -90,6 +93,10 @@ COPY backend/pyproject.toml backend/poetry.lock ./
 # https://github.com/python-poetry/poetry/issues/1579
 # https://github.com/python-poetry/poetry/issues/214 
 RUN poetry config virtualenvs.create false
+# https://stackoverflow.com/questions/74875143/how-to-skip-certificate-verification-in-poetry
+RUN poetry config certificates.PyPI.cert false
+RUN poetry source add fpho https://files.pythonhosted.org
+RUN poetry config certificates.fpho.cert false
 # [SIRC] We ran into strange host-key verification issues when downloading packages via poetry
 RUN git config --global http.sslVerify false
 # https://github.com/jelmer/dulwich/issues/698
