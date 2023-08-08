@@ -104,11 +104,11 @@ numpy = "*"
 pandas = "*"
 pillow = "*"
 
-[package.source]
-type = "git"
-url = "ssh://git@gitlab-srv/cde/cde-python"
-reference = "HEAD"
-resolved_reference = "2200e054305bbaac5419c11ba3ea923f8030695e"
+# [package.source]
+# type = "git"
+# url = "ssh://git@gitlab-srv/cde/cde-python"
+# reference = "HEAD"
+# resolved_reference = "2200e054305bbaac5419c11ba3ea923f8030695e"
 
 [[package]]
 name = "celery"
@@ -1403,7 +1403,7 @@ files = []
 develop = false
 
 [package.dependencies]
-cde = {git = "ssh://git@gitlab-srv/cde/cde-python"}
+# cde = {git = "ssh://git@gitlab-srv/cde/cde-python"}
 click = ">=7.0"
 joblib = "*"
 pyyaml = "*"
