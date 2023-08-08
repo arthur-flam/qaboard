@@ -37,12 +37,14 @@ RUN apt-get update -qq && \
     # This should work but doesn't because of proxy issues
     # apt-get install -y software-properties-common && \
     # add-apt-repository ppa:git-core/ppa && \
+RUN echo -e "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmI0ESXjaGwEEAMA26F3+mnRW8uRqASMsEa5EsmgvUpLD7EKpC7903OpiMGSvZ2sE\n34g7W6nUQY0R//AZS2iW4ZXfvdhQTQuuPlHM6Q3iUAt+nyXcf9xBlscs8Gm722u4\njAtFtBS4BMQRhRRfWTHwJIOM6OpGIccjPe8pQfIeoRxkKJxlehzw2mU1ABEBAAG0\nKExhdW5jaHBhZCBQUEEgZm9yIFVidW50dSBHaXQgTWFpbnRhaW5lcnOItgQTAQIA\nIAUCSXjaGwIbAwYLCQgHAwIEFQIIAwQWAgMBAh4BAheAAAoJEKFxXYjh3x8k/zMD\n/RKBMjavvFl71YBazSOGl2YfSsZiR/ANsby3+rUaULb8uxzCHXAQnlH5vdtLSPry\naLBvzCU8C3C02qNT8jRacU2752zsCkCi1SLRSOXdI/ATJHza5aTvYV93rTITBhU4\nsJQeK9RW0CtaDRAxJsn/Dr6J3lL/c9m9cT5fFpxOIsF4\n=33dX\n-----END PGP PUBLIC KEY BLOCK-----" > key.gpg
 RUN echo start && \
     echo "deb http://ppa.launchpad.net/git-core/ppa/ubuntu trusty main" >> /etc/apt/sources.list && \
     echo "deb-src http://ppa.launchpad.net/git-core/ppa/ubuntu trusty main" >> /etc/apt/sources.list && \
     # this should work but gpg seems to not be found
     # gpg --batch --keyserver hkp://keyserver.ubuntu.com:80 --keyserver-options http-proxy=$HTTP_PROXY --recv-keys A1715D88E1DF1F24 && \
-    apt-key adv --keyserver-options http-proxy=$HTTP_PROXY --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys A1715D88E1DF1F24 && \
+    #apt-key adv --keyserver-options http-proxy=$HTTP_PROXY --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys A1715D88E1DF1F24 && \
+    apt-key add ./key.gpg && \
     apt-get update -qq && apt-get install -y git && \
     git config --global http.proxy $PROXY
 
