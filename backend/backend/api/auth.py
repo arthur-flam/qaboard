@@ -239,6 +239,7 @@ def saml_auth():
     """ SAML Authentication """
     req = prepare_flask_request(request)
     auth = init_saml_auth(req)
+    print(request.args, req) # DEBUG
     errors = []
 
 
