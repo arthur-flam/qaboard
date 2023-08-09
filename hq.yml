@@ -29,7 +29,7 @@ services:
     - QABOARD_DATA_SHARED_DIR=/var/qaboard/data
     - QABOARD_LOGIN_TYPE=SAML
     - QABOARD_SAML_DIR=${QABOARD_SAML_DIR:-/etc/saml}
-    - QABOARD_SAML_ATTRIBUTE_EMAIL=http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress
+    - QABOARD_SAML_ATTRIBUTE_EMAIL=http://schemas.sec.com/2018/05/identity/claims/Mail
     - QABOARD_SAML_ATTRIBUTE_USER_NAME=http://schemas.sec.com/2018/05/identity/claims/LoginId
     - QABOARD_SAML_ATTRIBUTE_COMMON_NAME=http://schemas.sec.com/2018/05/identity/claims/Username
     volumes:
