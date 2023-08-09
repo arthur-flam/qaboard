@@ -336,7 +336,7 @@ def prepare_flask_request(request):
         'script_name': request.path,
         'get_data': request.args.copy(),
         # Uncomment if using ADFS as IdP, https://github.com/onelogin/python-saml/pull/144
-        # 'lowercase_urlencoding': True,
+        'lowercase_urlencoding': True,
         'post_data': request.form.copy()
     }
     # url_data = urlparse(request.url)
