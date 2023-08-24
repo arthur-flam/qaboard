@@ -25,7 +25,7 @@ if qaboard_hostname and qaboard_port:
 elif qaboard_host:
   qaboard_url = f"{qaboard_protocol}://{qaboard_host}"
 else:
-  qaboard_url = "http://qaboard"
+  qaboard_url = "https://qaboard.samsungds.net"
   # the default for a local dev server started with the default config
   # qaboard_url = "http://localhost:5151"
   # click.secho(f"WARNING: We don't know where to look for your QA-Board server. Default: {qaboard_url}", fg='yellow', bold=True, err=True)
