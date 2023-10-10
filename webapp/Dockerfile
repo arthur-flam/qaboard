@@ -27,6 +27,7 @@ COPY package.json package-lock.json ./
 # we used this config until npm started to say it's not valid (?)
 # RUN npm config set fetch-retries 10\
 #     npm config set fetch-timeout 10000# In the past we had ulimit issues and "ulimit -n 2000 &&"
+RUN npm config set strict-ssl false
 RUN npm ci || npm ci || npm ci
 
 COPY . ./
