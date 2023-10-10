@@ -1411,7 +1411,7 @@ requests = "*"
 rich = "*"
 scikit-optimize = "*"
 simplejson = "*"
-sklearn = "*"
+scikit-learn = "*"
 
 [package.extras]
 dev = ["flake8", "green", "mypy", "types-PyYAML", "types-requests", "types-setuptools", "types-simplejson"]
