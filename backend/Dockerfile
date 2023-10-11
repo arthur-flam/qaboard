@@ -37,7 +37,7 @@ RUN apt-get update -qq && \
     # This should work but doesn't because of proxy issues
     # apt-get install -y software-properties-common && \
     # add-apt-repository ppa:git-core/ppa && \
-RUN echo -e "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmI0ESXjaGwEEAMA26F3+mnRW8uRqASMsEa5EsmgvUpLD7EKpC7903OpiMGSvZ2sE\n34g7W6nUQY0R//AZS2iW4ZXfvdhQTQuuPlHM6Q3iUAt+nyXcf9xBlscs8Gm722u4\njAtFtBS4BMQRhRRfWTHwJIOM6OpGIccjPe8pQfIeoRxkKJxlehzw2mU1ABEBAAG0\nKExhdW5jaHBhZCBQUEEgZm9yIFVidW50dSBHaXQgTWFpbnRhaW5lcnOItgQTAQIA\nIAUCSXjaGwIbAwYLCQgHAwIEFQIIAwQWAgMBAh4BAheAAAoJEKFxXYjh3x8k/zMD\n/RKBMjavvFl71YBazSOGl2YfSsZiR/ANsby3+rUaULb8uxzCHXAQnlH5vdtLSPry\naLBvzCU8C3C02qNT8jRacU2752zsCkCi1SLRSOXdI/ATJHza5aTvYV93rTITBhU4\nsJQeK9RW0CtaDRAxJsn/Dr6J3lL/c9m9cT5fFpxOIsF4\n=33dX\n-----END PGP PUBLIC KEY BLOCK-----" > key.gpg
+RUN echo -e "\n-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmI0ESXjaGwEEAMA26F3+mnRW8uRqASMsEa5EsmgvUpLD7EKpC7903OpiMGSvZ2sE\n34g7W6nUQY0R//AZS2iW4ZXfvdhQTQuuPlHM6Q3iUAt+nyXcf9xBlscs8Gm722u4\njAtFtBS4BMQRhRRfWTHwJIOM6OpGIccjPe8pQfIeoRxkKJxlehzw2mU1ABEBAAG0\nKExhdW5jaHBhZCBQUEEgZm9yIFVidW50dSBHaXQgTWFpbnRhaW5lcnOItgQTAQIA\nIAUCSXjaGwIbAwYLCQgHAwIEFQIIAwQWAgMBAh4BAheAAAoJEKFxXYjh3x8k/zMD\n/RKBMjavvFl71YBazSOGl2YfSsZiR/ANsby3+rUaULb8uxzCHXAQnlH5vdtLSPry\naLBvzCU8C3C02qNT8jRacU2752zsCkCi1SLRSOXdI/ATJHza5aTvYV93rTITBhU4\nsJQeK9RW0CtaDRAxJsn/Dr6J3lL/c9m9cT5fFpxOIsF4\n=33dX\n-----END PGP PUBLIC KEY BLOCK-----" > key.gpg
 RUN echo start && \
     echo "deb http://ppa.launchpad.net/git-core/ppa/ubuntu trusty main" >> /etc/apt/sources.list && \
     echo "deb-src http://ppa.launchpad.net/git-core/ppa/ubuntu trusty main" >> /etc/apt/sources.list && \
@@ -125,6 +125,13 @@ WORKDIR /qaboard
 # this way the install below would not install any 3rd parties :| 
 WORKDIR /qaboard/backend
 COPY backend/wait-for-it.sh backend/init.sh backend/uwsgi.ini ./
+
+# It was found that there is a need to reset the battery setting.
+# poetry config seems to be reset.
+RUN poetry config certificates.PyPI.cert false
+RUN poetry source add fpho https://files.pythonhosted.org
+RUN poetry config certificates.fpho.cert false
+
 RUN poetry install --extras qaboard
 
 # SIRC-only, installs cde-python, used to read hex/raw images for the auto-ROI feature
