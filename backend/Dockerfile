@@ -1,29 +1,30 @@
 # https://pythonspeed.com/articles/base-image-python-docker-images/
-FROM python:3.13-slim-trixie
+# TODO: 3.14 when pillow ships in binary https://pillow.readthedocs.io/en/latest/installation/platform-support.html
+#       -slim-trixie when python-ldap binary links with the updated libldap..
+FROM python:3.13-slim-bookworm
 
 LABEL maintainer="arthurf.flam@samsung.com"
 
-# SIRC proxy configuration [debian/ubuntu]
-# Copied from http://gitlab-srv/docker/drun/snippets/11/edit
-# if you still run into network issues, try building the image on a different server :_)
-ENV PROXY_HOST=webproxy.transchip.com \
-    PROXY_PORT=8080 \
-    PROXY_PROTOCOL=http
-ENV PROXY $PROXY_PROTOCOL://$PROXY_HOST:$PROXY_PORT
-RUN echo "Acquire::http::Proxy \"$PROXY\";" >> /etc/apt/apt.conf; \
-    echo 'Acquire::https::Verify-Peer "false";' >> /etc/apt/apt.conf; \
-    echo "[http]\nsslverify = false\n# proxy = $PROXY" >> /root/.gitconfig
-ENV HTTP_PROXY=$PROXY \
-    http_proxy=$PROXY \
-    HTTPS_PROXY=$PROXY \
-    https_proxy=$PROXY \
-    NO_PROXY='gitlab-srv,gitlab-srv.transchip.com,localhost,aospt-dt,sentry,sentry.transchip.com'
+# Proxy/cert configuration — no-ops when args are empty (open-source builds)
+# SIRC/DSK pass values via compose overlay build args
+ARG PROXY_URL=""
+ARG CA_CERT_URL=""
+ARG NO_PROXY=""
 
+RUN if [ -n "$PROXY_URL" ]; then \
+      echo "Acquire::http::Proxy \"$PROXY_URL\";" >> /etc/apt/apt.conf && \
+      echo 'Acquire::https::Verify-Peer "false";' >> /etc/apt/apt.conf; \
+    fi
+ENV HTTP_PROXY=${PROXY_URL} http_proxy=${PROXY_URL} \
+    HTTPS_PROXY=${PROXY_URL} https_proxy=${PROXY_URL} \
+    NO_PROXY=${NO_PROXY}
 
 RUN apt-get update -qq && \
-    apt-get install ca-certificates wget -y && \
-    wget http://itweb/downloads/sirc-ca.crt -P /usr/local/share/ca-certificates/ && \
-    update-ca-certificates
+    apt-get install -y ca-certificates wget && \
+    if [ -n "$CA_CERT_URL" ]; then \
+      wget "$CA_CERT_URL" -P /usr/local/share/ca-certificates/ && \
+      update-ca-certificates; \
+    fi
 
 
     # Keeps Python from generating .pyc files for 1-time use in the container's unionFS
@@ -37,10 +38,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 
 # Git: debian ships a recent enough version without requiring an alternative PPA
-RUN apt-get install -y git && git config --global http.proxy $PROXY
+ARG GIT_SSL_VERIFY="true"
+RUN apt-get install -y git && \
+    if [ -n "$PROXY_URL" ]; then \
+      git config --global http.proxy "$PROXY_URL"; \
+    fi
 
-# [SIRC] We ran into strange host-key verification issues when downloading packages
-RUN git config --global http.sslVerify false && \
+RUN if [ "$GIT_SSL_VERIFY" = "false" ]; then \
+      git config --global http.sslVerify false; \
+    fi && \
     # gc tends to take time in our big repos and the locks slow everything down
     # causing uwsgi to spawn more workers and eat RAM
     git config --global gc.auto 0 && \
@@ -48,11 +54,17 @@ RUN git config --global http.sslVerify false && \
     git config --system --add safe.directory '*' && \
     git config --global --add safe.directory '*'
 
+ARG GIT_SERVER=""
+RUN --mount=type=ssh \
+    if [ -n "$GIT_SERVER" ]; then \
+      ssh -T -o StrictHostKeyChecking=no git@$GIT_SERVER; \
+    fi
+
 RUN apt-get update -qq && \
     apt-get install -y \
     # https://www.psycopg.org/docs/install.html#install-from-source
     # https://www.psycopg.org/docs/faq.html#faq-compile
-    libpq-dev build-essential \
+    libpq-dev build-essential gcc \
     # for Ldap Authentication
     libsasl2-dev libldap2-dev \
     # At SIRC we need to be able to turn into any user to delete their output files
@@ -63,7 +75,7 @@ RUN apt-get update -qq && \
     procps
     # If we want uwsgi's routing support we need libpcre
     # https://uwsgi-docs.readthedocs.io/en/latest/InternalRouting.html
-    # we used to have libpcre3 but it is not shipped as part of recent debian 
+    # we used to have libpcre3 but it is not shipped as part of recent debian
     # https://launchpad.net/ubuntu/+source/uwsgi/+changelog
     # and this breaks at link-time
     # libpcre2-dev
@@ -74,18 +86,19 @@ RUN apt-get update -qq && \
     # for scipy if python is very recent
     gfortran pkg-config libopenblas-dev liblapack-dev \
     # required for python3-saml for python-xmlsec https://xmlsec.readthedocs.io/en/stable/install.html
-    libxml2-dev libxmlsec1-dev libxmlsec1-openssl libz-dev
-
-# https://github.com/xmlsec/python-xmlsec/issues/320
-ENV UWSGI_PROFILE_OVERRIDE="xml=no"
+    libxml2-dev libxmlsec1-dev libxmlsec1-openssl libz-dev \
+    libxslt1-dev
 
 
 # References:
 # https://docs.astral.sh/uv/guides/integration/docker/
 # https://hynek.me/articles/docker-uv/
-COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.7 /uv /uvx /bin/
     # Already isolated environment
 ENV UV_SYSTEM_PYTHON=1 \
+    UV_PROJECT_ENVIRONMENT="/usr/local/" \
+    # Still useful for dev
+    PATH="/qaboard/backend/.venv/bin:$PATH" \
     # Silence uv complaining about not being able to use hard links
     UV_LINK_MODE=copy \
     # Faster application startups
@@ -96,49 +109,26 @@ ENV UV_SYSTEM_PYTHON=1 \
 # Make it possible to resolve dependencies of the CLI package
 WORKDIR /qaboard
 COPY pyproject.toml README.md ./
-
-# Including internal dependencies
-RUN --mount=type=ssh ssh -T -o StrictHostKeyChecking=no git@gitlab-srv
+WORKDIR /qaboard
+COPY deployments/ ./deployments
 
 WORKDIR /qaboard/backend
 # Install all dependencies
+# https://github.com/xmlsec/python-xmlsec/issues/320
+ENV UWSGI_PROFILE_OVERRIDE="xml=no" \
+    CC=gcc \
+    CXX=g++
 RUN --mount=type=ssh \
     --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=backend/uv.lock,target=uv.lock,readwrite \
     --mount=type=bind,source=backend/pyproject.toml,target=pyproject.toml \
     uv sync \
     # we ran into issues making sure we really build uwsgi
-    # from source to use the UWSGI_PROFILE_OVERRIDE set above
-    # --refresh-package uwsgi \
-    # --no-binary-package uwsgi \
+    # From source to use the UWSGI_PROFILE_OVERRIDE set above
     #FIXME: when we fix the xml bugs and issues then we can uncomment --locked
     # --locked \
     --no-install-project \
     --no-install-package qaboard
-
-    # we even tried to build here...
-# RUN --mount=type=ssh \
-# --mount=type=cache,target=/root/.cache/uv \
-# --mount=type=bind,source=backend/uv.lock,target=uv.lock,readwrite \
-# --mount=type=bind,source=backend/pyproject.toml,target=pyproject.toml \
-# uv add uwsgi --refresh-package uwsgi --no-binary-package uwsgi
-# and ended up runing this manually
-# RUN --mount=type=ssh \
-#     --mount=type=cache,target=/root/.cache/uv \
-#     --mount=type=bind,source=backend/uv.lock,target=uv.lock,readwrite \
-#     --mount=type=bind,source=backend/pyproject.toml,target=pyproject.toml \
-# uv add lxml xmlsec uwsgi \
-#     --no-binary-package uwsgi \
-#     --no-binary-package lxml \
-#     --no-binary-package xmlsec \
-#     --refresh-package lxml \
-#     --refresh-package xmlsec \
-#     --refresh-package uwsgi \
-#     --no-cache --reinstall
-# UWSGI_PROFILE_OVERRIDE=xml=expat uv add lxml xmlsec uwsgi --no-binary-package uwsgi --no-binary-package lxml --no-binary-package xmlsec --refresh-package lxml --refresh-package xmlsec --refresh-package uwsgi --no-cache --reinstall
-
-# FIXME: should not be needed: why don't we use the system python?
-ENV PATH="/qaboard/backend/.venv/bin:$PATH"
 
 # Backend
 WORKDIR /qaboard/backend
@@ -157,8 +147,31 @@ RUN --mount=type=ssh \
     --mount=type=cache,target=/root/.cache/uv \
     uv sync --refresh-package qaboard
     #FIXME: when we fix the xml bugs and issues then we can uncomment --locked
-    # --locked  
+    # --locked
 
+# Install site-specific extras (e.g. QABOARD_EXTRA=sirc)
+ENV PYTHONPATH="/opt/site-packages:${PYTHONPATH}"
+ARG QABOARD_EXTRA=""
+ARG CDE_PACKAGE=""
+# Useful if we need to dev...
+ENV CDE_PACKAGE=${CDE_PACKAGE}
+ENV QABOARD_EXTRA=${QABOARD_EXTRA}
+RUN --mount=type=ssh \
+    --mount=type=cache,target=/root/.cache/uv \
+    if [ -n "$QABOARD_EXTRA" ]; then \
+      ## Cannot work as uv requires to resolve even extras... 
+      # uv sync --extra "$QABOARD_EXTRA" --refresh-package qaboard; \
+      ## Annoying for dev and when managing lock-files
+      # uv pip install "qaboard-site-$QABOARD_EXTRA @ file:../deployments/$QABOARD_EXTRA/cli" "$CDE_PACKAGE"; \
+      uv pip install --no-deps --target /opt/site-packages \
+        "qaboard-site-$QABOARD_EXTRA @ file:../deployments/$QABOARD_EXTRA/cli" "$CDE_PACKAGE"; \
+    fi
+
+# TODO: Ideally clear proxy env so it doesn't leak into runtime containers
+# but for dev it is not a good experience
+# ENV HTTP_PROXY="" http_proxy="" \
+#     HTTPS_PROXY="" https_proxy=""
+#     # we keep NO_PROXY however!
 
 ENV QA_NO_CHECK_FOR_UPDATES=1
 

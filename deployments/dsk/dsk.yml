@@ -1,0 +1,75 @@
+# DSK (Device Solution Korea) compose overlay
+# Usage: docker compose -f docker-compose.yml -f production.yml -f deployments/dsk/dsk.yml up
+
+# Set these in .env or override below with your DSK proxy/cert values:
+#   PROXY_URL, CA_CERT_URL, NO_PROXY
+x-dsk-build-args: &dsk-build-args
+  PROXY_URL: ${PROXY_URL:-}
+  CA_CERT_URL: ${CA_CERT_URL:-}
+  GIT_SERVER: "github.sec.samsung.net"
+  CDE_PACKAGE: "cde @ git+ssh://git@github.sec.samsung.net/CDE/cde-python"
+  NO_PROXY: ${NO_PROXY:-}
+
+services:
+  backend:
+    build:
+      args:
+        <<: *dsk-build-args
+        QABOARD_EXTRA: "dsk"
+    env_file:
+      - .env
+      - deployments/dsk/.env
+    environment:
+      - QABOARD_LOGIN_TYPE=${QABOARD_LOGIN_TYPE:-SAML}
+      - QABOARD_TUNING_RUNNER=celery
+      - QABOARD_DEFAULT_USER=qaboard
+      - QABOARD_HOST=${QABOARD_HOST:-12.36.168.155}
+      - QABOARD_PROTOCOL=http
+      - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//
+      - 'QABOARD_IMAGE_SERVERS={"default": "/iiif", "raw,hex,cde": "/iiif/cde"}'
+
+  frontend:
+    build:
+      args:
+        <<: *dsk-build-args
+    environment:
+      - REACT_APP_QABOARD_LOGIN_TYPE=${QABOARD_LOGIN_TYPE:-SAML}
+      - REACT_APP_QABOARD_LOGIN_REQUIRED=${QABOARD_LOGIN_REQUIRED:-}
+
+  proxy:
+    build:
+      args:
+        <<: *dsk-build-args
+    volumes:
+    - ./deployments/dsk/nginx/qaboard.conf:/tmp/deployment/nginx/conf.d/qaboard.conf:ro
+
+  flower:
+    build:
+      args:
+        <<: *dsk-build-args
+
+  cron-backup-db:
+    environment:
+      - AS_USER_NAME=qaboard
+      - AS_USER_UID=1001
+      - AS_USER_GID=1001
+    volumes:
+      - /var/qaboard/data/backups:/backup
+
+
+  # iiif-cde:
+  #   # TODO: sync with DSK the new image
+  #   image: gitlab-srv:4567/swi/iipsrv
+  #   restart: always
+  #   # command: 'tail -f /dev/null' # keeps the container up for debugging, but does nothing...
+  #   # volumes:
+  #   # - TBD
+  #   user: "${USER_ID}:${USER_GID}"
+  #   environment:
+  #     - LOGFILE=/tmp/socket/log
+  #     - VERBOSITY=10
+  #     - MAX_CVT=-1
+  #     - PNG_QUALITY=9
+  #     - CORS=*
+  #     - FILESYSTEM_PREFIX=/var/www/localhost/images
+  #     - HOME=/home/${USER}

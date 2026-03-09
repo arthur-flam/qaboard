@@ -19,7 +19,6 @@ classifiers = [
 ]
 requires-python = ">=3.7"
 dependencies = [
-    "cde @ git+ssh://git@gitlab-srv/cde/cde-python",
     "click>=7.0",
     "joblib",
     "pyyaml",
@@ -29,6 +28,7 @@ dependencies = [
     "scikit-optimize",
     "sentry-sdk",
     "simplejson",
+    "psutil",
 ]
 license = {text = "Apache-2.0"}
 
@@ -45,6 +45,16 @@ dev = [
     "types-setuptools",
     "types-simplejson",
 ]
+# Unfortunately pip does not understand tool.uv.sources
+# and uv does not understand syntax with "qaboard-site-sirc @ file:deployements/sirc/cli"
+# and if we use an ssh syntax in uv it will try to resolve even if it is part of an unused extra
+# so we are forced to really split into 2 packages
+# sirc = [
+#     "qaboard-site-sirc",
+# ]
+# dsk = [
+#     "qaboard-site-dsk",
+# ]
 
 [project.scripts]
 qa = "qaboard.qa:main"
@@ -57,8 +67,16 @@ build-backend = "hatchling.build"
 include = ["qaboard/**/*", "README.md"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["qaboard", "qatools"]
+packages = [
+    "qaboard",
+    # for backward compat only
+    "qatools",
+]
 
+# See above
+# [tool.uv.sources]
+# qaboard-site-sirc = { path = "deployments/sirc/cli" }
+# qaboard-site-dsk = { path = "deployments/dsk/cli" }
 
 [tool.hatch.metadata]
 allow-direct-references = true
