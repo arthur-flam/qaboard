@@ -7,6 +7,7 @@ import { DateTime } from 'luxon';
 
 
 import {
+  Button,
   Classes,
   NonIdealState,
   Spinner,
@@ -20,7 +21,9 @@ import CommitsEvolution from "./CommitsEvolution";
 import { groupBy, calendarStrings, match_query } from "./utils";
 
 import { fetchCommits } from './actions/projects'
-import { default_date_range } from './defaults'
+
+// Commits are paginated: we show the latest ones and "Load more" fetches the next page
+const commits_per_page = 100;
 import {
 	projectSelector,
 	projectDataSelector,
@@ -61,19 +64,32 @@ class CiCommitList extends React.Component {
 
   componentDidUpdate(prevProps) {
     let changed = (this.props.project               !== prevProps.project              ||
-                   this.props.match.params.name     !== prevProps.match.params.name    ||      
+                   this.props.match.params.name     !== prevProps.match.params.name    ||
                    this.props.match.params.committer!== prevProps.match.params.committer)
     if (!this.props.is_loading && changed) {
       this.getData(this.props);
     }
+    // the navbar search is also sent to the server, so users can find
+    // any commit by hash/branch/message/committer/batch, not just loaded ones
+    if (this.props.search !== prevProps.search) {
+      clearTimeout(this.search_timer)
+      this.search_timer = setTimeout(() => this.getData(this.props), 300)
+    }
   }
 
-  getData(props) {
-    const { dispatch, project, date_range, aggregated_metrics, match } = props;
-    const extended_date_range = [date_range[0], date_range[1]]
-    extended_date_range[0].setHours(0,0,0,0);
-    extended_date_range[1].setHours(23,59,59,999);
-    dispatch(fetchCommits(project, {...match.params}, extended_date_range, aggregated_metrics))
+  getData(props, {offset=0} = {}) {
+    const { dispatch, project, aggregated_metrics, match, search, loaded_count } = props;
+    dispatch(fetchCommits(project, {...match.params}, null, aggregated_metrics, {
+      // when refreshing (offset 0) we re-fetch everything already shown,
+      // so "load more"-ed pages don't disappear
+      limit: offset > 0 ? commits_per_page : Math.max(commits_per_page, loaded_count || 0),
+      offset,
+      search: search || undefined,
+    }))
+  }
+
+  loadMore = () => {
+    this.getData(this.props, {offset: this.props.loaded_count || 0})
   }
 
   componentDidMount() {
@@ -81,16 +97,17 @@ class CiCommitList extends React.Component {
     let name = this.props.project.split('/').slice(-1)[0];
     document.title = `${match.params.name || match.params.committer || project} - ${name}`;
 
-    this.getData({...this.props, date_range: default_date_range()});
+    this.getData(this.props);
     this.interval = setInterval(x => this.getData(this.props), 60 * 1000);
   }
 
   componentWillUnmount() {
     clearInterval(this.interval);
+    clearTimeout(this.search_timer);
   }
 
   render() {
-    const { error, is_loaded, is_loading, project, match, project_data, commits, date_range } = this.props;
+    const { error, is_loaded, is_loading, project, match, project_data, commits, date_range, has_more } = this.props;
     let is_branch = !!match.params.name;
 
     let some_commits_loaded = !!commits && commits.length > 0;
@@ -118,13 +135,13 @@ class CiCommitList extends React.Component {
       {is_loaded && !is_loading && !error && !some_commits_loaded &&
         <NonIdealState
           title="Could not find a commit with results"
-          description={<span>Searched {" "}
+          description={!!date_range ? <span>Searched {" "}
             <strong>from <span title={date_range[0]}>{DateTime.fromJSDate(date_range[0]).toRelativeCalendar({unit: "days"})}</span></strong>
             {" "}to{" "}
             {date_range[1] > new Date() ? "today" : <strong>
               <span title={date_range[1]}>{DateTime.fromJSDate(date_range[1]).toRelativeCalendar({unit: "days"})}</span>
             </strong>}
-          </span>}
+          </span> : undefined}
           icon="search"
       />}
     </>
@@ -152,6 +169,16 @@ class CiCommitList extends React.Component {
         {qa_report}
         {warning_messages}
         {(is_loaded || some_commits_loaded) && list}
+        {has_more && <div style={{textAlign: 'center', margin: '20px'}}>
+          <Button
+            large
+            minimal
+            icon="more"
+            text="Load more commits"
+            loading={is_loading}
+            onClick={this.loadMore}
+          />
+        </div>}
       </Container>
     );
   }
@@ -194,6 +221,8 @@ const mapStateToProps = (state, ownProps) => {
       aggregated_metrics,
       date_range: commits_data.date_range,
       commits: commits_filtered,
+      loaded_count: commits_data.ids?.length || 0,
+      has_more: commits_data.has_more || false,
       error: commits_data.error,
       is_loaded: commits_data.is_loaded,
       is_loading: commits_data.is_loading,

@@ -82,6 +82,14 @@ export function projects(state = {
           ...state.data,
         }
       };
+      if (action.ordering !== undefined) {
+        // paginated fetches also tell us how to order the current page(s)
+        const append = (action.offset ?? 0) > 0
+        const previous_ordering = (append && state.ordering) || []
+        new_state.ordering = [...previous_ordering, ...action.ordering.filter(id => !previous_ordering.includes(id))]
+        new_state.total = action.total
+        new_state.search = action.search
+      }
       if (!action.projects)
         return new_state;
 
@@ -93,6 +101,10 @@ export function projects(state = {
     case UPDATE_COMMITS:
       var branch = branch_key(action.branch);
       let previous_ids = state.data[action.project].commits[branch]?.ids;
+      let new_ids = action.commits && action.commits.map(c => c.id)
+      if (new_ids && action.append && previous_ids)
+        // "load more": append the next page, without duplicates
+        new_ids = [...previous_ids, ...new_ids.filter(id => !previous_ids.includes(id))]
       new_state = {
         ...state,
         data: {
@@ -106,7 +118,8 @@ export function projects(state = {
                 is_loaded: true,
                 is_loading: false,
                 // in case of error, we keep the previous list of commits
-                ids: (action.commits && action.commits.map(c => c.id)) || previous_ids,
+                ids: new_ids || previous_ids,
+                has_more: action.has_more ?? false,
                 error: action.error,
               }
             }
@@ -116,10 +129,17 @@ export function projects(state = {
       if (action.commits.length > 0) {
         const first_commit = action.commits[action.commits.length - 1];
         const last_commit = action.commits[0];
-        new_state.data[action.project].commits[branch].date_range = [
+        let date_range = [
           new Date(first_commit.authored_datetime),
           new Date(last_commit.authored_datetime),
         ]
+        const previous_date_range = state.data[action.project].commits[branch]?.date_range;
+        if (action.append && !!previous_date_range)
+          date_range = [
+            new Date(Math.min(new Date(previous_date_range[0]), date_range[0])),
+            new Date(Math.max(new Date(previous_date_range[1]), date_range[1])),
+          ]
+        new_state.data[action.project].commits[branch].date_range = date_range
         // We keep track of the latest commit on each branch, hopping for no git tricks..
         if (branch !== 'latests') {
           var branch_last_commit = last_commit
@@ -185,7 +205,8 @@ export function projects(state = {
                 ids: (state.data[action.project].commits[branch] && state.data[action.project].commits[branch].ids) || [],
                 is_loading: true,
                 error: null,
-                date_range: action.date_range,
+                // paginated fetches don't select dates: keep the known range
+                date_range: action.date_range ?? state.data[action.project].commits[branch]?.date_range,
               }
             }
           }

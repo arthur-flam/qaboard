@@ -36,7 +36,8 @@ class App extends React.Component {
   }
 
   componentDidMount() {
-    this.props.store.dispatch(fetchProjects())
+    // Only the first page: the home page fetches (and searches) the rest on-demand
+    this.props.store.dispatch(fetchProjects({limit: 50}))
     const state = this.props.store.getState()
     if (state.selected.project !== null)
       fetchProject(state.selected.project)

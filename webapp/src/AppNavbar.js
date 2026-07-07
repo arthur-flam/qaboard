@@ -18,6 +18,7 @@ import {
 
 import { updateSelected } from "./actions/selected";
 import { fetchBranches, fetchCommits } from './actions/projects'
+import { default_date_range } from './defaults'
 import { CommitNavbar } from "./components/CommitNavbar";
 import { SelectBatchesNav } from "./components/tuning/SelectBatches";
 
@@ -96,10 +97,27 @@ class AppNavbar extends Component {
     this.props.dispatch(updateSelected(this.props.project, { [attribute]: value }))
   }
 
-  maybeFetchBranches = ({force_fetch}) => {
-    const { is_loading_branches, is_home, project, dispatch, branches} = this.props;
-    if (!is_loading_branches && !is_home && project && (branches.length===0 || force_fetch) ) 
-      dispatch(fetchBranches(project))
+  // Branches are fetched lazily - when the branch menu is opened or searched -
+  // and filtered server-side: no more downloading thousands of branches on every page.
+  loadBranches = query => {
+    const { is_home, project, dispatch } = this.props;
+    if (is_home || !project) return;
+    dispatch(fetchBranches(project, {filter: query || undefined, limit: 100}))
+  }
+
+  onBranchesOpening = () => {
+    const { branches, is_loading_branches } = this.props;
+    if ((branches || []).length === 0 && !is_loading_branches)
+      this.loadBranches()
+  }
+
+  onBranchQueryChange = query => {
+    clearTimeout(this.branches_timer)
+    this.branches_timer = setTimeout(() => this.loadBranches(query), 250)
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.branches_timer)
   }
 
   renderInputValue = branch => branch;
@@ -118,10 +136,6 @@ class AppNavbar extends Component {
     const { project } = this.props;
     let label = event.target.value
     this.props.dispatch(updateSelected(project, { selected_batch_new: label, selected_batch_ref: label }))    
-  }
-
-  componentDidMount() {
-    this.maybeFetchBranches({force_fetch: true});
   }
 
   render() {
@@ -224,7 +238,7 @@ class AppNavbar extends Component {
               extended_date_range[1].setHours(23,59,59,999);
               const is_dashboard = match.path.startsWith('/:project_id+/history');
               const options = is_dashboard ? {only_ci_batches: selected_batch_new === 'default', with_outputs: true} : {};
-              dispatch(fetchCommits(project, {...match.params}, new_date_range, aggregated_metrics, options))
+              dispatch(fetchCommits(project, {...match.params}, extended_date_range, aggregated_metrics, options))
             }}
             shortcuts
           />}
@@ -268,10 +282,11 @@ class AppNavbar extends Component {
                   leftIcon: 'filter',
                   intent: (!!selected.search && selected.search.length > 0) ? Intent.PRIMARY : null,
                 }}
+                popoverProps={{onOpening: this.onBranchesOpening}}
                 intent={!!selected.search ? 'primary' : 'default'}
                 placeholder="Filter..."
                 onQueryChange={query => {
-                  this.maybeFetchBranches({});
+                  this.onBranchQueryChange(query);
                   this.update('search')(query)
                 }}
               />
@@ -344,7 +359,7 @@ const mapStateToProps = (state, ownProps) => {
     new_batch_filtered,
     ref_batch_filtered,
 
-    date_range: commits_data.date_range,
+    date_range: commits_data.date_range || default_date_range(),
     filter_batch_new: selected.filter_batch_new,
     filter_batch_ref: selected.filter_batch_ref,
 

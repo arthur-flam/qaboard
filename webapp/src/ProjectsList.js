@@ -27,10 +27,13 @@ import { Container } from "./components/layout";
 import { Avatar } from "./components/avatars";
 import AuthButton from "./components/authentication/Auth"
 
-import { updateFavorite } from './actions/projects'
+import { updateFavorite, fetchProjects } from './actions/projects'
 import { updateSelected } from './actions/selected'
 import { match_query } from "./utils"
-import { project_avatar_style, git_hostname, default_git_hostname } from "./utils"
+import { project_avatar_style, git_info } from "./utils"
+
+// With hundreds of projects we paginate server-side
+const projects_per_page = 50;
 
 
 class LastCommitAt extends Component {
@@ -60,8 +63,32 @@ class ProjectsList extends Component {
     };
   }
 
+  componentDidMount() {
+    this.fetchPage(0)
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.search_timer)
+  }
+
+  fetchPage = (offset, query) => {
+    this.props.dispatch(fetchProjects({
+      limit: projects_per_page,
+      offset,
+      search: (query ?? this.state.query) || undefined,
+    }))
+  }
+
+  onSearch = e => {
+    const query = e.target.value;
+    this.setState({query})
+    // debounce the server-side search
+    clearTimeout(this.search_timer)
+    this.search_timer = setTimeout(() => this.fetchPage(0, query), 300)
+  }
+
   render() {
-    const { error, is_loaded, projects } = this.props;
+    const { error, is_loaded, projects, ordering, total } = this.props;
     const { query } = this.state;
     let warnings;
     if (error)
@@ -78,28 +105,19 @@ class ProjectsList extends Component {
       />
     </div>;
 
+    // The server orders by latest activity and searches server-side;
+    // we still match client-side to instantly filter already-loaded projects
     const matcher = match_query(query)
-    let rendered_projects = Object.entries(projects)
+    const ordered_ids = ordering ?? Object.keys(projects)
+    let rendered_projects = ordered_ids
+                            .filter(id => projects[id] !== undefined)
+                            .map(id => [id, projects[id]])
                             .filter( ([id, data]) => matcher(id))
+                            // pinned projects first; the server's activity ordering is kept otherwise
+                            .sort(([id0], [id1]) => (projects[id1].is_favorite || false) - (projects[id0].is_favorite || false))
     let list_projects = rendered_projects.length === 0 ? empty_projects : (
       <div>
         {rendered_projects
-          .sort(
-            ([id0, d0], [id1, d1]) => {
-              let fav0 = projects[id0].is_favorite || false
-              let fav1 = projects[id1].is_favorite || false
-              if (fav0 === fav1) {
-                let date0 = d0.latest_output_datetime || d0.data?.latest_output_datetime;
-                let date1 = d1.latest_output_datetime || d1.data?.latest_output_datetime;
-                if (!!date1  && !!!date0) return 1
-                if (!!!date1 &&  !!date0) return -1
-                if (!!!date1 && !!!date0) return new Date(d1.latest_commit_datetime) - new Date(d0.latest_commit_datetime)
-                return new Date(date1) - new Date(date0);
-              }
-              else
-                return fav1 - fav0;
-            }
-          )
           .map(([project_id, details]) => {
             let data = details.data || {};
             let git = data.git || {};
@@ -107,13 +125,9 @@ class ProjectsList extends Component {
             if (details.latest_commit_datetime === undefined || details.latest_commit_datetime === null)
               return <span key={project_id}/>
 
-            const project_git_hostname = git_hostname(data.qatools_config) ?? default_git_hostname
-            git.web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-            const gitlab_host = git.web_url.split('/').slice(0,3).join('/')
-            let avatar_url = qatools_config_project.avatar_url ?? git.avatar_url
-            if (!!avatar_url && avatar_url.startsWith(gitlab_host)) {
-              avatar_url = encodeURI(`/api/v1/gitlab/proxy?url=${avatar_url}`)
-            }
+            const repo = git_info(git, data.qatools_config)
+            git.web_url = repo.web_url
+            const avatar_url = repo.resolve_avatar_url(qatools_config_project.avatar_url ?? git.avatar_url)
             const is_subproject = git.path_with_namespace !== project_id;
             const has_custom_avatar = !!data.qatools_config?.project?.avatar_url
             const should_tweak_image = is_subproject && !has_custom_avatar;
@@ -194,15 +208,25 @@ class ProjectsList extends Component {
                   large
                   leftIcon="search"
                   placeholder="filter projects..."
-                  onChange={e => this.setState({query: e.target.value})}
+                  onChange={this.onSearch}
                 />
               </div>
             <div style={{}}>
-              <Tag intent={!!query ? Intent.PRIMARY : undefined} minimal>{rendered_projects.length} {!!query ? 'filtered ' : ''}projects</Tag>
+              <Tag intent={!!query ? Intent.PRIMARY : undefined} minimal>{total ?? rendered_projects.length} {!!query ? 'matching ' : ''}projects</Tag>
             </div>
           </div>
           {warnings}
           {list_projects}
+          {!!ordering && total > ordering.length && <div style={{textAlign: 'center', margin: '20px'}}>
+            <Button
+              large
+              minimal
+              icon="more"
+              text={`Load more (${ordering.length}/${total})`}
+              loading={!is_loaded}
+              onClick={() => this.fetchPage(ordering.length)}
+            />
+          </div>}
         </Container>
       </>
     );
@@ -217,6 +241,9 @@ const mapStateToProps = state => {
     error: state.projects.error || null,
     is_loaded: state.projects.is_loaded || false,
     projects: state.projects.data,
+    // set by paginated fetches: which projects to show, in order, and how many exist
+    ordering: state.projects.ordering,
+    total: state.projects.total,
   }
 }
 
