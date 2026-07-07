@@ -50,10 +50,21 @@ sudo sysctl -w net.core.somaxconn=65536
 
 Flask helps us create an HTTP server. It exposes API endpoints defined in the [api/](api/) folder.
 - `api.py`: read/list data about projects/commits/outputs
-- `webhooks.py`: listens for (i) push notification from gitlab (ii) new results sent by `qa`.
+- `webhooks.py`: listens for (i) push notification from git hosts (ii) new results sent by `qa`.
 - `tuning.py`: ask for new tuning runs, 
 
 `database.py` manages how we access our database, and connects to the git repository via `gitpython`.
+
+## Git hosts
+GitLab, GitHub and generic git hosts are all first-class citizens (see `git_hosts.py`):
+- Push webhooks: point your git host at `/webhook/gitlab`, `/webhook/github`, or `/webhook/git`
+  (generic, expects `{"ref", "checkout_sha", "project": {"path_with_namespace", "web_url", "clone_url"}}`).
+- Credentials used to clone repositories over http(s):
+  * `$GITLAB_ACCESS_TOKEN` for GitLab hosts,
+  * `$GITHUB_ACCESS_TOKEN` for GitHub hosts,
+  * or per-host with `$GIT_HOSTS='{"git.example.com": {"token": "...", "username": "oauth2"}}'`.
+- Existing databases can be normalized to the multi-host metadata schema with:
+  `python -m backend.scripts.migrate_to_multi_git_hosts [--dry-run]`
 
 
 ## Changing the database schemas

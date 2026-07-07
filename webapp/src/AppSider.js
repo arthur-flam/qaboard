@@ -31,7 +31,7 @@ import {
 } from './selectors/projects'
 import { updateSelected } from "./actions/selected";
 import { fetchCommit } from "./actions/commit";
-import { git_hostname, default_git_hostname, project_avatar_style } from "./utils"
+import { git_info, project_avatar_style } from "./utils"
 
 export const sider_width = '166px';
 
@@ -77,13 +77,9 @@ class ProjectSideAvatar extends React.Component {
     const should_tweak_image = is_subproject && !has_custom_avatar;
     const avatar_style = should_tweak_image ? project_avatar_style(project) : null;
 
-    const project_git_hostname = git_hostname(project_data?.data?.qatools_config) ?? default_git_hostname
-    git.web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-    const gitlab_host = git.web_url.split('/').slice(0,3).join('/')
-    let avatar_url = git.avatar_url
-    if (!!avatar_url && avatar_url.startsWith(gitlab_host)) {
-      avatar_url = encodeURI(`/api/v1/gitlab/proxy?url=${avatar_url}`)
-    }
+    const repo = git_info(git, project_data?.data?.qatools_config)
+    git.web_url = repo.web_url
+    const avatar_url = repo.resolve_avatar_url(git.avatar_url)
     return <span className={Classes.MENU_ITEM} style={{fontWeight: '200', minWidth: sider_width, marginBottom: '20px'}}>
     <Link onClick={this.toHome} className={Classes.FILL} to={`/${project}`} style={{color: 'inherit'}}>
       <>
@@ -140,9 +136,9 @@ class ProjectSideCommitList extends React.Component {
     let project_repo = git.path_with_namespace || '';
     let subproject = project.slice(project_repo.length + 1);
 
-    const project_git_hostname = git_hostname(project_data?.data?.qatools_config) ?? default_git_hostname
-    git.web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-    let code_url = subproject.length > 0 ? `${git.web_url}/tree/${is_branch ? match.params.name : reference_branch}/${subproject}` : git.web_url;
+    const repo = git_info(git, project_data?.data?.qatools_config)
+    git.web_url = repo.web_url
+    let code_url = subproject.length > 0 ? repo.tree_url(is_branch ? match.params.name : reference_branch, subproject) : git.web_url;
     return <>
       {is_project_home ? <div><MenuItem text={reference_branch} icon='git-branch' style={{marginRight: '5px'}} onClick={() => this.updateBranch(reference_branch)}/></div>
                         : <MenuItem icon={is_branch ? "git-branch" : 'user'} intent='primary' text={tag} title={tag}/>
@@ -186,11 +182,9 @@ class ProjectSideResults extends React.Component {
     const git = project_data.data?.git || {};
     let project_repo = git.path_with_namespace || '';
     let subproject = project.slice(project_repo.length + 1);
-    let commit_code_sufffix = !!commit ? (subproject.length > 0 ? `blob/${commit.id}/${subproject}` : `commit/${commit.id}`) : ''
-
-    const project_git_hostname = git_hostname(project_data?.data?.qatools_config) ?? default_git_hostname
-    git.web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-    let code_url = `${git.web_url}/${commit_code_sufffix}`
+    const repo = git_info(git, project_data?.data?.qatools_config)
+    git.web_url = repo.web_url
+    let code_url = !!commit ? (subproject.length > 0 ? repo.tree_url(commit.id, subproject) : repo.commit_url(commit.id)) : git.web_url
 
     // we can only do tuning for projects whose database is outside the repo
     // otherwise we would need to checkout the repo and manage access...

@@ -20,10 +20,11 @@ import qaboard
 from qaboard.config import storage_roots
 
 # "from X import Y" can cause circular import errors..
-from backend.models import Base, CiCommit  
+from backend.models import Base, CiCommit
 # import backend.models as models
 from backend import repos
 from ..git_utils import git_pull
+from ..git_hosts import normalize_git_project
 from ..config import default_outputs_root, default_artifacts_root
 
 class Project(Base):
@@ -88,7 +89,8 @@ class Project(Base):
   @property
   def repo(self):
     try:
-      return repos[self.id_git]
+      clone_url = self.data.get('git', {}).get('clone_url')
+      return repos.get(self.id_git, clone_url=clone_url)
     except Exception as e:
       print(f"Could not get repo for <{self.id_git}>: {e}")
       pass
@@ -162,7 +164,7 @@ def is_relative_to(path : Path, path_maybe_parent : Path) -> bool:
 
 
 def update_project_data(project, data, db_session):
-  project.data.update({'git': data['project']})
+  project.data.update({'git': normalize_git_project(data['project'])})
   db_session.add(project)
   # https://stackoverflow.com/questions/30088089/sqlalchemy-json-typedecorator-not-saving-correctly-issues-with-session-commit
   flag_modified(project, "data")
@@ -173,7 +175,8 @@ def update_project_data(project, data, db_session):
 
 def update_project(data, db_session):
   # TODO: refactor, call the logic in Commit.get_or_create
-  branch = data['ref'][11:] # data['ref'] => 'refs/heads/feature/Imu_preintegration'
+  # data['ref'] => 'refs/heads/feature/Imu_preintegration' or 'refs/tags/v1.0'
+  branch = re.sub('^refs/(heads|tags)/', '', data['ref'])
   commit_id = data['checkout_sha']
   if not commit_id:
     return

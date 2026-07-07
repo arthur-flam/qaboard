@@ -12,7 +12,7 @@ import {
 } from "@blueprintjs/core";
 
 import { make_eval_templates_recursively } from '../utils';
-import { git_hostname, default_git_hostname } from "../utils"
+import { git_info } from "../utils"
 
 export const toaster = Toaster.create();
   
@@ -84,8 +84,7 @@ class IntegrationsMenus extends React.Component {
           } else if (integration.gitlabCI) {
             url = '/api/v1/gitlab/job/play/';
             const git = project_data.data?.git || {};
-            const project_git_hostname = git_hostname(project_data.data?.qatools_config) ?? default_git_hostname
-            git.web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
+            git.web_url = git_info(git, project_data.data?.qatools_config).web_url
             if (!git.web_url) {
               this.setState({
                 integrations: {
@@ -175,7 +174,7 @@ class IntegrationsMenus extends React.Component {
         const eval_templates_recusively = make_eval_templates_recursively(this.props)
         // let _integrations = debug_integrations; // FIXME comment-out
         const _integrations = commit_qatools_config.integrations || project_qatools_config.integrations || [];
-        let integrations = [...default_gitlab_integrations, ..._integrations]
+        let integrations = [...default_integrations(this.props), ..._integrations]
         integrations = JSON.parse(JSON.stringify(integrations))
         integrations.filter(i => (i.href !== undefined && i.src === undefined) || i.gitlabCI || i.jenkins)
                     .forEach(integration => {
@@ -283,7 +282,7 @@ class IntegrationsMenus extends React.Component {
         const project_qatools_config = project_data?.data?.qatools_config || {};
         // let _integrations = debug_integrations; // FIXME comment-out
         const _integrations = commit_qatools_config.integrations || project_qatools_config.integrations || [];
-        let integrations = [...default_gitlab_integrations, ..._integrations]
+        let integrations = [...default_integrations(this.props), ..._integrations]
         integrations = JSON.parse(JSON.stringify(integrations))
         const uses_default_integrations = true
         // console.log(integrations)
@@ -465,5 +464,12 @@ const default_gitlab_integrations = [
       alt: "Coverage",
       src: "${git.web_url}/badges/${branch}/coverage.svg",
       only: "${branch}" // won't be displayed in per-commit pages
-    }, 
+    },
 ]
+
+// Default integrations depend on the git host: GitLab exposes per-branch badges,
+// other hosts don't have an equivalent, so users configure `integrations` in qaboard.yaml.
+const default_integrations = ({project_data}) => {
+  const { host } = git_info(project_data?.data?.git, project_data?.data?.qatools_config)
+  return host === 'gitlab' ? default_gitlab_integrations : []
+}

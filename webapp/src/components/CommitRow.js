@@ -27,7 +27,7 @@ import { Avatar } from "./avatars";
 import { DoneAtTag } from "./DoneAtTag";
 import { CopyToClipboard } from "react-copy-to-clipboard";
 import { format, shortId, pretty_label, linux_to_windows } from "../utils";
-import { git_hostname, default_git_hostname } from "../utils"
+import { git_info } from "../utils"
 import { has_milestones } from './milestones'
 
 const CommitDetails = styled.div`
@@ -74,9 +74,9 @@ class CommitResults extends React.Component {
       return <span></span>
 
     const git = project_data.data?.git || {};
-    const project_git_hostname = git_hostname(project_data.data?.qatools_config) ?? default_git_hostname
-    git.web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-    const gitlab_commit_url = `${git.web_url}/commit/${commit.id}`;
+    const repo = git_info(git, project_data.data?.qatools_config)
+    git.web_url = repo.web_url
+    const git_commit_url = repo.commit_url(commit.id);
     let batches_with_results = Object.entries(commit.batches)
                                .filter( ([label, batch]) => has_outputs_in_batch(label)(commit) )
                                .map( ([label, batch]) => label )
@@ -92,7 +92,7 @@ class CommitResults extends React.Component {
     )
       return (
         <div>
-        <a style={{ color: "grey" }} href={gitlab_commit_url}>
+        <a style={{ color: "grey" }} href={git_commit_url}>
           <Button intent={Intent.WARNING} minimal>
           
             Check the pipeline status..
@@ -262,17 +262,13 @@ class CommitRow extends React.Component {
   render() {
     const { commit, project, project_data={}, className, tag, toaster, dispatch } = this.props;
     const git = project_data.data?.git || {};
-    const project_git_hostname = git_hostname(project_data?.data?.qatools_config) ?? default_git_hostname
-    git.web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
+    const repo = git_info(git, project_data?.data?.qatools_config)
+    git.web_url = repo.web_url
     const is_subproject = git.path_with_namespace !== project;
-    const commit_url = `${git.web_url}/commit/${commit.id}`
+    const commit_url = repo.commit_url(commit.id)
     const has_data = !!commit?.authored_datetime
     let maybe_skeletton = has_data ? null : Classes.SKELETON;
-    let avatar_url = commit?.committer_avatar_url
-    const gitlab_host = git.web_url.split('/').slice(0,3).join('/')
-    if (!!avatar_url && avatar_url.startsWith(gitlab_host)) {
-      avatar_url = encodeURI(`/api/v1/gitlab/proxy?url=${avatar_url}`)
-    }
+    const avatar_url = repo.resolve_avatar_url(commit?.committer_avatar_url)
     const commit_has_milestones = has_milestones({commit, project, project_data})
     return (
       <CommitRowWrapper className={className}>

@@ -253,7 +253,7 @@ const project_avatar_style = project_id => {
 };
 
 
-const default_git_hostname = "http://gitlab-srv" // TODO: "https://gitlab.com" in the OSS version
+const default_git_hostname = "https://gitlab.com"
 const git_hostname = qaboard_config => {
   const project_url = qaboard_config?.project?.url
   // const project_url = "git@gitlab-srv:svt/te-testing.git"      //=> gitlab-srv
@@ -270,6 +270,35 @@ const git_hostname = qaboard_config => {
   }
   return hostname
 
+}
+
+// Multi-git-host helpers: GitLab, GitHub and generic git hosts are all first-class.
+// `git` is the normalized metadata sent by the backend (see backend/git_hosts.py),
+// but legacy GitLab-webhook-shaped data still works.
+const git_info = (git, qatools_config) => {
+  git = git || {}
+  const hostname = git_hostname(qatools_config) ?? default_git_hostname
+  const web_url = git.web_url ?? (git.path_with_namespace ? `${hostname}/${git.path_with_namespace}` : hostname)
+  const host_root = web_url.split('/').slice(0, 3).join('/')
+  const host = git.host ?? (host_root.includes('github') ? 'github' : 'gitlab')
+  return {
+    host,          // "gitlab" | "github" | "bitbucket" | "git"
+    host_root,     // "https://github.com"
+    web_url,       // "https://github.com/group/repo"
+    path_with_namespace: git.path_with_namespace,
+    commit_url: hexsha => host === 'bitbucket' ? `${web_url}/commits/${hexsha}` : `${web_url}/commit/${hexsha}`,
+    tree_url: (branch, path) => {
+      const tree = host === 'bitbucket' ? 'src' : 'tree'
+      return path ? `${web_url}/${tree}/${branch}/${path}` : `${web_url}/${tree}/${branch}`
+    },
+    // On self-hosted GitLab, avatars often require authentication: the backend proxies them.
+    // Other hosts (github...) serve public avatars.
+    resolve_avatar_url: avatar_url => {
+      if (!!avatar_url && host === 'gitlab' && avatar_url.startsWith(host_root))
+        return encodeURI(`/api/v1/gitlab/proxy?url=${avatar_url}`)
+      return avatar_url
+    },
+  }
 }
 
 // FIXME: make it part of a global user/project/instance configuration
@@ -424,6 +453,7 @@ export {
   plotly_palette,
   git_hostname,
   default_git_hostname,
+  git_info,
   linux_to_windows,
   make_eval_templates_recursively,
   metrics_fill_defaults,

@@ -67,7 +67,11 @@ class CommitAvatar extends React.PureComponent {
   render() {
     const { commit, size } = this.props;
     let maybe_skeleton = (!commit || !commit.committer_name) ? Classes.SKELETON : null;
-    let avatar_url = !!commit?.committer_avatar_url ? encodeURI(`/api/v1/gitlab/proxy?url=${commit?.committer_avatar_url}`) : null
+    // public avatars (gravatar, github...) don't need the authenticated gitlab proxy
+    const is_public_avatar = /gravatar\.com|githubusercontent\.com/.test(commit?.committer_avatar_url || '')
+    let avatar_url = !!commit?.committer_avatar_url
+      ? (is_public_avatar ? commit.committer_avatar_url : encodeURI(`/api/v1/gitlab/proxy?url=${commit?.committer_avatar_url}`))
+      : null
     return <Avatar
       href={!!commit && !!commit.committer_name && `/committer/${commit.committer_name}`}
       alt={!!commit ? commit.committer_name : ''}

@@ -661,16 +661,16 @@ def batch(ctx, batches, batches_files, tuning_search_dict, tuning_search_file, n
       qa_context=ctx.obj,
     )
 
-    from .gitlab import gitlab_token, update_gitlab_status
+    from .git_status import can_update_status, update_commit_status
     from .api import qaboard_url
-    if gitlab_token and jobs and is_ci and 'QABOARD_TUNING' not in os.environ:
+    if can_update_status() and jobs and is_ci and 'QABOARD_TUNING' not in os.environ:
       name = f"QA {subproject.name}" if subproject else 'QA'
       target_url = f"{qaboard_url}/{config['project']['name']}/commit/{commit_id}"
       label = ctx.obj["batch_label"]
       if label != "default":
         name += f" | {label}"
         target_url += f"?batch={label}"
-      update_gitlab_status(
+      update_commit_status(
         state='failed' if is_failed else 'success',
         name=name,
         target_url=target_url,

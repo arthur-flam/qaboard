@@ -12,6 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from backend import app, db_session
 from ..models import CiCommit, Output
 from ..models.Project import update_project
+from ..git_hosts import normalize_push_event
 
 
 @app.route('/api/v1/commit/<path:project_id>/<commit_id>/batches', methods=['DELETE'])
@@ -44,10 +45,40 @@ def delete_commit(commit_id, project_id=None):
 
 @app.route('/webhook/gitlab', methods=['GET', 'POST'])
 def gitlab_webhook():
-  """If Gitlab calls this endpoint every push, we get avatars and update our local copy of the repo."""
+  """Push webhook for GitLab: keeps our project metadata and local git clones up-to-date."""
   # https://docs.gitlab.com/ce/user/project/integrations/webhooks.html
   data = json.loads(request.data)
-  print(data, file=sys.stderr)
-  update_project(data, db_session)
-  return "{status:'OK'}"
+  # GitLab sends many event types on the same hook; we only care about pushes
+  if request.headers.get('X-Gitlab-Event', 'Push Hook') not in ('Push Hook', 'Tag Push Hook'):
+    return jsonify({"status": "ignored"})
+  update_project(normalize_push_event(data, host='gitlab'), db_session)
+  return jsonify({"status": "OK"})
+
+
+@app.route('/webhook/github', methods=['GET', 'POST'])
+def github_webhook():
+  """Push webhook for GitHub: keeps our project metadata and local git clones up-to-date."""
+  # https://docs.github.com/webhooks/webhook-events-and-payloads#push
+  event = request.headers.get('X-GitHub-Event', 'push')
+  if event == 'ping':
+    return jsonify({"status": "pong"})
+  if event != 'push':
+    return jsonify({"status": "ignored"})
+  data = json.loads(request.data)
+  update_project(normalize_push_event(data, host='github'), db_session)
+  return jsonify({"status": "OK"})
+
+
+@app.route('/webhook/git', methods=['GET', 'POST'])
+def git_webhook():
+  """
+  Generic push webhook for any other git host.
+  Expects a normalized payload:
+    {"ref": "refs/heads/main", "checkout_sha": "...",
+     "project": {"path_with_namespace": "group/repo", "web_url": ..., "clone_url": ...}}
+  GitLab- and GitHub-shaped payloads are also recognized.
+  """
+  data = json.loads(request.data)
+  update_project(normalize_push_event(data), db_session)
+  return jsonify({"status": "OK"})
 

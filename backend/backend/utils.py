@@ -32,24 +32,32 @@ def cache(minutes=1440, func_skip_cache=None):
 
 @cache(minutes=600)
 def get_users_per_name(search_filter):
-  """Retrievies users from Gitlab"""
+  """Retrieves users from GitLab, used only to show avatars. Requires admin rights to get emails."""
   if 'GITLAB_ACCESS_TOKEN' not in os.environ:
     return {}
 
   headers = {'Private-Token': os.environ['GITLAB_ACCESS_TOKEN']}
-  gitlab_api = "http://gitlab-srv/api/v4"
+  gitlab_host = os.environ.get('GITLAB_HOST', 'https://gitlab.com')
+  gitlab_api = f"{gitlab_host}/api/v4"
   users_db = {} # tries to matche a name/fullname/firstname/id to a gitlab user
 
   # gitlab paginates each 100 users
   page = 1
   users_on_page = {}
   while page==1 or users_on_page:
-    r = requests.get(f'{gitlab_api}/users/?{search_filter}',
-                     headers=headers,
-                     params={'per_page':1000, 'page': page},
-                     proxies={}
-                    )
-    users_on_page = r.json()
+    try:
+      r = requests.get(f'{gitlab_api}/users/?{search_filter}',
+                       headers=headers,
+                       params={'per_page':1000, 'page': page},
+                       proxies={},
+                       timeout=10,
+                      )
+      users_on_page = r.json()
+    except Exception as e:
+      print(f"WARNING: could not list users from {gitlab_api}: {e}")
+      return users_db
+    if not isinstance(users_on_page, list): # eg {"error": "insufficient permissions"}
+      return users_db
     for u in users_on_page:
       # need gitlab admin rights
       if 'email' in u:

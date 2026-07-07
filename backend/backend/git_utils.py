@@ -5,48 +5,52 @@ from git import RemoteProgress
 from git.exc import NoSuchPathError, InvalidGitRepositoryError
 
 from .fs_utils import as_user
+from .git_hosts import with_credentials
 
 class Repos():
-  """Holds data for multiple repositories."""
+  """Holds local clones for multiple repositories, possibly on multiple git hosts."""
 
   def __init__(self, git_server, clone_directory):
     self._repos = {}
+    # default host, used when we don't know a project's clone URL
     self.git_server = git_server
     if not self.git_server.endswith('/'):
         self.git_server = self.git_server + '/'
     self.clone_directory = clone_directory
 
   def __getitem__(self, project_path):
+    return self.get(project_path)
+
+  def get(self, project_path, clone_url=None):
     """
-    Return a git-python Repo object representing a clone
-    of $QABOARD_GIT_SERVER/project_path at $QABOARD_DATA_DIR
+    Return a git-python Repo object representing a clone at $QABOARD_DATA_GIT_DIR.
 
     project_path: the full git repository namespace, eg group/repo
+    clone_url: http(s) clone URL - usually from Project.data['git']['clone_url'],
+               as sent by the git host's webhooks. When missing we fall back to
+               the default git server ($GITLAB_HOST).
     """
-    if "GITLAB_ACCESS_TOKEN" not in os.environ:
-      raise ValueError(f'[ERROR] Please provide $GITLAB_ACCESS_TOKEN as environment variable')
-    if "GITLAB_HOST" not in os.environ:
-      raise ValueError(f'[ERROR] Please provide $GITLAB_HOST as environment variable')
+    if project_path in self._repos:
+      return self._repos[project_path]
 
     clone_location = str(self.clone_directory / project_path)
     try:
       repo = Repo(clone_location)
     except InvalidGitRepositoryError:
-      from fs_utils import rmtree
+      from .fs_utils import rmtree
       rmtree(clone_location) # fail, and hopefully it will work better next time...
+      raise
     except NoSuchPathError:
+      if not clone_url:
+        clone_url = f"{self.git_server}{project_path}"
       try:
-        # TODO: use access token :)
-        # git clone http://oauth2:xxxxxxxxxxxxxxxxx@gitlab-srv/cde/cde-python
-        gitlab_uri = self.git_server.replace('://', f"://oauth2:{os.environ['GITLAB_ACCESS_TOKEN']}@")
         print(f'Cloning <{project_path}> to {self.clone_directory}')
         repo = Repo.clone_from(
-          # for now we expect everything to be on gitlab-srv via http
-          f"{gitlab_uri}{project_path}",
+          with_credentials(clone_url),
           str(clone_location),
         )
       except Exception as e:
-        print(f'[ERROR] Could not clone: {e}. Please set $QABOARD_DATA_DIR to a writable location and verify your network settings')
+        print(f'[ERROR] Could not clone: {e}. Please set $QABOARD_DATA_DIR to a writable location, check your git credentials ($GITLAB_ACCESS_TOKEN, $GITHUB_ACCESS_TOKEN or $GIT_HOSTS) and verify your network settings')
         raise(e)
     self._repos[project_path] = repo
     return self._repos[project_path]
