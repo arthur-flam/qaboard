@@ -49,28 +49,41 @@ class Batch(Base):
       return self.ci_commit.outputs_dir / batch_folder_name(self.label)
 
 
-  def to_dict(self, with_outputs=False, with_aggregation=None):
+  def to_dict(self, with_outputs=False, with_aggregation=None, summary=None):
+    """
+    summary: optional pre-computed output counts and aggregated metrics
+             (see api.batch_output_summaries), to avoid loading every Output row.
+    """
     metrics_to_aggregate  = with_aggregation if with_aggregation else {}
     if with_outputs:
       outputs = {'outputs': {o.id: o.to_dict() for o in self.outputs}}
     else:
       outputs = {}
-    valid_outputs = 0
-    pending_outputs = 0
-    running_outputs = 0
-    failed_outputs = 0
-    deleted_outputs = 0
-    for o in self.outputs:
-      if not o.is_failed and not o.is_pending:
-        valid_outputs += 1
-      if o.is_pending:
-        pending_outputs += 1
-      if o.is_running:
-        running_outputs += 1
-      if o.is_failed:
-        failed_outputs += 1
-      if o.deleted:
-        deleted_outputs += 1
+    if summary is None:
+      valid_outputs = 0
+      pending_outputs = 0
+      running_outputs = 0
+      failed_outputs = 0
+      deleted_outputs = 0
+      for o in self.outputs:
+        if not o.is_failed and not o.is_pending:
+          valid_outputs += 1
+        if o.is_pending:
+          pending_outputs += 1
+        if o.is_running:
+          running_outputs += 1
+        if o.is_failed:
+          failed_outputs += 1
+        if o.deleted:
+          deleted_outputs += 1
+      summary = {
+        'aggregated_metrics': aggregated_metrics(self.outputs, metrics_to_aggregate),
+        'valid_outputs': valid_outputs,
+        'pending_outputs': pending_outputs,
+        'running_outputs': running_outputs,
+        'failed_outputs': failed_outputs,
+        'deleted_outputs': deleted_outputs,
+      }
     return {
         'id': self.id,
         'commit_id': self.ci_commit.hexsha,
@@ -78,13 +91,7 @@ class Batch(Base):
         'created_date': self.created_date.isoformat(),
         'data': self.data if self.data else {}, # None check for old batches (todo: migrate them properly)
         'batch_dir_url': dir_to_url(self.batch_dir),
-
-        'aggregated_metrics': aggregated_metrics(self.outputs, metrics_to_aggregate),
-        'valid_outputs': valid_outputs,
-        'pending_outputs': pending_outputs,
-        'running_outputs': running_outputs,
-        'failed_outputs': failed_outputs,
-        'deleted_outputs': deleted_outputs,
+        **summary,
         **outputs,
     }
 
@@ -174,6 +181,17 @@ class Batch(Base):
     if not still_has_outputs and not soft:
       session.delete(self)
     session.commit()
+
+
+def empty_batch_summary():
+  return {
+    'aggregated_metrics': {},
+    'valid_outputs': 0,
+    'pending_outputs': 0,
+    'running_outputs': 0,
+    'failed_outputs': 0,
+    'deleted_outputs': 0,
+  }
 
 
 # TODO: refactor with proper SQL, or use triggers to keep updated

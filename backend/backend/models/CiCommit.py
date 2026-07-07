@@ -19,6 +19,7 @@ from qaboard.conventions import get_commit_dirs
 from qaboard.api import dir_to_url
 
 from backend.models import Base, Batch, Output
+from backend.models.Batch import empty_batch_summary
 from ..utils import get_users_per_name
 from ..fs_utils import rm_empty_parents, rmtree
 from ..git_utils import find_branch
@@ -304,7 +305,7 @@ class CiCommit(Base):
       ci_commit.data = {}
     return ci_commit
 
-  def to_dict(self, with_aggregation=None, with_batches=None, with_outputs=False):
+  def to_dict(self, with_aggregation=None, with_batches=None, with_outputs=False, batch_summaries=None):
     users_db = get_users_per_name("")
     committer_avatar_url = ''
     if users_db and self.committer_name:
@@ -320,7 +321,7 @@ class CiCommit(Base):
         user = users_db[name.replace(' ', '.')]
       if not user:
         name_hash = md5(name.encode('utf8')).hexdigest()
-        committer_avatar_url = f'http://gravatar.com/avatar/{name_hash}'
+        committer_avatar_url = f'https://gravatar.com/avatar/{name_hash}'
       else:
         committer_avatar_url = user['avatar_url']
     out = {
@@ -341,7 +342,13 @@ class CiCommit(Base):
         'artifacts_url': self.artifacts_url,
         'repo_artifacts_url': self.repo_artifacts_url,
         'batches': {
-          b.label: b.to_dict(with_outputs=with_outputs, with_aggregation=with_aggregation)
+          b.label: b.to_dict(
+            with_outputs=with_outputs,
+            with_aggregation=with_aggregation,
+            # empty summary rather than None: when summaries are pre-computed,
+            # a batch without outputs has no rows to aggregate
+            summary=(batch_summaries.get(b.id) or empty_batch_summary()) if batch_summaries is not None else None,
+          )
           for b in self.batches
           if not with_batches or b.label in with_batches
         },
