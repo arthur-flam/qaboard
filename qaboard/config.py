@@ -15,6 +15,7 @@ from .utils import merge, getenvs
 from .git import git_head, git_show
 from .conventions import slugify, get_commit_dirs, location_from_spec, batches_files
 from .iterators import flatten
+from .site_config import site_config
 
 
 # In case the qaboard.yaml configuration has errors, we don't want to exit directly.
@@ -146,10 +147,6 @@ else:
 # For instance Linux builds are often at `build/bin/` vs `/x64/Release/` on Windows.
 on_windows = os.name == 'nt'
 on_linux = not on_windows
-
-# SIRC-specific hosts
-on_vdi = 'HOST' in os.environ and os.environ['HOST'].endswith("vdi")
-on_lsf = 'HOST' in os.environ and (os.environ['HOST'].endswith("transchip.com") or os.environ['HOST'].startswith("planet"))
 
 platform = 'windows' if on_windows else 'linux'
 
@@ -432,16 +429,8 @@ if metrics_file:
       available_metrics = _metrics.get('available_metrics', {})
       main_metrics = _metrics.get('main_metrics', [])
 
-# We want to allow any user to use the Gitlab API, stay backward compatible
-# ...and remove the credentials from the repo
-default_secrets_path = os.environ.get('QA_SECRETS', '/home/ispq/.secrets.yaml' if os.name != 'nt' else '//mars/raid/users/ispq/.secrets.yaml')
-secrets_path = Path(config.get('secrets', default_secrets_path))
-if secrets_path.exists():
-  with secrets_path.open() as f:
-    secrets = yaml.load(f, Loader=yaml.SafeLoader)
-else:
-  secrets = {}
-
+# reexport for backward compat
+from .site_config import secrets
 
 # backward compat only for HW_ALG's tools/find_valid_build.py (removed 28/07/20)
 from .git import _Repo, _Commit

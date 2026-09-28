@@ -13,36 +13,31 @@ from typing import Any, Dict, Optional, List
 import click
 
 from .config import project, commit_id, is_ci, available_metrics
-from .config import secrets
 from .run import RunContext
 
-qaboard_protocol = os.getenv('QABOARD_PROTOCOL', secrets.get('QABOARD_PROTOCOL', 'https'))
-qaboard_hostname = os.getenv('QABOARD_HOSTNAME', secrets.get('QABOARD_HOSTNAME'))
-qaboard_port = os.getenv('QABOARD_PORT', secrets.get('QABOARD_PORT'))
-qaboard_host = os.getenv('QABOARD_HOST', secrets.get('QABOARD_HOST'))
+from .site_config import site_config
+
+qaboard_protocol = site_config('QABOARD_PROTOCOL', 'http')
+qaboard_hostname = site_config('QABOARD_HOSTNAME')
+qaboard_port = site_config('QABOARD_PORT')
+qaboard_host = site_config('QABOARD_HOST')
 if qaboard_hostname and qaboard_port:
   qaboard_url = f"{qaboard_protocol}://{qaboard_hostname}:{qaboard_port}"
 elif qaboard_host:
   qaboard_url = f"{qaboard_protocol}://{qaboard_host}"
 else:
-  qaboard_url = "https://qa"
-  # the default for a local dev server started with the default config
-  # qaboard_url = "http://localhost:5151"
-  click.secho(f"WARNING: We don't know where to look for your QA-Board server. Default: {qaboard_url}", fg='yellow', bold=True, err=True)
-  click.secho(f"         Please provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
-  click.secho(f"         If needed you can define QABOARD_PROTOCOL (default: https). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
-  click.secho(f"       > If you don't have a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
+  qaboard_url = site_config('QABOARD_URL', 'http://localhost:5151')
+  if qaboard_url == 'http://localhost:5151':
+    click.secho(f"WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
+    click.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
+    click.secho(f"         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
+    click.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
+    click.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
+    click.secho(f"       > If you work at sirc/dsk re-install with e.g.:", fg='yellow', bold=True, err=True)
+    click.secho(f"         pip install --upgrade 'qaboard-site-sirc @ git+ssh://git@gitlab-srv/common-infrastructure/qaboard#subdirectory=deployments/sirc/cli'", fg='yellow', err=True)
 
-api_prefix = f"{qaboard_url}/api/v1"
+api_prefix = site_config('QABOARD_API_PREFIX', f"{qaboard_url}/api/v1")
 
-# TODO: remove this block
-# For now we use http, until we deal with cert trust issues
-api_protocol = os.getenv('QATOOLS_DB_PROTOCOL', 'http')
-api_host = os.getenv('QATOOLS_DB_HOST', 'qa')
-api_port = os.getenv('QATOOLS_DB_PORT', '5000') # can't access 80 from LSF..
-api_prefix = f"{api_protocol}://{api_host}:{api_port}/api/v1"
-
-qaboard_url = "https://qa" # At SIRC we cannot access 80/443 reliably so we use 5000 for the API
 
 headers = {'Content-Type': 'application/json'}
 if "QA_TOKEN" in os.environ:

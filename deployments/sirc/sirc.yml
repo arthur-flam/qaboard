@@ -1,0 +1,161 @@
+# SIRC (Samsung Israel R&D Center) compose overlay
+# Usage: docker compose -f docker-compose.yml -f production.yml -f deployments/sirc/sirc.yml up
+
+x-sirc-build-args: &sirc-build-args
+  PROXY_URL: "http://webproxy.transchip.com:8080"
+  CA_CERT_URL: "http://itweb/downloads/sirc-ca.crt"
+  GIT_SERVER: "gitlab-srv"
+  CDE_PACKAGE: "cde @ git+ssh://git@gitlab-srv/cde/cde-python"
+  NO_PROXY: "gitlab-srv,gitlab-srv.transchip.com,localhost,aospt-dt,sentry,sentry.transchip.com"
+
+
+services:
+  db:
+    # postgres needs a file owned by postgres, and we cannot chown on our shared storage
+    # the default entrypoint changes user from root to postgres and inits the database,
+    # but only if the command starts with "postgres"... so we need to wrap it
+    entrypoint: /init.sh
+    volumes:
+    - ./services/db/init.sh:/init.sh
+    - ./services/db/postgres.conf:/postgres.host.conf
+    - /home/ispq/qaboard_data_prod/database_backups:/backups
+    ports:
+      - ${QABOARD_EXPOSED_DB_PORT:-5432}:5432
+
+  backend:
+    image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:backend"
+    build:
+      ssh: [default]
+      args:
+        <<: *sirc-build-args
+        GIT_SSL_VERIFY: "false"
+        QABOARD_EXTRA: "sirc"
+    env_file:
+      - .env
+      - deployments/sirc/.env
+    environment:
+    - GITLAB_HOST=http://gitlab-srv
+    - UWSGI_UID=ispq
+    - UWSGI_GID=uucp
+    - QABOARD_DATA_SHARED_DIR=/home/ispq/qaboard/shared
+    - QABOARD_DATA_GIT_DIR=/algo/ws/ispq/qaboard_prod_data_git
+    - QA_RUNNERS_LSF_BRIDGE=ssh ispq@ispq-vdi 'bsub_su {user} -I {bsub_command}'
+    - QABOARD_LOGIN_TYPE=LDAP
+    - QABOARD_DISABLE_SIGNUP=True
+    - QABOARD_LOGIN_RESTRICTED=True
+    - QABOARD_LOGIN_RESTRICTED_YAML=/etc/ldap/users_restrict.yml
+    # - QABOARD_LDAP_USER_BASE=${QABOARD_LDAP_USER_BASE}
+    # - QABOARD_LDAP_BIND_DN=${QABOARD_LDAP_BIND_DN}
+    # - QABOARD_LDAP_PASSWORD=${QABOARD_LDAP_PASSWORD}
+    # - QABOARD_LDAP_HOST=${QABOARD_LDAP_HOST}
+    - QABOARD_LDAP_USER_FILTER=(&(objectClass=user)(sAMAccountName={login}))
+    # - SENTRY_DSN=${SENTRY_DSN:-}
+    - QABOARD_TUNING_RUNNER=lsf
+    - QABOARD_DEFAULT_USER=ispq
+    - QA_LSF_SSH_TARGET=ispq@ispq-vdi
+    - 'QABOARD_IMAGE_SERVERS={"default": "/iiif", "raw,hex,cde": "/iiif/cde"}'
+
+    volumes:
+    - ./services/backend/passwd:/etc/passwd
+    - ./services/backend/ldap:/etc/ldap
+    - /raid:/raid
+    - /stage:/stage
+    # - /home:/home
+    # - /home:/raid/users
+    - /stage/algo_data:/stage/algo_data
+    - /stage/qa_data:/stage/qa_data
+    - /stage/algo-datasets:/stage/algo-datasets
+    - /stage/algo_archive:/stage/algo_archive
+    - /sim:/sim:shared
+    - /algo:/algo:shared
+    - /data:/data:shared
+    - /net:/net:shared
+    - /algo/ws:/algo/ws:shared
+
+  proxy:
+    build:
+      args:
+        <<: *sirc-build-args
+    ports:
+    - ${QABOARD_PORT_HTTPS:-443}:443
+    - ${QABOARD_PROXY_PORT_HTTP:-80}:5003
+    # backward compat, from LSF accessing port 80 doesn't always work...
+    - ${QABOARD_EXTRA_SIRC_PORT_1:-5000}:5000
+    - ${QABOARD_EXTRA_SIRC_PORT_2:-5002}:5002
+    environment:
+    - NGINX_USER=ispq
+    volumes:
+    - ./deployments/sirc/nginx/qaboard.conf:/tmp/deployment/nginx/conf.d/qaboard.conf:ro
+    - ./deployments/sirc/nginx/dvd.conf:/tmp/deployment/nginx/conf.d/dvd.conf:ro
+    - ./deployments/sirc/nginx/publish.conf:/tmp/deployment/nginx/conf.d/publish.conf:ro
+    - /home/ispq/qaboard_prod/services/nginx/ssl/qa/qa.key:/ssl/cert.key
+    - /home/ispq/qaboard_prod/services/nginx/ssl/qa/cert.cer:/ssl/cert.cer
+    - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.cer:/ssl/publish.cer
+    - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.pem:/ssl/publish.pem
+    - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.key:/ssl/publish.key
+    - ./services/nginx/passwd:/etc/passwd
+    - /home:/home
+    - /raid:/raid
+    - /stage:/stage
+    - /home:/raid/users
+    - /stage/algo_data:/stage/algo_data
+    - /stage/algo_archive:/stage/algo_archive
+    - /stage/qa_data:/stage/qa_data
+    - /stage/algo-datasets:/stage/algo-datasets
+    - /algo:/algo:shared
+    - /sim:/sim:shared
+    - /data:/data:shared
+
+  cantaloupe:
+    # The service is now hosted outside of QA-Board
+    entrypoint: ["true"]
+    restart: no
+    command: []
+
+    image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:cantaloupe"
+    user: "1411:10" # FIXME: ==ispq, so remove after a 1st rebuild..
+    # user: ispq
+    build:
+      args:
+        <<: *sirc-build-args
+        user: ispq
+        uid: 1411
+        group: uucp
+        gid: 10
+    volumes:
+      - /stage/algo_data:/repository/stage/algo_data
+      - /algo/CIS/outputs:/repository/algo/CIS/outputs
+      - /algo/CIS_artifacts:/repository/algo/CIS_artifacts
+      - /algo/ws/sircdevops/qaboard_data/cantaloupe:/var/cache/cantaloupe
+      - /sim:/repository/sim:shared
+      - /data:/data:shared
+    environment:
+      CANTALOUPE_MEM_START: 4g
+      CANTALOUPE_MEM_MAX: 8g
+
+  frontend:
+    image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:frontend"
+    build:
+      args:
+        <<: *sirc-build-args
+        NODE_TLS_REJECT_UNAUTHORIZED: "0"
+        # REACT_APP_SENTRY_DSN: ${REACT_APP_SENTRY_DSN:-}
+        REACT_APP_QABOARD_LOGIN_TYPE: "LDAP"
+        # SENTRY_ORG: ${SENTRY_ORG:-sentry}
+        # SENTRY_PROJECT: ${SENTRY_PROJECT:-qaboard-frontend}
+        # SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+        # REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST:-}
+        # REACT_APP_POSTHOG_TOKEN: ${REACT_APP_POSTHOG_TOKEN:-}
+
+  website:
+    image: "gitlab-srv.transchip.com:4567/common-infrastructure/qaboard:website"
+    build:
+      args:
+        <<: *sirc-build-args
+        NODE_TLS_REJECT_UNAUTHORIZED: "0"
+
+  flower:
+    build:
+      ssh: [default]
+      args:
+        <<: *sirc-build-args

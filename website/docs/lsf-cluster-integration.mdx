@@ -30,9 +30,26 @@ runners:
                                   # Will be added after all other CLI flags.
 ```
 
-:::warning
-`qa` doesn't use LSF's job arrays. If your algorithm takes very little time to run, maybe using them would be better. Create an issue or contact [Arthur Flam](mailto:arthur.flam@samsung.com). 
-:::
+## Limiting concurrency
+By default all the runs from a `qa batch` are sent at once. To limit how many run at the same time:
+
+```yaml title="qaboard.yaml"
+runners:
+  lsf:
+    concurrency: 20              # 0=unlimited (default)
+    # concurrency_strategy: array  # default
+```
+
+or `qa batch --lsf-concurrency 20 my-batch`.
+
+Two strategies are available:
+- `array` (default): runs with identical LSF options are sent as a single [job array](https://www.ibm.com/docs/en/spectrum-lsf/10.1.0?topic=arrays-create-job-array) with a slot limit (`-J "name[1-n]%20"`). It's a sliding window, and a single `bsub` call. Each run's output is in its `log.lsf.txt`. If runs need different LSF options (e.g. per input type), each group gets its own array and its own limit.
+- `waves`: runs are sent by groups of `concurrency` jobs, each group waiting for the previous one to end (`-w "ended(...)"`). Slow runs delay the next wave. Use it only if job arrays don't work for you.
+
+In both cases job names keep the batch prefix, so stopping a batch from QA-Board still works.
+
+## Many short runs? Use a pool of workers
+Each run is an LSF job, and pays LSF's scheduling overhead. If you have many short runs, run them instead on a few long-lived workers, themselves started as LSF jobs: read the [Dask integration](dask-integration) docs.
 
 ## LSF options per batch
 
@@ -77,7 +94,8 @@ qa batch --help
   --lsf-options TEXT           Other LSF options (as 1 string, like '-W
                                24:00') that bsub can understand. Will be added
                                after all other CLI flags.
-  --lsf-sequential / --lsf-parallel
+  --lsf-concurrency INTEGER    Max number of LSF jobs from this batch running
+                               at the same time. 0=unlimited
 ```
 
 ## Connecting to LSF via a "bridge" host
