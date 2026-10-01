@@ -30,12 +30,13 @@ import "@blueprintjs/datetime2/lib/css/blueprint-datetime2.css";
 import "./App.css";
 
 import { routes } from './routes'
+import { ReleaseNotesProvider, WhatsNewLink } from "./releaseNotes/ReleaseNotes"
 import PrivateContent from "./components/authentication/PrivateContent"
 import { sider_width } from './AppSider'
 
 const Footer = () => {
   return <div style={{margin: "10px", textAlign: "right"}}>
-     <span className={Classes.TEXT_MUTED}>Made with <span role="img" aria-label="<3">❤️</span> at Samsung, under <a href="https://github.com/Samsung/qaboard">Apache License 2.0</a></span> 
+     <span className={Classes.TEXT_MUTED}><WhatsNewLink via="footer"/> · Made with <span role="img" aria-label="<3">❤️</span> at Samsung, under <a href="https://github.com/Samsung/qaboard">Apache License 2.0</a></span>
   </div>
 }
 
@@ -107,6 +108,7 @@ class App extends React.Component {
 	  return <Provider store={this.props.store}>
       <PersistGate loading={null} persistor={this.props.persistor}>
         <IeDeprecationWarning/>
+        <ReleaseNotesProvider>
           <Router history={history}>
             <Switch>
               <SentryRoute exact path="/" >
@@ -119,6 +121,7 @@ class App extends React.Component {
               </SentryRoute>
             </Switch>
           </Router>
+        </ReleaseNotesProvider>
       </PersistGate>
     </Provider>
   }

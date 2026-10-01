@@ -17,6 +17,13 @@ module.exports = function(app) {
     })
   );
   app.use(
+    '/docs',
+    createProxyMiddleware({
+      target: QABOARD_SERVER_URL,
+      changeOrigin: true,
+    })
+  );
+  app.use(
     '/s',
     createProxyMiddleware({
       target: QABOARD_SERVER_URL,
