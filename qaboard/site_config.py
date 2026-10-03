@@ -6,6 +6,9 @@ Priority order (highest wins):
 2. Installed site package defaults (e.g. qaboard-site-sirc)
 3. Hardcoded open-source defaults
 
+Site packages can also provide a base `qaboard.yaml` that all projects' configurations are merged on,
+by pointing QABOARD_SITE_CONFIG to it (see `site_qaboard_config`).
+
 Install a site package to auto-configure:
     # for SIRC 
     pip install --upgrade "qaboard-site-sirc @ git+ssh://git@gitlab-srv/common-infrastructure/qaboard#subdirectory=deployments/sirc/cli"    # SIRC defaults
@@ -13,7 +16,9 @@ Install a site package to auto-configure:
     pip install --upgrade "qaboard-site-dsk @ git+ssh://git@gitlab-srv/common-infrastructure/qaboard#subdirectory=deployments/dsk/cli"    # DSK defaults
 """
 import os
+import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -85,3 +90,62 @@ def site_config(key, default=None):
     """Get a config value: ENV > secrets > site package > default."""
     return os.getenv(key, secrets.get(key, _site_defaults.get(key, default)))
 
+
+# Locations can be specified as a path, {linux, windows}, {outputs, artifacts}...
+# They are not merged key by key: when projects define them, they replace the site's.
+LOCATION_KEYS = (('storage',), ('inputs', 'database'))
+
+
+def site_qaboard_config_path() -> Optional[Path]:
+    """
+    Path to the site's base qaboard.yaml, if any. Set QABOARD_SITE_CONFIG="" to ignore the site's.
+    Like other locations, it can depend on the platform, e.g. for a variable shared by Linux and Windows CI runners:
+        QABOARD_SITE_CONFIG='{"linux": "/mnt/qaboard/site.yaml", "windows": "//server/qaboard/site.yaml"}'
+    """
+    from .conventions import location_from_spec
+    spec = site_config('QABOARD_SITE_CONFIG')
+    if isinstance(spec, str) and spec.lstrip().startswith('{'):
+        try:
+            spec = json.loads(spec)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"QABOARD_SITE_CONFIG is not valid JSON: {e}") from e
+    if not spec:
+        return None
+    return location_from_spec(spec).expanduser()
+
+
+def site_qaboard_config() -> Dict[str, Any]:
+    """The site's base qaboard.yaml: projects' qaboard.yaml are merged on top of it."""
+    try:
+        path = site_qaboard_config_path()
+        if not path:
+            return {}
+        with path.open() as f:
+            site_qaboard = yaml.load(f, Loader=yaml.SafeLoader) or {}
+        if not isinstance(site_qaboard, dict):
+            raise ValueError("expected a mapping at the top level")
+    except (OSError, yaml.YAMLError, ValueError) as e:
+        import click
+        click.secho(f"ERROR: Could not read the site's base qaboard.yaml (QABOARD_SITE_CONFIG={site_config('QABOARD_SITE_CONFIG')}): {e}", fg='red', err=True)
+        return {}
+    # The project's identity can't have site-wide defaults
+    for key in ('name', 'url'):
+        (site_qaboard.get('project') or {}).pop(key, None)
+    return site_qaboard
+
+
+def without_locations_from(site: Dict[str, Any], configs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Removes from the site config the locations that are defined by the projects' configs."""
+    for *parents, key in LOCATION_KEYS:
+        if not any(key in get_path(c, parents) for c in configs):
+            continue
+        get_path(site, parents).pop(key, None)
+    return site
+
+
+def get_path(d: Dict[str, Any], keys) -> Dict[str, Any]:
+    """d[k1][k2]... or {} if it's not a mapping."""
+    value: Any = d
+    for k in keys:
+        value = value.get(k) if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else {}
