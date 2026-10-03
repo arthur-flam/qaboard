@@ -114,6 +114,10 @@ Going further on a single host doesn't buy much: the host is the single point of
 5. Check the compose project name matches the existing one: `docker compose ls`. It must be `COMPOSE_PROJECT_NAME` in the env file, or compose would start with new, empty volumes. `deploy.py` refuses to deploy into a project that doesn't exist, unless you pass `--init`.
 6. In GitLab, the runner's ssh key must be able to `ssh ispq@<host>`.
 
+:::note `build:images` fails with "denied: access forbidden"
+CI pushes with the job token, which can only push to the registry of the GitLab project running the pipeline (`$CI_REGISTRY_IMAGE`), whatever your role. If the project isn't `common-infrastructure/qaboard` (moved, renamed, a fork…), or its container registry is disabled (*Settings > General > Visibility*), the push is denied. Either enable the registry, or create a deploy token with `write_registry` on the project that owns the images and set it as the CI/CD variables `QABOARD_REGISTRY_USER` / `QABOARD_REGISTRY_PASSWORD` (masked).
+:::
+
 :::note Without a container registry
 Set the CI/CD variable `QABOARD_BUILD_ON_HOST=1`: images are then built on each host during the deploy (slower, and production doesn't run exactly the images tested in staging).
 :::

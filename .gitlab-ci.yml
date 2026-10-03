@@ -149,7 +149,20 @@ build:images:
     # Don't leave the job token in the shared ~/.docker
     - export DOCKER_CONFIG="$CI_PROJECT_DIR/.docker" && mkdir -p "$DOCKER_CONFIG"
     - if [ -d ~/.docker/cli-plugins ]; then ln -sfn ~/.docker/cli-plugins "$DOCKER_CONFIG/cli-plugins"; fi
-    - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+    # Log in to the registry the images are pushed to (QABOARD_IMAGE must match the image names in deployments/sirc/*.yml).
+    # The job token can only push to *this* project's registry ($CI_REGISTRY_IMAGE), whatever the user's role.
+    # To push elsewhere, set the CI/CD variables QABOARD_REGISTRY_USER/QABOARD_REGISTRY_PASSWORD (a deploy token with write_registry).
+    - |
+      registry="${QABOARD_IMAGE%%/*}"
+      echo "Pushing to $QABOARD_IMAGE, this project's registry is $CI_REGISTRY_IMAGE"
+      if [ -n "$QABOARD_REGISTRY_USER" ]; then
+        echo "$QABOARD_REGISTRY_PASSWORD" | docker login -u "$QABOARD_REGISTRY_USER" --password-stdin "$registry"
+      elif [ "${QABOARD_IMAGE#*/}" != "${CI_REGISTRY_IMAGE#*/}" ]; then
+        echo "ERROR: the job token can't push to $QABOARD_IMAGE, only to $CI_REGISTRY_IMAGE. Set QABOARD_REGISTRY_USER/QABOARD_REGISTRY_PASSWORD."
+        exit 1
+      else
+        echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$registry"
+      fi
     # BuildKit's cache on the build host makes unchanged layers instant (e.g. the backend's dependencies)
     - docker compose --env-file deployments/sirc/production.env build backend frontend website proxy cantaloupe fluentd
     - docker compose --env-file deployments/sirc/production.env push backend frontend website proxy cantaloupe fluentd
