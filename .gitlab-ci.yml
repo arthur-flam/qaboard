@@ -13,6 +13,10 @@
 # No container registry? Set QABOARD_BUILD_ON_HOST=1: images are then built on each host when deploying (slower)
 #
 # Runbook: website/docs/backend-admin/deployment.mdx
+#
+# Shells: the job scripts run in bash (the runner uses `su -s /bin/bash`), but ssh runs remote commands
+#         with the login shell of the user, tcsh at SIRC. deployments/sirc/.envrc is bash, so remote
+#         commands must go through bash: `ssh host bash -s <<EOF` or `ssh host "bash -c '...'"`.
 
 workflow:
   rules:
@@ -173,6 +177,7 @@ backend-tests:
     DEPLOY_ARGS: ""
   script:
     - DEPLOY_ARGS="$DEPLOY_ARGS ${QABOARD_BUILD_ON_HOST:+--build}"
+    # bash -s: the login shell on the hosts is tcsh
     - |
       ssh -o BatchMode=yes "$DEPLOY_HOST" bash -s <<EOF
       set -eo pipefail
@@ -222,7 +227,7 @@ test:staging:
     - curl -fsS --noproxy '*' --retry 10 --retry-delay 3 --retry-all-errors --max-time 30 "$QABOARD_STAGING_URL/api/v1/health"
     - curl -fsS --noproxy '*' --max-time 120 "$QABOARD_STAGING_URL/api/v1/projects" > /dev/null
     - curl -fsS --noproxy '*' --max-time 30 "$QABOARD_STAGING_URL/" | grep -q 'id="root"'
-    - ssh -o BatchMode=yes "$QABOARD_STAGING_HOST" "cd $QABOARD_STAGING_DIR && source deployments/sirc/.envrc && python3 deployments/deploy.py deployments/sirc/staging.env compose exec -T -e BACKEND_TEST_MODE=no-mock backend python -m pytest smoke_tests/ -q -p no:cacheprovider"
+    - ssh -o BatchMode=yes "$QABOARD_STAGING_HOST" "bash -c 'cd $QABOARD_STAGING_DIR && source deployments/sirc/.envrc && python3 deployments/deploy.py deployments/sirc/staging.env compose exec -T -e BACKEND_TEST_MODE=no-mock backend python -m pytest smoke_tests/ -q -p no:cacheprovider'"
   rules:
     - !reference [.on-master, rules]
 
@@ -232,7 +237,7 @@ stop:staging:
   interruptible: false
   needs: []
   script:
-    - ssh -o BatchMode=yes "$QABOARD_STAGING_HOST" "cd $QABOARD_STAGING_DIR && source deployments/sirc/.envrc && python3 deployments/deploy.py deployments/sirc/staging.env compose stop"
+    - ssh -o BatchMode=yes "$QABOARD_STAGING_HOST" "bash -c 'cd $QABOARD_STAGING_DIR && source deployments/sirc/.envrc && python3 deployments/deploy.py deployments/sirc/staging.env compose stop'"
   environment:
     name: staging
     action: stop
@@ -249,7 +254,7 @@ staging:refresh-db:
   needs: []
   resource_group: staging
   script:
-    - ssh -o BatchMode=yes "$QABOARD_STAGING_HOST" "cd $QABOARD_STAGING_DIR && source deployments/sirc/.envrc && python3 deployments/deploy.py deployments/sirc/staging.env seed-db"
+    - ssh -o BatchMode=yes "$QABOARD_STAGING_HOST" "bash -c 'cd $QABOARD_STAGING_DIR && source deployments/sirc/.envrc && python3 deployments/deploy.py deployments/sirc/staging.env seed-db'"
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual

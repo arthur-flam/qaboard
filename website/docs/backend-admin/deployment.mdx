@@ -47,6 +47,7 @@ Set the CI/CD variable `QABOARD_PROD_DEPLOY=manual`: `deploy:production` then wa
 - **On the host**:
 ```bash
 ssh qa
+bash  # the login shell is tcsh, .envrc is bash
 cd /home/ispq/qaboard_prod && source deployments/sirc/.envrc
 deployments/deploy.py deployments/sirc/production.env status     # deployed version, history
 deployments/deploy.py deployments/sirc/production.env rollback   # back to the previous version
@@ -60,6 +61,7 @@ Rolling back the code does not roll back database migrations. Write migrations t
 ## Deploying by hand
 ```bash
 ssh qa
+bash  # the login shell is tcsh, .envrc is bash
 cd /home/ispq/qaboard_prod && source deployments/sirc/.envrc
 git fetch && git checkout --detach <commit>
 deployments/deploy.py deployments/sirc/production.env up --version <short commit>
@@ -74,6 +76,7 @@ Staging runs the production images and configuration, with **its own database**.
 
 ```bash
 ssh alginfra1
+bash  # the login shell is tcsh, .envrc is bash
 cd /home/ispq/qaboard_staging && source deployments/sirc/.envrc
 deployments/deploy.py deployments/sirc/staging.env seed-db             # last 30 days
 deployments/deploy.py deployments/sirc/staging.env seed-db --days 90
@@ -112,7 +115,7 @@ Going further on a single host doesn't buy much: the host is the single point of
 3. Fill the secrets: `.env` and `deployments/sirc/.env` (see `deployments/sirc/.env.sirc.example`), the SSL certificates.
 4. Let the host pull images: create a GitLab **deploy token** with `read_registry`, then `docker login gitlab-srv.transchip.com:4567` once as `ispq`.
 5. Check the compose project name matches the existing one: `docker compose ls`. It must be `COMPOSE_PROJECT_NAME` in the env file, or compose would start with new, empty volumes. `deploy.py` refuses to deploy into a project that doesn't exist, unless you pass `--init`.
-6. In GitLab, the runner's ssh key must be able to `ssh ispq@<host>`.
+6. In GitLab, the runner's ssh key must be able to `ssh ispq@<host>`. The login shell can be anything (tcsh at SIRC): the jobs run their remote commands with `bash`.
 
 :::note Without a container registry
 Set the CI/CD variable `QABOARD_BUILD_ON_HOST=1`: images are then built on each host during the deploy (slower, and production doesn't run exactly the images tested in staging).
