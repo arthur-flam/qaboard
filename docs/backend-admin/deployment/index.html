@@ -10,7 +10,7 @@
 
 
 <link rel="search" type="application/opensearchdescription+xml" title="QA-Board" href="/qaboard/opensearch.xml"><link rel="stylesheet" href="/qaboard/assets/css/styles.6da155d0.css">
-<script src="/qaboard/assets/js/runtime~main.2cec6e4f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.7a75764a.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.38fb9ded.js" defer="defer"></script>
 </head>
 <body>
@@ -64,7 +64,7 @@
 <p>Going further on a single host doesn&#x27;t buy much: the host is the single point of failure. A warm standby (a second host with a PostgreSQL streaming replica, and a manual failover) is possible but costs about as much effort as <a class="" href="/qaboard/docs/backend-admin/kubernetes">moving to kubernetes</a>, which gives automatic failover.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="first-time-setup-of-a-host">First-time setup of a host<a href="#first-time-setup-of-a-host" class="hash-link" aria-label="Direct link to First-time setup of a host" title="Direct link to First-time setup of a host" translate="no">​</a></h2>
 <ol>
-<li class="">Docker Engine with <strong>docker compose ≥ 2.24</strong> (<code>docker compose version</code>). The runner deploying with <code>DOCKER_HOST=ssh://...</code> needs it too.</li>
+<li class="">Docker Engine with <strong>docker compose ≥ 2.24</strong> (<code>docker compose version</code>). The build host (<code>QABOARD_BUILD_HOST</code>) needs it too: CI builds and pushes the images there over ssh, from the job&#x27;s checkout on NFS.</li>
 <li class="">Clone the repository: <code>git clone git@gitlab-srv:common-infrastructure/qaboard.git /home/ispq/qaboard_prod</code> (or <code>_staging</code>).</li>
 <li class="">Fill the secrets: <code>.env</code> and <code>deployments/sirc/.env</code> (see <code>deployments/sirc/.env.sirc.example</code>), the SSL certificates.</li>
 <li class="">Let the host pull images: create a GitLab <strong>deploy token</strong> with <code>read_registry</code>, then <code>docker login gitlab-srv.transchip.com:4567</code> once as <code>ispq</code>.</li>
