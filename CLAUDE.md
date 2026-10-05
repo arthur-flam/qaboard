@@ -133,7 +133,7 @@ npm test -- --run       # Vitest + Testing Library, jsdom
 ## Key Technologies
 
 - **Backend**: Python 3.11+, Flask, PostgreSQL, SQLAlchemy, Celery, Redis
-- **Frontend**: React 19, Redux, Blueprint UI 6, React Router 8, D3.js, Plotly.js 3, Monaco. Built with Vite 8, tested with Vitest, linted with oxlint
+- **Frontend**: React 19 (function components, React Compiler), TanStack Query (server state), Zustand (user preferences), the URL for what's selected (`src/selection.js`), Blueprint UI 6, React Router 8, D3.js, Plotly.js 3, Monaco. Built with Vite 8, tested with Vitest, linted with oxlint. `npm run bench` measures performance
 - **Infrastructure**: Docker Compose, nginx, RabbitMQ
 - **CLI**: Python with Click framework
 - **Package Management**: `uv` for Python, `npm` for JavaScript

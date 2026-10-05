@@ -4,7 +4,7 @@ import { DateTime } from "luxon";
 import { Button, Callout, Classes, Collapse, Colors, Intent, Spinner, Tag, Tooltip } from "@blueprintjs/core";
 
 import { toaster } from "../../toaster";
-import { updateSelected } from "../../actions/selected";
+import { updateSelected } from "../../selection";
 import { LogViewer } from "./LogViewer";
 import { LsfReport, withCode } from "./LsfReport";
 import { lsfHint, lsfKilled, lsfReason } from "./lsf";
@@ -209,7 +209,7 @@ export const BatchSubmissions = ({ batch, has_runs }) => {
  * Tells users how the batch they started from QA-Board is doing, when they can't see it from its runs:
  * `qa batch` is waiting for LSF, running, failed, or didn't start any run.
  */
-const LatestSubmissionCallout = ({ submission, has_runs, project, dispatch, onFinished }) => {
+const LatestSubmissionCallout = ({ submission, has_runs, project, onFinished }) => {
   const status = useSubmissionStatus(submission)
   const previous = useRef(status.state)
   useEffect(() => {
@@ -221,7 +221,7 @@ const LatestSubmissionCallout = ({ submission, has_runs, project, dispatch, onFi
   const show_logs = <Button
     size="small"
     icon="console"
-    onClick={() => dispatch(updateSelected(project, { selected_views: 'logs' }))}
+    onClick={() => updateSelected(project, { selected_views: ['logs'] })}
   >
     Show the logs
   </Button>
@@ -253,8 +253,8 @@ const LatestSubmissionCallout = ({ submission, has_runs, project, dispatch, onFi
   </Callout>
 }
 
-export const SubmissionCallout = ({ batch, has_runs, project, dispatch, onFinished }) => {
+export const SubmissionCallout = ({ batch, has_runs, project, onFinished }) => {
   const [latest] = batchSubmissions(batch)
   if (!latest) return null
-  return <LatestSubmissionCallout key={latest.id} submission={latest} has_runs={has_runs} project={project} dispatch={dispatch} onFinished={onFinished} />
+  return <LatestSubmissionCallout key={latest.id} submission={latest} has_runs={has_runs} project={project} onFinished={onFinished} />
 }

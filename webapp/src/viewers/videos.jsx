@@ -17,7 +17,6 @@ const SyncedVideos = ({
 
   // but it's not the case for the reference
   const viewer_reference_ref = useRef(null);
-  const [show_reference, setShowReference] = useState(false);
 
   const syncInterval = useRef(null);
   const frameRate = 30; // Adjust this based on your video's frame rate
@@ -29,11 +28,6 @@ const SyncedVideos = ({
   const meta_new = manifests?.new?.[path]
   const meta_reference = manifests?.reference?.[path]
   const hasSameData = is_same_data(path, meta_new, meta_reference);
-
-  const show_reference_updated = !!output_ref && !hasSameData
-  if (show_reference !== show_reference_updated) {
-    setShowReference(show_reference_updated)
-  }
 
   const handlePlayRef = () => {
     if (viewer_new_ref.current) {
@@ -93,53 +87,10 @@ const SyncedVideos = ({
     }
   };
 
-  // The effects are declared after the handlers they register
-  useEffect(() => {
-    // keep the element: on cleanup, the ref may already point to a newly rendered element
-    const viewer_reference = viewer_reference_ref.current
-    const handleTimeUpdate = () => {
-      if (viewer_reference_ref.current) {
-        setCurrentTimeRef(viewer_reference_ref.current.currentTime);
-      }
-    };
-    if (viewer_reference) { // normally should be always true
-      viewer_reference.addEventListener("timeupdate", handleTimeUpdate);
-      viewer_reference.addEventListener('play', handlePlayRef);
-      viewer_reference.addEventListener('pause', handlePauseRef);
-    }
-    // cleanup on unmount
-    return () => {
-      if (viewer_reference) {
-        viewer_reference.removeEventListener("timeupdate", handleTimeUpdate);
-        viewer_reference.removeEventListener('play', handlePlayRef);
-        viewer_reference.removeEventListener('pause', handlePauseRef);
-      }
-    };
-  }, [show_reference])
-
-  useEffect(() => {
-    const viewer_new = viewer_new_ref.current
-    const handleTimeUpdate = () => {
-      if (viewer_new_ref.current) {
-        setCurrentTimeNew(viewer_new_ref.current.currentTime);
-      }
-    };
-    if (viewer_new) { // always true since unconditionnaly rendered
-      viewer_new.addEventListener("timeupdate", handleTimeUpdate);
-      viewer_new.addEventListener('play', handlePlayRef);
-      viewer_new.addEventListener('pause', handlePauseRef);
-    }
-    // cleanup on unmount
-    return () => {
-      if (viewer_new) {
-        viewer_new.removeEventListener("timeupdate", handleTimeUpdate);
-        viewer_new.removeEventListener('play', handlePlayRef);
-        viewer_new.removeEventListener('pause', handlePauseRef);
-      }
-      if (syncInterval.current) {
-        cancelAnimationFrame(syncInterval.current);
-      }
-    };
+  // stop syncing on unmount
+  useEffect(() => () => {
+    if (syncInterval.current)
+      cancelAnimationFrame(syncInterval.current);
   }, []);
 
   const width = parseFloat(((style?.width ?? '390px').replace(/[^\d]+/, '')))
@@ -160,6 +111,9 @@ const SyncedVideos = ({
           width={singleVideoWidth}
           poster={`${output_new.output_dir_url}/${poster}`}
           type={type}
+          onPlay={handlePlayRef}
+          onPause={handlePauseRef}
+          onTimeUpdate={e => setCurrentTimeNew(e.currentTarget.currentTime)}
         >
           <source src={`${output_new.output_dir_url}/${path}`} />
         </video>
@@ -185,13 +139,16 @@ const SyncedVideos = ({
               width={singleVideoWidth}
               poster={`${output_ref.output_dir_url}/${poster}`}
               type={type}
+              onPlay={handlePlayRef}
+              onPause={handlePauseRef}
+              onTimeUpdate={e => setCurrentTimeRef(e.currentTarget.currentTime)}
             >
               <source src={`${output_ref.output_dir_url}/${path}`} />
             </video>
           )}
         </div>
       ) : (
-        <span ref={viewer_reference_ref} />
+        <span />
       )}
     </>
   );

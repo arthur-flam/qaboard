@@ -1,16 +1,15 @@
-import React, { Component } from "react";
-import axios from "axios";
-const { get, post } = axios;
+import { useEffect, useEffectEvent, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 
-import { CopyToClipboard } from "react-copy-to-clipboard";
+import { CopyToClipboard } from "../CopyToClipboard";
 
+import { http, errorMessage } from "../../api/http";
 import MonacoEditor from "../MonacoEditor";
 
 import {
   Classes,
   Callout,
   Intent,
-  Spinner,
   NonIdealState,
   Button,
   Tag,
@@ -28,260 +27,178 @@ const editor_options = {
 };
 
 
-class AddRecordingsForm extends Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      isLoaded: true,
-      error: null,
-      files: {},
-      groups: {},
-      dirty: {},
-      submitted: {},
-      overwrite: false,
-      selected_group_info: {
-        number_of_tests: 0
-      },
-      selected_group_info_loading: false,
-      selectedTabId: null,
-    };
-  }
- 
-  componentDidMount() {
-    const { available_tests_files } = this.props;
-    this.setState({ selectedTabId: "usr", files: available_tests_files }, () =>
-    Object.entries(this.state.files).forEach( ([, value]) => {
-      this.getGroups(value)
-    }));
-    
-    // Add event listener for CTRL-S
-    document.addEventListener('keydown', this.handleKeyDown);
-  }
- 
-  getGroups(name) {
-    get(`/api/v1/tests/groups?project=${this.props.project}&name=${name}`)
-      .then(response => {
-        this.setState(prevState => ({
-          isLoaded: true,
-          groups: {...prevState.groups, [name]: response.data},
-        }));
-      })
-      .catch(error => {
-        this.setState({ isLoaded: true, error });
-      });
-  }
+const groupsQuery = (project, name) => ({
+  queryKey: ['tests-groups', project, name],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/tests/groups', { params: { project, name }, signal, responseType: 'text' })).data,
+  staleTime: 60 * 1000,
+});
 
-  updateGroups = newGroups => {
-    const { files, selectedTabId } = this.state;
-    let name = files[selectedTabId]
-    this.setState({ groups: {...this.state.groups, [name]: newGroups}, dirty: {...this.state.dirty, [name]: true}});
+
+// Edit the definitions of batches of tests: shared with everyone, or private
+const AddRecordingsForm = ({ project, commit, config, git, available_tests_files, docs_root }) => {
+  const queryClient = useQueryClient();
+  const files = available_tests_files ?? {};
+  const names = Object.values(files);
+  const groups_queries = useQueries({ queries: names.map(name => groupsQuery(project, name)) });
+  // what users typed, before they save it
+  const [edits, setEdits] = useState({});
+  const [dirty, setDirty] = useState({});
+  const [submitted, setSubmitted] = useState({});
+  const [selectedTabId, setSelectedTabId] = useState("usr");
+
+  const group_name = files[selectedTabId];
+  const group_index = names.indexOf(group_name);
+  const group_value = edits[group_name] ?? groups_queries[group_index]?.data;
+  const is_group_dirty = dirty[group_name];
+  const is_group_submitted = submitted[group_name];
+
+  const updateGroups = newGroups => {
+    setEdits(edits => ({ ...edits, [group_name]: newGroups }));
+    setDirty(dirty => ({ ...dirty, [group_name]: true }));
   };
 
-  onSubmit = (name, e) => {
+  const onSubmit = (name, e) => {
     e.preventDefault();
-    const { groups } = this.state;
-    this.setState(prevState => ({ 
-      dirty: {...prevState.dirty, [name]: false},
-      submitted: {...prevState.submitted, [name]: true},
-      }));
+    const groups = edits[name] ?? groups_queries[names.indexOf(name)]?.data;
+    setDirty(dirty => ({ ...dirty, [name]: false }));
+    setSubmitted(submitted => ({ ...submitted, [name]: true }));
     toaster.show({
       message: `The request was sent!`,
     });
-    post(`/api/v1/tests/groups?project=${this.props.project}&name=${name}`, {
-      project: this.props.project,
-      groups: groups[name],
-    })
+    http.post('/api/v1/tests/groups', { project, groups }, { params: { project, name } })
       .then(() => {
-        this.setState(prevState => ({submitted: {...prevState.submitted, [name]: false}}));
+        setSubmitted(submitted => ({ ...submitted, [name]: false }));
+        queryClient.setQueryData(groupsQuery(project, name).queryKey, groups);
+        // tuning experiments will see the new definitions
+        queryClient.invalidateQueries({ queryKey: ['tests-group', project] });
         toaster.show({
           message: `Saved`,
           intent: Intent.SUCCESS
         });
       })
       .catch(error => {
-        this.setState(prevState => ({ submitted: {...prevState.submitted, [name]: false}, dirty: {...prevState.dirty, [name]: true}}));
+        setSubmitted(submitted => ({ ...submitted, [name]: false }));
+        setDirty(dirty => ({ ...dirty, [name]: true }));
         toaster.show({
-          message: `Something went wrong: ${JSON.stringify(error.response)}`,
+          message: `Something went wrong: ${errorMessage(error)}`,
           intent: Intent.DANGER,
         });
       });
   };
 
-  handleTabChange = newTabId => { this.setState({ selectedTabId: newTabId }) };
+  // CTRL-S (or CMD-S on Mac) saves
+  const onKeyDown = useEffectEvent(e => {
+    if (!(e.ctrlKey || e.metaKey) || e.key !== 's') return;
+    e.preventDefault(); // Prevent browser's save dialog
+    // Only submit if we have a valid group name and there are dirty changes
+    if (group_name && dirty[group_name])
+      onSubmit(group_name, e);
+  });
+  useEffect(() => {
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
-  editorDidMount() {
-  }
-  
-  editorWillMount() {
-  }
-
-  componentWillUnmount() {
-    document.removeEventListener('keydown', this.handleKeyDown);
-  }
-
-  handleKeyDown = (e) => {
-    // Check if CTRL-S (or CMD-S on Mac) was pressed
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault(); // Prevent browser's save dialog
-      
-      // Get the currently selected group name
-      const { files, selectedTabId } = this.state;
-      let groupName = files[selectedTabId];
-      
-      // Only submit if we have a valid group name and there are dirty changes
-      if (groupName && this.state.dirty[groupName]) {
-        this.onSubmit(groupName, e);
-      }
-    }
-  };
-
-  // TODO: add serach feature of other users yamls (read-only)
-  // renderGroups = (group, { modifiers, handleClick }) => {
-  //   // if (!modifiers.matchesPredicate)
-  //   return null;
-  //   return (
-  //     <MenuItem
-  //       // active={modifiers.active}
-  //       // icon={this.isRoiGroupSelected(group) ? "tick" : "blank"}
-  //       // key={group.title}
-  //       // onClick={(handleClick)}
-  //       // text={group.title}
-  //       text={"dff"}
-  //       shouldDismissPopover={false}
-  //     />
-  //   );
-  // };
-  // handleGroupsMultiSelect = (group) => {
-  //   // if (!this.isuserGroupSelected(group))
-  //   //   this.selectuserGroup(group);
-  //   // else
-  //   //   this.deselectuserGroup(this.getSelecteduserGroupIndex(group));
-  // };
-
-  render() {
-    const { project, commit, config, git } = this.props;
-    const { isLoaded, error, groups, selectedTabId, files, dirty, submitted} = this.state;
-
-    if (!isLoaded) return <Spinner />;
-    if (error)
-      return (
-        <NonIdealState
-          title="An error occurred"
-          description={JSON.stringify(error.response)}
-        />
-      );
-
-    const user_form_name = files?.['usr'] || ''
-    let group_name = files[selectedTabId]
-    let group_value = groups[group_name]
-    let is_group_dirty = dirty[group_name]
-    let is_group_submitted = submitted[group_name]
-    // let is_any_dirty = Object.values(dirty || []).some(v => v)
-    // let is_any_submitted = Object.values(submitted || []).some(v => v)
-
-    const panel_user = <>
-      <MonacoEditor
-        height={"80vh"}
-        language='yaml'
-        options={editor_options}
-        name="user_groups"
-        onChange={this.updateGroups}
-        value={group_value || ""}
-        // editorDidMount={this.editorDidMount}
-        // editorWillMount={this.editorWillMount}
-      />
-    </>
-
-    const panel_shared = <>
-      <MonacoEditor
-        height={"80vh"}
-        language='yaml'
-        options={editor_options}
-        name="groups"
-        onChange={this.updateGroups}
-        value={group_value || ""}
-        // editorDidMount={this.editorDidMount}
-        // editorWillMount={this.editorWillMount}
-      />
-    </>
-
-    let commit_groups_files = config.inputs?.batches ?? config.inputs?.groups ?? []; // .groups for backward compat
-    if (!Array.isArray(commit_groups_files))
-      commit_groups_files = [commit_groups_files]
-    // we allow python-syntax formatting with project/subproject
-    // ideally we should something more... complete
-    let project_repo = git.path_with_namespace ?? '';
-    let subproject = project.slice(project_repo.length + 1);
-    commit_groups_files = commit_groups_files.map(f => {
-      const subproject_parts = subproject.split('/')
-      const project_parts = project.split('/')
-      // FIXME: call utils.fill_template, with a twist to replace "\${key}" with ${key},
-      //        but not trivial since those are to be interpreted as python Pathlib... 
-      return f.replace('{project.name}', project_parts[project_parts.length-1])
-              .replace('{subproject.parts[0]}', subproject_parts[0])
-              .replace('{subproject}', subproject)
-    })
+  const error = groups_queries.find(q => q.error)?.error;
+  if (error)
     return (
-       <form>
-        <Callout title="How to define custom batches" icon='info-sign' style={{marginBottom: '10px'}}>
-          <p>Tuning experiments will try to use batch definitions from:
+      <NonIdealState
+        title="An error occurred"
+        description={errorMessage(error)}
+      />
+    );
+
+  const user_form_name = files['usr'] || '';
+
+  const panel_user = <>
+    <MonacoEditor
+      height={"80vh"}
+      language='yaml'
+      options={editor_options}
+      name="user_groups"
+      onChange={updateGroups}
+      value={group_value || ""}
+    />
+  </>
+
+  const panel_shared = <>
+    <MonacoEditor
+      height={"80vh"}
+      language='yaml'
+      options={editor_options}
+      name="groups"
+      onChange={updateGroups}
+      value={group_value || ""}
+    />
+  </>
+
+  let commit_groups_files = config.inputs?.batches ?? config.inputs?.groups ?? []; // .groups for backward compat
+  if (!Array.isArray(commit_groups_files))
+    commit_groups_files = [commit_groups_files]
+  // we allow python-syntax formatting with project/subproject
+  // ideally we should something more... complete
+  const project_repo = git?.path_with_namespace ?? '';
+  const subproject = project.slice(project_repo.length + 1);
+  const subproject_parts = subproject.split('/')
+  const project_parts = project.split('/')
+  commit_groups_files = commit_groups_files.map(f =>
+    // FIXME: call utils.fill_template, with a twist to replace "\${key}" with ${key},
+    //        but not trivial since those are to be interpreted as python Pathlib...
+    f.replace('{project.name}', project_parts[project_parts.length-1])
+     .replace('{subproject.parts[0]}', subproject_parts[0])
+     .replace('{subproject}', subproject)
+  )
+  return (
+     <form>
+      <Callout title="How to define custom batches" icon='info-sign' style={{marginBottom: '10px'}}>
+        <div>Tuning experiments will try to use batch definitions from:
           <ol className={Classes.LIST}>
-            <li>The <b>current commit,</b> in:</li>
-          <ul className={Classes.LIST}>
-           {commit_groups_files.map(file => <React.Fragment key={file}>
-             <li><a href={`${git?.web_url}/tree/${commit.id}/${file}`}>{file}</a></li>
-            </React.Fragment>)}
+            <li>The <b>current commit,</b> in:
+              <ul className={Classes.LIST}>
+                {commit_groups_files.map(file => <li key={file}><a href={`${git?.web_url}/tree/${commit?.id}/${file}`}>{file}</a></li>)}
               </ul>
+            </li>
             <li><b>Shared</b> with all QA-Board users.</li>
             <li><b>Private</b> ({user_form_name}), that only you can view and edit.</li>
-          </ol></p>
-          <p>To know more about the <b>syntax</b> of this files, <a href={`${this.props.docs_root}docs/batches-running-on-multiple-inputs`}>read the docs</a>.</p>
-          {(config.inputs?.database !== undefined) && <p>
-             <em>By default input paths are relative to</em> <code>{config.inputs?.database?.windows}</code>
-            <CopyToClipboard
-              text={config?.inputs?.database?.windows}
-              style={{margin: '5px'}}
-              onCopy={() => {
-                toaster.show({
-                  message: "Copied to clipboard!",
-                  intent: Intent.SUCCESS
-                });
-              }}>
-              <Tag interactive minimal round icon="duplicate">Copy</Tag>
-            </CopyToClipboard>
-          </p>}
-        </Callout>
-        <div className={`${Classes.INLINE} ${Classes.FORM_GROUP}`}>
-          <Button
-            disabled={!is_group_dirty || is_group_submitted}
-            intent={Intent.PRIMARY}
-            onClick={(e)=>this.onSubmit(group_name, e)}
-            style={{marginRight: '12px'}}
-            icon="floppy-disk"
-            >
-          <span>Update Batches</span>
-          </Button>
-          {/* <Button
-            disabled={!is_any_dirty || is_any_submitted}
-            intent={Intent.DANGER}
-            onClick={(e)=>{Object.entries(files).forEach( ([key, value]) => {if(dirty[value]){this.onSubmit(value, e)}})}}
-            icon={<><Icon icon="floppy-disk" style={{marginRight: '4px'}}/>
-                    <Icon icon="floppy-disk" style={{marginRight: '4px'}}/></>}
-            >
-          <span>Update All</span>
-          </Button> */}
+          </ol>
         </div>
+        <p>To know more about the <b>syntax</b> of this files, <a href={`${docs_root}docs/batches-running-on-multiple-inputs`}>read the docs</a>.</p>
+        {(config.inputs?.database !== undefined) && <p>
+           <em>By default input paths are relative to</em> <code>{config.inputs?.database?.windows}</code>
+          <CopyToClipboard
+            text={config?.inputs?.database?.windows}
+            style={{margin: '5px'}}
+            onCopy={() => {
+              toaster.show({
+                message: "Copied to clipboard!",
+                intent: Intent.SUCCESS
+              });
+            }}>
+            <Tag interactive minimal round icon="duplicate">Copy</Tag>
+          </CopyToClipboard>
+        </p>}
+      </Callout>
+      <div className={`${Classes.INLINE} ${Classes.FORM_GROUP}`}>
+        <Button
+          disabled={!is_group_dirty || is_group_submitted}
+          intent={Intent.PRIMARY}
+          onClick={e => onSubmit(group_name, e)}
+          style={{marginRight: '12px'}}
+          icon="floppy-disk"
+          >
+        <span>Update Batches</span>
+        </Button>
+      </div>
 
-        <div className={`${Classes.INLINE} ${Classes.FORM_GROUP}`} />
+      <div className={`${Classes.INLINE} ${Classes.FORM_GROUP}`} />
 
-        <Tabs renderActiveTabPanelOnly id="Groups" onChange={this.handleTabChange} defaultSelectedTabId="usr">
-          <Tab id="gr" title="Shared" panel={panel_shared} />
-          <Tab id="usr" title={user_form_name} panel={panel_user} />
-        </Tabs>
-      </form>
-    );
-  }
-}
+      <Tabs renderActiveTabPanelOnly id="Groups" onChange={setSelectedTabId} selectedTabId={selectedTabId}>
+        <Tab id="gr" title="Shared" panel={panel_shared} />
+        <Tab id="usr" title={user_form_name} panel={panel_user} />
+      </Tabs>
+    </form>
+  );
+};
 
 
 export { AddRecordingsForm };

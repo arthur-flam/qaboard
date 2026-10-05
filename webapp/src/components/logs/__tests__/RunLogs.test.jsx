@@ -2,7 +2,8 @@
  * Tests for the runs in the logs view.
  * Run with: cd webapp && npm test -- RunLogs
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import { setupIntersectionMocking, resetIntersectionMocking } from 'react-intersection-observer/test-utils';
 
 import { RunLogs, configurationSummary, runName } from '../RunLogs';
@@ -60,7 +61,7 @@ describe('runName', () => {
 describe('RunLogs', () => {
   const renderRun = (props = {}) => {
     const onToggle = vi.fn()
-    const view = render(<RunLogs id={7} output={output} project="p" commit={{ id: 'abc' }} dispatch={vi.fn()} expanded={false} onToggle={onToggle} {...props} />)
+    const view = renderWithProviders(<RunLogs id={7} output={output} project="p" commit={{ id: 'abc' }} expanded={false} onToggle={onToggle} {...props} />, { siteConfig: {} })
     return { ...view, onToggle }
   }
 
