@@ -23,6 +23,8 @@ const setup = async page => {
     return route.fulfill({ json: key ? api[key] : {} });
   });
   await page.addInitScript(() => {
+    // the "What's new" dialog would steal the focus
+    localStorage.setItem('qaboard.release-notes.last-seen', '2999-01-01');
     window.__long_tasks = [];
     new PerformanceObserver(list => window.__long_tasks.push(...list.getEntries().map(e => ({ start: e.startTime, duration: e.duration }))))
       .observe({ type: 'longtask', buffered: true });
