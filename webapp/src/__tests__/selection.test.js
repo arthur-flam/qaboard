@@ -85,6 +85,11 @@ describe('changing the selection', () => {
     expect(selected.branch).toBe('master');
   });
 
+  test('the page type comes from the routes, not from words in the URL', () => {
+    expect(roundtrip('/p/commits/fix/commit', 'p', { new_commit_id: 'abc' }).url).toBe('/p/commits/fix/commit?commit=abc');
+    expect(roundtrip('/p', 'p', { new_commit_id: 'abc' }).url).toBe('/p/commit/abc?');
+  });
+
   test('"nothing selected" survives the round trip', () => {
     expect(roundtrip('/p/commit/abc', 'p', { ref_commit_id: '' }).selected.ref_commit_id).toBe('');
     expect(roundtrip('/p/commit/abc', 'p', { new_commit_id: '' }).selected.new_commit_id).toBe('');

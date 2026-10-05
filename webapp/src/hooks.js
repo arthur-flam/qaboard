@@ -108,9 +108,13 @@ export function useCommitsList({ enabled = true, refetchInterval } = {}) {
   const { project, branch, committer, date_range, route, selected_batch_new } = selected;
   const project_data = useProjectData(project);
   const dashboard = route.is_history;
+  // On branches, metrics can differ from the project's: once we know the latest commit, we ask for its metrics.
+  const [branch_metrics, setBranchMetrics] = useState({ key: null, qatools_metrics: undefined });
+  const list_key = `${project}|${branch}`;
+  const qatools_metrics = (branch && branch_metrics.key === list_key && branch_metrics.qatools_metrics) || project_data.data?.qatools_metrics;
   const metrics = useMemo(
-    () => aggregation_metrics(project_data.data?.qatools_metrics, { dashboard }),
-    [project_data.data?.qatools_metrics, dashboard],
+    () => aggregation_metrics(qatools_metrics, { dashboard }),
+    [qatools_metrics, dashboard],
   );
   const params = {
     project,
@@ -124,7 +128,10 @@ export function useCommitsList({ enabled = true, refetchInterval } = {}) {
   const query = useQuery({ ...commitsQuery(params), enabled: enabled && !!project, refetchInterval });
 
   const default_branch = project_data.data?.git?.default_branch ?? project_data.data?.qatools_config?.project?.reference_branch;
-  const { data, dataUpdatedAt } = query;
+  const { data, dataUpdatedAt, isPlaceholderData } = query;
+  const latest_metrics = branch && !isPlaceholderData ? data?.[0]?.data?.qatools_metrics : undefined;
+  if (latest_metrics && (branch_metrics.key !== list_key || branch_metrics.qatools_metrics !== latest_metrics))
+    setBranchMetrics({ key: list_key, qatools_metrics: latest_metrics });
   const derived = useMemo(() => {
     const all = data ?? [];
     // Hide commits without results, except recent ones: their CI may still be running
@@ -218,7 +225,7 @@ export function useComparison() {
     [batches.new_batch, new_commit, new_project_data, selected],
   );
   const selected_views = useMemo(() => {
-    const views = selected.selected_views ?? [config.config.outputs?.default_tab_details ?? project_data.data?.qatools_config?.outputs?.default_tab_details ?? 'summary'];
+    const views = selected.selected_views ?? [].concat(config.config.outputs?.default_tab_details ?? project_data.data?.qatools_config?.outputs?.default_tab_details ?? 'summary');
     return views.map(v => v.replace('_', '-'));
   }, [selected.selected_views, config.config, project_data]);
 

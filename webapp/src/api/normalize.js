@@ -53,6 +53,7 @@ export const normalize_output = output => {
 
 const normalize_batch = batch => ({
   ...batch,
+  data: normalize_data(batch.data),
   outputs: Object.fromEntries(Object.entries(batch.outputs ?? {}).map(([id, o]) => [id, normalize_output(o)])),
 });
 

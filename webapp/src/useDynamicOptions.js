@@ -3,7 +3,7 @@
 //
 // Cards register one by one, possibly thousands of them: we collect registrations without re-rendering,
 // and merge them at most a few times per second.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { matchPath } from "./router";
 import { mergeCompatibleOptions } from "./utils/dynamicOptions";
@@ -37,7 +37,8 @@ const empty_state = { options: {}, with_files: new Set(), registered: 0 };
 
 
 // reset_key: registrations are forgotten when it changes (e.g. another commit or batch)
-export function useDynamicOptions({ config, reset_key }) {
+// files_key: which visualizations have files is forgotten when it changes (e.g. the filter)
+export function useDynamicOptions({ config, reset_key, files_key }) {
   const registry = useRef({ options: new Map(), with_files: new Set(), timer: null, dirty: false });
   const [state, setState] = useState(empty_state);
 
@@ -66,11 +67,20 @@ export function useDynamicOptions({ config, reset_key }) {
     setLastResetKey(reset_key);
     setState(empty_state);
   }
-  useEffect(() => {
+  // Layout effects run before the passive effects in which output cards register: we don't lose their registrations
+  const reset_keys = useRef({ reset_key, files_key });
+  useLayoutEffect(() => {
+    const previous = reset_keys.current;
+    reset_keys.current = { reset_key, files_key };
     const r = registry.current;
-    clearTimeout(r.timer);
-    registry.current = { options: new Map(), with_files: new Set(), timer: null, dirty: false };
-  }, [reset_key]);
+    if (previous.reset_key !== reset_key) {
+      clearTimeout(r.timer);
+      registry.current = { options: new Map(), with_files: new Set(), timer: null, dirty: false };
+    } else if (previous.files_key !== files_key) {
+      r.with_files = new Set();
+      setState(state => ({ ...state, with_files: new Set() }));
+    }
+  }, [reset_key, files_key]);
   useEffect(() => () => clearTimeout(registry.current.timer), []);
 
   const latest_config = useRef(config);
@@ -84,11 +94,6 @@ export function useDynamicOptions({ config, reset_key }) {
     r.options.set(output_id, options);
     schedule();
   };
-  // Files can change when filters change, without new registrations
-  const forgetFiles = () => {
-    registry.current.with_files = new Set();
-    setState(state => ({ ...state, with_files: new Set() }));
-  };
   const recompute = () => {
     registry.current.dirty = true;
     flush();
@@ -100,7 +105,6 @@ export function useDynamicOptions({ config, reset_key }) {
     registered_outputs: state.registered,
     register,
     reset,
-    forgetFiles,
     recompute,
   };
 }

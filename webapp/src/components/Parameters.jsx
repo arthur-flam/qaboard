@@ -21,6 +21,7 @@ import { bit_accuracy_help, humanFileSize } from "../viewers/bit_accuracy/utils"
 import { linux_to_windows } from "../utils";
 import { OutputViewer } from "../viewers/OutputViewer";
 import { toaster } from "../toaster"
+import { useUrlText, updateSelected } from "../hooks";
 
 
 // The list of files in a commit's artifacts
@@ -52,6 +53,7 @@ const CommitParameters = ({ new_commit, ref_commit, config }) => {
     });
   };
   const toggle = (attribute_url, value) => () => update(attribute_url)(!value);
+  const [files_filter_text, onFilesFilterChange] = useUrlText(files_filter, value => updateSelected(null, { params_files_filter: value }, { replace: true }));
 
   const new_manifest = useManifest(manifest_url(new_commit, artifact));
   const ref_manifest = useManifest(manifest_url(ref_commit, artifact));
@@ -144,9 +146,9 @@ const CommitParameters = ({ new_commit, ref_commit, config }) => {
         style={{flex: '50 1 auto'}}
       >
         <InputGroup
-          value={files_filter}
+          value={files_filter_text}
           placeholder="filter by path"
-          onChange={update('params_files_filter')}
+          onChange={onFilesFilterChange}
           type="search"
           leftIcon="filter"
           style={{ width: "150px" }}

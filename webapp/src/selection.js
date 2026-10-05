@@ -6,7 +6,8 @@ import { useMemo } from "react";
 import qs from "qs";
 import { DateTime } from "luxon";
 
-import { history, useRouter } from "./router";
+import { history, useRouter, matchRoutes } from "./router";
+import { route_paths } from "./route_paths";
 
 
 // Names in the URL's query string
@@ -106,12 +107,16 @@ export function useSelected() {
 }
 
 
+const page_routes = Object.values(route_paths).map(path => ({ path }));
+
 // Where to go to apply changes to the selection.
 // Pure as well, takes the current URL: (project, changes, {pathname, search}) => {pathname, search}
 export const url_for_selection = (project, selected, { pathname, search }) => {
   let query = qs.parse(search.replace(/^\?/, ''));
-  const on_commit_page = /\/commit(\/|$)/.test(pathname);
-  const on_list_page = /\/(commits|committer|history|dashboard)(\/|$)/.test(pathname);
+  const route = route_info(matchRoutes(page_routes, pathname)?.route.path ?? '');
+  const on_commit_page = route.is_commit;
+  // the project page lists commits, but selecting one opens it
+  const on_list_page = route.is_history || (route.is_list && pathname.replace(/\/$/, '') !== `/${project}`);
 
   // Branches and committers have their own pages
   if ('branch' in selected || 'committer' in selected) {

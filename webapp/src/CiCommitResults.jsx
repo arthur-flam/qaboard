@@ -91,12 +91,14 @@ const CiCommitResults = () => {
   }, [project, new_commit_id]);
 
   const [controls, setControls] = useViewerControls(config);
-  // Registrations are reset when the commit or batch changes, or when the visualizations change
+  // Registrations are reset when the commit or batch changes, or when the visualizations change.
+  // Which visualizations have files is reset when the filter changes (but we keep registrations for performance).
   const visualizations_key = JSON.stringify(config.outputs?.visualizations || []);
-  const dynamic = useDynamicOptions({ config, reset_key: `${new_commit_id}|${selected_batch_new}|${visualizations_key}` });
-  // Reset file tracking when filter changes (but keep registrations for performance)
-  const { forgetFiles } = dynamic;
-  useEffect(() => forgetFiles(), [filter_batch_new]); // oxlint-disable-line react/exhaustive-deps
+  const dynamic = useDynamicOptions({
+    config,
+    reset_key: `${new_commit?.id}|${selected_batch_new}|${visualizations_key}`,
+    files_key: filter_batch_new,
+  });
   // New dynamic options start with their default value, synced across outputs
   const effective_controls = useMemo(() => {
     const dynamic_options = { ...controls.dynamic_options };

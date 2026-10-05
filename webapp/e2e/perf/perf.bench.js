@@ -5,6 +5,7 @@
 // main-thread time spent in tasks above 50ms (the Total Blocking Time definition), "script" is
 // the time spent running JavaScript (Chrome's ScriptDuration).
 import fs from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import { test } from '@playwright/test';
 import { make_api, project } from './fixtures';
 
@@ -33,26 +34,31 @@ const setup = async page => {
 
 const metrics = async cdp => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
 
-// Waits until the main thread had no long task for `quiet` ms
+// Waits until the main thread had no long task for `quiet` ms (at most 60s)
 const settle = async (page, quiet = 1000) => {
   await page.waitForFunction(quiet => {
     const last = window.__long_tasks.at(-1);
     const last_end = last ? last.start + last.duration : 0;
     return performance.now() - last_end > quiet;
-  }, quiet, { polling: 100, timeout: 120_000 });
+  }, quiet, { polling: 100, timeout: 60_000 }).catch(() => console.warn('the page did not settle'));
 };
 
 const measure = async (page, cdp, action) => {
   await settle(page, 500);
   const before = await metrics(cdp);
-  const t0 = await page.evaluate(() => performance.now());
+  // after a navigation, the page has a new document, with its own clock and long tasks
+  const page_t0 = await page.evaluate(() => { window.__same_document = true; return performance.now() });
+  const t0 = performance.now();
   await action();
-  const t1 = await page.evaluate(() => performance.now());
+  const time = performance.now() - t0;
   await settle(page);
   const after = await metrics(cdp);
-  const blocking = await page.evaluate(t0 => window.__long_tasks.filter(t => t.start >= t0).reduce((s, t) => s + Math.max(0, t.duration - 50), 0), t0);
+  const blocking = await page.evaluate(page_t0 => {
+    const since = window.__same_document ? page_t0 : 0;
+    return window.__long_tasks.filter(t => t.start >= since).reduce((s, t) => s + Math.max(0, t.duration - 50), 0);
+  }, page_t0);
   return {
-    time: Math.round(t1 - t0),
+    time: Math.round(time),
     blocking: Math.round(blocking),
     script: Math.round((after.ScriptDuration - before.ScriptDuration) * 1000),
     heap_mb: Math.round(after.JSHeapUsedSize / 1e6),
