@@ -109,14 +109,13 @@ class RunContext():
 
     @staticmethod
     def from_click_run_context(ctx, config):
-        if ctx.params['input_path'].is_absolute():
-            database_str, *input_path_parts = ctx.params['input_path'].parts
-            database = Path(database_str)
-            input_path = Path(*input_path_parts)
+        from .iterators import local_input_path, split_absolute
+        input_path = Path(local_input_path(str(ctx.params['input_path'])))
+        if input_path.anchor: # not is_absolute(): on Windows, \algo\inputs has no drive
+            database, input_path = split_absolute(input_path)
             ctx.obj["database"] = database
         else:
             database = ctx.obj['database']
-            input_path = ctx.params['input_path']
         
         database_is_absolute = database.is_absolute()
         # we resolve all the time to handle users that ask for both //db/path and /db//path ...

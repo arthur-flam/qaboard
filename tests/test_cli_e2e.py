@@ -58,6 +58,8 @@ class QaProject(unittest.TestCase):
       (cls.project / 'inputs' / name).write_text(name)
     (cls.project / 'qa' / 'batches.yaml').write_text(yaml.dump({
       'images': {'inputs': ['inputs'], 'globs': ['*.jpg'], 'database': {'linux': str(cls.project), 'windows': str(cls.project)}},
+      # inputs given as absolute paths: the database is the root of the path
+      'absolute': {'inputs': [str(cls.project / 'inputs' / 'dir')], 'globs': ['*.jpg']},
     }))
     config = yaml.safe_load((cls.project / 'qaboard.yaml').read_text())
     config['storage'] = {'linux': str(Path(cls.tmp.name) / 'storage'), 'windows': str(Path(cls.tmp.name) / 'storage')}
@@ -276,6 +278,13 @@ class TestBatch(QaProject):
     self.assertEqual(len(inputs), 3)
     output_dirs = self.qa('batch', '--batch', 'images', '--list-output-dirs', check=0).stdout.splitlines()
     self.assertEqual(len(output_dirs), 3)
+
+  def test_absolute_input_paths(self):
+    runs = json.loads(self.qa('batch', 'absolute', '--list', check=0).stdout)
+    self.assertEqual(len(runs), 1)
+    self.assertEqual(runs[0]['input_path'], str(self.project / 'inputs' / 'dir' / 'c.jpg'))
+    self.assertEqual(runs[0]['database'], self.project.anchor)
+    self.qa('run', '--input', str(self.project / 'inputs' / 'a.jpg'), 'true', check=0)
 
   def test_forwarded_args(self):
     for args in (['--', '--my-flag', 'value'], ['--my-flag', 'value']):

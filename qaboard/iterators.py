@@ -9,17 +9,17 @@ import numbers
 import fnmatch
 import traceback
 from copy import deepcopy
-from pathlib import Path
+from pathlib import Path, PurePath
 from itertools import chain, product
 from dataclasses import replace
-from typing import List, Union, Dict, Tuple, Iterator, Sequence, cast
+from typing import List, Union, Dict, Tuple, Iterator, Sequence, TypeVar, cast
 
 import yaml
 import typer
 
 from .conventions import pretty_hash, get_settings, location_from_spec
 from .utils import input_metadata, entrypoint_module
-from .compat import cased_path
+from .compat import cased_path, linux_to_windows
 from .run import RunContext
 
 
@@ -153,11 +153,28 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
       typer.secho(f'WARNING: No inputs found matching "{path}" [{globs}] under "{database}".', fg='yellow', err=True)
 
 
+def local_input_path(path: str, windows: bool = os.name == 'nt') -> str:
+  """Batches files are often shared between Linux and Windows: on Windows, Linux paths are mapped (QABOARD_PATH_MAPPINGS)."""
+  if windows and path.startswith('/'):
+    return linux_to_windows(path)
+  return path
+
+
+AnyPath = TypeVar('AnyPath', bound=PurePath)
+
+def split_absolute(path: AnyPath) -> Tuple[AnyPath, AnyPath]:
+  """
+  An absolute input path, as (database, path relative to the database): we can only glob relative patterns.
+  Checks the anchor and not is_absolute(): on Windows, paths without a drive like \\algo\\inputs are not "absolute".
+  """
+  return type(path)(path.anchor), type(path)(path.relative_to(path.anchor))
+
+
 def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exclude=None):
-  if path and Path(path).is_absolute():
-    database_str, *path_parts =  Path(path).resolve().parts
-    path = Path(*path_parts)
-    database = Path(database_str)
+  if path:
+    path = local_input_path(str(path))
+    if Path(path).anchor:
+      database, path = split_absolute(Path(path).resolve())
   if database.is_absolute(): # normalization to avoid common issues where users ask for "//some/path" instead of "/some/path"
     database = database.resolve()
   entrypoint_module_ = entrypoint_module(qatools_config)
