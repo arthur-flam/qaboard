@@ -22,6 +22,7 @@ export const default_site_config = {
   avatar_url_template: null,
   sentry_traces_sample_rate: 1.0,
   git_web_url: 'https://gitlab.com',
+  git_hosts: [],
   quota_url_template: null,
   support_url: 'https://github.com/Samsung/qaboard/issues',
 };

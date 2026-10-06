@@ -8,40 +8,51 @@ import useBaseUrl from '@docusaurus/useBaseUrl';
 CI tools run automated scripts and tests everytime someone pushes a new commit.
 
 :::tip
-If you don't have a CI, follow [those instructions to use GitlabCI](https://docs.gitlab.com/ee/ci/quick_start/). 
+If you don't have a CI, try [GitHub Actions](https://docs.github.com/en/actions/quickstart) or [GitLab CI](https://docs.gitlab.com/ee/ci/quick_start/).
 
-This said, you can still view your results in the web application by using `qa --share run/batch`. *Note: It will only work with commits that were pushed to gitlab!*
+This said, you can still view your results in the web application by using `qa --share run/batch`. *Note: It will only work with commits that were pushed to your git host!*
 :::
 
 
 ## Requirement
-- Make sure your Gitlab project has an integration with QA-Board. If you're not sure if/how, review the [setup guide](project-init). You should be able to see your project in the QA-Board web application.
+- Make sure your repository sends its push events to QA-Board. If you're not sure if/how, review the [setup guide](project-init#optional-connect-your-git-host). You should be able to see your project in the QA-Board web application.
 
 <img alt="Index of the projects" src={useBaseUrl('img/projects-index.jpg')} />
 
 ## Running QA-Board in your CI
-1. **Have your CI launch QA-Board:** With GitlabCI, you would do something like:
-
-```yaml title="gitlab-ci.yml"
-qa-tests:
-  stage: test
-  script:
-  # assuming you defined a batch named ci
-  - qa batch ci
-```
+1. **Have your CI launch QA-Board**, e.g. `qa batch ci`, assuming you defined a batch named `ci` (examples below).
 
 :::note
 You CI is responsible for setting up an environment (`$PATH`...) in which `qaboard` is installed! Consider using `docker`, or sourcing a configuration file...
 :::
 
-2. **Push a commit to Gitlab**. If your CI is successful, the commit will appear in your project's page: 
+2. **Push a commit**. If your CI is successful, the commit will appear in your project's page: 
 
 <img alt="Index of the latest commits" src={useBaseUrl('img/commits-index.jpg')} />
 
+3. If `qa` has a token for your git host, `qa batch` also sets a **commit status** named `QA` (or `QA <subproject>`), with a link to the results.
 
-## Example with GitlabCI
-> QA-Board knows how to work with the most common CI tools: GitlabCI, Jenkins...
+## Example with GitHub Actions
+```yaml title=".github/workflows/qa.yml"
+on: [push, pull_request]
+permissions:
+  contents: read
+  statuses: write  # for qa batch's commit status
+  checks: read     # for bit-accuracy checks that wait for the reference commit's CI
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: pip install qaboard
+    - run: qa batch ci
+      env:
+        QABOARD_URL: https://qaboard.example.com
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+`qa` reads the commit from `GITHUB_SHA`, and the branch from `GITHUB_HEAD_REF` or `GITHUB_REF_NAME`. For pull requests, it uses the pull request's last commit, not the temporary merge commit that GitHub checks out. It calls the API of `GITHUB_SERVER_URL` (or `GITHUB_API_URL`) for the repository `GITHUB_REPOSITORY`, so it works with GitHub Enterprise too.
 
+## Example with GitLab CI
 ```yaml title=".gitlab-ci.yml"
 stages:
   - build
@@ -58,22 +69,12 @@ qa-tests:
   script:
   - qa batch ci
 ```
+`qa` reads the commit and branch from `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME`. For commit statuses, give it a `GITLAB_ACCESS_TOKEN` with the `api` scope (e.g. a CI/CD variable, or the site's shared secrets), and `GITLAB_HOST` if it should not use `CI_SERVER_URL`.
 
-## Example with GitHub Actions
-`qa` reads the commit and branch from `GITHUB_SHA` and `GITHUB_REF`. The repository should have a [GitHub integration](project-init#optional-integration-with-github).
+## Other CI tools
+> QA-Board knows how to work with the most common CI tools: GitHub Actions, GitLab CI, Jenkins, CircleCI, TravisCI...
 
-```yaml title=".github/workflows/qa.yml"
-on: push
-jobs:
-  qa:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: pip install qaboard
-    - run: qa batch ci
-      env:
-        QABOARD_URL: https://qaboard.example.com
-```
+Elsewhere, `qa` finds your git host from `project.url` in *qaboard.yaml* and the hosts listed in `QABOARD_GIT_HOSTS` (see [Git hosts](backend-admin/git-hosts)), and uses `GITHUB_ACCESS_TOKEN` or `GITLAB_ACCESS_TOKEN`.
 
 :::note
 `qa` detects that it runs in a CI when the `CI` environment variable is set (by GitlabCI, GitHub Actions, CircleCI, TravisCI...), or `GIT_COMMIT` (by Jenkins' git plugin).

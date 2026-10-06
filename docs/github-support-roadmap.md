@@ -1,36 +1,28 @@
-# GitHub Support Roadmap
+# Git hosts: what's left to do
 
-## Implemented
-- GitHub webhook endpoint (`/webhook/github`) for push events
-- GitHub repo cloning with `x-access-token` authentication
-- GitHub avatar resolution via GitHub API with Redis caching
-- GitHub Enterprise support (auto-detected from repository URL)
-- Frontend avatar proxying for all hosting types
+GitHub, GitLab, Gitea/Forgejo and Bitbucket Cloud are configured with `QABOARD_GIT_HOSTS`
+(see `backend/backend/git_hosts/` and website/docs/backend-admin/git-hosts.mdx).
+GitHub has webhooks, commit statuses from `qa batch`, CI checks for bit-accuracy, and GitHub Actions integrations.
 
-## Deferred Items
+## Deferred
 
-### CLI GitHub Integration
-- Create `qaboard/github.py` parallel to `gitlab.py`
-- Commit status reporting to GitHub (pending/success/failure checks)
-- CI pipeline checks for GitHub Actions
+### GitHub App authentication
+- Use GitHub App installation tokens instead of personal access tokens: org-level access, automatic rotation.
 
-### GitHub Actions Integration
-- Equivalent of `/api/v1/gitlab/job` and `/api/v1/gitlab/job/play` for GitHub Actions workflow dispatch
-- Workflow run status tracking
+### Per-user credentials
+- All users share the hosts' tokens (e.g. to start GitHub Actions workflows or GitLab jobs).
+  Use the logged-in user's own OAuth token instead.
 
-### Webhook Signature Verification
-- Validate `X-Hub-Signature-256` header using `GITHUB_WEBHOOK_SECRET` env var
-- Reject unsigned or incorrectly signed payloads
+### Workflows on a given commit
+- GitHub's workflow_dispatch only runs on a branch or tag, and doesn't say which run it started:
+  we look for a new run of the workflow on that ref for a few seconds.
 
-### GitHub App Authentication
-- Use GitHub App installation tokens instead of PATs
-- Better org-level access control
-- Automatic token rotation
+### Other hosts
+- Gitea/Forgejo and Bitbucket: commit statuses from `qa`, and CI integrations (Gitea/Forgejo Actions, Bitbucket Pipelines).
+- Bitbucket Data Center webhooks (`repo:refs_changed`): today it can only be a `generic` host (cloning).
 
-### Default GitHub Actions Integration Badges
-- Frontend `default_github_integrations` with Actions badge URLs
-- Display workflow status badges in project views
+### Pull/merge requests
+- Show pull requests and merge requests, and link results to them.
 
-### Multi-Token Support
-- Per-instance token configuration for orgs with multiple GitHub Enterprise instances
-- Token routing based on repository URL host
+### Git clones are not host-qualified
+- Project ids and clones are `group/repo`: the same path on two hosts would collide.

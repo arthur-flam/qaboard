@@ -59,8 +59,9 @@ if os.environ.get('FLASK_ENV') == 'production' and os.environ.get('SENTRY_DSN'):
 
 # Provide easy access to our git repositories
 from .git_utils import Repos
-from .config import git_server, qaboard_data_git_dir
-repos = Repos(git_server, qaboard_data_git_dir)
+from .git_hosts import git_hosts
+from .config import qaboard_data_git_dir
+repos = Repos(git_hosts, qaboard_data_git_dir)
 
 
 # Some magic to use sqlalchemy safely with Flask
@@ -106,13 +107,16 @@ def warm_cache():
 
     def warm():
         print("Warming cache in worker")
-        from backend.utils import get_users_per_name
-        try:
-            users = get_users_per_name("")  # also stored in redis, shared with the other workers
-        except Exception as e:
-            print(f"WARNING: could not warm the users cache: {e}")
-            return
-        print(f"Loaded info about {len(users)} users")
+        from backend.git_hosts.gitlab import GitLabHost, gitlab_users
+        for host in git_hosts:
+            if not isinstance(host, GitLabHost) or not host.token:
+                continue
+            try:
+                users = gitlab_users(host)  # also stored in redis, shared with the other workers
+            except Exception as e:
+                print(f"WARNING: could not warm the users cache for {host}: {e}")
+                continue
+            print(f"Loaded info about {len(users)} users from {host}")
 
     import threading
     threading.Thread(target=warm, name="warm-cache", daemon=True).start()

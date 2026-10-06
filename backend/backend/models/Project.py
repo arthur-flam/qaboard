@@ -25,6 +25,7 @@ from backend.models import Base, CiCommit
 # import backend.models as models
 from backend import repos
 from ..git_utils import git_pull
+from ..git_hosts.base import branch_from_ref
 from ..config import default_outputs_root, default_artifacts_root
 
 class Project(Base):
@@ -91,7 +92,8 @@ class Project(Base):
   @property
   def repo(self):
     try:
-      return repos[self.id_git]
+      project_url = (self.data.get('qatools_config') or {}).get('project', {}).get('url')
+      return repos.get(self.id_git, git=self.data.get('git'), project_url=project_url)
     except Exception as e:
       print(f"Could not get repo for <{self.id_git}>: {e}")
       pass
@@ -175,8 +177,13 @@ def update_project_data(project, data, db_session):
 
 
 def update_project(data, db_session):
+  """
+  Called on push webhooks.
+  data: {ref, checkout_sha, project}, see `GitHost.parse_push` in git_hosts/base.py
+        data['project'] is the repository's data (see git_hosts/__init__.py), stored as Project.data['git']
+  """
   # TODO: refactor, call the logic in Commit.get_or_create
-  branch = data['ref'][11:] # data['ref'] => 'refs/heads/feature/Imu_preintegration'
+  branch = branch_from_ref(data['ref']) # data['ref'] => 'refs/heads/feature/Imu_preintegration'
   commit_id = data['checkout_sha']
   if not commit_id:
     return
@@ -186,10 +193,8 @@ def update_project(data, db_session):
   root_project = Project.get_or_create(session=db_session, id=root_project_id)
   update_project_data(root_project, data, db_session)
 
-  hosting_type = data['project'].get('hosting_type')
-  web_url = data['project'].get('web_url')
   try:
-    repo = repos.get(root_project_id, hosting_type=hosting_type, web_url=web_url)
+    repo = repos.get(root_project_id, git=data['project'])
     git_pull(repo)
   except:
     print(f"Could not fetch the git info for {root_project_id}")

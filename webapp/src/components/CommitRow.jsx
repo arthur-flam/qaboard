@@ -24,7 +24,7 @@ import { Avatar } from "./avatars";
 import { DoneAtTag } from "./DoneAtTag";
 import { CopyToClipboard } from "./CopyToClipboard";
 import { format, shortId, pretty_label, linux_to_windows } from "../utils";
-import { git_hostname, default_git_hostname } from "../utils"
+import { commit_url as git_commit_url, image_url } from "../git"
 import { has_milestones } from './milestones'
 
 const CommitDetails = styled.div`
@@ -62,13 +62,6 @@ const has_outputs_in_batch = label => commit => {
 }
 
 
-const git_web_url = (project_data) => {
-  const git = project_data?.data?.git ?? {};
-  const project_git_hostname = git_hostname(project_data?.data?.qatools_config) ?? default_git_hostname
-  return git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-}
-
-
 // We compare the batch with the same batch in the reference commit
 const commit_page = (project, commit, label) => {
   const search = label !== 'default' ? `?${new URLSearchParams({ batch: label, batch_ref: label })}` : ''
@@ -81,7 +74,7 @@ const CommitResults = ({ project, project_data = {}, commit, className, default_
     if (incomplete_data)
       return <span></span>
 
-    const gitlab_commit_url = `${git_web_url(project_data)}/commit/${commit.id}`;
+    const code_url = git_commit_url(project_data, commit.id);
     let batches_with_results = Object.entries(commit.batches)
                                .filter( ([label]) => has_outputs_in_batch(label)(commit) )
                                .map( ([label]) => label )
@@ -97,7 +90,7 @@ const CommitResults = ({ project, project_data = {}, commit, className, default_
     )
       return (
         <div className={className}>
-        <a style={{ color: "grey" }} href={gitlab_commit_url}>
+        <a style={{ color: "grey" }} href={code_url}>
           <Button intent={Intent.WARNING} minimal>
           
             Check the pipeline status..
@@ -252,12 +245,11 @@ const CommitRow = ({ commit, project, project_data = {}, className, tag, toaster
   const refresh = () => refreshCommit(project, commit.id);
 
   const git = project_data.data?.git ?? {};
-  const web_url = git_web_url(project_data)
   const is_subproject = git.path_with_namespace !== project;
-  const commit_url = `${web_url}/commit/${commit.id}`
+  const commit_url = git_commit_url(project_data, commit.id)
   const has_data = !!commit?.authored_datetime
   let maybe_skeletton = has_data ? null : Classes.SKELETON;
-  const avatar_url = commit?.committer_avatar_url ? encodeURI(`/api/v1/gitlab/proxy?url=${commit.committer_avatar_url}`) : null
+  const avatar_url = image_url(commit?.committer_avatar_url)
   const commit_has_milestones = has_milestones({commit, project, project_data})
 
   const deleteRuns = url => {

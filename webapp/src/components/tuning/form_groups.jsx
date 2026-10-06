@@ -17,6 +17,7 @@ import {
   Tabs,
 } from "@blueprintjs/core";
 import { toaster } from "../../toaster"
+import { blob_url } from "../../git"
 
 
 const editor_options = {
@@ -155,7 +156,7 @@ const AddRecordingsForm = ({ project, commit, config, git, available_tests_files
           <ol className={Classes.LIST}>
             <li>The <b>current commit,</b> in:
               <ul className={Classes.LIST}>
-                {commit_groups_files.map(file => <li key={file}><a href={`${git?.web_url}/tree/${commit?.id}/${file}`}>{file}</a></li>)}
+                {commit_groups_files.map(file => <li key={file}><a href={blob_url({ data: { git } }, commit?.id, file)}>{file}</a></li>)}
               </ul>
             </li>
             <li><b>Shared</b> with all QA-Board users.</li>

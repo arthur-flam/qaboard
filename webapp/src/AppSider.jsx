@@ -21,7 +21,8 @@ import { LogsMenuItem, logs_hint_class } from "./AppSiderLogsItem"
 
 import { useCommitsList, useComparison, useSiteConfig, useUser, updateSelected } from "./hooks"
 import { useIntegrationStatuses } from "./useIntegrationStatuses"
-import { git_hostname, default_git_hostname, project_avatar_style, quota_url } from "./utils"
+import { project_avatar_style, quota_url } from "./utils"
+import { repo_url, tree_url, commit_url, image_url, default_integrations } from "./git"
 
 export const sider_width = sidebar.width.default;
 
@@ -367,10 +368,9 @@ const LinkMenuItem = ({ to, ...props }) => {
   return <MenuItem href={to} onClick={onClick} {...props}/>;
 }
 
-const git_web_url = project_data => {
-  const git = project_data.data?.git || {};
-  return git.web_url ?? `${git_hostname(project_data.data?.qatools_config) ?? default_git_hostname}/${git.path_with_namespace}`;
-}
+// The integrations of the branch pages: from qaboard.yaml, or the defaults for the project's git host
+const branch_integrations = ({ project_data, commit }) =>
+  project_data.data?.qatools_config?.integrations ?? commit?.data?.qatools_config?.integrations ?? default_integrations(project_data);
 
 const ProjectSideAvatar = ({ project, project_data = {} }) => {
   const git = project_data.data?.git || {};
@@ -379,7 +379,7 @@ const ProjectSideAvatar = ({ project, project_data = {} }) => {
   const has_custom_avatar = !!project_data.data?.qatools_config?.project?.avatar_url
   const should_tweak_image = is_subproject && !has_custom_avatar;
   const avatar_style = should_tweak_image ? project_avatar_style(project) : null;
-  const avatar_url = git.avatar_url ? encodeURI(`/api/v1/gitlab/proxy?url=${git.avatar_url}`) : undefined;
+  const avatar_url = image_url(git.avatar_url) ?? undefined;
   return (
     <ProjectAvatar>
       <Link to={`/${project}`} style={{display: 'flex', alignItems: 'center', gap: '12px', width: '100%', color: 'inherit'}}>
@@ -421,7 +421,7 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
   };
 
   let qatools_config = project_data.data?.qatools_config || {};
-  let integrations = qatools_config.integrations ?? commit?.data?.qatools_config?.integrations ?? [];
+  let integrations = branch_integrations({ project_data, commit });
   let reference_branch = qatools_config.project?.reference_branch;
   const git = project_data.data?.git || {};
 
@@ -438,8 +438,7 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
   const branch = is_branch ? match.params.name : reference_branch;
   let project_repo = git.path_with_namespace || '';
   let subproject = project.slice(project_repo.length + 1);
-  const web_url = git_web_url(project_data);
-  let code_url = subproject.length > 0 ? `${web_url}/tree/${branch}/${subproject}` : web_url;
+  let code_url = subproject.length > 0 ? tree_url(project_data, branch, subproject) : repo_url(project_data);
   return <>
     {is_project_home
       ? <div><LinkMenuItem to={`/${project}/commits/${reference_branch}`} text={reference_branch} icon='git-branch' style={{marginRight: '5px'}}/></div>
@@ -489,8 +488,8 @@ const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, ne
   const git = project_data.data?.git || {};
   let project_repo = git.path_with_namespace || '';
   let subproject = project.slice(project_repo.length + 1);
-  let commit_code_sufffix = !!commit?.id ? (subproject.length > 0 ? `blob/${commit.id}/${subproject}` : `commit/${commit.id}`) : ''
-  let code_url = `${git_web_url(project_data)}/${commit_code_sufffix}`
+  let code_url = !commit?.id ? repo_url(project_data)
+                 : subproject.length > 0 ? tree_url(project_data, commit.id, subproject) : commit_url(project_data, commit.id);
 
   const has_optim = new_batch?.data?.optimization === true;
   const active = view => selected_views.includes(view);
@@ -557,7 +556,7 @@ const AppSider = () => {
   const commit = route.is_commit ? new_commit : latest_commit;
 
   const integrations = [
-    ...(project_data.data?.qatools_config?.integrations ?? commit?.data?.qatools_config?.integrations ?? []),
+    ...branch_integrations({ project_data, commit }),
     ...results_integrations({ new_batch, commit, project_data }),
   ];
   const template_context = {
