@@ -34,7 +34,7 @@ class Repos():
 
     project_path: the full git repository namespace, eg group/repo
     git: what we know about the repository: Project.data['git'], e.g. {"hosting_type": "github", "web_url": ...}
-         It tells us which host to clone it from. By default: the default host (GITLAB_HOST).
+         It tells us which host to clone it from. By default: the default host (GITLAB_HOST, else the first in QABOARD_GIT_HOSTS).
     project_url: from qaboard.yaml, used if `git` doesn't tell us the host.
 
     Paths come from unauthenticated webhooks and API calls, so we only ever delete what we created:

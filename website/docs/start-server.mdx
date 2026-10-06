@@ -102,10 +102,11 @@ QA-Board can connect to external authentifications systems (LDAP, SAML). If need
 -------------------------|-------- |------------------------------------------------------|
 | `SECRET_KEY`           | _generated_ | Signs the sessions. If unset, a key is generated once and saved in the backend's data volume. With several hosts/kubernetes, set the same value everywhere. |
 | `QABOARD_GIT_HOSTS`    | _none_  | Your git hosts (GitHub, GitLab, Gitea/Forgejo, Bitbucket...) with their tokens and webhook secrets: a JSON list, or the path to a JSON/YAML file. See [Git hosts](backend-admin/git-hosts) |
-| `GITLAB_HOST`          | *https://gitlab.com* | The default git host, a GitLab, e.g. *http://my-gitlab-srv/*. Used for git links of projects that don't say where they are hosted |
-| `GITLAB_ACCESS_TOKEN`  | _none_  | Token for `GITLAB_HOST`: `read_repository` scope to clone private repositories, `api` to play GitLab CI jobs and see committers' avatars |
-| `GITHUB_ACCESS_TOKEN`  | _none_  | Token for github.com: to clone private repositories and use GitHub Actions |
-| `QABOARD_GITLAB_HOSTS`, `QABOARD_GITHUB_HOSTS` | _none_  | Comma-separated hostnames of other GitLab / GitHub Enterprise servers, that get `GITLAB_ACCESS_TOKEN` / `GITHUB_ACCESS_TOKEN`. `QABOARD_GIT_HOSTS` lets you give each its own token |
+| `GITLAB_HOST`          | *https://gitlab.com*, if `QABOARD_GIT_HOSTS` isn't set either | Your GitLab, e.g. *https://gitlab.example.com*. It's the default git host: for projects that don't say where they are hosted, and for pushes to `/webhook/gitlab` from hostnames the server doesn't know. **Keep it set when you upgrade**, see [Git hosts](backend-admin/git-hosts#upgrading-from-older-versions) |
+| `GITLAB_ACCESS_TOKEN`  | _none_  | Token for `GITLAB_HOST`: `read_repository` scope to clone private repositories, `read_api` to show GitLab CI job statuses and committers' avatars, `api` to play manual jobs |
+| `GITHUB_ACCESS_TOKEN`  | _none_  | Token for github.com (always known, even without a token) and the hosts of `QABOARD_GITHUB_HOSTS`: to clone private repositories and use GitHub Actions |
+| `QABOARD_GITLAB_HOSTS` | _none_  | Comma-separated. Hostnames (e.g. `gitlab-alias`) are other names of `GITLAB_HOST`. URLs (e.g. `https://gitlab2.example.com`) are other GitLab servers, that get `GITLAB_ACCESS_TOKEN`. `QABOARD_GIT_HOSTS` lets you give each its own token |
+| `QABOARD_GITHUB_HOSTS` | _none_  | Comma-separated hostnames of GitHub Enterprise servers, that get `GITHUB_ACCESS_TOKEN`. `QABOARD_GIT_HOSTS` lets you give each its own token |
 | `QABOARD_STORAGE_ROOTS` | */mnt/qaboard* | Folders where your projects store outputs and artifacts, separated by `:` (e.g. `/mnt/qaboard:/mnt/datasets`). The backend refuses results stored elsewhere, and never writes, deletes or runs code outside these folders |
 | `QABOARD_WEBHOOK_SECRET` | _none_ | Secret that push webhooks must send (GitLab's *Secret token*, GitHub's *Secret*...), unless their host has its own `webhook_secret` in `QABOARD_GIT_HOSTS`. Recommended: without it anyone who can reach the server can send fake push events |
 | `QABOARD_PORT_HTTP`    | 5151    | Port mapped to the app on the host                   |
@@ -137,7 +138,7 @@ QA-Board can connect to external authentifications systems (LDAP, SAML). If need
 | `QABOARD_PATH_MAPPINGS` | `[]` | JSON list of `["windows_prefix", "linux_prefix"]` pairs, used to show Windows paths to results (`qa` reads it too, from the environment or a site package, to convert Windows paths), e.g. `[["\\\\server\\share", "/mnt/share"]]` |
 | `QABOARD_DEFAULT_USER` | qaboard | The user CI runs are saved under (with `{user}` in `storage`). Runs started from the webapp replace it with the logged-in user in output paths |
 | `QABOARD_DOCS_ROOT`    | */* | Where the webapp's links to the docs point. By default, the docs served by this server at `/docs/`, which match its version |
-| `QABOARD_AVATAR_URL`   | _none_  | Avatar URL template for logged-in users, with a `{user_name}` placeholder |
+| `QABOARD_AVATAR_URL`   | _none_  | Avatar URL template with a `{user_name}` placeholder, e.g. from a company directory: for the logged-in user's menu, and for GitLab committers who didn't upload an avatar. For the user's menu it's only read from the environment, not from a site package |
 | `POSTHOG_API_KEY` / `POSTHOG_HOST` | _none_ | Enables [PostHog](https://posthog.com/) product analytics in the webapp |
 | `REDIS_HOST` / `REDIS_PORT` | redis / 6379 (set in *docker-compose.yml*) | Redis cache shared by the backend replicas. The backend still works if it's unreachable |
 | `QABOARD_QUOTA_URL_TEMPLATE` | _none_ | Shows a "Quota" link, with `{user_name}` and `{project}` placeholders |

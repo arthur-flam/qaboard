@@ -17,11 +17,12 @@ QABOARD_GIT_HOSTS is a JSON list, or the path to a JSON/YAML file with the list:
   - api_url: if it's not the usual one for this type of host (e.g. https://api.github.com)
   - hostnames: other names of the host, to recognize repository URLs, e.g. an ssh alias
   - name: shown to users
-  - user_avatar_url: users' avatars, with {url} and {username} (default for GitHub: {url}/{username}.png).
+  - user_avatar_url: users' avatars, with {url} and {username}
+    (defaults: {url}/{username}.png for GitHub, {url}/user/avatar/{username}/-1 for Gitea/Forgejo).
     For GitLab, only for users who didn't upload an avatar. Default: QABOARD_AVATAR_URL (with {user_name})
 
 Backward compatible with the variables we used before:
-  - GITLAB_HOST (default https://gitlab.com) and GITLAB_ACCESS_TOKEN.
+  - GITLAB_HOST and GITLAB_ACCESS_TOKEN. GITLAB_HOST defaults to https://gitlab.com if QABOARD_GIT_HOSTS isn't set either.
     Without a scheme, we use https://. Credentials in the URL are used if there's no GITLAB_ACCESS_TOKEN.
     QABOARD_GITLAB_HOSTS (comma-separated): hostnames are other names of GITLAB_HOST (e.g. an alias),
     URLs (with a scheme) are other GitLab servers that may receive GITLAB_ACCESS_TOKEN.

@@ -208,7 +208,7 @@ projects list. What's left:
 - Gitea's avatar URL, the Bitbucket signature header and the Gitea/Bitbucket payload fields were written from their docs and tested on
   sample payloads only: check them against real servers. [S]
 - Project ids and clones are not qualified by host: two hosts with the same `group/repo` share a project. Tokens are shared by all
-  users (no per-user OAuth). See docs/github-support-roadmap.md. [L, behaviour]
+  users (no per-user OAuth). See docs/git-hosts-roadmap.md. [L, behaviour]
 - If `QABOARD_GIT_HOSTS` points to a file the kubernetes migration Job doesn't mount, the backend fails to import, and `migrate.sh`'s
   fallback to `alembic stamp` silently skips the migrations (see docs/known-issues.md about that fallback). [S]
 - qaboard/config.py:209 prints an internal Jenkins URL. [S]

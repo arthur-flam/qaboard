@@ -4,9 +4,12 @@ Talks to the project's git host (GitLab, GitHub...) from the CI:
 - `qa check-bit-accuracy` can wait for the CI of the reference commit (see `lastest_successful_ci_commit`).
 
 We find the host from the CI's environment (GitHub Actions, GitLab CI), else from qaboard.yaml's project.url,
-using QABOARD_GIT_HOSTS like the server does (a JSON list of {type, url, token, api_url...}).
-Tokens: GITHUB_TOKEN (set by GitHub Actions) or GITHUB_ACCESS_TOKEN, GITLAB_ACCESS_TOKEN, or the hosts' `token`.
-Like settings, they can come from the environment, the shared secrets (QA_SECRETS) or the site package.
+using QABOARD_GIT_HOSTS like the server does: a JSON list of {type, url, token or token_env, api_url, hostnames},
+or the path to a JSON/YAML file with the list. Unlike the server, we need a string, not a list (e.g. from YAML secrets).
+We only use the github and gitlab hosts.
+Tokens: GITHUB_TOKEN (GitHub Actions doesn't set it in the environment: workflows map it from secrets.GITHUB_TOKEN)
+or GITHUB_ACCESS_TOKEN, GITLAB_ACCESS_TOKEN, or the hosts' `token`.
+Like settings, they can come from the environment, the secrets files (QA_SECRETS, ~/.qaboard/secrets.yaml) or the site package.
 """
 import os
 import re

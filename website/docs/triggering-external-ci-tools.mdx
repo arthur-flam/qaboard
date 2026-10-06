@@ -126,7 +126,7 @@ integrations:
 ```
 The menu shows the status of the workflow's latest run for the commit, with a link to it. Clicking starts the workflow (you need to be logged in), and QA-Board follows the run it started.
 
-The server starts workflows with its own token, so it only starts the workflows that the project's `qaboard.yaml` lists, on the project's repository, with the inputs (and `ref`, if you set one) of the integration, and only for users who can access the project. `${...}` templates in `workflow`, `inputs` and `ref` match any value.
+The server starts workflows with its own token, so it only shows and starts the workflows that the project's `qaboard.yaml` lists (the one of its reference branch), on the project's repository, and only for users who can access the project. To start one, the inputs must be those of the integration (the same names), and the `ref` too if you set one. `${...}` templates in `workflow`, `inputs` and `ref` match any value.
 
 :::note
 GitHub runs workflows on the latest commit of a branch or tag, not on a given commit. If the branch moved on, use an input to tell your workflow which commit to check out.
@@ -146,10 +146,12 @@ integrations:
 ```
 <img alt="jenkins-and-gitlab-integrations" src={useBaseUrl('img/gitlab-jenkins.gif')} />
 
-The QA-Board server needs a GitLab token with the `api` scope. See [Git hosts](backend-admin/git-hosts).
+The QA-Board server needs a GitLab token with the `api` scope to play jobs (`read_api` is enough to show their status). See [Git hosts](backend-admin/git-hosts#tokens).
 
 ## Default integrations
-If your `qaboard.yaml` has no `integrations`, branch pages show defaults for your git host: GitLab's pipeline status badge, or a link to GitHub Actions. Set `integrations: []` to hide them.
+If your `qaboard.yaml` has no `integrations`, branch pages show defaults for your git host, when QA-Board knows which kind it is (from its push events, or the server's [git hosts](backend-admin/git-hosts)): GitLab's pipeline status badge, or a link to GitHub Actions. Set `integrations: []` to hide them.
+
+Badges that fail to load (e.g. for private projects, or projects without CI) are hidden.
 
 
 ## Trigger Jenkins builds

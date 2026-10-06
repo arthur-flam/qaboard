@@ -52,7 +52,7 @@ QA-Board works with **GitHub** (and GitHub Enterprise), **GitLab**, **Gitea/Forg
 - Wait for CI pipelines to end when checking if results changed vs the last version
 - Delete old results
 
-Your QA-Board server must know your git host, and have a token if the repository is private: ask its admins, or see [Git hosts](backend-admin/git-hosts).
+Your QA-Board server must know your git host, and have a token if the repository is private: ask its admins, or see [Git hosts](backend-admin/git-hosts). If a delivery fails, its HTTP status tells why (see [webhooks](backend-admin/git-hosts#webhooks)).
 
 ### GitHub
 In the repository's *Settings > Webhooks*, add a webhook with:
@@ -67,7 +67,7 @@ In the repository's *Settings > Webhooks*, add a webhook with:
 As one of the project's Maintainers, go to *Settings > Webhooks* (`https://<gitlab>/<group>/<project>/-/hooks`) and add a webhook with:
 * __URL:__ `https://<your-qaboard-server>/webhook/gitlab`
 * __Secret token:__ the server's webhook secret, if it has one (recommended)
-* __Trigger:__ *Push events*
+* __Trigger:__ *Push events* and *Tag push events*
 
 > To test everything went well, GitLab lets you "Test" your new hook. You should get a blue happy `200 OK` message  🔵🎉.
 
