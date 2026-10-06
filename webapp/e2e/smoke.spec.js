@@ -32,6 +32,8 @@ test.beforeEach(async ({ page }, testInfo) => {
   });
 });
 
+// Playwright needs a destructuring pattern for the fixtures, even when we use none
+// oxlint-disable-next-line no-empty-pattern
 test.afterEach(async ({}, testInfo) => {
   expect(testInfo.errors_seen, 'errors in the browser console').toEqual([]);
 });

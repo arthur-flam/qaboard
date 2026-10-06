@@ -50,7 +50,7 @@ const filterMetric = (query, metric) => match_query(query)(`${metric.key} ${metr
 // and the values of dynamic options. Saved in the URL.
 function useViewerControls(config) {
   const { history } = useRouter();
-  // we initialize optionnal controls with their defaults
+  // we initialize optional controls with their defaults
   const [controls, setControls] = useState(() => controls_defaults(config));
   // When the configuration changes, we keep users' choices
   const [controls_outputs, setControlsOutputs] = useState(config?.outputs);
