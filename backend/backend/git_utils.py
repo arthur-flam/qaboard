@@ -1,92 +1,67 @@
-import os
 import re
-from urllib.parse import urlparse
+from pathlib import Path
 
 from git import Repo
 from git import RemoteProgress
 from git.exc import NoSuchPathError, InvalidGitRepositoryError
 
-from .fs_utils import as_user
+from .fs_utils import rmtree
 
 
 # Repository paths and URLs come from unauthenticated webhooks and API calls.
 # Paths must stay under the clone directory: no absolute paths, no "." or ".." segments
 safe_project_path = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*")
-# We only clone from (and send the GITHUB_ACCESS_TOKEN to) known GitHub hosts
-trusted_github_hosts = {'github.com', *[h for h in os.environ.get('QABOARD_GITHUB_HOSTS', '').split(',') if h]}
-
 def check_project_path(project_path):
   if not safe_project_path.fullmatch(str(project_path)):
     raise ValueError(f"Invalid repository path: {project_path!r}")
 
 
 class Repos():
-  """Holds data for multiple repositories."""
+  """Local clones of the repositories, at $QABOARD_DATA_GIT_DIR/<project_path>"""
 
-  def __init__(self, git_server, clone_directory):
-    self._repos = {}
-    self.git_server = git_server
-    if not self.git_server.endswith('/'):
-        self.git_server = self.git_server + '/'
-    self.clone_directory = clone_directory
+  def __init__(self, git_hosts, clone_directory):
+    self.git_hosts = git_hosts # see git_hosts/__init__.py
+    self.clone_directory = Path(clone_directory)
 
-  def _authenticated_clone_url(self, project_path, hosting_type=None, web_url=None):
-    """Build an authenticated clone URL for GitHub or GitLab."""
-    if hosting_type == 'github':
-      github_token = os.environ.get('GITHUB_ACCESS_TOKEN', '')
-      if web_url:
-        parsed = urlparse(web_url)
-        host = parsed.hostname
-        scheme = parsed.scheme
-        if scheme not in ('http', 'https') or host not in trusted_github_hosts:
-          raise ValueError(f"Untrusted GitHub host: {web_url}. Set QABOARD_GITHUB_HOSTS to allow it.")
-      else:
-        host = 'github.com'
-        scheme = 'https'
-      if github_token:
-        return f"{scheme}://x-access-token:{github_token}@{host}/{project_path}"
-      return f"{scheme}://{host}/{project_path}"
-    else:
-      # GitLab (default)
-      gitlab_token = os.environ.get('GITLAB_ACCESS_TOKEN', '')
-      if gitlab_token:
-        return self.git_server.replace('://', f"://oauth2:{gitlab_token}@") + project_path
-      return f"{self.git_server}{project_path}"
+  def __getitem__(self, project_path):
+    return self.get(project_path)
 
-  def __getitem__(self, project_path, hosting_type=None, web_url=None):
+  def get(self, project_path, git=None, project_url=None):
     """
-    Return a git-python Repo object representing a clone
-    of $QABOARD_GIT_SERVER/project_path at $QABOARD_DATA_DIR
+    Return a git-python Repo object representing a clone of the repository.
 
     project_path: the full git repository namespace, eg group/repo
-    hosting_type: 'github' or 'gitlab' (default)
-    web_url: the web URL of the repo (used to derive host for GitHub Enterprise)
+    git: what we know about the repository: Project.data['git'], e.g. {"hosting_type": "github", "web_url": ...}
+         It tells us which host to clone it from. By default: the default host (GITLAB_HOST).
+    project_url: from qaboard.yaml, used if `git` doesn't tell us the host.
     """
     check_project_path(project_path)
-    clone_location = str(self.clone_directory / project_path)
+    clone_location = self.clone_directory / project_path
+    # Tokens are only sent to the host they belong to: we never clone from a URL we're given
     try:
-      repo = Repo(clone_location)
+      host = self.git_hosts.for_repo(git, project_url)
+    except ValueError:
+      host = None # we can still read existing clones
+    try:
+      repo = Repo(str(clone_location))
+      if host:
+        repo.git.update_environment(**host.git_env()) # to fetch
+      return repo
     except InvalidGitRepositoryError:
-      from fs_utils import rmtree
-      rmtree(clone_location) # fail, and hopefully it will work better next time...
+      rmtree(clone_location) # likely a failed clone, we try again
     except NoSuchPathError:
-      try:
-        clone_url = self._authenticated_clone_url(project_path, hosting_type=hosting_type, web_url=web_url)
-        print(f'Cloning <{project_path}> to {self.clone_directory}')
-        # https://gitpython.readthedocs.io/en/stable/reference.html#git.repo.base.Repo.clone_from
-        repo = Repo.clone_from(
-          clone_url,
-          str(clone_location),
-        )
-      except Exception as e:
-        print(f'[ERROR] Could not clone: {e}. Please set $QABOARD_DATA_DIR to a writable location and verify your network settings')
-        raise(e)
-    self._repos[project_path] = repo
-    return self._repos[project_path]
-
-  def get(self, project_path, hosting_type=None, web_url=None):
-    """Like __getitem__ but accepts hosting context parameters."""
-    return self.__getitem__(project_path, hosting_type=hosting_type, web_url=web_url)
+      pass
+    if not host:
+      host = self.git_hosts.for_repo(git, project_url) # raises why
+    print(f'Cloning <{project_path}> from {host} to {self.clone_directory}')
+    try:
+      # https://gitpython.readthedocs.io/en/stable/reference.html#git.repo.base.Repo.clone_from
+      repo = Repo.clone_from(host.clone_url(project_path), str(clone_location), env=host.git_env())
+    except Exception as e:
+      print(f'[ERROR] Could not clone {project_path} from {host}. Please set $QABOARD_DATA_DIR to a writable location and verify your network settings')
+      raise RuntimeError(host.redact(str(e))) from None
+    repo.git.update_environment(**host.git_env())
+    return repo
 
 
 def git_pull(repo):

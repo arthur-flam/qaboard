@@ -41,6 +41,7 @@ _image_servers = _parse_json_env('QABOARD_IMAGE_SERVERS', '{"default": "/iiif"}'
 @app.route("/api/v1/config")
 def get_site_config():
     """Return runtime site configuration for the frontend."""
+    from ..git_hosts import git_hosts
     sample_rate = os.environ.get('SENTRY_TRACES_SAMPLE_RATE', '1.0')
     try:
         sample_rate = float(sample_rate)
@@ -60,7 +61,9 @@ def get_site_config():
         "avatar_url_template": os.environ.get('QABOARD_AVATAR_URL'),
         "sentry_traces_sample_rate": sample_rate,
         # Fallback web URL for git links, when a project doesn't define project.url in qaboard.yaml
-        "git_web_url": git_server,
+        "git_web_url": git_hosts.default.url,
+        # The git hosts we know, to link to projects whose data doesn't say where they are hosted: [{type, url, name}]
+        "git_hosts": git_hosts.public(),
         # Optional link to a storage quota dashboard, with {user_name} and {project} placeholders
         "quota_url_template": os.environ.get('QABOARD_QUOTA_URL_TEMPLATE'),
         # Where users report issues

@@ -1,13 +1,10 @@
 """
 Here is the "write" part of the API, to signal more data is ready.
-It includes the actual webhooks sent e.g. by Gitlab, as well as
+It includes the actual webhooks sent by git hosts (GitLab, GitHub...), as well as
 API calls to update batches and outputs.
 """
-import os
 import sys
-import hmac
 import json
-import hashlib
 
 from flask import request, jsonify
 from sqlalchemy.orm.attributes import flag_modified
@@ -15,6 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from backend import app, db_session
 from ..models import CiCommit, Output
 from ..models.Project import update_project
+from ..git_hosts import git_hosts, committers, HOST_TYPES
 from .auth import login_required
 
 
@@ -45,55 +43,70 @@ def delete_commit(commit_id, project_id=None):
 
 
 
+# ==========================================
+# Push webhooks from git hosts
+# ==========================================
+# When git hosts call us on every push, we update our local copy of the repository,
+# the projects and their qaboard.yaml configuration, and learn about committers to show their avatars.
+#
+# Webhooks must prove they know their host's `webhook_secret` (default: QABOARD_WEBHOOK_SECRET),
+# e.g. GitLab's "Secret token" or GitHub's "Secret". See git_hosts/__init__.py
 
-# If set, webhooks must prove they know it: GitLab's "Secret token", GitHub's "Secret"
-webhook_secret = os.environ.get('QABOARD_WEBHOOK_SECRET', '')
+def receive_push(host_type):
+  host_class = HOST_TYPES[host_type]
+  body = request.get_data()
+  try:
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+      raise ValueError("expected a JSON object")
+  except ValueError as e:
+    return jsonify({"error": f"Invalid webhook payload: {e}"}), 400
 
-def is_gitlab_webhook_authentic():
-  if not webhook_secret:
-    return True
-  token = request.headers.get('X-Gitlab-Token', '')
-  return hmac.compare_digest(token.encode(), webhook_secret.encode())
+  # We check the secret of the host the repository is on
+  repo_url = host_class.repository_url(payload)
+  host = git_hosts.find(repo_url, host_class.type) if repo_url else None
+  if not host and host_class.type == 'gitlab':
+    # Like before git hosts were configurable: GitLab pushes are from GITLAB_HOST, maybe under another hostname
+    host = git_hosts.of_type('gitlab')
+  secret = host.webhook_secret if host else git_hosts.webhook_secret
+  if not host_class.is_webhook_authentic(request.headers, body, secret):
+    return jsonify({"error": "Invalid webhook secret"}), 401
 
-def is_github_webhook_authentic():
-  # https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
-  if not webhook_secret:
-    return True
-  signature = request.headers.get('X-Hub-Signature-256', '')
-  expected = 'sha256=' + hmac.new(webhook_secret.encode(), request.get_data(), hashlib.sha256).hexdigest()
-  return hmac.compare_digest(signature.encode(), expected.encode())
+  try:
+    push = host_class.parse_push(payload, request.headers)
+  except (KeyError, TypeError, ValueError, AttributeError, IndexError) as e:
+    return jsonify({"error": f"Invalid {host_type} push webhook: {e!r}"}), 400
+  if push is None:
+    return jsonify({"status": "ignored", "reason": "not a push event"})
+  if not host:
+    return jsonify({"error": f"Unknown git host for {repo_url}. Add it to QABOARD_GIT_HOSTS."}), 403
+  print(f"Push to {push['project'].get('path_with_namespace')} on {host}: {push['ref']} {push['checkout_sha']}", file=sys.stderr)
+  committers.remember(push['committers'], host_url=host.url)
+  push['project'] = host.describe(push['project'])
+  update_project(push, db_session)
+  return jsonify({"status": "OK"})
 
 
 @app.route('/webhook/gitlab', methods=['GET', 'POST'])
 def gitlab_webhook():
-  """If Gitlab calls this endpoint every push, we get avatars and update our local copy of the repo."""
-  # https://docs.gitlab.com/ce/user/project/integrations/webhooks.html
-  if not is_gitlab_webhook_authentic():
-    return jsonify({"error": "Invalid webhook secret token"}), 401
-  data = json.loads(request.data)
-  print(data, file=sys.stderr)
-  update_project(data, db_session)
-  return "{status:'OK'}"
+  # https://docs.gitlab.com/ee/user/project/integrations/webhooks.html
+  return receive_push('gitlab')
 
 
 @app.route('/webhook/github', methods=['GET', 'POST'])
 def github_webhook():
-  """If GitHub calls this endpoint every push, we normalize the payload and update our local copy of the repo."""
   # https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
-  if not is_github_webhook_authentic():
-    return jsonify({"error": "Invalid webhook signature"}), 401
-  data = json.loads(request.data)
-  print(data, file=sys.stderr)
-  normalized = {
-    'ref': data['ref'],
-    'checkout_sha': data.get('after'),
-    'project': {
-      'path_with_namespace': data['repository']['full_name'],
-      'web_url': data['repository']['html_url'],
-      'name': data['repository']['name'],
-      'hosting_type': 'github',
-    }
-  }
-  update_project(normalized, db_session)
-  return "{status:'OK'}"
+  return receive_push('github')
 
+
+@app.route('/webhook/gitea', methods=['GET', 'POST'])
+@app.route('/webhook/forgejo', methods=['GET', 'POST'])
+def gitea_webhook():
+  # https://docs.gitea.com/usage/webhooks, https://forgejo.org/docs/latest/user/webhooks/
+  return receive_push('gitea')
+
+
+@app.route('/webhook/bitbucket', methods=['GET', 'POST'])
+def bitbucket_webhook():
+  # https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/#Push
+  return receive_push('bitbucket')

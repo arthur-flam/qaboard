@@ -20,7 +20,7 @@ from qaboard.conventions import get_commit_dirs
 from qaboard.api import dir_to_url
 
 from backend.models import Base, Batch, Output
-from ..utils import get_avatar_url, get_github_avatar_url
+from ..git_hosts import committer_avatar_url, committers
 from ..fs_utils import rm_empty_parents, rmtree
 from ..storage import check_storage_path, check_inside, UnsafePathError
 from ..git_utils import find_branch
@@ -293,6 +293,9 @@ class CiCommit(Base):
           git_authored_datetime = git_commit.authored_datetime
           # commits belong to many branches, so this is a guess
           git_branch = find_branch(hexsha, project.repo)
+        if data and data.get("commit_committer_email"):
+          # For avatars. The CLI is not authenticated: it can't overwrite what webhooks told us.
+          committers.remember([{"name": git_committer_name, "email": data["commit_committer_email"]}], overwrite=False)
         ci_commit = CiCommit(
           hexsha,
           project=project,
@@ -340,12 +343,10 @@ class CiCommit(Base):
     return ci_commit
 
   def _get_avatar_url(self):
-    """Return the avatar URL using the appropriate hosting provider."""
-    hosting_type = self.project.data.get('git', {}).get('hosting_type', 'gitlab')
-    if hosting_type == 'github':
-      web_url = self.project.data.get('git', {}).get('web_url', '')
-      return get_github_avatar_url(self.committer_name, web_url)
-    return get_avatar_url(self.committer_name)
+    """The committer's avatar, from what we know about the git host and the committers. No network calls."""
+    project_data = self.project.data or {}
+    project_url = (project_data.get('qatools_config') or {}).get('project', {}).get('url')
+    return committer_avatar_url(self.committer_name, project_data.get('git'), project_url)
 
   def to_dict(self, db_session, with_aggregation=None, with_batches=None, with_outputs=False):
     repo_artifacts_url = self.repo_artifacts_url

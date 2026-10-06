@@ -5,6 +5,7 @@ import os
 import re
 import time
 import json
+import datetime
 from urllib.parse import urlparse
 
 from flask import request, jsonify, make_response
@@ -14,7 +15,9 @@ from requests.utils import quote
 from requests.auth import HTTPBasicAuth
 
 from backend import app
-from ..config import qaboard_data_dir, git_server
+from ..config import qaboard_data_dir
+from ..git_hosts import git_hosts
+from ..git_utils import check_project_path
 from .auth import login_required
 
 # We love our proxies
@@ -97,14 +100,25 @@ for hostname, auth in gitlab_credentials.items():
     json.dump(gitlab_cookies, f)
 
 
-# We only send GITLAB_ACCESS_TOKEN to the gitlab servers we know about
-trusted_gitlab_hosts = {urlparse(git_server).hostname, *[h for h in os.environ.get('QABOARD_GITLAB_HOSTS', '').split(',') if h]}
+class IntegrationError(Exception):
+  def __init__(self, message, status=500):
+    super().__init__(message)
+    self.status = status
 
-def gitlab_api_url(gitlab_host):
-  parsed = urlparse(gitlab_host)
-  if parsed.scheme not in ('http', 'https') or parsed.hostname not in trusted_gitlab_hosts:
-    raise ValueError(f"Untrusted gitlab host: {gitlab_host}. Set QABOARD_GITLAB_HOSTS to allow it.")
-  return f"{gitlab_host.rstrip('/')}/api/v4"
+def api_host(url, type):
+  """
+  The configured git host at `url`, of this type, to call its API.
+  We only send tokens to the hosts they belong to, never to a URL we're given.
+  """
+  host = git_hosts.find(url, type) if url else git_hosts.of_type(type)
+  if not host:
+    raise IntegrationError(f"Unknown {type} host: {url}. Add it to QABOARD_GIT_HOSTS.", 403)
+  if not host.token:
+    raise IntegrationError(f"Missing a token for {host.url}: set it in QABOARD_GIT_HOSTS (or GITLAB_ACCESS_TOKEN / GITHUB_ACCESS_TOKEN)", 500)
+  return host
+
+def integration_error(e):
+  return jsonify({"error": str(e)}), getattr(e, 'status', 500)
 
 
 jenkins_credentials = json.loads(os.environ.get('JENKINS_AUTH', '{}'))
@@ -125,9 +139,13 @@ def jenkins_hostname_credentials(build_url):
 
 # TODO: get password for gitlab-adm to avoid any auth and password changes
 # TODO: if expired, renew the token...
-@app.route("/api/v1/gitlab/proxy")
+@app.route("/api/v1/git/proxy")
+@app.route("/api/v1/gitlab/proxy") # backward compatibility
 @login_required
 def proxy_gitlab():
+  """
+  Proxies images (avatars, CI badges...), with a session on GitLab hosts that have GITLAB_AUTH credentials.
+  """
   url = request.args['url']
   hostname = urlparse(url).hostname
   if gitlab_cookies.get(hostname):
@@ -177,72 +195,58 @@ def proxy_webook():
   return resp
 
 
+# ==========================================
+# GitLab CI: manual jobs
+# ==========================================
+# qaboard.yaml: integrations: [{text: "My job", gitlabCI: {job_name: "my-job"}}]
+# The web app sends {gitlab_host, project_id, commit_id, job_name, job_id?}
+
+def gitlab_pipeline_jobs(host, project_id, commit_id):
+  """The jobs in the latest pipeline of a commit."""
+  r = host.api('GET', f"/projects/{project_id}/repository/commits/{quote(str(commit_id), safe='')}")
+  r.raise_for_status()
+  pipeline = r.json().get('last_pipeline')
+  if not pipeline:
+    raise IntegrationError(f"No pipeline for {commit_id}", 404)
+  # https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
+  jobs, page = [], 1
+  while True:
+    r = host.api('GET', f"/projects/{project_id}/pipelines/{pipeline['id']}/jobs", params={"page": page, "per_page": 50})
+    r.raise_for_status()
+    jobs.extend(r.json())
+    if page >= int(r.headers.get('X-Total-Pages') or 0):
+      return jobs
+    page += 1
+
+def gitlab_job_named(host, project_id, commit_id, job_name):
+  jobs = gitlab_pipeline_jobs(host, project_id, commit_id)
+  matching_jobs = [j for j in jobs if j['name'] == job_name]
+  if not matching_jobs:
+    raise IntegrationError(f"Only these jobs are available: {[j['name'] for j in jobs]}", 404)
+  # the latest, if the job was retried
+  return max(matching_jobs, key=lambda j: j['id'])
+
+
 @app.route("/api/v1/gitlab/job", methods=['POST'])
 @app.route("/api/v1/gitlab/job/", methods=['POST'])
 def gitlab_job():
   """
   Get information about a GitlabCI manual job.
   """
-  if "GITLAB_ACCESS_TOKEN" not in os.environ:
-    return jsonify({"error": f'Error: Missing GITLAB_ACCESS_TOKEN in environment variables'}), 500
-
   data = request.get_json()
   try:
-    gitlab_api = gitlab_api_url(data['gitlab_host'])
-  except ValueError as e:
-    return jsonify({"error": str(e)}), 403
-  gitlab_headers = {
-    'Private-Token': os.environ['GITLAB_ACCESS_TOKEN'],
-  }
-  project_id = quote(data['project_id'], safe='')
-  if data.get('job_id'):
-    job_id = quote(str(data['job_id']), safe='')
-  else:
-    # Get the latest pipeline for this commit
-    url = f"{gitlab_api}/projects/{project_id}/repository/commits/{quote(str(data['commit_id']), safe='')}"
-    r = requests.get(url, headers=gitlab_headers)
-    pipeline_id = r.json()['last_pipeline']['id']
-
-    # Get the list of manual jobs in that pipeline
-    # https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
-    jobs = []
-    page = 1
-    total_pages = None
-    def get_jobs(page, per_page):
-      r = requests.get(
-        f"{gitlab_api}/projects/{project_id}/pipelines/{pipeline_id}/jobs",
-        params={
-          "page": page,
-          "per_page": per_page,
-        },
-        headers=gitlab_headers,
-      )
-      total_pages = int(r.headers['X-Total-Pages']) if r.headers.get('X-Total-Pages') else 0
-      return r.json(), total_pages
-    while total_pages is None or page <= total_pages:
-      jobs_page, total_pages = get_jobs(page=page, per_page=50)
-      jobs.extend(jobs_page)
-      page += 1
-
-    try:
-        matching_jobs = [j for j in jobs if data['job_name'] == j['name']]
-        for j in matching_jobs:
-          print(j['name'], j['id'], j["created_at"], j['status'])
-    except Exception as e:
-        return jsonify({"error": f'Only these jobs are available: {jobs}'}), 404
-    if not matching_jobs:
-        return jsonify({"error": f'Only these jobs are available: {jobs}'}), 404
-    # FIXME: sort by id
-    job_id = matching_jobs[-1]['id']
-
-  url = f"{gitlab_api}/projects/{project_id}/jobs/{job_id}"
-  try:
-    r = requests.get(url, headers=gitlab_headers)
-    print(r.json())
+    host = api_host(data.get('gitlab_host'), 'gitlab')
+    project_id = quote(data['project_id'], safe='')
+    if data.get('job_id'):
+      job_id = data['job_id']
+    else:
+      job_id = gitlab_job_named(host, project_id, data['commit_id'], data['job_name'])['id']
+    r = host.api('GET', f"/projects/{project_id}/jobs/{quote(str(job_id), safe='')}")
     return r.content, r.status_code
+  except IntegrationError as e:
+    return integration_error(e)
   except Exception as e:
-      return jsonify({"error": f'Error: {e}'}), 500
-
+    return jsonify({"error": f'Error: {e}'}), 500
 
 
 @app.route("/api/v1/gitlab/job/play", methods=['POST'])
@@ -252,67 +256,121 @@ def gitlab_play_manual_job():
   """
   Trigger a GitlabCI manual job.
   """
-  if "GITLAB_ACCESS_TOKEN" not in os.environ:
-    return jsonify({"error": f'Error: Missing GITLAB_ACCESS_TOKEN in environment variables'}), 500
   data = request.get_json()
-
   try:
-    gitlab_api = gitlab_api_url(data['gitlab_host'])
-  except ValueError as e:
-    return jsonify({"error": str(e)}), 403
-  gitlab_headers = {
-    # FIXME: store the credentials in a "secret store", global per user/project 
-    'Private-Token': os.environ['GITLAB_ACCESS_TOKEN'],
-  }
-  project_id = quote(data['project_id'], safe='')
-
-  # Get the latest pipeline for this commit
-  url = f"{gitlab_api}/projects/{project_id}/repository/commits/{quote(str(data['commit_id']), safe='')}"
-  r = requests.get(url, headers=gitlab_headers)
-  pipeline_id = r.json()['last_pipeline']['id']
-
-  # Get the list of manual jobs in that pipeline
-  # https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
-  jobs = []
-  page = 1
-  total_pages = None
-  def get_jobs(page, per_page):
-    r = requests.get(
-      f"{gitlab_api}/projects/{project_id}/pipelines/{pipeline_id}/jobs",
-      params={
-        "page": page,
-        "per_page": per_page,
-      },
-      headers=gitlab_headers,
-    )
-    total_pages = int(r.headers['X-Total-Pages']) if r.headers.get('X-Total-Pages') else 0
-    return r.json(), total_pages
-  while total_pages is None or page <= total_pages:
-    jobs_page, total_pages = get_jobs(page=page, per_page=50)
-    jobs.extend(jobs_page)
-    page += 1
-
-
-  try:
-      matching_jobs = [j for j in jobs if data['job_name'] == j['name']]
-      assert matching_jobs
-      for j in matching_jobs:
-        print(j['name'], j['id'], j["created_at"], j['status'])
-  except Exception as e:
-      return jsonify({"error": f'Only these jobs are available: {jobs}'}), 404
-
-  # Play the job
-  # https://docs.gitlab.com/ee/api/jobs.html
-  url = f"{gitlab_api}/projects/{project_id}/jobs/{matching_jobs[0]['id']}/play"
-  try:
-    r = requests.post(url, headers=gitlab_headers)
-    print(r.json())
+    host = api_host(data.get('gitlab_host'), 'gitlab')
+    project_id = quote(data['project_id'], safe='')
+    job = gitlab_job_named(host, project_id, data['commit_id'], data['job_name'])
+    # https://docs.gitlab.com/ee/api/jobs.html#run-a-job
+    r = host.api('POST', f"/projects/{project_id}/jobs/{job['id']}/play")
     return r.content, r.status_code
+  except IntegrationError as e:
+    return integration_error(e)
   except Exception as e:
-      print(url)
-      print(e)
-      return jsonify({"error": f"ERROR: when posting to {url}: {e}"}), 500
+    print(e)
+    return jsonify({"error": f"ERROR: when playing the job: {e}"}), 500
 
+
+
+# ==========================================
+# GitHub Actions: workflow runs
+# ==========================================
+# qaboard.yaml: integrations: [{text: "Benchmark", githubActions: {workflow: "benchmark.yml", inputs: {...}}}]
+# The web app sends {host, repo, commit_id, workflow, run_id?} to get the status, and {host, repo, workflow, ref, inputs} to start it.
+
+def github_workflow(data):
+  host = api_host(data.get('host'), 'github')
+  repo = data['repo']
+  check_project_path(repo) # e.g. org/repo
+  return host, repo, quote(str(data['workflow']), safe='')
+
+def workflow_run_status(run):
+  """A GitHub Actions run, with a status like GitLab's (that the web app knows)"""
+  if not run:
+    return {"status": "manual"} # no run yet
+  if run['status'] == 'completed':
+    status = {
+      'success': 'success',
+      'cancelled': 'canceled',
+      'skipped': 'skipped',
+      'neutral': 'skipped',
+      'action_required': 'manual',
+    }.get(run.get('conclusion'), 'failed') # failure, timed_out, startup_failure, stale...
+  else:
+    status = 'running' if run['status'] == 'in_progress' else 'pending' # queued, waiting, requested...
+  return {
+    "id": run['id'],
+    "status": status,
+    "web_url": run.get('html_url'),
+    "name": run.get('display_title') or run.get('name'),
+    "conclusion": run.get('conclusion'),
+    "created_at": run.get('created_at'),
+    "updated_at": run.get('updated_at'),
+  }
+
+
+@app.route("/api/v1/github/workflow", methods=['POST'])
+@app.route("/api/v1/github/workflow/", methods=['POST'])
+def github_workflow_run():
+  """
+  The status of the latest run of a GitHub Actions workflow for a commit.
+  """
+  data = request.get_json()
+  try:
+    host, repo, workflow = github_workflow(data)
+    if data.get('run_id'):
+      r = host.api('GET', f"/repos/{repo}/actions/runs/{quote(str(data['run_id']), safe='')}")
+      r.raise_for_status()
+      run = r.json()
+    else:
+      # https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow
+      r = host.api('GET', f"/repos/{repo}/actions/workflows/{workflow}/runs", params={"head_sha": data['commit_id'], "per_page": 1})
+      r.raise_for_status()
+      runs = r.json()['workflow_runs']
+      run = runs[0] if runs else None
+    return jsonify(workflow_run_status(run))
+  except IntegrationError as e:
+    return integration_error(e)
+  except Exception as e:
+    return jsonify({"error": f'Error: {e}'}), 500
+
+
+@app.route("/api/v1/github/workflow/dispatch", methods=['POST'])
+@app.route("/api/v1/github/workflow/dispatch/", methods=['POST'])
+@login_required
+def github_workflow_dispatch():
+  """
+  Starts a GitHub Actions workflow (it needs a `workflow_dispatch` trigger) on a branch or tag.
+  """
+  data = request.get_json()
+  try:
+    host, repo, workflow = github_workflow(data)
+    started_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=10)
+    # https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event
+    r = host.api('POST', f"/repos/{repo}/actions/workflows/{workflow}/dispatches", json={
+      "ref": data['ref'],
+      "inputs": data.get('inputs') or {},
+    })
+    if not r.ok:
+      return r.content, r.status_code
+    # GitHub doesn't tell us which run it started: we look for it for a few seconds
+    for _ in range(8):
+      time.sleep(1.5)
+      r = host.api('GET', f"/repos/{repo}/actions/workflows/{workflow}/runs", params={
+        "event": "workflow_dispatch",
+        "branch": data['ref'],
+        "created": f">={started_at:%Y-%m-%dT%H:%M:%SZ}",
+        "per_page": 1,
+      })
+      runs = r.json().get('workflow_runs') if r.ok else None
+      if runs:
+        return jsonify(workflow_run_status(runs[0]))
+    return jsonify({"status": "pending"})
+  except IntegrationError as e:
+    return integration_error(e)
+  except Exception as e:
+    print(e)
+    return jsonify({"error": f"ERROR: when starting the workflow: {e}"}), 500
 
 
 @app.route("/api/v1/jenkins/build", methods=['POST'])
