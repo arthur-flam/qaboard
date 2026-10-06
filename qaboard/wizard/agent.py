@@ -140,7 +140,7 @@ def build_model(llm: LLM):
   from pydantic_ai.providers.openai import OpenAIProvider
   verify: Any = llm.verify
   if isinstance(verify, str):
-    verify = ssl.create_default_context(**{'capath' if os.path.isdir(verify) else 'cafile': verify})
+    verify = ssl.create_default_context(capath=verify) if os.path.isdir(verify) else ssl.create_default_context(cafile=verify)
   client = AsyncOpenAI(
     base_url=llm.base_url,
     # Local servers (ollama, vLLM...) often don't need a key, but the client wants one
