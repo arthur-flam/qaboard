@@ -120,9 +120,13 @@ class Output(Base):
 
   @property
   def output_dir(self):
+    return self.get_output_dir()
+
+  def get_output_dir(self, batch_dir=None):
+    """`batch_dir`: the batch's, if you know it already"""
     if self.output_dir_override is not None:
       return Path(self.output_dir_override)
-    return self.batch.batch_dir / self.output_folder
+    return (batch_dir or self.batch.batch_dir) / self.output_folder
 
   @property
   def output_dir_url(self):
@@ -136,7 +140,8 @@ class Output(Base):
            f"config='{self.configuration}' "
            f"filename='{self.test_input.filename}' /]")
 
-  def to_dict(self):
+  def to_dict(self, batch_dir=None):
+    """`batch_dir`: the batch's, when serializing many of its outputs"""
     cols = [
      'id',
      'output_type',
@@ -154,7 +159,7 @@ class Output(Base):
     return {
         **as_dict,
         'created_date': self.created_date.isoformat(),
-        'output_dir_url': self.output_dir_url,
+        'output_dir_url': dir_to_url(self.get_output_dir(batch_dir)),
         'test_input_database': str(self.test_input.database),
         'test_input_path': str(self.test_input.path),
         'test_input_metadata': self.test_input.data['metadata'] if (self.test_input.data and 'metadata' in self.test_input.data) else {},
