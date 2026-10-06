@@ -104,6 +104,7 @@ QA-Board can connect to external authentifications systems (LDAP, SAML). If need
 | `SECRET_KEY`           | _generated_ | Signs the sessions. If unset, a key is generated once and saved in the backend's data volume. With several hosts/kubernetes, set the same value everywhere. |
 | `GITLAB_HOST`          | *https://gitlab.com* | e.g. *https://gitlab.com* or *http://my-gitlab-srv/*. Also used for git links in the UI |
 | `QABOARD_GITLAB_HOSTS` | _none_  | Comma-separated extra gitlab hostnames the backend may send `GITLAB_ACCESS_TOKEN` to |
+| `QABOARD_PROXY_HOSTS` | _none_  | Comma-separated hostnames the web app may load avatars and badges from through the backend, besides your gitlab hosts and gravatar. Add the hosts of your projects' `project.avatar_url` and `integrations[].src` images |
 | `GITHUB_ACCESS_TOKEN`  | _none_  | Token used to clone private GitHub repositories and look up committers' avatars (see [GitHub integration](project-init#optional-integration-with-github)) |
 | `QABOARD_GITHUB_HOSTS` | _none_  | Comma-separated GitHub Enterprise hostnames the backend may clone from and send `GITHUB_ACCESS_TOKEN` to, besides github.com |
 | `QABOARD_STORAGE_ROOTS` | */mnt/qaboard* | Folders where your projects store outputs and artifacts, separated by `:` (e.g. `/mnt/qaboard:/mnt/datasets`). The backend refuses results stored elsewhere, and never writes, deletes or runs code outside these folders |
