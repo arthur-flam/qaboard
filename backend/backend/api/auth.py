@@ -69,8 +69,6 @@ elif login_type == "SAML":
 def create_token():
   if not current_user.is_authenticated:
     return f"Not logged-in", 403
-  # user = User.query.filter_by(user_name='sircdevops').one()
-  # login_user(user, remember=False, duration=timedelta(days=180))
   token = Token(current_user)
   db_session.add(token)
   db_session.commit()
@@ -95,7 +93,8 @@ def signup():
       "data": {},
     })
   except Exception as e:
-    print(f"[signup] Error when creating new user with {request.form}: {e}")
+    # don't log request.form: it has the password
+    print(f"[signup] Error when creating new user @{request.form.get('user_name')} <{request.form.get('email')}>: {e}")
     return f"{e}", 403
   return jsonify({
     "id": user.id,
@@ -322,7 +321,6 @@ def is_authorized_user(user_info: dict, project=None):
           for inner_key, inner_value in value.items():
             if is_authorized: break
             if inner_key in perms_data[key].keys():
-              print([v for v in inner_value if v in perms_data[key][inner_key]])
               is_authorized = any([v for v in inner_value if v in perms_data[key][inner_key]])
   return is_authorized
 
@@ -463,7 +461,6 @@ def saml_auth():
 
         auth.process_response(request_id=request_id)
         errors = auth.get_errors()
-        not_auth_warn = not auth.is_authenticated()
         if len(errors) == 0:
             if 'AuthNRequestID' in session:
                 del session['AuthNRequestID']
@@ -525,10 +522,6 @@ def saml_auth():
     print(" ".join(errors))
     return " ".join(errors), 403
 
-    # self_url = OneLogin_Saml2_Utils.get_self_url(req)
-    # if 'RelayState' in request.form and self_url != request.form['RelayState']:
-    #     return redirect(auth.redirect_to(request.form['RelayState']))
-
 
 def init_saml_auth(req):
     auth = OneLogin_Saml2_Auth(req, custom_base_path=app.config['SAML_PATH'])
@@ -546,14 +539,3 @@ def prepare_flask_request(request):
         # 'lowercase_urlencoding': True,
         'post_data': request.form.copy()
     }
-    # url_data = urlparse(request.url)
-    # return {
-    #     'https': 'on' if request.scheme == 'https' else 'off',
-    #     'http_host': request.host,
-    #     'server_port': url_data.port,
-    #     'script_name': request.path,
-    #     'get_data': request.args.copy(),
-    #     # Uncomment if using ADFS as IdP, https://github.com/onelogin/python-saml/pull/144
-    #     # 'lowercase_urlencoding': True,
-    #     'post_data': request.form.copy()
-    # }

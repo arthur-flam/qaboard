@@ -4,17 +4,13 @@ docker compose -f docker-compose.yml -f development.yml -f sirc.yml run --rm --u
 """
 import sys
 import time
-import shutil
-import traceback
 
 import click
 
 from backend.models import Output
-from backend.database import db_session, Session
+from backend.database import db_session
 
-from migration_utils import get_username
 from backend.fs_utils import as_user
-from migration_utils import rm_files_not_listed_in_manifests
 
 dryrun = '--dry-run' in sys.argv
 # Progress will be printed every batch/100

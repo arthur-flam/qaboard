@@ -1,5 +1,5 @@
 import os
-from .database import db_session, Session
+from .database import db_session
 
 # Configure the flask application
 from flask import Flask
@@ -65,7 +65,7 @@ repos = Repos(git_server, qaboard_data_git_dir)
 
 # Some magic to use sqlalchemy safely with Flask
 # http://flask.pocoo.org/docs/0.12/patterns/sqlalchemy/
-from backend.database import db_session, engine, Base
+from backend.database import engine, Base
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db_session.remove()
@@ -83,7 +83,7 @@ import backend.api.milestones
 import backend.api.auth
 import backend.api.tasks
 
-# Enable cross-origin requests to avoid development headcaches  
+# Enable cross-origin requests to avoid development headaches
 # cors = CORS(app, resources={r"/api/*": {"origins": "*"}})
 CORS(app)
 
@@ -120,6 +120,6 @@ def warm_cache():
 try:
   import uwsgi
   uwsgi.post_fork_hook = warm_cache
-except:
+except ImportError:
   pass
 

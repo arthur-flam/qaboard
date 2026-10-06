@@ -77,12 +77,11 @@ import requests
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import text
 
-from backend.models import Project, CiCommit, Batch, Output
-from backend.database import db_session, Session
+from backend.models import CiCommit, Batch, Output
+from backend.database import db_session
 from backend.fs_utils import as_user, rm_empty_parents
 
 from migration_utils import get_username
-from migration_utils import rm_files_not_listed_in_manifests
 
 # TODO
 # - [TODO CHECK tmux alginfra1] remove old deleted stuff with delete_remaining_data_from_deleted_runs.py

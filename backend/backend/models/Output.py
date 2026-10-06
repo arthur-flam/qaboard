@@ -12,10 +12,10 @@ from pathlib import Path
 from sqlalchemy import Column, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
-from sqlalchemy import text, and_, Integer, String, Float, Boolean, DateTime, JSON
+from sqlalchemy import text, and_, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 
-from qaboard.conventions import slugify, slugify_hash, make_hash, serialize_config
+from qaboard.conventions import slugify_hash, serialize_config
 from qaboard.utils import save_outputs_manifest
 from qaboard.api import dir_to_url
 
@@ -82,7 +82,7 @@ class Output(Base):
 
   #### How good we ran
   is_pending = Column(Boolean(), default=False)
-  is_running = Column(Boolean(), default=False) # a running ouput is still pending...
+  is_running = Column(Boolean(), default=False) # a running output is still pending...
   is_failed = Column(Boolean(), default=False)
 
   metrics = Column(JSON(), nullable=False, default=dict, server_default='{}')
@@ -228,7 +228,7 @@ class Output(Base):
     job_options = self.data.get("job_options", {}) or {}
     job_options_cli = []
     if not job_options:
-      # for backward compatibility, it's a good defaut at SIRC
+      # for backward compatibility, it's a good default at SIRC
       job_options_cli = ["--lsf-max-memory", "20000"]
     elif job_options.get('type') == "lsf":
       # TODO: support other runners... maybe create an ad-hoc functions in their classes...

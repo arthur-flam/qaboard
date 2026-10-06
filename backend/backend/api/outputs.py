@@ -1,12 +1,10 @@
-import json
 import datetime
 
-from flask import request, jsonify, redirect, make_response, g
+from flask import request, jsonify, make_response, g
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm.exc import NoResultFound
 
 from qaboard.conventions import deserialize_config
-from qaboard.api import dir_to_url
 
 from backend import app, db_session
 from ..models import TestInput, CiCommit, Output
@@ -107,19 +105,11 @@ def get_output_manifest(output_id):
       return jsonify({"error": f"{e}"}), 400
     return jsonify(manifest)
   else:
-    # FIXME: in dev it will return http://backend/ and break the frontend who cannot connect
-    #        in 2021 it seems the spec allow returning relative urls...
-    #        Maybe we should return the manifest content instead...
-    # return redirect(dir_to_url(manifest_path), code=302)
+    # We return the manifest's content instead of redirecting to dir_to_url(manifest_path):
+    # in dev, redirects pointed to http://backend/, which the frontend cannot reach.
     response = make_response(manifest_path.read_text())
     response.headers['Content-Type'] = 'application/json'
     return response
-
-
-
-
-
-
 
 
 @app.route('/api/v1/output', methods=['POST'])
@@ -207,8 +197,6 @@ def new_output_webhook():
   if not output.data:
     output.data = {}
   if "data" in data: # e.g. storage, job_options, batch name
-    if not output.data:
-      output.data = {}
     output.data.update(data['data'])
     flag_modified(output, "data")
   output.data["user"] = data['user']
