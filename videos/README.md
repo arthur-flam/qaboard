@@ -26,7 +26,8 @@ in a container or a VM.
 ## How it works
 - **storyboard.yaml**: the scenes, in order, each with its narration lines (the captions, and later the voice).
   - `title`: a title card. `chat`: a team chat where messages appear. `terminal`: a recorded terminal session.
-    `browser`: the web app in a browser window, driven by actions (click, scroll, zoom...).
+    `browser`: the web app in a browser window, driven by actions (click, scroll, zoom...), see the top of
+    [lib/render.py](lib/render.py). `zoom: 1.25` renders the app larger, for legibility.
   - `{name}` placeholders come from `vars:`, and from values captured while recording (e.g. commit hashes, for URLs).
 - **lib/terminal.py** runs terminal scenes for real in a pseudo-terminal, types like a person, and saves asciicasts
   (`.cache/<chapter>/casts`). Long waits are shortened. `mark:` steps name moments the narration can sync to.
@@ -45,7 +46,8 @@ voice:
   model_id: eleven_multilingual_v2
 ```
 and `ELEVENLABS_API_KEY` in the environment (or `QA_VIDEO_VOICE=none` to render without). Each line is synthesized
-once (cached in `.cache/voice`), the scenes stretch to the voice's pace, captions follow, and the audio is mixed in.
+once (cached in `.cache/voice`), lines follow each other at the voice's pace (or wait for their `at:` moment), a scene
+lasts until its last line is said, captions follow the voice, and the audio is mixed in.
 Another provider is a class with `audio(line)` and `duration(line)` in [lib/voice.py](lib/voice.py).
 
 ## Writing a new chapter
