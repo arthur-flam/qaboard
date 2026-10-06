@@ -1,5 +1,3 @@
-import json
-
 from flask import request, jsonify, g
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -70,7 +68,7 @@ def update_batch():
     batch.data["commands"] = {**batch.data.get('commands', {}), **command}
     flag_modified(batch, "data")
 
-  # It's a `qa optimzize` experiment
+  # It's a `qa optimize` experiment
   if batch_data.get('optimization'):
     if batch_data.get('is_best_iter'):
       batch.data['best_iter'] = batch_data['iteration']
@@ -158,8 +156,8 @@ def rename_batch():
   try:
     assert all([b.label != data['label'] for b in batch.ci_commit.batches])
   except:
-    return '{"error":"already exists {e}"}', 403
-  status = batch.rename(label=data['label'], db_session=db_session)
+    return '{"error":"already exists"}', 403
+  batch.rename(label=data['label'], db_session=db_session)
   return '{"status": "OK"}'
 
 # Check move: existing, delete if empty, filter

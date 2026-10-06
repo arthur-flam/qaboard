@@ -106,7 +106,7 @@ const BatchCommand = ({ command }) => {
 /**
  * The logs of all the runs in a batch, and of the commands that started it.
  */
-export const BatchLogs = ({ batch, project, commit, dispatch }) => {
+export const BatchLogs = ({ batch, project, commit }) => {
   const [filter, setFilter] = useState('all')
   const [expanded, setExpanded] = useState(() => new Set())
   const [limit, setLimit] = useState(PAGE_SIZE)
@@ -183,7 +183,6 @@ export const BatchLogs = ({ batch, project, commit, dispatch }) => {
             output={output}
             project={project}
             commit={commit}
-            dispatch={dispatch}
             expanded={expanded.has(output.id)}
             onToggle={toggle}
           />)}
@@ -205,7 +204,6 @@ export const BatchLogs = ({ batch, project, commit, dispatch }) => {
         output={batch_output}
         project={project}
         commit={commit}
-        dispatch={dispatch}
         title="Batch logs"
         expanded={expanded.has('batch')}
         onToggle={toggle}

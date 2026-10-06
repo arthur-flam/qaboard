@@ -12,10 +12,10 @@ from pathlib import Path
 from sqlalchemy import Column, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
-from sqlalchemy import text, and_, Integer, String, Float, Boolean, DateTime, JSON
+from sqlalchemy import text, and_, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 
-from qaboard.conventions import slugify, slugify_hash, make_hash, serialize_config
+from qaboard.conventions import slugify_hash, serialize_config
 from qaboard.utils import save_outputs_manifest
 from qaboard.api import dir_to_url
 
@@ -82,7 +82,7 @@ class Output(Base):
 
   #### How good we ran
   is_pending = Column(Boolean(), default=False)
-  is_running = Column(Boolean(), default=False) # a running ouput is still pending...
+  is_running = Column(Boolean(), default=False) # a running output is still pending...
   is_failed = Column(Boolean(), default=False)
 
   metrics = Column(JSON(), nullable=False, default=dict, server_default='{}')
@@ -120,9 +120,13 @@ class Output(Base):
 
   @property
   def output_dir(self):
+    return self.get_output_dir()
+
+  def get_output_dir(self, batch_dir=None):
+    """`batch_dir`: the batch's, if you know it already"""
     if self.output_dir_override is not None:
       return Path(self.output_dir_override)
-    return self.batch.batch_dir / self.output_folder
+    return (batch_dir or self.batch.batch_dir) / self.output_folder
 
   @property
   def output_dir_url(self):
@@ -136,7 +140,8 @@ class Output(Base):
            f"config='{self.configuration}' "
            f"filename='{self.test_input.filename}' /]")
 
-  def to_dict(self):
+  def to_dict(self, batch_dir=None):
+    """`batch_dir`: the batch's, when serializing many of its outputs"""
     cols = [
      'id',
      'output_type',
@@ -154,7 +159,7 @@ class Output(Base):
     return {
         **as_dict,
         'created_date': self.created_date.isoformat(),
-        'output_dir_url': self.output_dir_url,
+        'output_dir_url': dir_to_url(self.get_output_dir(batch_dir)),
         'test_input_database': str(self.test_input.database),
         'test_input_path': str(self.test_input.path),
         'test_input_metadata': self.test_input.data['metadata'] if (self.test_input.data and 'metadata' in self.test_input.data) else {},
@@ -228,7 +233,7 @@ class Output(Base):
     job_options = self.data.get("job_options", {}) or {}
     job_options_cli = []
     if not job_options:
-      # for backward compatibility, it's a good defaut at SIRC
+      # for backward compatibility, it's a good default at SIRC
       job_options_cli = ["--lsf-max-memory", "20000"]
     elif job_options.get('type') == "lsf":
       # TODO: support other runners... maybe create an ad-hoc functions in their classes...

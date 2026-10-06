@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
 import { visualizer } from 'rollup-plugin-visualizer'
 
 // Where the development server relays API/data requests. The variable names predate Vite, we keep them.
@@ -16,9 +17,19 @@ const proxy = {
   '^/docs/': { target: QABOARD_SERVER_URL, changeOrigin: true },
 }
 
+const compiler_logger = {
+  logEvent(filename, event) {
+    if (event.kind === 'CompileError' || event.kind === 'CompileSkip')
+      console.log(`[react-compiler] ${event.kind} ${filename}:${event.fnLoc?.start?.line ?? ''} ${event.detail?.reason ?? event.reason ?? ''}`)
+  },
+}
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
+    // Automatic memoization of components and hooks https://react.dev/learn/react-compiler
+    // Components that break the Rules of React are skipped: `REACT_COMPILER_LOG=1 npm run build` lists them.
+    babel({ presets: [reactCompilerPreset({ logger: process.env.REACT_COMPILER_LOG ? compiler_logger : undefined })] }),
     // npm run analyze => build/stats.html
     mode === 'analyze' && visualizer({ filename: 'build/stats.html', gzipSize: true }),
   ],

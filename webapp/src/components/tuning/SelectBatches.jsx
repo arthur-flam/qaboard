@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import {
   Colors,
   MenuItem,
@@ -13,92 +13,79 @@ import {
 import { pretty_label } from '../../utils'
 import { has_milestones } from '../milestones'
 
+// Prepare batch data for Select component
+const prepareBatchData = ({ commit, project, project_data }) => {
+  return Object.entries(commit?.batches ?? {})
+    .sort( ([label1], [label2]) => {
+      if (label1 === 'default')
+        return -1;
+      if (label2 === 'default')
+        return 1;
+      return label1.localeCompare(label2);
+    })
+    .map(([label, batchData]) => {
+      const outputs = Object.values(batchData.outputs ?? {}).filter(o => o.output_type !== "optim_iteration")
+      const title = pretty_label(batchData)
+      
+      // Check if this batch is a milestone
+      const batch_obj = { label };
+      const is_milestone = has_milestones({ commit, project, project_data, batch: batch_obj });
+      const milestone_prefix = is_milestone ? "⭐ " : "";
+      
+      const nb_success = outputs.filter(o => !o.is_pending && !o.is_failed).length;
+      const nb_failed = outputs.filter(o => o.is_failed).length;
+      const nb_running = outputs.filter(o => o.is_running).length;
+      
+      const status = `${nb_success}/${outputs.length} ✅`;
+      const failures = nb_failed > 0 ? `${nb_failed}❌` : "";
+      const running = nb_running > 0 ? `${nb_running}🏃` : "";
+      const optimization = batchData.data?.optimization ? `${batchData.data?.iteration} 🔁` : "";
+      
+      // Extract username from commands or batch data
+      const commands = Object.values(batchData.data?.commands || {});
+      const username = commands.length > 0 ? commands[0]?.user : null;
+      
+      // Create searchable text for filtering
+      const searchText = [
+        title.toLowerCase(),
+        label.toLowerCase(),
+        username?.toLowerCase() || '',
+        nb_failed > 0 ? 'failed fail error' : '',
+        nb_running > 0 ? 'running' : '',
+        nb_success > 0 ? 'success successful' : '',
+        batchData.data?.optimization ? 'optimization tuning' : '',
+        batchData.data?.type === 'local' ? 'local' : 'ci',
+      ].join(' ');
+
+      return {
+        label,
+        title,
+        title_with_milestone: milestone_prefix + title,
+        status,
+        failures,
+        running,
+        optimization,
+        username,
+        searchText,
+        nb_success,
+        nb_failed,
+        nb_running,
+        total: outputs.length,
+        batchData,
+        is_milestone
+      };
+    });
+};
+
+
 const SelectBatchesNav = ({ commit, onChange, batch, project, project_data }) => {
-  // Prepare batch data for Select component
-  const prepareBatchData = (batches) => {
-    return Object.entries(batches)
-      .sort( ([label1, _1], [label2, _2]) => {
-        if (label1 === 'default')
-          return -1;
-        if (label2 === 'default')
-          return 1;
-        return label1.localeCompare(label2);
-      })
-      .map(([label, batchData]) => {
-        let outputs = Object.values(batchData.outputs || {})
-        outputs = outputs.filter(o => o.output_type !== "optim_iteration")
-        const title = pretty_label(batchData)
-        
-        // Check if this batch is a milestone
-        const batch_obj = { label };
-        const is_milestone = has_milestones({ commit, project, project_data, batch: batch_obj });
-        const milestone_prefix = is_milestone ? "⭐ " : "";
-        
-        let nb_success = outputs.filter(o => !o.is_pending && !o.is_failed).length;
-        let nb_failed = outputs.filter(o => o.is_failed).length;
-        let nb_running = outputs.filter(o => o.is_running).length;
-        
-        const status = `${nb_success}/${outputs.length} ✅`;
-        const failures = nb_failed > 0 ? `${nb_failed}❌` : "";
-        const running = nb_running > 0 ? `${nb_running}🏃` : "";
-        const optimization = batchData.data.optimization ? `${batchData.data.iteration} 🔁` : "";
-        
-        // Extract username from commands or batch data
-        const commands = Object.values(batchData.data?.commands || {});
-        const username = commands.length > 0 ? commands[0]?.user : null;
-        
-        // Create searchable text for filtering
-        const searchText = [
-          title.toLowerCase(),
-          label.toLowerCase(),
-          username?.toLowerCase() || '',
-          nb_failed > 0 ? 'failed fail error' : '',
-          nb_running > 0 ? 'running' : '',
-          nb_success > 0 ? 'success successful' : '',
-          batchData.data.optimization ? 'optimization tuning' : '',
-          batchData.data.type === 'local' ? 'local' : 'ci',
-        ].join(' ');
-
-        return {
-          label,
-          title,
-          title_with_milestone: milestone_prefix + title,
-          status,
-          failures,
-          running,
-          optimization,
-          username,
-          searchText,
-          nb_success,
-          nb_failed,
-          nb_running,
-          total: outputs.length,
-          batchData,
-          is_milestone
-        };
-      });
-  };
-
-  // Memoize batchItems to prevent recreation and infinite loops
-  const batchItems = useMemo(() => prepareBatchData(commit?.batches ?? {}), [commit?.batches ?? {}]);
+  const batchItems = useMemo(() => prepareBatchData({ commit, project, project_data }), [commit, project, project_data]);
   
   // Memoize selectedBatch calculation
   const selectedBatch = useMemo(() => 
     batchItems.find(item => item.label === batch.label), 
     [batchItems, batch.label]
   );
-  
-  // State for keyboard navigation - remembers the last keyboard-selected batch
-  const [keyboardActiveBatch, setKeyboardActiveBatch] = useState(selectedBatch);
-  
-  // Update keyboard active batch when selected batch changes
-  useEffect(() => {
-    // console.log(`Keyboard navigation: ${keyboardActiveBatch?.label} -> ${selectedBatch?.label}`);
-    if (selectedBatch && keyboardActiveBatch?.label !== selectedBatch.label) {
-      // console.log(`Selected batch: ${selectedBatch?.label}`);
-      setKeyboardActiveBatch(selectedBatch);
-    }
-  }, [selectedBatch]);
   
   // Custom item renderer for rich display
   const renderBatch = (batchItem, { handleClick, modifiers }) => {
@@ -152,9 +139,9 @@ const SelectBatchesNav = ({ commit, onChange, batch, project, project_data }) =>
   if (!commit || !commit.batches)
     return <span/>
 
-  let has_tuning_batches = Object.values(commit.batches).length >= 1;
-  let selected_batch_missing = !Object.keys(commit.batches).includes(batch.label)
-  let style = selected_batch_missing ? {color: Colors.RED2} : {}
+  const has_tuning_batches = Object.keys(commit.batches).length >= 1;
+  const selected_batch_missing = !(batch.label in commit.batches)
+  const style = selected_batch_missing ? {color: Colors.RED2} : {}
 
   return (
     <Select
@@ -162,16 +149,6 @@ const SelectBatchesNav = ({ commit, onChange, batch, project, project_data }) =>
       itemRenderer={renderBatch}
       itemPredicate={filterBatch}
       onItemSelect={handleBatchSelect}
-      // activeItem={keyboardActiveBatch}
-      onActiveItemChange={item => {
-        if (!item?.label) {
-          return
-        }
-        // Guard against setting the same item to prevent loops
-        if (item?.label !== keyboardActiveBatch?.label) {
-          setKeyboardActiveBatch(batchItems[item.label]);
-        }
-      }}
       filterable={true}
       noResults={
         <NonIdealState

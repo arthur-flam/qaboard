@@ -5,10 +5,8 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { Provider } from 'react-redux';
-import { createStore } from 'redux';
 import { IconNames } from '@blueprintjs/icons';
 
 import bundle from '../release-notes.json';
@@ -24,6 +22,7 @@ import {
   renderHtml,
 } from '../logic';
 import { ReleaseNotesProvider, WhatsNewButton } from '../ReleaseNotes';
+import { renderWithProviders } from '../../test-utils';
 
 
 const note = (slug, date, extra = {}) => ({
@@ -146,7 +145,6 @@ describe('the bundle', () => {
 
 
 describe('the What\'s new popup', () => {
-  const store = createStore(() => ({ siteConfig: { docs_root: '/' } }));
   // last month: finished, and recent enough to pop up
   const d = new Date();
   const lastMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0));
@@ -156,12 +154,11 @@ describe('the What\'s new popup', () => {
     highlights: [{ title: 'Flying cars', description: 'They fly.', audience: 'users', icon: 'airplane', link: '/docs/faq' }],
     html: '<h2>Web app</h2><ul><li>Added flying cars</li></ul>',
   });
-  const renderApp = () => render(
-    <Provider store={store}>
-      <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
-        <WhatsNewButton />
-      </ReleaseNotesProvider>
-    </Provider>
+  const renderApp = () => renderWithProviders(
+    <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
+      <WhatsNewButton />
+    </ReleaseNotesProvider>,
+    { siteConfig: { docs_root: '/' } }
   );
   beforeEach(() => window.localStorage.clear());
 
@@ -198,11 +195,9 @@ describe('the What\'s new popup', () => {
     await waitFor(() => expect(screen.queryByText('Flying cars')).not.toBeInTheDocument());
     window.history.pushState({}, '', '/other/project');
     rerender(
-      <Provider store={store}>
-        <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
-          <WhatsNewButton />
-        </ReleaseNotesProvider>
-      </Provider>
+      <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
+        <WhatsNewButton />
+      </ReleaseNotesProvider>
     );
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(screen.queryByText('Flying cars')).not.toBeInTheDocument();
@@ -212,12 +207,11 @@ describe('the What\'s new popup', () => {
     const current = note(new Date().toISOString().slice(0, 7), new Date().toISOString().slice(0, 10), {
       highlights: [{ title: 'Hover boards', description: 'Soon.', audience: 'users', icon: 'airplane' }],
     });
-    render(
-      <Provider store={store}>
-        <ReleaseNotesProvider load={() => Promise.resolve([current])} popupDelay={0}>
-          <WhatsNewButton />
-        </ReleaseNotesProvider>
-      </Provider>
+    renderWithProviders(
+      <ReleaseNotesProvider load={() => Promise.resolve([current])} popupDelay={0}>
+        <WhatsNewButton />
+      </ReleaseNotesProvider>,
+      { siteConfig: { docs_root: '/' } }
     );
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(screen.queryByText('Hover boards')).not.toBeInTheDocument();
