@@ -314,7 +314,7 @@ class Wizard:
     with ui.spinner("Looking around…"):
       facts = detect(self.root)
 
-    rows = [('folder', escape(str(facts.root)))]
+    rows = [('folder', escape(short_path(facts.root)))]
     if facts.is_git:
       rows.append(('git remote', escape(facts.remote_url) if facts.remote_url else '[yellow]none[/yellow]'))
       count = len(facts.dirty_files)
@@ -954,8 +954,9 @@ class Chat:
     self.history = result.all_messages()
     self.turns += 1
     self.deps.read_budget, self.deps.questions_left = READ_BUDGET, 2
-    ui.assistant(result.output or "Done.")
+    # The changes first, the summary last: it stays on screen, next to the prompt
     self.wizard.show_round(before, self.deps.changes)
+    ui.assistant(result.output or "Done.")
     usage = result.usage() if callable(result.usage) else result.usage
     tokens = (getattr(usage, 'input_tokens', 0) or 0) + (getattr(usage, 'output_tokens', 0) or 0)
     requests = getattr(usage, 'requests', 0)

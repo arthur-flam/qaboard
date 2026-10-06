@@ -53,13 +53,15 @@ class Renderer:
     self.browser.close()
     self.playwright.stop()
 
-  def scene(self, name: str, scene: Dict[str, Any], timeline: Timeline) -> Tuple[Path, float]:
-    """Records one scene, returns its clip and duration."""
+  def scene(self, name: str, scene: Dict[str, Any], timeline: Timeline, local_storage: Optional[Dict[str, str]] = None) -> Tuple[Path, float]:
+    """Records one scene, returns its clip and duration. local_storage: set in every page before it loads (the app's preferences)."""
     videos = Path(tempfile.mkdtemp(dir=self.work))
     context = self.browser.new_context(
       viewport={'width': WIDTH, 'height': HEIGHT}, device_scale_factor=1,
       record_video_dir=str(videos), record_video_size={'width': WIDTH, 'height': HEIGHT},
     )
+    if local_storage:
+      context.add_init_script(f"for (const [k, v] of Object.entries({json.dumps(local_storage)})) {{ try {{ localStorage.setItem(k, v) }} catch (e) {{}} }}")
     page = context.new_page()
     page.set_default_timeout(60_000)
     video_start = time.monotonic()

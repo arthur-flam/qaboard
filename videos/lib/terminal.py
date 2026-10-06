@@ -178,7 +178,13 @@ class Session:
       time.sleep(0.2)
       self.send('\r')
     elif 'pause' in step:
-      time.sleep(step['pause'])
+      # a deliberate pause: empty events keep it from being shortened like a wait
+      end = time.monotonic() + float(step['pause'])
+      while time.monotonic() < end:
+        time.sleep(min(0.4, max(0.0, end - time.monotonic())))
+        with self.lock:
+          if self.recording:
+            self.events.append((time.monotonic() - self.t0, ''))
     elif 'key' in step:
       self.send(KEYS[step['key']])
     elif 'mark' in step:

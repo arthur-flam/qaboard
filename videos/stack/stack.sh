@@ -52,7 +52,8 @@ build_ca_bases() {
   [ -f "$QABOARD_DEMO_CA_BUNDLE" ] || die "QABOARD_DEMO_CA_BUNDLE=$QABOARD_DEMO_CA_BUNDLE does not exist"
   local base
   for base in python:3.13-slim-bookworm node:24; do
-    if [ -n "${FORCE_BUILD:-}" ] || ! docker image inspect "qaboard-demo-ca/$base" >/dev/null 2>&1; then
+    # Not rebuilt by `build`: they don't depend on this repo (docker rmi them to refresh)
+    if ! docker image inspect "qaboard-demo-ca/$base" >/dev/null 2>&1; then
       log "building qaboard-demo-ca/$base (trusts \$QABOARD_DEMO_CA_BUNDLE)"
       docker buildx build -q --load -t "qaboard-demo-ca/$base" --build-arg "BASE=$base" \
         --secret "id=ca,src=$QABOARD_DEMO_CA_BUNDLE" "$HERE/ca" >/dev/null
@@ -67,7 +68,7 @@ build() {
   done
   [ ${#missing[@]} -gt 0 ] || return 0
   build_ca_bases
-  log "building ${missing[*]} from $REPO (first time: ~10-15 min, logs in $WORKDIR/build.log)"
+  log "building ${missing[*]} from $REPO (first time: ~5-10 min, logs in $WORKDIR/build.log)"
   mkdir -p "$WORKDIR"
   local start=$SECONDS
   if ! compose build --progress=plain "${missing[@]}" >"$WORKDIR/build.log" 2>&1; then
@@ -201,7 +202,10 @@ seed() {
 
   log "experiment: qa --share --label radius-3 --tuning '{\"radius\": 3}' batch demo"
   qa_cli --share --label radius-3 --tuning '{"radius": 3}' batch demo >"$WORKDIR/seed-3.log" 2>&1 || { tail -20 "$WORKDIR/seed-3.log" >&2; die "qa batch failed"; }
-  log "seeded $repo (logs: $WORKDIR/seed-*.log)"
+  # A local account to log in with (already exists after a first seed: the error is ignored)
+  curl -fsS --noproxy '*' -o /dev/null -X POST "$URL/api/v1/user/signup/" \
+    -d "user_name=ada&password=lovelace&email=ada@example.com&full_name=Ada Lovelace" 2>/dev/null || true
+  log "seeded $repo (logs: $WORKDIR/seed-*.log), log in as ada / lovelace"
   url
 }
 

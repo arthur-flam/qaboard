@@ -8,6 +8,7 @@
 # Regenerate: uv run videos/make.py videos/01-getting-started   (see videos/README.md)
 # Narration lines are what a voice will say, and the captions. Keep them short: one idea per line.
 
+title: "QA-Board · Chapter 1 — From results_final_v3 to a dashboard"
 output: out/01-getting-started.mp4
 chapter: "QA-Board · <b>Chapter 1</b>"
 crossfade: 0.5
@@ -15,19 +16,27 @@ voice:
   provider: none            # elevenlabs: set voice_id here and ELEVENLABS_API_KEY in the environment
 
 vars:
-  demo: "{cache}/work/denoiser"
+  home: /home/noa                                   # real paths on screen: ~/denoiser
+  demo: /home/noa/denoiser
   venv: "{cache}/venv"
   server: "http://qaboard.acme.internal"           # what viewers see
   server_local: "http://localhost:5151"            # what the browser really loads (videos/stack)
-  project: "acme/denoiser"
+  project: "imaging/denoiser"                      # from the demo repo's git remote
+  batch: "%40noa%7C%20default"                      # `qa --share batch` by noa: "@noa| default"
 
 # Once, before recording: a fresh demo repository (with Noa's history and messy results folders),
 # a clean QA-Board, and the tools Noa uses.
 prepare:
   - "test -x {venv}/bin/qa || (uv venv -q -p 3.12 {venv} && uv pip install -q --python {venv}/bin/python -e '{repo}[wizard]' numpy pillow)"
-  - "{videos}/stack/stack.sh reset"
-  - "rm -rf {demo} && python3 {repo}/examples/denoiser/make_history.py {demo} --upto 2"
+  - "{videos}/stack/stack.sh reset > /dev/null && {videos}/stack/stack.sh up > /dev/null"
+  - "rm -rf {home} && mkdir -p {home} && python3 {repo}/examples/denoiser/make_history.py {demo} --upto 2 > /dev/null"
   - "grep -q acme.internal /etc/hosts || echo '127.0.0.1 qaboard.acme.internal llm.acme.internal' >> /etc/hosts"
+
+# The browser: app preferences set before pages load
+browser:
+  local_storage:
+    qaboard.release-notes.last-seen: "2099-12-31"   # no "What's new" popup
+    controls-panel-expanded: "false"
 
 # The terminal Noa uses
 terminal:
@@ -39,14 +48,15 @@ terminal:
 
 env:
   PATH: "{venv}/bin:/usr/local/bin:/usr/bin:/bin"
-  HOME: "{cache}/home"
+  HOME: "{home}"
+  USER: noa
+  LOGNAME: noa
   QA_NO_CHECK_FOR_UPDATES: "1"
   GIT_PAGER: cat
   GIT_AUTHOR_NAME: Noa Levi
   GIT_AUTHOR_EMAIL: noa@example.com
   GIT_COMMITTER_NAME: Noa Levi
   GIT_COMMITTER_EMAIL: noa@example.com
-  QA_USER_SECRETS: "{cache}/home/.qaboard/secrets.yaml"
   QABOARD_SITE_CONFIG: ""
   # The company's settings, like a site package would provide them
   QABOARD_LLM_PROVIDER: anthropic
@@ -136,26 +146,31 @@ scenes:
       - mark: server
       - answer: {when: "QA-Board URL", text: "qaboard.acme.internal"}
       - answer: {when: "Log in now", text: "n"}
+      - answer: {when: "Save the server settings", text: "y"}
       - answer: {when: "shared results go", text: ""}
       - mark: ai
       - answer: {when: "Let an AI", text: "y"}
       - answer: {when: "Anything it should know", text: "We judge results with PSNR and SSIM against the clean images"}
       - mark: assistant
       - expect: "›"
-      - pause: 2
+      - pause: 4.5
       - mark: chat
       - type: "How do I compare the gaussian and bilateral filters?"
         cps: 22
       - enter: true
       - expect: "›"
-      - pause: 1.5
+      - pause: 4
       - enter: true
       - mark: review
+      - expect: "All good"
+      - pause: 2
       - answer: {when: "All good\\?", text: "w"}
       - mark: done
+      - expect: "Try qa run"
+      - pause: 3
       - answer: {when: "now\\?", text: "y"}
       - expect: "It ran"
-      - pause: 2
+      - pause: 3
     after:
       - "echo @commit_wizard=$(git rev-parse HEAD)"
     narration:
@@ -186,15 +201,27 @@ scenes:
   # --- Results in the browser ----------------------------------------------------------------
   - id: results
     type: browser
-    url: "{server_local}/{project}/commit/{commit1_short}"
+    url: "{server_local}/{project}/commit/{commit1}?batch={batch}&batch_ref={batch}&selected_views=summary"
     display_url: "qaboard.acme.internal/{project}/commit/{commit1_short}"
     hold: 1.5
     actions:
-      - pause: 2
-      - until: 6
+      - pause: 1.5
+      - move: "text=PSNR"
+      - pause: 1.5
+      - click: 'a:has-text("Metrics Table")'
+      - pause: 3
+      - click: 'a:has-text("Visualizations")'
+      - wait: ".output-card"
+      - pause: 1.5
+      - move: 'input[placeholder="filter new outputs"]'
+      - type: {into: 'input[placeholder="filter new outputs"]', text: "fabric"}
+      - pause: 2.5
+      - focus: {on: ".output-card", scale: 1.45}
+      - pause: 4
+      - unfocus: true
     narration:
       - "Every input, its metrics, and the images your code wrote."
-      - "Zoom in: the views stay in sync."
+      - "Here, the fabric test chart: crisp, like it should be."
 
   # --- The next change ----------------------------------------------------------------------
   - id: change
@@ -218,15 +245,29 @@ scenes:
 
   - id: compare
     type: browser
-    url: "{server_local}/{project}/commit/{commit2_short}"
-    display_url: "qaboard.acme.internal/{project}/commit/{commit2_short}"
+    url: "{server_local}/{project}/commit/{commit2}?reference={commit1}&batch={batch}&batch_ref={batch}&selected_views=table-compare"
+    display_url: "qaboard.acme.internal/{project}/commit/{commit2_short}?reference={commit1_short}"
     hold: 1.5
     actions:
       - pause: 2
-      - until: 8
+      - focus: {on: "text=Improvement report", scale: 1.35}
+      - pause: 1
+      - move: "text=night/parking.png"
+      - pause: 2.5
+      - move: "text=texture/fabric.png"
+      - pause: 2.5
+      - unfocus: true
+      - click: 'a:has-text("Visualizations")'
+      - wait: ".output-card"
+      - move: 'input[placeholder="filter new outputs"]'
+      - type: {into: 'input[placeholder="filter new outputs"]', text: "fabric"}
+      - pause: 2.5
+      - focus: {on: ".output-card", scale: 1.45}
+      - pause: 5
+      - unfocus: true
     narration:
       - "QA-Board compares it with the previous version."
-      - "Night shots: better. But look at the fabric."
+      - "Night shots: much better. But look at the fabric."
       - "The texture is gone. You would have heard it from a customer."
       - "Now you know, before merging."
 

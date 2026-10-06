@@ -8,7 +8,8 @@ Makes a QA-Board video from its storyboard.
     uv run videos/make.py videos/01-getting-started            # record the terminal scenes, then render
     uv run videos/make.py videos/01-getting-started record     # only (re-)record the terminal scenes
     uv run videos/make.py videos/01-getting-started render     # only render, from the recordings
-    uv run videos/make.py videos/01-getting-started render --scenes outro,batch
+    uv run videos/make.py videos/01-getting-started render --scenes outro,batch   # a preview of some scenes
+    uv run videos/make.py videos/01-getting-started script     # the narration, in narration.md
 
 Requirements: ffmpeg, Chromium (the one Playwright uses), `npm install` in videos/, and for scenes that show the
 web app, a running QA-Board (videos/stack). See videos/README.md.
@@ -153,7 +154,7 @@ class Chapter:
           marks = scene['cast'].get('marks', {})
         timeline = plan(scene.get('narration', []), voice, marks=marks)
         print(f"● rendering {scene['id']}", flush=True)
-        clip, _ = renderer.scene(scene['id'], scene, timeline)
+        clip, _ = renderer.scene(scene['id'], scene, timeline, local_storage=(self.board.get('browser') or {}).get('local_storage'))
         clips.append((clip, timeline))
     finally:
       renderer.close()
@@ -164,15 +165,40 @@ class Chapter:
     print(f"✔ {output} ({total:.0f} s), captions in {output.with_suffix('.srt')}")
 
 
+def write_script(chapter: 'Chapter') -> Path:
+  """The narration, scene by scene, to review it (or hand it to a voice actor) before rendering."""
+  board = chapter.board
+  lines = [f"# {board.get('title') or chapter.folder.name}", '']
+  for scene in board['scenes']:
+    lines.append(f"## {scene['id']} ({scene['type']})")
+    what = scene.get('title') if scene['type'] == 'title' else None
+    if what:
+      lines.append(f"*On screen: {re.sub(r'<[^>]+>', '', str(what))}*")
+    for item in scene.get('narration') or []:
+      text = item if isinstance(item, str) else item['text']
+      lines.append(f"- {re.sub(r'<[^>]+>', '', text)}")
+    lines.append('')
+  words = sum(len(re.sub(r'<[^>]+>', '', i if isinstance(i, str) else i['text']).split())
+              for scene in board['scenes'] for i in scene.get('narration') or [])
+  lines.append(f"*{words} words, about {words / 150:.1f} minutes of voice at 150 words per minute.*")
+  output = chapter.folder / 'narration.md'
+  output.write_text('\n'.join(lines) + '\n')
+  return output
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument('chapter', type=Path)
-  parser.add_argument('step', nargs='?', choices=('all', 'record', 'render'), default='all')
+  parser.add_argument('step', nargs='?', choices=('all', 'record', 'render', 'script'), default='all',
+                      help="script: writes the narration to narration.md, to review it")
   parser.add_argument('--scenes', default='', help="Only these scenes (comma-separated ids)")
   args = parser.parse_args()
   if not (HERE / 'node_modules' / '@xterm').exists():
     subprocess.run(['npm', 'install', '--no-audit', '--no-fund', '--loglevel=error'], cwd=HERE, check=True)
   chapter = Chapter(args.chapter)
+  if args.step == 'script':
+    print(write_script(chapter))
+    return
   only = [s for s in args.scenes.split(',') if s]
   if args.step in ('all', 'record'):
     chapter.record(only)

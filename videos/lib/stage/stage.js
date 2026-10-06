@@ -196,7 +196,7 @@
     // Fit the terminal's grid in the window
     const fontSize = Math.floor(Math.min((1640 - 52) / (cols * 0.602), (830 - 52 - 44) / (rows * 1.2)));
     const term = new Terminal({
-      cols, rows, fontSize, lineHeight: 1.12, fontFamily: "'JetBrains Mono', 'Noto Color Emoji', monospace",
+      cols, rows, fontSize, lineHeight: 1.12, fontFamily: "'JetBrains Mono', 'DejaVu Sans Mono', 'Noto Color Emoji', monospace",
       theme: THEME, allowProposedApi: true, cursorBlink: false, scrollback: 0, convertEol: false,
     });
     const unicode = new Unicode11Addon.Unicode11Addon();
