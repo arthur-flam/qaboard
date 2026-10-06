@@ -221,6 +221,83 @@ def test_repos_refuse_paths_outside_the_clone_directory(git_utils, tmp_path):
   assert not (tmp_path / "outside").exists()
 
 
+def git(*args, cwd=None):
+  env = {"GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@example.com", "GIT_COMMITTER_NAME": "a", "GIT_COMMITTER_EMAIL": "a@example.com", "HOME": str(cwd or "/tmp")}
+  return subprocess.run(["git", *args], cwd=cwd, env={**__import__("os").environ, **env}, check=True, capture_output=True, encoding="utf-8").stdout
+
+
+class LocalHost:
+  """A git host whose repositories are local folders"""
+  def __init__(self, root):
+    self.root = root
+  def for_repo(self, git=None, project_url=None):
+    return self
+  def clone_url(self, path):
+    return str(self.root / path)
+  def git_env(self):
+    return {}
+  def redact(self, text):
+    return text
+
+
+@pytest.fixture
+def local_repos(git_utils, tmp_path):
+  """Repos that clone from tmp_path/remote/<path> to tmp_path/git/<path>"""
+  for path in ("org/repo", "org/other", "org/broken"):
+    git("init", "-q", str(tmp_path / "remote" / path))
+    (tmp_path / "remote" / path / "src").mkdir()
+    (tmp_path / "remote" / path / "src" / "file.txt").write_text("content")
+    git("add", ".", cwd=tmp_path / "remote" / path)
+    git("commit", "-q", "-m", "init", cwd=tmp_path / "remote" / path)
+  return git_utils.Repos(LocalHost(tmp_path / "remote"), tmp_path / "git")
+
+
+def test_repos_never_delete_what_they_did_not_clone(local_repos, tmp_path):
+  clones = tmp_path / "git"
+  assert local_repos.get("org/repo").working_tree_dir == str(clones / "org" / "repo")
+  local_repos.get("org/other")
+  # e.g. push webhooks for repositories named "org" or "org/repo/src"
+  for path in ["org", "org/repo/src", "org/repo/src/file.txt", "org/repo/missing", "org/repo/src/missing/x"]:
+    with pytest.raises(ValueError):
+      local_repos.get(path)
+  assert (clones / "org" / "repo" / "src" / "file.txt").read_text() == "content"
+  assert local_repos.get("org/other").head.commit
+  # A folder that is not a clone
+  (clones / "org" / "folder").mkdir()
+  (clones / "org" / "folder" / "data.txt").write_text("data")
+  with pytest.raises(ValueError):
+    local_repos.get("org/folder")
+  assert (clones / "org" / "folder" / "data.txt").exists()
+  # ...unless it's empty
+  (clones / "org" / "broken").mkdir()
+  assert local_repos.get("org/broken").head.commit
+  assert not list(clones.glob("org/.*"))
+
+
+def test_repos_replace_broken_clones(local_repos, tmp_path):
+  clones = tmp_path / "git"
+  local_repos.get("org/broken")
+  (clones / "org" / "broken" / ".git" / "HEAD").unlink() # git can't read it anymore
+  (clones / "org" / "broken" / "untracked.txt").write_text("x")
+  repo = local_repos.get("org/broken")
+  assert repo.head.commit and not (clones / "org" / "broken" / "untracked.txt").exists()
+  assert not list(clones.glob("org/.*")) # temporary folders are removed
+  # A broken clone with other clones inside is not ours to delete
+  local_repos.get("org/repo")
+  (clones / "org" / "broken" / ".git" / "HEAD").unlink()
+  (clones / "org" / "broken" / "nested").mkdir()
+  (clones / "org" / "broken" / "nested" / ".git").mkdir()
+  with pytest.raises(ValueError):
+    local_repos.get("org/broken")
+  assert (clones / "org" / "broken" / "nested" / ".git").exists()
+
+
+def test_failed_clones_leave_nothing_behind(local_repos, tmp_path):
+  with pytest.raises(RuntimeError):
+    local_repos.get("org/does-not-exist")
+  assert sorted(p.name for p in (tmp_path / "git" / "org").iterdir()) == []
+
+
 UNTRUSTED_URLS = ["https://attacker.example.com/org/repo", "ext::sh -c id", "file:///etc", "git@attacker.example.com:org/repo"]
 
 def credentials(host):
