@@ -69,7 +69,9 @@ const gitlab_job = (project, project_data, commit) => ({
   project_id: project_data.data?.git?.path_with_namespace ?? project,
   commit_id: commit.id,
 });
+// The server only starts or reads the workflows of projects users can access, declared in their qaboard.yaml
 const github_workflow = (project, project_data, commit) => ({
+  project,
   host: host_url(project_data),
   repo: project_data.data?.git?.path_with_namespace ?? project,
   commit_id: commit.id,
@@ -165,7 +167,8 @@ export function useIntegrationStatuses(context) {
         } else if (githubActions) {
           // The latest run for this commit, or the one we started
           url = '/api/v1/github/workflow/';
-          params = { ...github_workflow(project, project_data, commit), run_id: status.data?.id, ...githubActions };
+          // dispatched_at: to find the run we started when the server didn't see it yet
+          params = { ...github_workflow(project, project_data, commit), run_id: status.data?.id, dispatched_at: status.data?.dispatched_at, ...githubActions };
         } else if (jenkins) {
           if (status.triggered !== true) return;
           url = '/api/v1/jenkins/build/';
