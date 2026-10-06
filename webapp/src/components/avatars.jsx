@@ -1,6 +1,8 @@
 import { Link } from "../router";
 import styled from "styled-components";
 
+import { image_url } from "../git";
+
 const AvatarCell = styled.div`
   width: ${props => props.size || '45px'};
   color: rgba(0, 0, 0, 0.85);
@@ -58,7 +60,7 @@ const Avatar = ({ src, href, alt, size, style = {}, img_style = {} }) => {
 
 // Links to the committer's page when we know the project
 const CommitAvatar = ({ commit, project, size, style }) => {
-  const avatar_url = commit?.committer_avatar_url ? encodeURI(`/api/v1/gitlab/proxy?url=${commit.committer_avatar_url}`) : null
+  const avatar_url = image_url(commit?.committer_avatar_url)
   const href = (project && commit?.committer_name) ? `/${project}/committer/${commit.committer_name}` : null
   return <Avatar
     href={href}

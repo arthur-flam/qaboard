@@ -264,13 +264,6 @@ const project_avatar_style = project_id => {
 };
 
 
-// Used when a project does not define project.url in qaboard.yaml, set from /api/v1/config (GITLAB_HOST)
-let default_git_hostname = "https://gitlab.com"
-const setDefaultGitHostname = hostname => {
-  if (hostname)
-    default_git_hostname = hostname.replace(/\/+$/, '')
-}
-
 // Link to a storage quota dashboard, if the site has one (QABOARD_QUOTA_URL_TEMPLATE)
 const quota_url = (template, user_name, project) => {
   if (!template || !user_name)
@@ -278,28 +271,6 @@ const quota_url = (template, user_name, project) => {
   return template
     .replace('{user_name}', encodeURIComponent(user_name))
     .replace('{project}', encodeURIComponent(project ?? ''))
-}
-
-const git_hostname = qaboard_config => {
-  const project_url = qaboard_config?.project?.url
-  // const project_url = "git@gitlab-srv:svt/te-testing.git"      //=> gitlab-srv
-  // const project_url = "git@gitlab-srv:8080:svt/te-testing.git" //=> gitlab-srv:8080
-  // const project_url = "https://gitlab-srv/svt/te-testing.git"  //=> gitlab-srv
-  let hostname = null
-  if (project_url) {
-    let match = project_url.match(/@([^/:]+(:[0-9]+)?)[:/]/)
-    if (match) {
-      // For SSH remotes we don't know the protocol. We use the one from GITLAB_HOST if it's the same server.
-      const default_host = default_git_hostname.match(/^(https?):\/\/([^/]+)/)
-      const protocol = (default_host && default_host[2] === match[1]) ? default_host[1] : 'https'
-      hostname = `${protocol}://${match[1]}`
-    }
-    match = project_url.match(/(https?:\/\/[^/:]+(:[0-9]+)?)\//)
-    if (match)
-      hostname = match[1]
-  }
-  return hostname
-
 }
 
 // Path mappings populated from /api/v1/config (via setPathMappings).
@@ -533,6 +504,9 @@ const copyElementToClipboard = async (element, name, message_renderer) => {
 };
 
 
+// Moved to git.js, kept here for compatibility
+export { git_hostname, default_git_hostname, setDefaultGitHostname } from './git';
+
 export {
   average,
   median,
@@ -550,11 +524,8 @@ export {
   project_avatar_style,
   hash_color,
   plotly_palette,
-  git_hostname,
-  default_git_hostname,
   linux_to_windows,
   setPathMappings,
-  setDefaultGitHostname,
   quota_url,
   are_on_same_filesystem, extract_drive_and_folder,
   make_eval_templates_recursively,

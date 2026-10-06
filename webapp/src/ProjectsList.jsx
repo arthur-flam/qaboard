@@ -29,7 +29,8 @@ import { WhatsNewLink } from './releaseNotes/ReleaseNotes'
 import { useProjects, useSiteConfig, useUser } from './hooks'
 import { usePrefsStore } from './stores/prefs'
 import { match_query } from "./utils"
-import { project_avatar_style, git_hostname, default_git_hostname, quota_url } from "./utils"
+import { project_avatar_style, quota_url } from "./utils"
+import { repo_url, image_url } from "./git"
 
 
 const LastCommitAt = ({ project, className }) => {
@@ -70,12 +71,8 @@ const ProjectCard = ({ project_id, details }) => {
   const git = data.git || {};
   const qatools_config_project = data.qatools_config?.project || {};
 
-  const project_git_hostname = git_hostname(data.qatools_config) ?? default_git_hostname
-  const web_url = git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-  let avatar_url = qatools_config_project.avatar_url ?? git.avatar_url
-  if (!!avatar_url) {
-    avatar_url = encodeURI(`/api/v1/gitlab/proxy?url=${avatar_url}`)
-  }
+  const web_url = repo_url(details)
+  const avatar_url = image_url(qatools_config_project.avatar_url ?? git.avatar_url)
   const is_subproject = git.path_with_namespace !== project_id;
   const has_custom_avatar = !!data.qatools_config?.project?.avatar_url
   const should_tweak_image = is_subproject && !has_custom_avatar;
