@@ -5,6 +5,7 @@ import { Classes, Tag } from "@blueprintjs/core";
 import MonacoEditor, { MonacoDiffEditor } from "../components/MonacoEditor";
 
 import { http, errorMessage } from "../api/http";
+import { output_files_stale_time } from "../api/queries";
 import { is_same_data } from "../utils"
 
 // TODO: Implement a way to hide identical lines in the diff viewer
@@ -50,7 +51,7 @@ export const textFileQuery = (url, { is_running } = {}) => ({
   queryFn: ({ signal }) => http.get(url, { signal, responseType: 'text' }).then(r => r.data),
   select: strip_ansi,
   enabled: !!url,
-  staleTime: is_running ? 0 : Infinity,
+  staleTime: is_running ? 0 : output_files_stale_time,
 });
 
 const count_lines = text => (text?.match(/\r?\n/g)?.length ?? 0) + 1;

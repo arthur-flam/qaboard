@@ -1,5 +1,4 @@
 import { Fragment, useMemo, useState } from "react";
-import qs from "qs";
 
 import Plot from "./components/Plot";
 import {
@@ -12,10 +11,9 @@ import {
   Switch
 } from "@blueprintjs/core";
 
-import { useRouter } from "./router";
-import { useSiteConfig, useUrlText, updateSelected } from "./hooks";
+import { useSelected, useSiteConfig, useUrlText, updateSelected } from "./hooks";
 import { OutputCard } from "./viewers/OutputCard";
-import { controls_defaults, updateQueryUrl } from "./viewers/controls";
+import { useViewerControls } from "./viewers/controls";
 import { BitAccuracyForm } from "./viewers/bit_accuracy/utils";
 import { is_image } from "./viewers/images/utils"
 import { hash_color, match_query, average, median, matching_output } from "./utils";
@@ -252,7 +250,6 @@ const CommitsEvolutionPerTest = props => {
     available_metrics = {},
     onSelect,
   } = props;
-  const { history } = useRouter();
   const qatools_config = project_data?.data?.qatools_config;
 
   const [hovered, setHovered] = useState({ label: null, test_input_path: "", configurations: "" });
@@ -261,13 +258,8 @@ const CommitsEvolutionPerTest = props => {
   // after a click, the reference stays the same
   const [selected_ref, setSelectedRef] = useState(false);
 
-  // controls of the output viewers, reset when the project's configuration changes
-  const [controls, setControls] = useState(() => controls_defaults(qatools_config));
-  const [controls_config, setControlsConfig] = useState(qatools_config?.outputs?.controls);
-  if (controls_config !== qatools_config?.outputs?.controls) {
-    setControlsConfig(qatools_config?.outputs?.controls);
-    setControls(controls_defaults(qatools_config));
-  }
+  // controls of the output viewers
+  const [controls, updateControls] = useViewerControls(qatools_config);
 
   const { traces, traces_metadata } = useMemo(() => {
     const params = { commits, metrics, aggregation, available_metrics, per_output_granularity, output_filter, relative, shown_batches };
@@ -304,10 +296,6 @@ const CommitsEvolutionPerTest = props => {
     setHoveredCommitRef(commit);
   };
 
-  const updateControls = controls => {
-    setControls(controls);
-    updateQueryUrl(history, controls);
-  };
   const toggle = name => () => updateControls({ ...controls, [name]: !controls[name] });
   const toggle_show = name => () => updateControls({ ...controls, show: { ...controls.show, [name]: !controls.show[name] } });
 
@@ -431,9 +419,8 @@ const CommitsEvolutionPerTest = props => {
 
 // The plot's options are kept in the URL
 const CommitsEvolution = ({ project, project_data, commits = [], new_commit, ref_commit, style, default_breakdown_per_test, output_filter, per_output_granularity, shown_batches, select_metrics, onSelect }) => {
-  const { location } = useRouter();
+  const { query } = useSelected();
   const { docs_root } = useSiteConfig();
-  const query = useMemo(() => qs.parse(location.search.substring(1)), [location.search]);
   const { available_metrics = {}, main_metrics = [], default_metric } = project_data?.data?.qatools_metrics || {};
   const flag = (name, default_value) => query[name] !== undefined ? query[name] === 'true' : default_value;
 
@@ -451,12 +438,12 @@ const CommitsEvolution = ({ project, project_data, commits = [], new_commit, ref
   // Changing the plot's options doesn't add browser history entries
   const update = name => e => {
     const value = (e?.target && e.target.value !== undefined) ? e.target.value : e;
-    updateSelected(project, { [name]: value }, { replace: true });
+    updateSelected({ [name]: value }, { replace: true });
   };
   const [files_filter, onFilesFilterChange] = useUrlText(query.files_filter || '', update('files_filter'));
   const toggle = name => () => {
     const values = { breakdown_per_test, relative, show_bit_accuracy };
-    updateSelected(project, { [name]: !(values[name] ?? query[name] === 'true') }, { replace: true });
+    updateSelected({ [name]: !(values[name] ?? query[name] === 'true') }, { replace: true });
   };
 
   if (!default_metric)
@@ -538,7 +525,7 @@ const CommitsEvolution = ({ project, project_data, commits = [], new_commit, ref
         hide_runs_without_files={query.hide_runs_without_files === 'true'}
         expand_all={query.expand_all === 'true'}
         files_filter={files_filter}
-        toggle={name => () => updateSelected(project, { [name]: query[name] !== 'true' }, { replace: true })}
+        toggle={name => () => updateSelected({ [name]: query[name] !== 'true' }, { replace: true })}
         update={name => name === 'files_filter' ? onFilesFilterChange : update(name)}
       />}
     </div>

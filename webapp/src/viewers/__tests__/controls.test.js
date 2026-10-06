@@ -2,7 +2,9 @@
  * Tests for the visual controls of outputs.
  * Run with: cd webapp && npm test -- controls
  */
-import { controls_defaults, updateQueryUrl } from '../controls';
+import { controls_defaults, save_controls } from '../controls';
+import { history } from '../../router';
+import { parse_query } from '../../selection';
 
 
 describe('controls_defaults', () => {
@@ -29,13 +31,13 @@ describe('controls_defaults', () => {
 });
 
 
-describe('updateQueryUrl', () => {
+describe('save_controls', () => {
   it("replaces the URL: toggles don't add history entries", () => {
-    const history = { push: vi.fn(), replace: vi.fn() };
-    updateQueryUrl(history, { show_reference: false });
-    expect(history.push).not.toHaveBeenCalled();
-    expect(history.replace).toHaveBeenCalledWith(expect.objectContaining({
-      search: expect.stringContaining(encodeURIComponent(JSON.stringify({ show_reference: false }))),
-    }));
+    const push = vi.spyOn(history, 'push');
+    const replace = vi.spyOn(history, 'replace');
+    save_controls({ show_reference: false });
+    expect(push).not.toHaveBeenCalled();
+    expect(parse_query(window.location.search).controls).toBe(JSON.stringify({ show_reference: false }));
+    expect(replace).toHaveBeenCalledTimes(1);
   });
 });

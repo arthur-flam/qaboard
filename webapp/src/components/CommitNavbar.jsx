@@ -234,6 +234,8 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
   const handleDeleteBatchesPaste = labels => setShowDeleteBatchesValues(values => [...values, ...labels])
 
 
+  // While users type a commit id, the first change adds a browser history entry, the next ones replace it
+  const [typing, setTyping] = useState(false)
   // The page fetches the commit, then replaces the short id with the full id in the URL
   const selectCommit = (value, input = project_input) => {
     const id = value?.target?.value ?? value;
@@ -241,20 +243,21 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
     const commit_id = selected[commit_attr]
     if (commit_id && commit_id.startsWith(id) && selected[project_attr] === commit_project)
       return
-    updateSelected(project, {
+    updateSelected({
       [commit_attr]: id,
       ...(input ? {[project_attr]: input} : {}),
-    }, {replace: true})
+    }, {replace: typing})
+    setTyping(true)
   };
 
-  const removeSelection = () => updateSelected(project, { [commit_attr]: '' })
+  const removeSelection = () => updateSelected({ [commit_attr]: '' })
 
   const selectBranch = async branch => {
     const commit_project = selected[project_attr]
     try {
       const branch_commit = await queryClient.fetchQuery(commitQuery({project: commit_project, branch}))
       queryClient.setQueryData(commitQuery({project: commit_project, id: branch_commit.id}).queryKey, branch_commit)
-      updateSelected(project, {[commit_attr]: branch_commit.id})
+      updateSelected({[commit_attr]: branch_commit.id})
     } catch (error) {
       toaster.show({message: `Could not find the latest commit on ${branch}: ${errorMessage(error)}`, intent: Intent.DANGER});
     }
@@ -264,7 +267,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
     // milestones from qaboard.yaml are only a branch, tag or commit
     if (!milestone.commit && milestone.branch)
       return selectBranch(milestone.branch)
-    updateSelected(project, {
+    updateSelected({
       [commit_attr]: milestone.commit,
       [batch_attr]: milestone.batch,
       [filter_attr]: milestone.filter,
@@ -277,7 +280,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
     const other_batch_attr = `selected_batch_${other_type}`
     const other_filter_attr = `filter_batch_${other_type}`
     const other_project_attr = `${other_type}_project`
-    updateSelected(project, {
+    updateSelected({
       [other_commit_attr]: selected[commit_attr],
       [other_batch_attr]: selected[batch_attr],
       [other_filter_attr]: selected[filter_attr],
@@ -286,7 +289,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
   }
 
   const switchSelection = () => {
-    updateSelected(project, {
+    updateSelected({
       new_project: selected.ref_project,
       ref_project: selected.new_project,
       new_commit_id: selected.ref_commit_id,
@@ -379,6 +382,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
                 <Tag minimal icon="edit"><span className="hide-small-screen">Change</span></Tag>
               </Popover>}
               onChange={selectCommit}
+              onBlur={() => setTyping(false)}
               small
               defaultValue={commit?.id ? shortId(project, commit.id) : ''}
               key={commit?.id ? shortId(project, commit.id) : ''}

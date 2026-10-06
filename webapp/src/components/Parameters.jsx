@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import qs from "qs";
 import copy from 'copy-to-clipboard';
 
 import {
@@ -16,12 +15,11 @@ import {
 } from "@blueprintjs/core";
 
 import { http, errorMessage } from "../api/http";
-import { useRouter } from "../router";
 import { bit_accuracy_help, humanFileSize } from "../viewers/bit_accuracy/utils";
-import { linux_to_windows } from "../utils";
+import { linux_to_windows, event_value } from "../utils";
 import { OutputViewer } from "../viewers/OutputViewer";
 import { toaster } from "../toaster"
-import { useUrlText, updateSelected } from "../hooks";
+import { useSelected, useUrlText, updateSelected } from "../hooks";
 
 
 // The list of files in a commit's artifacts
@@ -37,23 +35,16 @@ const manifest_url = (commit, artifact) => commit?.artifacts_url ? `${commit.art
 // Compares the artifacts (e.g. configuration files) of the new and reference commits.
 // The options are in the URL.
 const CommitParameters = ({ new_commit, ref_commit, config }) => {
-  const { history, location } = useRouter();
-  const query = useMemo(() => qs.parse(location.search.replace(/^\?/, '')), [location.search]);
+  const { query } = useSelected();
   const artifact = query.params_artifact || 'configurations';
   const show_all_files = query.params_show_all_files === 'true';
   const expand_all = query.params_expand_all !== 'false';
   const color_blind_friendly = query.params_color_blind_friendly === 'true';
   const files_filter = query.params_files_filter || '';
 
-  const update = attribute_url => e => {
-    const value = (e.target && e.target.value !== undefined) ? e.target.value : e;
-    history.push({
-      pathname: location.pathname,
-      search: qs.stringify({ ...query, [attribute_url]: value }, { arrayFormat: 'repeat' }),
-    });
-  };
+  const update = attribute_url => e => updateSelected({ [attribute_url]: event_value(e) });
   const toggle = (attribute_url, value) => () => update(attribute_url)(!value);
-  const [files_filter_text, onFilesFilterChange] = useUrlText(files_filter, value => updateSelected(null, { params_files_filter: value }, { replace: true }));
+  const [files_filter_text, onFilesFilterChange] = useUrlText(files_filter, value => updateSelected({ params_files_filter: value }, { replace: true }));
 
   const new_manifest = useManifest(manifest_url(new_commit, artifact));
   const ref_manifest = useManifest(manifest_url(ref_commit, artifact));

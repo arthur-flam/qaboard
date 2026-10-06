@@ -1,7 +1,6 @@
-import { Fragment, memo, useEffect, useEffectEvent, useMemo, useState } from "react";
-import qs from "qs";
+import { Fragment, memo, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useInView } from 'react-intersection-observer'
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DateTime } from 'luxon';
 import { FullScreen, useFullScreenHandle } from "react-full-screen";
 
@@ -30,6 +29,8 @@ import { humanFileSize, humanElapsedTime } from "./bit_accuracy/utils";
 
 import { Link, history } from "../router"
 import { http, errorMessage } from "../api/http";
+import { output_files_stale_time, invalidateOutputFiles } from "../api/queries";
+import { parse_query, path_segment, stringify_query } from "../selection";
 import { linux_to_windows, is_same_data } from '../utils'
 import { is_image } from "./images/utils"
 import { toaster } from "../toaster"
@@ -71,7 +72,7 @@ export const manifestQuery = output => {
     },
     enabled: !!output?.output_dir_url,
     // the files of finished outputs don't change
-    staleTime: output?.is_running ? 0 : Infinity,
+    staleTime: output?.is_running ? 0 : output_files_stale_time,
     refetchInterval: output?.is_running ? 30 * 1000 : false,
   });
 };
@@ -133,9 +134,9 @@ const history_location = (project, commit, output, type, search) => {
   // https://stackoverflow.com/a/6969486
   const filter = output.test_input_path?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return {
-    pathname: `/${project}/history/${commit?.branch ?? ''}`,
-    search: qs.stringify({
-      ...qs.parse(search.replace(/^\?/, '')),
+    pathname: `/${path_segment(project)}/history/${path_segment(commit?.branch ?? '')}`,
+    search: stringify_query({
+      ...parse_query(search),
       filter,
       filter_ref: filter,
       show_bit_accuracy: type === 'bit_accuracy',
@@ -283,6 +284,15 @@ const OutputCard = memo(function OutputCard(props) {
   // values selected for the options that are not synced across outputs
   const [local_selected, setLocalSelected] = useState({});
   const [registration_error, setRegistrationError] = useState();
+
+  // When a run that was redone finishes, its files changed
+  const queryClient = useQueryClient();
+  const was_pending = useRef(output_new?.is_pending);
+  useEffect(() => {
+    if (was_pending.current && !output_new?.is_pending && output_new?.output_dir_url)
+      invalidateOutputFiles(queryClient, output_new.output_dir_url);
+    was_pending.current = output_new?.is_pending;
+  }, [queryClient, output_new?.is_pending, output_new?.output_dir_url]);
 
   const has_output_dir = !!output_new?.output_dir_url;
   const query_new = useQuery({ ...manifestQuery(output_new), enabled: viewable && has_output_dir });

@@ -118,8 +118,8 @@ const useTableData = ({ new_batch, metrics, available_metrics, with_refs_only })
 };
 
 
-const CompareRow = memo(({ output, output_ref, metrics, row_props }) =>
-  <Row {...row_props}>
+const CompareRow = memo(({ output, output_ref, metrics, index, measure }) =>
+  <Row data-index={index} ref={measure}>
     <RowHeaderCell output={output} />
     {metrics.map(m => (
       <ColumnsMetricImprovement
@@ -173,8 +173,8 @@ const TableCompare = ({
             ))}
           </tr>
         </thead>
-        <VirtualTbody items={outputs} renderRow={([id, output], row_props) =>
-          <CompareRow key={id} row_props={row_props} output={output} output_ref={ref_batch?.outputs?.[output.reference_id]} metrics={metrics_}/>
+        <VirtualTbody items={outputs} renderRow={([id, output], index, measure) =>
+          <CompareRow key={id} index={index} measure={measure} output={output} output_ref={ref_batch?.outputs?.[output.reference_id]} metrics={metrics_}/>
         }/>
       </HTMLTable>
     </Section>
@@ -182,8 +182,8 @@ const TableCompare = ({
 };
 
 
-const KpiRow = memo(({ output, output_ref, metrics, metrics_with_refs, row_props }) =>
-  <Row {...row_props}>
+const KpiRow = memo(({ output, output_ref, metrics, metrics_with_refs, index, measure }) =>
+  <Row data-index={index} ref={measure}>
     <RowHeaderCell output={output} />
     {metrics.map(m => (
       <Fragment key={m.key}>
@@ -237,8 +237,8 @@ const TableKpi = ({
             ))}
           </tr>
         </thead>
-        <VirtualTbody items={outputs} renderRow={([id, output], row_props) =>
-          <KpiRow key={id} row_props={row_props} output={output} output_ref={ref_batch?.outputs?.[output.reference_id]} metrics={metrics_} metrics_with_refs={new_batch.metrics_with_refs}/>
+        <VirtualTbody items={outputs} renderRow={([id, output], index, measure) =>
+          <KpiRow key={id} index={index} measure={measure} output={output} output_ref={ref_batch?.outputs?.[output.reference_id]} metrics={metrics_} metrics_with_refs={new_batch.metrics_with_refs}/>
         }/>
       </HTMLTable>
     </Section>

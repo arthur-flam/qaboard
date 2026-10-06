@@ -14,6 +14,7 @@ import { select } from 'd3-selection'
 import * as flameGraph from 'd3-flame-graph';
 
 import { http, errorMessage } from "../api/http";
+import { output_files_stale_time } from "../api/queries";
 
 // Integrates 
 // We love Brendan Gregg's flame charts
@@ -57,7 +58,7 @@ const fileQuery = (url, output) => ({
   queryKey: ['file', url],
   queryFn: ({ signal }) => http.get(url, { signal }).then(r => r.data),
   enabled: !!url,
-  staleTime: output?.is_running ? 0 : Infinity,
+  staleTime: output?.is_running ? 0 : output_files_stale_time,
 });
 
 

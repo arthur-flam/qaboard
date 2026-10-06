@@ -86,7 +86,7 @@ const CommitsNavbars = () => {
   const update = attribute => e => {
     const value = (e?.target && e.target.value !== undefined) ? e.target.value : e;
     // typing filters shouldn't add browser history entries
-    updateSelected(project, { [attribute]: value }, { replace: attribute.startsWith('filter') })
+    updateSelected({ [attribute]: value }, { replace: attribute.startsWith('filter') })
   }
   const show_ref_navbar = !(selected_views.includes('logs') || selected_views.includes('tuning') || selected_views.includes('groups'))
   return <>
@@ -129,8 +129,8 @@ const CommitsListNavbar = () => {
   // We only fetch branches once users start searching
   const [wants_branches, setWantsBranches] = useState(false);
   const [today] = useState(() => new Date());
-  const [search, onSearchChange] = useUrlText(selected.search, query => updateSelected(project, { search: query || undefined }, { replace: true }));
-  const [filter, onFilterChange] = useUrlText(selected.filter_batch_new, value => updateSelected(project, { filter_batch_new: value }, { replace: true }));
+  const [search, onSearchChange] = useUrlText(selected.search, query => updateSelected({ search: query || undefined }, { replace: true }));
+  const [filter, onFilterChange] = useUrlText(selected.filter_batch_new, value => updateSelected({ filter_batch_new: value }, { replace: true }));
   const { data: branches = [] } = useBranches(project, { enabled: wants_branches });
 
   const handleBranchChange = branch => {
@@ -142,7 +142,7 @@ const CommitsListNavbar = () => {
   const changeDates = new_date_range => {
     if (new_date_range[0] === null && new_date_range[1] === null)
       return
-    updateSelected(project, { from: new_date_range[0] ?? date_range[0], to: new_date_range[1] ?? date_range[1] }, { replace: true })
+    updateSelected({ from: new_date_range[0] ?? date_range[0], to: new_date_range[1] ?? date_range[1] }, { replace: true })
   }
 
   const is_project_home = match.path === "/:project_id+/commits" || match.path === "/:project_id+"
@@ -175,7 +175,7 @@ const CommitsListNavbar = () => {
           batch={new_batch}
           project={project}
           project_data={project_data}
-          onChange={event => updateSelected(project, { selected_batch_new: event.target.value, selected_batch_ref: event.target.value })}
+          onChange={event => updateSelected({ selected_batch_new: event.target.value, selected_batch_ref: event.target.value })}
           hide_counts
         />}
         {(is_project_home || is_project_branch_home) &&

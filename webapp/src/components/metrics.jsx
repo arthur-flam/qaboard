@@ -16,7 +16,6 @@ import {
 } from "@blueprintjs/core";
 import { MultiSelect } from "@blueprintjs/select";
 
-import { noMetrics } from "./metricSelect";
 import { RunBadge } from "./tags";
 import { format, median, plotly_palette, match_query } from "../utils";
 
@@ -346,7 +345,6 @@ const SuccessBar = ({ success_frac }) => (
   />
 );
 
-const no_metrics_selected = [];
 
 const tags_breakdown = outputs => {
   const tags = {};
@@ -392,38 +390,6 @@ const MetricsSummary = ({ new_batch, ref_batch, breakdown_by_tag, xaxis_labels: 
   if (new_batch === null) return <span />;
   const xaxis_labels = xaxis_labels_ || ["New", "Reference"];
 
-  const isMetricSelected = metric => selected_keys.includes(metric.key);
-  const handleMetricSelect = metric => setSelectedKeys(
-    isMetricSelected(metric) ? selected_keys.filter(k => k !== metric.key) : [...selected_keys, metric.key]
-  );
-  const shown_metrics = selected_metrics.filter(m => new_batch.used_metrics.has(m.key));
-  const handleRemoveMetric = (_tag, index) => {
-    const removed = shown_metrics[index];
-    setSelectedKeys(selected_keys.filter(k => k !== removed?.key));
-  };
-  const clearButton =
-    selected_metrics.length > 0 ? (
-      <Button icon="cross" aria-label="Clear" minimal={true} onClick={() => setSelectedKeys(no_metrics_selected)} />
-    ) : null;
-
-  const renderMetric = (metric, { handleClick, modifiers }) => {
-    if (!modifiers.matchesPredicate) {
-      return null;
-    }
-    const { key, ...rest } = metric;
-    return (
-      <MenuItem
-        active={modifiers.active}
-        icon={isMetricSelected(metric) ? "tick" : "blank"}
-        key={key}
-        label={key}
-        text={<MetricHeader {...rest} show_suffix/>}
-        onClick={handleClick}
-        shouldDismissPopover={false}
-      />
-    );
-  };
-
   const batch_data = new_batch.data || {};
   return (
     <div>
@@ -432,20 +398,7 @@ const MetricsSummary = ({ new_batch, ref_batch, breakdown_by_tag, xaxis_labels: 
           The aggregation below contains all runs, possibly with tuning <strong>parameters mixed together.</strong>
         </Callout>
       )}
-      <MultiSelect
-        items={Object.values(available_metrics).filter(m => new_batch.used_metrics.has(m.key))}
-        itemPredicate={filterMetric}
-        itemRenderer={renderMetric}
-        onItemSelect={handleMetricSelect}
-        tagRenderer={m => m.label}
-        tagInputProps={{
-          onRemove: handleRemoveMetric,
-          rightElement: clearButton
-        }}
-        noResults={noMetrics}
-        selectedItems={shown_metrics}
-        popoverProps={Classes.MINIMAL}
-      />
+      <MetricSelect available_metrics={available_metrics} used_metrics={new_batch.used_metrics} selected={selected_keys} onChange={setSelectedKeys}/>
       <br/>
       {breakdown_by_tag &&
         Object.entries(tags).map(([tag, count], idx) =>
@@ -468,6 +421,44 @@ const MetricsSummary = ({ new_batch, ref_batch, breakdown_by_tag, xaxis_labels: 
 };
 
 const filterMetric = (query, metric) => match_query(query)(`${metric.key} ${metric.label} ${metric.short_label}`);
+const noMetrics = <MenuItem disabled={true} text="No matching metrics." />;
+
+// Picks metrics among those the batch has.
+// selected: keys of metrics, onChange(keys). Selected metrics the batch doesn't have stay selected.
+const MetricSelect = ({ available_metrics = {}, used_metrics, selected, onChange }) => {
+  const items = Object.values(available_metrics).filter(m => used_metrics.has(m.key));
+  const shown = selected.map(k => available_metrics[k]).filter(m => m && used_metrics.has(m.key));
+  const is_selected = metric => selected.includes(metric.key);
+  const toggle = metric => onChange(is_selected(metric) ? selected.filter(k => k !== metric.key) : [...selected, metric.key]);
+  const renderMetric = (metric, { handleClick, modifiers }) => {
+    if (!modifiers.matchesPredicate)
+      return null;
+    const { key, ...rest } = metric;
+    return <MenuItem
+      active={modifiers.active}
+      icon={is_selected(metric) ? "tick" : "blank"}
+      key={key}
+      label={key}
+      text={<MetricHeader {...rest} show_suffix/>}
+      onClick={handleClick}
+      shouldDismissPopover={false}
+    />;
+  };
+  return <MultiSelect
+    items={items}
+    itemPredicate={filterMetric}
+    itemRenderer={renderMetric}
+    onItemSelect={toggle}
+    tagRenderer={({ key: _key, ...m }) => <MetricHeader {...m}/>}
+    tagInputProps={{
+      onRemove: (_tag, index) => onChange(selected.filter(k => k !== shown[index]?.key)),
+      rightElement: selected.length > 0 ? <Button icon="cross" aria-label="Clear" minimal onClick={() => onChange([])}/> : null,
+    }}
+    noResults={noMetrics}
+    selectedItems={shown}
+    popoverProps={Classes.MINIMAL}
+  />;
+};
 
 const delta_intent = (delta_relative, smaller_is_better) => {
   if (delta_relative > 0.01) return smaller_is_better ? Intent.DANGER : Intent.SUCCESS;
@@ -560,6 +551,7 @@ const MetricSummary = ({ metric: m, outputs_new, outputs_ref, outputs_by_tag, xa
 };
 
 export {
+  MetricSelect,
   HistogramComparaison,
   MetricsSummary,
   MetricTag,

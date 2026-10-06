@@ -184,7 +184,6 @@ const StyledSwitch = styled(Switch)`
 const noop = () => {};
 const no_options = {};
 const no_files = new Set();
-const no_registration = { total_outputs: 0, registered_outputs: 0, is_throttled: false, last_recompute_at: 0 };
 
 const storage_key = 'controls-panel-expanded';
 const saved_expanded = () => {
@@ -216,8 +215,6 @@ const FloatingControlsPanel = ({
   onToggleDynamicOptionSync = noop,
   visualizations_with_files = no_files,
   expandPanel = false,
-  registration_info = no_registration,
-  onForceReregisterAllOptions = noop,
 }) => {
   // Get initial panel state from localStorage, default to open
   const [isExpanded, setIsExpanded] = useState(saved_expanded);
@@ -427,26 +424,6 @@ const FloatingControlsPanel = ({
                   </div>
                 )
               }
-              {registration_info.is_throttled && registration_info.total_outputs > 0 && (
-                <div style={{ marginTop: 2 }}>
-                  📝 {registration_info.registered_outputs}/{registration_info.total_outputs} outputs registered
-                  {registration_info.is_throttled && (
-                    <span style={{ color: '#d9822b' }}> (throttled)</span>
-                  )}
-                </div>
-              )}
-              {registration_info.is_throttled && (
-                <div style={{ marginTop: 4 }}>
-                  <Button
-                    icon="refresh"
-                    small
-                    onClick={onForceReregisterAllOptions}
-                    style={{ fontSize: '11px' }}
-                  >
-                    Refresh Options
-                  </Button>
-                </div>
-              )}
             </div>
           )}
 

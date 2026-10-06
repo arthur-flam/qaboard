@@ -221,7 +221,7 @@ const LatestSubmissionCallout = ({ submission, has_runs, project, onFinished }) 
   const show_logs = <Button
     size="small"
     icon="console"
-    onClick={() => updateSelected(project, { selected_views: ['logs'] })}
+    onClick={() => updateSelected({ selected_views: ['logs'] })}
   >
     Show the logs
   </Button>

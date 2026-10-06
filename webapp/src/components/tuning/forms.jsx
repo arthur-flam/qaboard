@@ -571,7 +571,7 @@ const TuningForm = ({ project, config, metrics, commit, available_tests_files })
           <span style={{borderBottom: '1px dotted #000', textDecoration: 'none'}}>{tests.length} tests. </span>
         </Popover>}
         <p style={{marginBottom: '5px'}}>
-          To know what batches you can use, go to the tab <Tag icon="layout-group-by" interactive minimal round onClick={() => updateSelected(project, { selected_views: 'groups' })}>Available Tests</Tag>.
+          To know what batches you can use, go to the tab <Tag icon="layout-group-by" interactive minimal round onClick={() => updateSelected({ selected_views: 'groups' })}>Available Tests</Tag>.
           </p>
         {error && <p><Tag icon='warning-sign' intent={Intent.DANGER}>{error}</Tag></p>}
         {selected_group_info_loading && <Icon icon="time"/>}

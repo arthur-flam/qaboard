@@ -10,9 +10,9 @@ import { StyleSheetManager } from "styled-components";
 import isPropValid from "@emotion/is-prop-valid";
 
 import { history, matchRoutes, RouteMatch } from "./router";
-import { queryClient, persistOptions } from "./api/queryClient";
+import { queryClient, persistOptions, onCacheRestored } from "./api/queryClient";
 import { siteConfigQuery } from "./api/queries";
-import { useSiteConfig } from "./hooks";
+import { ComparisonProvider, useSiteConfig } from "./hooks";
 import { initSentry, initPostHog } from "./analytics";
 import { Layout } from "./components/layout";
 import ProjectsList from "./ProjectsList";
@@ -71,7 +71,7 @@ const Fallback = ({ error, componentStack }) => {
 const App = ({ persist = true }) => {
   // Tests don't have IndexedDB: they don't persist the cache
   const Provider = persist ? PersistQueryClientProvider : QueryClientProvider;
-  const providerProps = persist ? { client: queryClient, persistOptions } : { client: queryClient };
+  const providerProps = persist ? { client: queryClient, persistOptions, onSuccess: onCacheRestored } : { client: queryClient };
   return <Provider {...providerProps}>
     <Sentry.ErrorBoundary fallback={props => <Fallback {...props}/>}>
       <Analytics/>
@@ -103,6 +103,7 @@ const ProjectApp = ({ pathname }) => {
   if (!matched) return null;
   const { route: { sider: Sider, navbar: Navbar, main: Main }, match } = matched;
   return <RouteMatch match={match}>
+    <ComparisonProvider>
     <Layout className={Classes.UI_TEXT}>
       <Sider/>
       <div style={{width: '100%'}}>
@@ -115,6 +116,7 @@ const ProjectApp = ({ pathname }) => {
         </div>
       </div>
     </Layout>
+    </ComparisonProvider>
   </RouteMatch>
 }
 

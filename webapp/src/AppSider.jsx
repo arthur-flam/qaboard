@@ -412,7 +412,7 @@ const QuotaMenuItem = ({ user, project }) => {
 const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_commit = {}, user, docs_root, ...integrationProps }) => {
   const { match } = useRouter();
   const selectMilestone = milestone => {
-    updateSelected(project, {
+    updateSelected({
       new_project: milestone.project ?? project,
       new_commit_id: milestone.commit,
       selected_batch_new: milestone.batch,
@@ -494,7 +494,7 @@ const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, ne
 
   const has_optim = new_batch?.data?.optimization === true;
   const active = view => selected_views.includes(view);
-  const set = view => () => updateSelected(project, { selected_views: view })
+  const set = view => () => updateSelected({ selected_views: view })
   return <>
     <IntegrationsMenus
       integrations={results_integrations({ new_batch, commit, project_data })}
@@ -552,7 +552,7 @@ const AppSider = () => {
   const user = useUser();
   const { project, project_data, selected, selected_views, new_commit, ref_commit, new_batch, ref_batch } = useComparison();
   const route = selected.route;
-  const { latest_commit } = useCommitsList({ enabled: !route.is_commit });
+  const { latest_commit } = useCommitsList();
   // the commit whose integrations we show
   const commit = route.is_commit ? new_commit : latest_commit;
 

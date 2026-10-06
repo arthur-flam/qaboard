@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { http, errorMessage } from "../api/http";
+import { output_files_stale_time } from "../api/queries";
 
 
 // Files are cached: switching between views doesn't fetch them again
@@ -8,7 +9,7 @@ const fileQuery = (url, output) => ({
   queryKey: ['file', url],
   queryFn: ({ signal }) => http.get(url, { signal }).then(r => r.data),
   enabled: !!url,
-  staleTime: output?.is_running ? 0 : Infinity,
+  staleTime: output?.is_running ? 0 : output_files_stale_time,
 });
 
 

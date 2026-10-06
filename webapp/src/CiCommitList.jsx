@@ -60,7 +60,7 @@ const error_msg = error => {
 const CiCommitList = () => {
   const { project, branch, committer, search } = useSelected();
   const project_data = useProjectData(project);
-  const { commits: all_commits, error, isPending, isFetching, isSuccess, date_range } = useCommitsList({ refetchInterval: 60 * 1000 });
+  const { commits: all_commits, error, isPending, isFetching, isSuccess, date_range } = useCommitsList();
   const [now] = useState(() => new Date());
 
   useEffect(() => {

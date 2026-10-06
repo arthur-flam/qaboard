@@ -1,34 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "./router";
 
 import {
   Classes,
-  Button,
-  MenuItem,
   Card,
   NonIdealState,
 } from "@blueprintjs/core";
-import { MultiSelect } from "@blueprintjs/select";
-import { noMetrics } from "./components/metricSelect";
 
 import { Container, Section } from "./components/layout";
-import { MetricsSummary, MetricHeader } from "./components/metrics";
+import { MetricsSummary, MetricSelect } from "./components/metrics";
 import { CommitWarningMessages, BatchStatusMessages } from "./components/messages";
 
 import { TableCompare, TableKpi } from "./components/tables";
 import { BatchLogs } from "./components/BatchLogs";
 import { CommitParameters } from "./components/Parameters";
 import { OutputCardsList } from "./viewers/OutputCardsList";
-import { useComparison, useCommitIdsInUrl, useSiteConfig, useUser, updateSelected } from "./hooks";
+import { useComparison, useSiteConfig, useUser, updateSelected } from "./hooks";
 import { useDynamicOptions } from "./useDynamicOptions";
 
 
 import { TuningForm } from "./components/tuning/forms";
 import { AddRecordingsForm } from "./components/tuning/form_groups";
 import TuningExploration from "./components/tuning/TuningExploration";
-import { controls_defaults, updateQueryUrl } from "./viewers/controls";
+import { useViewerControls } from "./viewers/controls";
 import { ExportPlugin } from "./plugins/ExportPlugin";
-import { match_query } from "./utils";
 import { humanFileSize } from "./viewers/bit_accuracy/utils";
 import { setSyncPreferences } from "./utils/dynamicOptions";
 
@@ -37,39 +31,6 @@ import FloatingControlsPanel from "./components/FloatingControlsPanel";
 
 
 
-const visualization_stats = {
-  total_visualizations: 0,
-  disabled_visualizations: 0,
-  missing_files_count: 0,
-};
-
-const filterMetric = (query, metric) => match_query(query)(`${metric.key} ${metric.label} ${metric.short_label}`);
-
-
-// Controls of the output viewers (e.g. image diff on/off), which visualizations are shown,
-// and the values of dynamic options. Saved in the URL.
-function useViewerControls(config) {
-  const { history } = useRouter();
-  // we initialize optionnal controls with their defaults
-  const [controls, setControls] = useState(() => controls_defaults(config));
-  // When the configuration changes, we keep users' choices
-  const [controls_outputs, setControlsOutputs] = useState(config?.outputs);
-  if (controls_outputs !== config?.outputs) {
-    setControlsOutputs(config?.outputs);
-    const defaults = controls_defaults(config);
-    setControls({
-      ...defaults,
-      show: { ...defaults.show, ...controls.show },
-      dynamic_options: controls.dynamic_options || {},
-      dynamic_options_sync: controls.dynamic_options_sync || {},
-    });
-  }
-  const update = controls => {
-    setControls(controls);
-    updateQueryUrl(history, controls);
-  };
-  return [controls, update];
-}
 
 
 const CiCommitResults = () => {
@@ -82,7 +43,6 @@ const CiCommitResults = () => {
   const { available_metrics } = metrics;
   const { docs_root } = useSiteConfig();
   const user = useUser();
-  useCommitIdsInUrl({ new_commit, ref_commit });
 
   useEffect(() => {
     const name = project.split('/').slice(-1)[0];
@@ -139,7 +99,7 @@ const CiCommitResults = () => {
 
   const update = attribute => e => {
     const value = (e?.target && e.target.value !== undefined) ? e.target.value : e;
-    updateSelected(project, { [attribute]: value }, { replace: attribute.startsWith('filter') })
+    updateSelected({ [attribute]: value }, { replace: attribute.startsWith('filter') })
   }
 
   // The metrics shown in tables
@@ -147,43 +107,12 @@ const CiCommitResults = () => {
     () => selected_metrics_keys.map(m => available_metrics[m]).filter(Boolean),
     [selected_metrics_keys, available_metrics],
   );
-  const setSelectedMetrics = metrics => updateSelected(project, { selected_metrics: metrics.map(m => m.key) });
-  const isMetricSelected = metric => selected_metrics.some(m => m.key === metric.key);
-  const handleMetricSelect = metric => setSelectedMetrics(
-    isMetricSelected(metric) ? selected_metrics.filter(m => m.key !== metric.key) : [...selected_metrics, metric]
-  );
-  const renderMetric = (metric, { handleClick, modifiers }) => {
-    if (!modifiers.matchesPredicate)
-      return null;
-    return (
-      <MenuItem
-        active={modifiers.active}
-        icon={isMetricSelected(metric) ? "tick" : "blank"}
-        key={metric.key}
-        label={metric.key}
-        text={<MetricHeader {...metric} show_suffix />}
-        onClick={handleClick}
-        shouldDismissPopover={false}
-      />
-    );
-  };
-  const shown_selected_metrics = selected_metrics.filter(m => new_batch.used_metrics.has(m.key));
-  const metricTableSelect = (
-    <MultiSelect
-      items={Object.values(available_metrics).filter(m => new_batch.used_metrics.has(m.key))}
-      itemPredicate={filterMetric}
-      itemRenderer={renderMetric}
-      onItemSelect={handleMetricSelect}
-      tagRenderer={m => <MetricHeader {...m}/>}
-      tagInputProps={{
-        onRemove: (_tag, index) => setSelectedMetrics(shown_selected_metrics.filter((_, i) => i !== index)),
-        rightElement: selected_metrics.length > 0 ? <Button icon="cross" aria-label="Clear" minimal={true} onClick={() => setSelectedMetrics([])} /> : null,
-      }}
-      noResults={noMetrics}
-      selectedItems={shown_selected_metrics}
-      popoverProps={Classes.MINIMAL}
-    />
-  );
+  const metricTableSelect = <MetricSelect
+    available_metrics={available_metrics}
+    used_metrics={new_batch.used_metrics}
+    selected={selected_metrics_keys}
+    onChange={keys => updateSelected({ selected_metrics: keys })}
+  />;
 
   const warning_messages = <CommitWarningMessages project={new_project} commit={new_commit} />;
   const config_outputs = config.outputs || {};
@@ -393,16 +322,8 @@ const CiCommitResults = () => {
           dynamic_options={dynamic.dynamic_options}
           onUpdateDynamicOption={updateDynamicOption}
           onToggleDynamicOptionSync={toggleDynamicOptionSync}
-          visualization_stats={visualization_stats}
           visualizations_with_files={dynamic.visualizations_with_files}
           expandPanel={expand_floating_panel}
-          registration_info={{
-            total_outputs: new_batch.filtered.outputs.length,
-            registered_outputs: dynamic.registered_outputs,
-            is_throttled: false,
-            last_recompute_at: dynamic.registered_outputs,
-          }}
-          onForceReregisterAllOptions={dynamic.recompute}
         />
       )}
     </Container>
