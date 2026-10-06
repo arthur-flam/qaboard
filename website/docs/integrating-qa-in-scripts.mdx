@@ -14,13 +14,25 @@ qa batch my-batch --list-output-dirs
 #> $some/other/place
 #> ...
 
+qa batch my-batch --list-inputs
+##=> prints to STDOUT the path of each input, one per line
+
 qa batch my-batch --list
-##=> prints to STDOUT an array with info on each run
+##=> prints to STDOUT a JSON array with info on each run, without running anything
 # [
 #   {
-#      "absolute_input_path": "some/file"
-#      "configurations": ["my-config"],
-#      "output_directory": "some/place"
+#     "batch": "my-batch",
+#     "input_path": "images/a.jpg",
+#     "rel_input_path": "images/a.jpg",
+#     "database": "/mnt/datasets",
+#     "type": "default",
+#     "platform": "linux",
+#     "configurations": ["base"],
+#     "extra_parameters": {},
+#     "output_dir": "/mnt/qaboard/group/my-project/af/9370b9246657e7/output/linux/base/images-a",
+#     "command": "qa --configuration base run --input \"images/a.jpg\"",
+#     "job_options": {"type": "local", "concurrency": -1, ...},
+#     "id": null
 #   }
 # ]
 ```
@@ -28,10 +40,43 @@ qa batch my-batch --list
 For specific needs, you can also use `qa get` to output internal variables:
 
 ```bash
+qa get                                  # the main variables, as JSON
 qa get --input my/input output_dir
 qa get commit_id
+qa get configurations --json
 # etc
 ```
+
+### Using qa from scripts, CI and AI agents
+`qa` is meant to be scripted, and works well with coding agents like Claude Code:
+- **It never prompts.** Every option can be given on the command line, or as an [environment variable](using-the-qa-cli#environment-variables).
+- **Exit codes**: `0` on success, `1` when runs fail (`qa run`, `qa batch`, bit-accuracy checks...), `2` when the command line is invalid.
+- **Data on stdout, diagnostics on stderr**: `qa get`, `qa batch --list*` and the metrics of `qa run` go to stdout. The commands, output directories, links to QA-Board and most warnings go to stderr. Your own code's output goes to stdout.
+- **Machine-readable outputs**: `qa get` (JSON), `qa get VARIABLE --json`, `qa batch --list` (JSON). The metrics that `qa run` prints at the end are a Python dict, read them from the run's *metrics.json* instead.
+- **No side effects when exploring**: `qa batch --list` and `qa --dryrun` don't run anything. `qa --offline` doesn't update QA-Board, and without `--share` local results are saved under *output/*, not shown to others.
+- **No colors**: set `NO_COLOR=1`, else `qa` keeps colors (QA-Board shows logs with colors).
+- **Help**: `qa --help` lists the commands, `qa COMMAND --help` their options, with examples and environment variables.
+
+For example, to run an input and read its metrics:
+
+```bash
+qa run --input images/a.jpg || echo "the run failed"
+cat "$(qa get output_dir --input images/a.jpg)/metrics.json"   # also: log.txt, the output files...
+```
+
+:::tip Tell your coding agent about qa
+Add a section like this to your project's *AGENTS.md* or *CLAUDE.md*:
+
+```markdown
+## Running and evaluating with QA-Board (`qa`)
+- Run on one input: `qa run --input <path, relative to the database>`. Exit code 1 means the run failed.
+- Batches of inputs are defined in qa/batches.yaml. Run one locally: `qa batch <batch> --runner local`.
+- See what a batch would run, as JSON, without running it: `qa batch <batch> --list`.
+- A run's results are in `$(qa get output_dir --input <path>)`: metrics.json, log.txt and the output files.
+- Keep experiments apart with `qa --label <name> ...`. Don't use `--share` unless asked: it publishes results to QA-Board.
+- Set NO_COLOR=1 to avoid colors in the output. `qa COMMAND --help` documents all options.
+```
+:::
 
 ## HTTP API
 > **TODO:** Formalize with an [openapi/swagger spec](https://editor.swagger.io/).

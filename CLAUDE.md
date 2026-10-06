@@ -66,7 +66,17 @@ yarn build              # Build static site
 # Main qaboard package uses uv for dependencies
 # Development dependencies include testing tools
 uv sync --extra dev     # Install with dev dependencies
+uv run qa --help
 ```
+The `qa` CLI is in `qaboard/cli/`: `app.py` (global options, `main()`), `options.py` (shared options, defaults from
+qaboard.yaml), then one module per group of commands. The logic of big commands lives outside (`bit_accuracy.py`,
+`optimize.py`). `qaboard/qa.py` is only a backward-compatible shim.
+- The python names of parameters are an API: they define the environment variables (`qa batch --runner` reads
+  `QA_BATCH_RUNNER`). `tests/test_cli_surface.py` fails if commands/options change; if on purpose, run
+  `python tests/test_cli_surface.py --update` and mention it in the release notes.
+- Configuration is loaded at import time from the current directory (`qaboard/config.py`): tests that import qaboard
+  run in a subprocess, see `tests/test_cli_e2e.py`.
+- Print with `typer.secho(..., err=True)` for diagnostics: stdout is for data (`qa get`, `--list`, metrics).
 
 ## Release notes and docs (communicating with users)
 
@@ -137,7 +147,7 @@ npm test -- --run       # Vitest + Testing Library, jsdom
 - **Backend**: Python 3.11+, Flask, PostgreSQL, SQLAlchemy, Celery, Redis
 - **Frontend**: React 19, Redux, Blueprint UI 6, React Router 8, D3.js, Plotly.js 3, Monaco. Built with Vite 8, tested with Vitest, linted with oxlint
 - **Infrastructure**: Docker Compose, nginx, RabbitMQ
-- **CLI**: Python with Click framework
+- **CLI**: Python 3.10+, Typer (with Rich for `--help` and tracebacks)
 - **Package Management**: `uv` for Python, `npm` for JavaScript
 
 ## Development Workflow

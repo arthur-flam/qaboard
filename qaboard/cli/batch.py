@@ -113,7 +113,7 @@ def batch(
     help="Restrict the number of threads to use. 0=no restriction.",
   )] = default_lsf_max_threads,
   lsf_max_memory: Annotated[str, typer.Option(
-    '--lsf-max-memory', parser=int_or_str, rich_help_panel=PANEL_LSF,
+    '--lsf-max-memory', parser=int_or_str, metavar='MB', rich_help_panel=PANEL_LSF,
     help="Restrict the memory to use, in MB. 0=no restriction.",
   )] = default_lsf_max_memory,
   lsf_queue: Annotated[Optional[str], typer.Option(
