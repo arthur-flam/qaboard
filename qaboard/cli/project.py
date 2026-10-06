@@ -49,6 +49,8 @@ def get_variables(ctx: typer.Context) -> Dict[str, Any]:
     variables.update({k: v for k, v in vars(module).items() if not k.startswith('_')})
   variables.update(ctx.obj)
   if ctx.params.get('input_path'):
+    from .run import use_click_compat_context
+    use_click_compat_context(ctx) # for the metadata() function of user code
     try:
       run_context = RunContext.from_click_run_context(ctx, config)
       variables.update(run_context.asdict())

@@ -74,6 +74,15 @@ class TestCompatWithSircMappings(unittest.TestCase):
         # odd paths...
         self.assertEqual(l2w('/algo/CIS/outputs/test'), r'\\netapp\vol23_algo\CIS\outputs\test')
         self.assertEqual(l2w('/algo/CIS/inputs/test'), r'\\netapp\vol24_algo\CIS_inputs\test')
+        # only whole folders are mapped, once
+        self.assertEqual(l2w('/algo/ws/proj/algo/ws'), r'\\netapp\algo_ws\proj\algo\ws')
+        self.assertEqual(l2w('/algorithms/x'), r'\algorithms\x')
+        self.assertEqual(l2w('/algo/ws2/x'), r'\\netapp\vol23_algo\ws2\x') # not \\netapp\algo_ws2
+
+    def test_to_linux_whole_folders(self):
+        w2l = self.compat.windows_to_linux
+        self.assertEqual(w2l(r'\\netapp\algo_ws2\x'), '//netapp/algo_ws2/x')
+        self.assertEqual(w2l(r'\\mars\stage\algo_db\x\mars\stage'), '/stage/algo_db/x/mars/stage')
 
     def test_to_path(self):
         w2l_path = self.compat.windows_to_linux_path

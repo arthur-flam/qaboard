@@ -34,6 +34,8 @@ def run_qa(cwd, *args, env=None, check=None):
     'PATH': os.pathsep.join([str(Path(sys.executable).parent), os.environ.get('PATH', '')]),
     'QA_TESTING': '1',
     'QA_NO_CHECK_FOR_UPDATES': '1',
+    # git must never wait for a password (qa init runs `git remote show`)
+    'GIT_TERMINAL_PROMPT': '0',
     'QA_OFFLINE': 'true',
     'QABOARD_HOST': 'localhost:5151',
     'COLUMNS': '200', # help without line wraps
@@ -68,7 +70,7 @@ class QaProject(unittest.TestCase):
     config['inputs']['database'] = {'linux': str(cls.project), 'windows': str(cls.project)}
     (cls.project / 'qaboard.yaml').write_text(yaml.dump(config))
     git = lambda *args: subprocess.run(['git', *args], cwd=cls.project, check=True, capture_output=True)
-    git('init', '-q', '-b', 'master')
+    git('init', '-q')
     git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '--allow-empty', '-m', 'first commit')
 
   @classmethod
@@ -240,13 +242,35 @@ class TestClickEntrypoint(QaProject):
       "  obj = click.get_current_context().obj\n"
       "  click.echo(f\"label={obj['batch_label']} same_obj={obj is context.obj}\")\n"
       "  return {'is_failed': False}\n"
+      "def postprocess(metrics, context):\n"
+      "  click.echo('postprocess label=' + click.get_current_context().obj['batch_label'])\n"
+      "  return metrics\n"
+    )
+    # click imported inside the functions
+    (cls.project / 'qa' / 'lazy.py').write_text(
+      "def run(context):\n"
+      "  import click\n"
+      "  click.echo('lazy label=' + click.get_current_context().obj['batch_label'])\n"
+      "  return {'is_failed': False}\n"
     )
 
   def test_click_entrypoint(self):
     result = self.qa('--label', 'my-label', 'run', '-i', 'inputs/a.jpg', check=0)
     self.assertIn('label=my-label same_obj=True', result.stdout)
+    self.assertIn('postprocess label=my-label', result.stdout)
     # like before, colors are kept in logs, even if stdout is not a terminal
     self.assertIn('\x1b[32mfrom click', result.stdout)
+
+  def test_click_imported_in_functions(self):
+    config = yaml.safe_load((self.project / 'qaboard.yaml').read_text())
+    config['project']['entrypoint'] = 'qa/lazy.py'
+    (self.project / 'qaboard.yaml').write_text(yaml.dump(config))
+    try:
+      result = self.qa('--label', 'my-label', 'run', '-i', 'inputs/a.jpg', check=0)
+      self.assertIn('lazy label=my-label', result.stdout)
+    finally:
+      config['project']['entrypoint'] = 'qa/main.py'
+      (self.project / 'qaboard.yaml').write_text(yaml.dump(config))
 
 
 class TestFailedPostprocess(QaProject):
@@ -317,6 +341,7 @@ class TestBatch(QaProject):
     self.assertIn("'not-a-runner' is not one of", result.stderr)
     self.qa('batch', 'images', '--list', env={'QA_BATCH_ACTION_ON_EXISTING': 'nope'}, check=2)
     self.qa('batch', 'images', '--action-on-pending', 'sync', '--action-on-existing', 'assert-exists', '--list-inputs', check=0)
+    self.qa('batch', 'images', '--runner', 'lsf', '--lsf-max-memory', '16G', '--list', check=2)
 
   def test_batch_is_required(self):
     result = self.qa('batch', check=1)
@@ -342,7 +367,8 @@ class TestInit(unittest.TestCase):
   def test_init(self):
     with tempfile.TemporaryDirectory() as tmp:
       subprocess.run(['git', 'init', '-q'], cwd=tmp, check=True)
-      subprocess.run(['git', 'remote', 'add', 'origin', 'https://github.com/someone/my-project.git'], cwd=tmp, check=True)
+      # a remote that can't be reached: qa init still finds the project's name in its URL
+      subprocess.run(['git', 'remote', 'add', 'origin', 'https://example.invalid/someone/my-project.git'], cwd=tmp, check=True)
       run_qa(tmp, 'init', check=0)
       self.assertTrue((Path(tmp) / 'qaboard.yaml').exists())
       self.assertTrue((Path(tmp) / 'qa' / 'main.py').exists())
@@ -372,6 +398,9 @@ outputs = iter([{"is_pending": True}, {"is_pending": False, "is_failed": %s}])
 with mock.patch('qaboard.api.get_output', lambda id: next(outputs)), mock.patch('time.sleep'):
   from qaboard.cli import app
   result = CliRunner().invoke(app, ['wait', '--output-id', '123'], obj={})
+# a crash would also exit with 1
+if result.exception and not isinstance(result.exception, SystemExit):
+  raise result.exception
 sys.exit(result.exit_code)
 """
 

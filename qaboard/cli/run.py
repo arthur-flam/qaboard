@@ -8,7 +8,6 @@ import time
 import traceback
 from shlex import quote
 from pathlib import Path
-from contextlib import nullcontext
 from typing import Annotated, Optional
 
 import typer
@@ -32,17 +31,20 @@ def forward_args(ctx: typer.Context):
   ]
 
 
-def click_compat_context(ctx: typer.Context):
+def use_click_compat_context(ctx: typer.Context):
   """
-  User code written when `qa` used click may call click.secho or click.get_current_context().
-  If it imported click (qaboard doesn't install it anymore), we give it a context like before: same `obj`, and colors in logs.
+  User code written when `qa` used click may call click.secho or click.get_current_context(), in its run(),
+  postprocess(), metadata() or iter_inputs() functions. If click is installed (qaboard doesn't install it anymore),
+  until the command ends, they get a click context like before: the same `obj`, and colors in logs.
   """
-  if 'click' not in sys.modules:
-    return nullcontext()
+  import importlib.util
+  if importlib.util.find_spec('click') is None:
+    return
   import click
   click_ctx = click.Context(click.Command(ctx.info_name), obj=ctx.obj, color=ctx.color)
   click_ctx.params = ctx.params
-  return click_ctx
+  click_ctx.__enter__()
+  ctx.call_on_close(lambda: click_ctx.__exit__(None, None, None))
 
 
 def print_metrics(metrics: dict):
@@ -88,6 +90,7 @@ def run(
       qa --share --config fast run -i images/a.jpg
       qa run -i images/a.jpg -- --flag-for-your-code
   """
+  use_click_compat_context(ctx)
   forward_args(ctx)
   run_context = RunContext.from_click_run_context(ctx, config)
 
@@ -132,8 +135,7 @@ def run(
 
     entrypoint = entrypoint_module(config)
     try:
-      with click_compat_context(ctx):
-        runtime_metrics = entrypoint.run(run_context)
+      runtime_metrics = entrypoint.run(run_context)
     except Exception as e:
       typer.secho(f'[ERROR] Your `run` function raised an exception: {e}', fg='red', bold=True)
       typer.secho(traceback.format_exc(), fg='red')
@@ -152,8 +154,7 @@ def run(
     if os.getcwd() != cwd:
       os.chdir(cwd)
 
-    with click_compat_context(ctx):
-      metrics = postprocess_(runtime_metrics, run_context, skip=no_postprocess or runtime_metrics['is_failed'], save_manifests_in_database=save_manifests_in_database)
+    metrics = postprocess_(runtime_metrics, run_context, skip=no_postprocess or runtime_metrics['is_failed'], save_manifests_in_database=save_manifests_in_database)
     if not metrics:
       metrics = runtime_metrics
 
@@ -322,13 +323,13 @@ def postprocess(
 
       qa postprocess --input images/a.jpg
   """
+  use_click_compat_context(ctx)
   forward_args(ctx)
   run_context = RunContext.from_click_run_context(ctx, config)
   with redirect_std_streams(run_context.output_dir / 'log.txt', color=ctx.obj['color']):
     print_outputs(run_context)
     print_url(ctx)
-    with click_compat_context(ctx):
-      metrics = postprocess_({}, run_context)
+    metrics = postprocess_({}, run_context)
     print_metrics(metrics)
     if metrics['is_failed']:
       typer.secho('[ERROR] The run has failed.', fg='red', err=True, bold=True)
@@ -352,12 +353,15 @@ def sync(
 
       qa sync --input images/a.jpg
   """
+  use_click_compat_context(ctx)
   run_context = RunContext.from_click_run_context(ctx, config)
   if (run_context.output_dir / 'metrics.json').exists():
     with (run_context.output_dir / 'metrics.json').open('r') as f:
       metrics = json.load(f)
     notify_qa_database(**ctx.obj, metrics=metrics, is_pending=False, is_running=False)
     print_metrics(metrics)
+  else:
+    typer.secho(f"WARNING: Nothing to sync, there is no metrics.json in {run_context.output_dir}", fg='yellow', err=True)
 
 
 

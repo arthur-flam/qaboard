@@ -14,7 +14,7 @@ from typing import Annotated, Any, Dict, List, Optional
 import typer
 
 from .app import app
-from .options import default_batches_files_list, int_or_str, Runner, ActionOnExisting, ActionOnPending
+from .options import default_batches_files_list, Runner, ActionOnExisting, ActionOnPending
 from .options import lsf_config, dask_config, default_runner
 from .options import default_lsf_queue, default_lsf_max_threads, default_lsf_max_memory, default_lsf_resources
 from .options import default_lsf_priority, default_lsf_options, default_lsf_concurrency, default_dask_concurrency
@@ -112,8 +112,8 @@ def batch(
     '--lsf-max-threads', rich_help_panel=PANEL_LSF,
     help="Restrict the number of threads to use. 0=no restriction.",
   )] = default_lsf_max_threads,
-  lsf_max_memory: Annotated[str, typer.Option(
-    '--lsf-max-memory', parser=int_or_str, metavar='MB', rich_help_panel=PANEL_LSF,
+  lsf_max_memory: Annotated[int, typer.Option(
+    '--lsf-max-memory', metavar='MB', rich_help_panel=PANEL_LSF,
     help="Restrict the memory to use, in MB. 0=no restriction.",
   )] = default_lsf_max_memory,
   lsf_queue: Annotated[Optional[str], typer.Option(
@@ -155,6 +155,8 @@ def batch(
       qa batch my-batch -- --flag-for-your-code
   """
   from ..runners import runners
+  from .run import use_click_compat_context
+  use_click_compat_context(ctx) # for the iter_inputs() and metadata() functions of user code
   if not batches_files:
     typer.secho('WARNING: Could not find how to identify input tests.', fg='red', err=True, bold=True)
     typer.secho('Consider adding to qaboard.yaml somelike like:\n```\ninputs:\n  batches: batches.yaml\n```', fg='red', err=True)

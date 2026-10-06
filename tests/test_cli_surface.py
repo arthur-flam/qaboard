@@ -36,7 +36,7 @@ def dump(command, envvar_prefix):
       "nargs": param.nargs,
       "required": param.required,
       # Options can be set with environment variables named after the command and the parameter's python name
-      "envvar": f"{envvar_prefix}_{param.name}".upper() if is_option else None,
+      "envvar": param.envvar or (f"{envvar_prefix}_{param.name}".upper() if is_option and param.allow_from_autoenv else None),
     }
   if hasattr(command, "commands"):
     surface["commands"] = {

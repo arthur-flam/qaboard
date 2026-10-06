@@ -97,19 +97,31 @@ mappings = _load_path_mappings()
 re_algo_inputs = re.compile(r"\\\\netapp\\vol23_algo\\([^\\]+)[\\_]inputs")
 
 
+def _after_prefix(path: str, prefix: str, sep: str, ignore_case: bool = False):
+  """The rest of `path` if it is `prefix` or inside it (/algo matches /algo/x, not /algo2), else None."""
+  prefix = prefix.rstrip(sep)
+  head = path[:len(prefix)]
+  if (head.lower() == prefix.lower()) if ignore_case else (head == prefix):
+    rest = path[len(prefix):]
+    if not rest or rest.startswith(sep):
+      return rest
+  return None
+
+
 def windows_to_linux(path : str) -> str:
   path = path.replace('/', '\\')
   for path_windows, path_linux in mappings:
-    path_windows_re = re.escape(path_windows)
-    if re.match(path_windows_re, path, re.IGNORECASE):
-      path = re.sub(path_windows_re, path_linux, path, count=1, flags=re.IGNORECASE)
+    rest = _after_prefix(path, path_windows, '\\', ignore_case=True)
+    if rest is not None:
+      path = path_linux.rstrip('/') + rest
       break
   return path.replace('\\', '/')
 
 def linux_to_windows(path : str) -> str:
   for path_windows, path_linux in mappings:
-    if path.startswith(path_linux):
-      path = path.replace(path_linux, path_windows)
+    rest = _after_prefix(path, path_linux, '/')
+    if rest is not None:
+      path = path_windows.rstrip('\\') + rest
       break
   path = path.replace('/', '\\')
   match_algo_inputs = re_algo_inputs.match(path)

@@ -23,6 +23,23 @@ print(json.dumps({'calls': len(calls), 'dsn': calls[0].kwargs.get('dsn') if call
 """
 
 
+# qa crashes: the exception is sent to Sentry, even though typer prints the traceback with its own sys.excepthook
+CRASH = """
+import sys, json
+from unittest import mock
+captured = []
+with mock.patch('sentry_sdk.init'), mock.patch('sentry_sdk.flush'), \\
+     mock.patch('sentry_sdk.capture_exception', side_effect=captured.append), \\
+     mock.patch('qaboard.site_config._site_defaults', {}):
+  from qaboard.cli.app import main
+  sys.argv = ['qa', '--tuning', '{not json', 'get', 'commit_id']
+  try:
+    main()
+  except BaseException as e:
+    print(json.dumps({'exception': type(e).__name__, 'captured': [type(c).__name__ for c in captured]}))
+"""
+
+
 class TestSentry(unittest.TestCase):
   def init(self, env):
     keys = ('CI', 'QABOARD_SENTRY_DSN', 'QABOARD_SENTRY_VERIFY')
@@ -42,6 +59,14 @@ class TestSentry(unittest.TestCase):
   def test_ci_with_dsn(self):
     result = self.init({'CI': 'true', 'QABOARD_SENTRY_DSN': 'https://key@sentry.example.com/1'})
     self.assertEqual(result, {'calls': 1, 'dsn': 'https://key@sentry.example.com/1', 'custom_transport': False})
+
+  def test_crashes_are_reported(self):
+    clean = {k: v for k, v in os.environ.items() if k not in ('CI', 'QABOARD_SENTRY_DSN', 'QABOARD_SENTRY_VERIFY')}
+    env = {**clean, 'CI': 'true', 'QABOARD_SENTRY_DSN': 'https://key@sentry.example.com/1', 'PYTHONPATH': str(ROOT),
+           'QA_NO_CHECK_FOR_UPDATES': '1', 'QABOARD_HOST': 'localhost'}
+    out = subprocess.run([sys.executable, '-c', CRASH], cwd=ROOT / 'qaboard' / 'sample_project', env=env, capture_output=True, text=True)
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    self.assertEqual(result, {'exception': 'JSONDecodeError', 'captured': ['JSONDecodeError']}, out.stderr)
 
   def test_without_tls_verification(self):
     result = self.init({'CI': 'true', 'QABOARD_SENTRY_DSN': 'https://k@s/1', 'QABOARD_SENTRY_VERIFY': 'false'})

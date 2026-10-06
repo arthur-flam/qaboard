@@ -6,7 +6,7 @@ import os
 import sys
 import json
 from pathlib import Path
-from typing import Annotated, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 import typer
 from typer.core import TyperGroup
@@ -235,14 +235,14 @@ def split_dashdash() -> List[str]:
   return []
 
 
-def init_sentry():
-  """In CI, report errors to the Sentry project set by the site (QABOARD_SENTRY_DSN), if any."""
+def init_sentry() -> bool:
+  """In CI, report errors to the Sentry project set by the site (QABOARD_SENTRY_DSN), if any. Returns whether it's enabled."""
   from ..site_config import site_config, as_requests_verify
   dsn = site_config("QABOARD_SENTRY_DSN")
   if not os.environ.get("CI") or not dsn:
-    return
+    return False
   import sentry_sdk
-  options = {}
+  options: Dict[str, Any] = {}
   if as_requests_verify(site_config("QABOARD_SENTRY_VERIFY")) is False:
     import urllib3
     urllib3.disable_warnings()
@@ -253,16 +253,25 @@ def init_sentry():
         return options
     options["transport"] = InsecureHttpTransport
   sentry_sdk.init(dsn=dsn, traces_sample_rate=1.0, **options)
+  return True
 
 
 def main():
-  init_sentry()
+  sentry_enabled = init_sentry()
   from ..compat import ensure_cli_backward_compatibility
   ensure_cli_backward_compatibility()
   forwarded_args = split_dashdash()
-  app(
-    obj={"forwarded_args": forwarded_args},
-    # Every option can be given as an environment variable: QA_LABEL, QA_BATCH_RUNNER...
-    auto_envvar_prefix='QA',
-    prog_name='qa',
-  )
+  try:
+    app(
+      obj={"forwarded_args": forwarded_args},
+      # Every option can be given as an environment variable: QA_LABEL, QA_BATCH_RUNNER...
+      auto_envvar_prefix='QA',
+      prog_name='qa',
+    )
+  except Exception as e:
+    # typer replaces sys.excepthook to print tracebacks, without calling the one Sentry installed
+    if sentry_enabled:
+      import sentry_sdk
+      sentry_sdk.capture_exception(e)
+      sentry_sdk.flush()
+    raise

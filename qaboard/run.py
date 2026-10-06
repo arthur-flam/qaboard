@@ -1,3 +1,4 @@
+import os
 import json
 import copy
 from pathlib import Path
@@ -112,6 +113,8 @@ class RunContext():
         from .iterators import local_input_path, split_absolute
         input_path = Path(local_input_path(str(ctx.params['input_path'])))
         if input_path.anchor: # not is_absolute(): on Windows, \algo\inputs has no drive
+            if not input_path.is_absolute(): # on Windows, use the current drive, like batches do
+                input_path = Path(os.path.abspath(input_path))
             database, input_path = split_absolute(input_path)
             ctx.obj["database"] = database
         else:
