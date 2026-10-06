@@ -19,7 +19,9 @@ ANSI = re.compile(r'\x1b\[')
 
 # Variables that change how qa behaves (CI mode, commit...): the tests must not depend on where they run
 CI_VARIABLES = ('CI', 'GIT_COMMIT', 'CI_COMMIT_SHA', 'CI_COMMIT_REF_NAME', 'CI_COMMIT_TAG', 'GITHUB_SHA', 'GITHUB_REF',
-                'GIT_BRANCH', 'NO_COLOR', 'QA_OUTPUTS_COMMIT', 'QA_BATCH', 'QA_BATCH_COMMAND_ID', 'QA_BATCHES_FILES')
+                'GIT_BRANCH', 'NO_COLOR', 'QA_OUTPUTS_COMMIT', 'QA_BATCH', 'QA_BATCH_COMMAND_ID', 'QA_BATCHES_FILES',
+                # force colors in --help and errors (typer/rich), e.g. in GitHub Actions
+                'GITHUB_ACTIONS', 'FORCE_COLOR', 'PY_COLORS')
 
 
 def run_qa(cwd, *args, env=None, check=None):
