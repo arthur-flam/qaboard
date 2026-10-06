@@ -133,8 +133,11 @@ class Chapter:
     self.state_file.write_text(json.dumps(self.state, indent=2))
 
   # --- Rendering ------------------------------------------------------------------
-  def render(self, only: List[str]):
-    """Renders the scenes, and joins them. With `only`, renders and joins only those scenes, into a preview."""
+  def render(self, only: List[str], force: bool = False):
+    """
+    Renders the scenes, and joins them. With `only`, renders and joins only those scenes, into a preview.
+    Unchanged scenes are reused (`force` renders everything: browser scenes show live data that may have changed).
+    """
     from render import Renderer, compose
     voice = provider(self.board.get('voice'))
     renderer = Renderer(self.cache / 'clips')
@@ -153,8 +156,17 @@ class Chapter:
           scene['cast'] = json.loads(cast_file.read_text())
           marks = scene['cast'].get('marks', {})
         timeline = plan(scene.get('narration', []), voice, marks=marks)
-        print(f"● rendering {scene['id']}", flush=True)
-        clip, _ = renderer.scene(scene['id'], scene, timeline, local_storage=(self.board.get('browser') or {}).get('local_storage'))
+        local_storage = (self.board.get('browser') or {}).get('local_storage')
+        # A clip is rendered again only when what it shows changed (the scene, its recording, narration, the stage)
+        key = fingerprint([scene, timeline.to_json(), local_storage])
+        clip = renderer.work / f"{scene['id']}.mp4"
+        key_file = clip.with_suffix('.key')
+        if not force and clip.exists() and key_file.exists() and key_file.read_text() == key:
+          print(f"● {scene['id']}: unchanged", flush=True)
+        else:
+          print(f"● rendering {scene['id']}", flush=True)
+          clip, _ = renderer.scene(scene['id'], scene, timeline, local_storage=local_storage)
+          key_file.write_text(key)
         clips.append((clip, timeline))
     finally:
       renderer.close()
@@ -163,6 +175,15 @@ class Chapter:
       output = output.with_name(output.stem + '-preview.mp4')
     total = compose(clips, output, fade=float(self.board.get('crossfade', 0.5)))
     print(f"✔ {output} ({total:.0f} s), captions in {output.with_suffix('.srt')}")
+
+
+def fingerprint(data: Any) -> str:
+  """Identifies what a clip shows: its data, and the stage and renderer code."""
+  import hashlib
+  digest = hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode())
+  for path in sorted((HERE / 'lib' / 'stage').iterdir()) + [HERE / 'lib' / 'render.py']:
+    digest.update(path.read_bytes())
+  return digest.hexdigest()
 
 
 def write_script(chapter: 'Chapter') -> Path:
@@ -192,6 +213,7 @@ def main():
   parser.add_argument('step', nargs='?', choices=('all', 'record', 'render', 'script'), default='all',
                       help="script: writes the narration to narration.md, to review it")
   parser.add_argument('--scenes', default='', help="Only these scenes (comma-separated ids)")
+  parser.add_argument('--force', action='store_true', help="Render every scene again, even unchanged ones")
   args = parser.parse_args()
   if not (HERE / 'node_modules' / '@xterm').exists():
     subprocess.run(['npm', 'install', '--no-audit', '--no-fund', '--loglevel=error'], cwd=HERE, check=True)
@@ -203,7 +225,7 @@ def main():
   if args.step in ('all', 'record'):
     chapter.record(only)
   if args.step in ('all', 'render'):
-    chapter.render(only)
+    chapter.render(only, force=args.force or args.step == 'all')
 
 
 if __name__ == '__main__':

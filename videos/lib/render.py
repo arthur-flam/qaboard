@@ -9,7 +9,7 @@ Renders scenes to video clips with Playwright, on the stage page (lib/stage), th
       - wait: "table"                     # a CSS selector in the app
       - click: "text=night/parking"       # moves the cursor there, clicks for real
       - move: ".bp6-card"                 # just moves the cursor
-      - scroll: {to: ".metrics"}          # or {by: 600}
+      - scroll: {to: ".metrics"}          # or {by: 600}, {to: ..., block: end} (start, center, nearest)
       - move: {at: ".card", dy: -40}      # offsets in the app's pixels
       - focus: {at: "img", scale: 1.8}    # zooms the camera on a part of the window (not `on:`, YAML reads it as true)
       - unfocus: true
@@ -150,7 +150,8 @@ class Driver:
 
   def do_scroll(self, value, action):
     if 'to' in value:
-      self.locator(value['to']).evaluate("node => node.scrollIntoView({behavior: 'smooth', block: 'center'})")
+      # block: center (default), start, end, nearest
+      self.locator(value['to']).evaluate("(node, block) => node.scrollIntoView({behavior: 'smooth', block})", value.get('block', 'center'))
     else:
       self.frame.evaluate("by => window.scrollBy({top: by, behavior: 'smooth'})", value['by'])
     self.page.wait_for_timeout(int(value.get('ms', 1200)))

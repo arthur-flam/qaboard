@@ -48,7 +48,7 @@ html, body {
   display: flex; justify-content: center; pointer-events: none;
 }
 #caption span {
-  max-width: 1500px; padding: 16px 30px; border-radius: 16px;
+  max-width: 1760px; padding: 16px 30px; border-radius: 16px;
   background: rgba(8, 10, 22, .78); backdrop-filter: blur(8px);
   font-size: 38px; line-height: 1.3; font-weight: 600; text-align: center;
   opacity: 0; transform: translateY(12px); transition: opacity .35s, transform .35s;

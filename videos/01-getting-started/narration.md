@@ -19,7 +19,7 @@
 - One command: qa wizard.
 - It looks at your project: the git remote, the languages, where your test images are.
 - It finds your QA-Board server…
-- …and an AI assistant reads your code, to call it. Here, Claude, through the company's gateway.
+- …and an AI assistant reads your code to call it: here, Claude, via the company gateway.
 - It explores, writes the integration, and tells you what it did.
 - You can talk to it, like to a colleague.
 - You review everything once. Nothing is written before you say so.

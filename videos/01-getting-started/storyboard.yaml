@@ -180,7 +180,7 @@ scenes:
       - {text: "One command: <em>qa wizard</em>.", at: 1}
       - {text: "It looks at your project: the git remote, the languages, where your test images are.", at: {mark: detect, offset: 0.5}}
       - {text: "It finds your QA-Board server…", at: {mark: server}}
-      - {text: "…and an AI assistant reads your code, to call it. Here, Claude, through the company's gateway.", at: {mark: ai}}
+      - {text: "…and an AI assistant reads your code to call it: here, Claude, via the company gateway.", at: {mark: ai}}
       - {text: "It explores, writes the integration, and tells you what it did.", at: {mark: assistant, offset: 2}}
       - {text: "You can talk to it, like to a colleague.", at: {mark: chat}}
       - {text: "You review everything once. Nothing is written before you say so.", at: {mark: review}}
@@ -271,15 +271,16 @@ scenes:
       - type: {into: 'input[placeholder="filter new outputs"]', text: "fabric"}
       - pause: 1.5
       # new | reference, side by side (the viewers are 1000px wide, see outputs.style in qaboard.yaml)
-      - scroll: {to: '{output}'}
-      - focus: {at: '{output}', dx: 250, scale: 1.3}
+      - scroll: {to: '{output}', block: end}   # centered, the "new | reference" labels would be under the app's header
+      - move: '{output}'
+      - focus: {at: '{output}', dx: 250, dy: -20, scale: 1.3}
       - pause: 5.5
       - unfocus: true
     narration:
       - "QA-Board compares it with the previous version."
-      - "Night shots: much better. But look at the fabric."
-      - "The texture is gone. You would have heard it from a customer."
-      - "Now you know, before merging."
+      - {text: "Night shots: much better. But look at the fabric.", at: 4.5}
+      - {text: "The texture is gone. You would have heard it from a customer.", at: 18.5}
+      - {text: "Now you know, before merging.", at: 23.5}
 
   # --- Outro --------------------------------------------------------------------------------
   - id: outro
