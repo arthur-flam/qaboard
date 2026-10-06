@@ -5,7 +5,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 
 - Tags: effort **S** (an hour) / **M** (a day) / **L** (more), and whether the fix changes **behaviour/API**
   (*no change*, *behaviour* = what users or admins observe, *API* = HTTP routes/params/responses, CLI flags, qaboard.yaml).
-- Within each section, items are ordered by value/effort. Line numbers are as of this commit.
+- Within each section, items are ordered by value/effort. Line numbers are as of October 2026: search for the quoted code if they drifted.
 - Not repeated here: [docs/known-issues.md](docs/known-issues.md) (site-specific code, ops, EOL images, migrations)
   and [webapp/TODO.md](webapp/TODO.md) (viewers to check, dependencies, class components).
 
@@ -20,7 +20,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 6. **Every `POST /api/v1/batch` overwrites the commit's qaboard.yaml with the client's** (api/batch.py:50-58, and models/CiCommit.py:272 for projects). [S, behaviour]
 7. **`qaboard_clean` never deletes artifacts, nor commits that never had outputs** (clean.py:264, 307). [S, behaviour]
 8. **`qa get` is broken on Python ≥ 3.13, and CI only tests 3.11 while the backend image runs 3.13** (qaboard/qa.py:170-179, .github/workflows/ci.yaml). [S, behaviour]
-9. **The server process runs with `umask 0` after the first manifest refresh** (models/Output.py:365), and other `os.umask(000)` windows race between threads. [S, behaviour]
+9. **The server process runs with `umask 0` after the first manifest refresh** (models/Output.py:370), and other `os.umask(000)` windows race between threads. [S, behaviour]
 10. **docker-compose.yml publishes RabbitMQ (guest/guest), Flower and pgadmin on all host interfaces** (docker-compose.yml:131-132,147,226). [S, behaviour]
 
 ## Security
@@ -39,7 +39,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
   `data['output_dir_url_new'][2:]/reports` without `check_storage_path`, and its `report_url` has a double slash (`/s//algo/...`).
   `/api/v1/output/image/pixel` (123) and `/image/diff` (149) read any image the server can read (`url_to_dir` of a client URL).
   Add `@login_required`, `check_storage_path` for writes, and restrict reads to the storage roots. [S, API]
-- **`QABOARD_LOGIN_REQUIRED` is only enforced by the web app** (api/api.py:53, webapp/src/components/authentication/PrivateContent.jsx:21):
+- **`QABOARD_LOGIN_REQUIRED` is only enforced by the web app** (api/api.py:55, webapp/src/components/authentication/PrivateContent.jsx:21):
   the API and `/s/` files stay readable anonymously, while website/docs/backend-admin/managing-users.mdx:59 says it
   "blocks anonymous users from accessing any content". Enforce it in a `before_request` (and nginx `auth_request` for `/s/`), or fix the docs. [M, behaviour]
 - **Project permissions are only checked on some reads** (`is_authorized_user`, api/auth.py:272): `GET /api/v1/output/<id>`,
@@ -80,15 +80,15 @@ Found while surveying the code base (October 2026), after the cleanups that chan
   evaluates the default first, so clients sending only `commit_sha` get a 400. Use `data.get('commit_sha') or data['git_commit_sha']`. [S, API]
 - **`as_user` kills the worker** (fs_utils.py:111): when the forked child fails, the *parent* calls `os._exit(1)`, killing the uwsgi
   worker mid-request. Raise instead. It also leaks a temp file per call (77) and never closes the pickle files. [S, behaviour]
-- **Process-wide umask** (models/Output.py:365): `update_manifest()` sets `os.umask(0)` for good, so every file the server creates
-  afterwards is world-writable. `api/tuning.py:455,482`, `api/export_to_folder.py:207`, `models/Output.py:290` change it temporarily,
+- **Process-wide umask** (models/Output.py:370): `update_manifest()` sets `os.umask(0)` for good, so every file the server creates
+  afterwards is world-writable. `api/tuning.py:455,482`, `api/export_to_folder.py:207`, `models/Output.py:295` change it temporarily,
   racing with other threads. Use explicit `mode=`/`chmod` on what we create. [S, behaviour]
 - **Process-wide `chdir` in the server** (qaboard/conventions.py:75, called by api/tuning.py:93-108 via `batches_files`): other threads
   see the cwd change, and it isn't restored if `iglob` raises. Use `glob(root_dir=...)` (Python ≥ 3.10). [S, no change]
 - **Retry that can't work** (api/image.py:75-81): after a failed `json.load(f)`, the retry reads from the same exhausted file object. `f.seek(0)` or reopen. [S, behaviour]
 - **Matching outputs by input id** (api/export_to_folder.py:104-110): `compatible()` returns `False` when both inputs have the same id, and
   `None` otherwise: probably meant `True`. [S, behaviour]
-- **Deleting files of an output** (models/Output.py:354): `rm_empty_parents(output_dir)` after each file checks the output folder's
+- **Deleting files of an output** (models/Output.py:330,341): `rm_empty_parents(output_dir)` after each file checks the output folder's
   parents (never empty), not the file's: empty sub-folders stay, and it costs `iterdir()` calls per file. Use `rm_empty_parents(output_file)`. [S, behaviour]
 - **Duplicate outputs** (models/Output.py:187-208): on `MultipleResultsFound`, rows are deleted (their files stay) and a new output created. Keep the newest instead. [S, behaviour]
 - **`hybrid_cache`** (hybrid_cache.py:33-35): the thread-local cache ignores `maxsize` and the TTL (grows for the worker's life), and keys
@@ -100,7 +100,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 - **`find_rois` ignores `threshold` and `diameter`** (api/image_diff.py:103): the request still sends them. Remove them from the API or implement them. [S, API]
 - **Time zones**: `datetime.now()` (api/tuning.py:406) vs `utcnow()` elsewhere for `latest_output_datetime`; `utcnow()` is deprecated. [S, behaviour]
 - `delete` of a milestone with an unknown key is a `KeyError` (500) (api/milestones.py:50); a body-less `GET` is a 400. [S, API]
-- `clean_big_files.py` deletes every file > 1GB of the last 6 months' outputs **on import** and writes to `/home/arthurf/errors.txt`:
+- `clean_big_files.py` deletes every file > 1GB of the last 6 months' outputs **on import** and writes to a hardcoded home directory:
   move it to `scripts/` behind a `__main__` guard, or delete it. Same for `backend/restore_artifacts.py`. [S, no change]
 
 ## Backend: API conventions
@@ -119,7 +119,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 
 ## CLI
 
-- **`qa get` on Python ≥ 3.13** (qaboard/qa.py:170-179, off-limits for this pass): PEP 667 makes `locals()` a snapshot, so
+- **`qa get` on Python ≥ 3.13** (qaboard/qa.py:170-179): PEP 667 makes `locals()` a snapshot, so
   `locals().update(...)` has no effect and `qa get commit_id` prints "Could not find commit_id". The backend image runs 3.13.
   Use an explicit dict. On 3.13, 6 tests of tests/test_cli*.py fail at master: 3 from this, 3 with a missing cwd (not investigated,
   maybe a consequence). All pass on 3.11. [S, behaviour]
@@ -132,7 +132,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 - **XDG/Windows inverted** (qaboard/check_for_updates.py:47-53): Linux reads `%LOCALAPPDATA%`, Windows `$XDG_CONFIG_HOME`.
   `to_ints` (88) crashes on versions like `1.2.3rc1`. [S, behaviour]
 - **`notify_qa_database` error path** (qaboard/api.py:176-200): if serialization fails, `json.loads(data)` gets a dict (TypeError).
-  No request has a `timeout` (179,206,230; gitlab.py too): a hung server blocks CI jobs forever. [S, behaviour]
+  No request has a `timeout` (179,206,230): a hung server blocks CI jobs forever. [S, behaviour]
 - `print('Called')` in every function decorated with `@on_branch` (qaboard/ci_helpers.py:56); `run_tests() -> int` returns a bool. [S, behaviour]
 - `LocalRunner.stop_jobs` returns the `NotImplementedError` class instead of raising (qaboard/runners/local.py:54). [S, no change]
 - Leaks: `yaml.load(open(...))` (qaboard/iterators.py:208), the `NamedTemporaryFile` in `file_info` on Windows (qaboard/utils.py:278-284),
@@ -145,8 +145,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 - **Plotly "Send to Cloud" is still on in the tuning exploration** (webapp/src/components/tuning/TuningExploration.jsx:15-16):
   webapp/TODO.md's item was fixed for SlamOutputCard only. Set `showSendToCloud: false`, drop `plotlyServerURL`. [S, behaviour]
 - `style={{dispay: "inline"}}` (webapp/src/viewers/images/images.jsx:980) is a typo, so the div is a block. Fix it and check the layout. [S, behaviour]
-- 33 oxlint warnings left (`npx oxlint`): 11 in `components/integrations.jsx` (unused destructured props, see the git-hosts section),
-  a11y (empty `<td>`/`<th>` in tables.jsx, captions in videos.jsx, a clickable `div` in images/tooltip.jsx, `role="img"` in App.jsx),
+- 23 oxlint warnings left (`npx oxlint`): a11y (empty `<td>`/`<th>` in tables.jsx, captions in videos.jsx, clickable `div`s in images/tooltip.jsx and components/integrations.jsx, `role="img"` in App.jsx),
   `setState` in effects (releaseNotes/ReleaseNotes.jsx, images/roi_viewer.jsx) and missing hook deps (roi_viewer.jsx:69, tooltip.jsx:127).
   Then make `no-unused-vars` an error. [M, no change]
 - Dead docs in src/: `src/todo.md`, `src/viewers/todo-image-viewers.md` (mentions internal hosts). Merge into webapp/TODO.md or delete. [S, no change]
@@ -166,7 +165,7 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 
 - **Test the CLI on the Python the images use** (3.13) in .github/workflows/ci.yaml, not only 3.11. [S, no change]
 - flake8 only checks `E9,F63,F7,F82` (.flake8). After this pass, 57 F401/F811/F841 are left outside alembic and the `__init__` re-exports,
-  mostly in files other agents are rewriting: clean them,
+  clean them,
   then add `F401,F811,F841` (or use ruff with `F,B`). `ruff check --select B` also finds the issues above (B023 in clean.py:94,178). [S, no change]
 - Mixed line endings: 69 files are CRLF (`git ls-files --eol | grep crlf`, e.g. api/export_to_folder.py, qaboard/run.py, AppSider.jsx).
   Normalize them with a `.gitattributes` (`* text=auto`) in one commit. [S, no change]

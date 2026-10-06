@@ -95,7 +95,7 @@ describe('CiCommitList', () => {
     renderPage(`/${project}`);
     await screen.findByText("Commit number 0.");
     act(() => observer_callback([{ isIntersecting: true }]));
-    await screen.findByText("Commit number 99.");
+    expect(await screen.findByText("Commit number 99.")).toBeInTheDocument();
   });
 
   it('searches all the commits on the server', async () => {
@@ -113,6 +113,6 @@ describe('CiCommitList', () => {
 
   it('says when nothing matches', async () => {
     renderPage(`/${project}?search=nothing-like-this`);
-    await screen.findByText('No commit matches your search');
+    expect(await screen.findByText('No commit matches your search')).toBeInTheDocument();
   });
 });
