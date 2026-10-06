@@ -28,6 +28,11 @@ BATCH_SIZE = 500
 
 def upgrade():
   from backend.git_hosts import git_hosts
+  if git_hosts.errors:
+    # We'd describe projects with the wrong hosts, for good. The code works with projects that were not migrated,
+    # and push webhooks describe projects again.
+    print(f"WARNING: not describing the git host of projects, the git host settings are invalid: {git_hosts.errors}")
+    return
   connection = op.get_bind()
   last_id, updated = '', 0
   while True:

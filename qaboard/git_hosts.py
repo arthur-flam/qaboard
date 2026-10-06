@@ -5,7 +5,7 @@ Talks to the project's git host (GitLab, GitHub...) from the CI:
 
 We find the host from the CI's environment (GitHub Actions, GitLab CI), else from qaboard.yaml's project.url,
 using QABOARD_GIT_HOSTS like the server does: a JSON list of {type, url, token or token_env, api_url, hostnames},
-or the path to a JSON/YAML file with the list. Unlike the server, we need a string, not a list (e.g. from YAML secrets).
+or the path to a JSON/YAML file with the list, or a list (e.g. from YAML secrets or a site package).
 We only use the github and gitlab hosts.
 Tokens: GITHUB_TOKEN (GitHub Actions doesn't set it in the environment: workflows map it from secrets.GITHUB_TOKEN)
 or GITHUB_ACCESS_TOKEN, GITLAB_ACCESS_TOKEN, or the hosts' `token`.
@@ -167,16 +167,18 @@ def configured_hosts() -> List[Dict]:
   if not value:
     return []
   try:
-    if value.strip().startswith('['):
+    if isinstance(value, list): # e.g. from a site package, or a YAML secrets file
+      hosts = value
+    elif value.strip().startswith('['):
       hosts = json.loads(value)
     else:
       import yaml
       with open(os.path.expanduser(value.strip())) as f:
         hosts = yaml.safe_load(f) or []
-  except (OSError, ValueError) as e:
+  except (OSError, ValueError, AttributeError) as e:
     click.secho(f"WARNING: Could not read QABOARD_GIT_HOSTS: {e}", fg='yellow', err=True)
     return []
-  return [h for h in hosts if isinstance(h, dict) and h.get('url')]
+  return [h for h in hosts if isinstance(h, dict) and h.get('url')] if isinstance(hosts, list) else []
 
 
 def host_token(host: Dict) -> Optional[str]:

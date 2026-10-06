@@ -35,6 +35,16 @@ class TestGitHosts(unittest.TestCase):
     self.assertEqual(repo_path_of("ssh://git@host:22/a/b"), "a/b")
     self.assertEqual(repo_path_of("git@gitlab-srv:8080:svt/x"), "svt/x")
 
+  def test_configured_hosts(self):
+    hosts = [{"type": "github", "url": "https://github.example.com"}]
+    # a JSON string in the environment, or a list from a site package or a YAML secrets file
+    for value in (json.dumps(hosts), hosts):
+      self.settings = {"QABOARD_GIT_HOSTS": value}
+      self.assertEqual(self.git_hosts.configured_hosts(), hosts)
+    for value in ("[not json", {"type": "github"}, 5):
+      self.settings = {"QABOARD_GIT_HOSTS": value}
+      self.assertEqual(self.git_hosts.configured_hosts(), [])
+
   def test_github_actions(self):
     self.settings = {"GITLAB_HOST": "http://gitlab-srv", "GITLAB_ACCESS_TOKEN": "gitlab-token"}
     host = self.detect({
