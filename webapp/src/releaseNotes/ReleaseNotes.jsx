@@ -23,7 +23,8 @@ import {
   HASH,
   getLastSeen,
   setLastSeen,
-  newestDate,
+  isPreview,
+  lastSeenSlug,
   popupNotes,
   renderHtml,
   resolveLink,
@@ -70,6 +71,8 @@ export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 
       setHasUnread(to_popup.length > 0);
       if (to_popup.length > 0 && window.location.hash !== HASH)
         timer = setTimeout(() => {
+          // another tab may have shown the notes in the meantime
+          if (popupNotes(notes, getLastSeen()).length === 0) return;
           setDialogOpen(true);
           track("release_notes_popup", { slug: to_popup[0].slug });
         }, popupDelay);
@@ -78,7 +81,7 @@ export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 
   }, [load, popupDelay]);
 
   const markSeen = useCallback(() => {
-    const newest = newestDate(notes);
+    const newest = lastSeenSlug(notes);
     if (newest) setLastSeen(newest);
     setHasUnread(false);
   }, [notes]);
@@ -257,6 +260,9 @@ const NoteHeader = ({ note, isNew }) => <Eyebrow>
   <h3>{note.title}</h3>
   {note.version && <Tag minimal round icon="tag">v{note.version}</Tag>}
   {isNew && <Tag round intent="primary">New</Tag>}
+  {isPreview(note) && <Tooltip content="This period isn't over: more changes will be added">
+    <Tag minimal round icon="time">In progress</Tag>
+  </Tooltip>}
 </Eyebrow>;
 
 const Description = styled.p`
