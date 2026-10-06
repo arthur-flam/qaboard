@@ -40,11 +40,17 @@ def api_ci_commit(commit_id=None):
     # We've been using it to store code quality metrics per subproject in our monorepo,
     # Then we use other tools (e.g. metabase) to create dashboards.
     commit_data = request.json.get('data', {})
+    if not isinstance(commit_data, dict):
+      commit_data = {}
+    # QA-Board's own bookkeeping, clients can't change it
+    commit_data = {k: v for k, v in commit_data.items() if k not in ('artifacts_recreation', 'artifacts_deleted')}
     commit.data = {**commit.data, **commit_data}
     flag_modified(commit, "data")
     # `qa save-artifacts` calls us when it's done. It may have saved only some artifacts,
     # so we check they are really usable before saying they are back.
-    if commit.deleted or commit.data.get('artifacts_recreation', {}).get('status') == 'triggered':
+    recreation = commit.data.get('artifacts_recreation')
+    recreation = recreation if isinstance(recreation, dict) else {}
+    if commit.deleted or recreation.get('status') == 'triggered':
       try:
         commit.deleted = False
         artifacts_ok = commit.artifacts_status()["ok"]
@@ -52,8 +58,8 @@ def api_ci_commit(commit_id=None):
         print(f"WARNING: could not check the artifacts of {commit}: {e}")
         artifacts_ok = False
       commit.deleted = not artifacts_ok
-      if artifacts_ok and commit.data.get('artifacts_recreation'):
-        commit.data['artifacts_recreation'] = {**commit.data['artifacts_recreation'], 'status': 'done', 'done_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+      if artifacts_ok and recreation:
+        commit.data['artifacts_recreation'] = {**recreation, 'status': 'done', 'done_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}
     db_session.add(commit)
     db_session.commit()
     return jsonify({"status": "OK"})
@@ -160,14 +166,25 @@ def commit_artifacts_info(ci_commit):
     status = ci_commit.artifacts_status(max_checked_files=50)
   except Exception as e:
     status = {"ok": False, "problems": [f"Could not check the artifacts: {e}"]}
-  settings = ci_commit.recreate_artifacts_settings
-  return {
+  dict_or_none = lambda value: value if isinstance(value, dict) else None
+  info = {
     **status,
-    "recreate": recreate_artifacts.describe(settings) if isinstance(settings, dict) else None,
-    "recreate_errors": recreate_artifacts.validate(settings, recreate_artifacts.template_variables(ci_commit)) if settings else [],
-    "recreation": ci_commit.data.get('artifacts_recreation'),
-    "deletion": ci_commit.data.get('artifacts_deleted'),
+    "recreate": None,
+    "recreate_errors": [],
+    "recreation": dict_or_none(ci_commit.data.get('artifacts_recreation')),
+    # after a while, redo/tuning ask the CI again
+    "recreating": recreate_artifacts.in_progress(ci_commit.data.get('artifacts_recreation')),
+    "deletion": dict_or_none(ci_commit.data.get('artifacts_deleted')),
   }
+  # the configuration comes from unauthenticated API calls: it must never break the commit page
+  try:
+    settings = ci_commit.recreate_artifacts_settings
+    if settings:
+      info["recreate_errors"] = recreate_artifacts.validate(settings, recreate_artifacts.template_variables(ci_commit))
+      info["recreate"] = recreate_artifacts.describe(settings)
+  except Exception as e:
+    info["recreate_errors"] = [f"Could not read `recreate_artifacts`: {e}"]
+  return info
 
 
 @app.route("/api/v1/commit/save-artifacts/", methods=['POST'])

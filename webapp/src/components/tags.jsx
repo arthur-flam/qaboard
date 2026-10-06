@@ -332,7 +332,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
           setWaiting(true)
           toaster.show({message: "Requested Redo."});
           axios.post(`/api/v1/output/redo/${id}/`, {is_pending: false, is_running: false})
-            .then(() => {
+            .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
               setWaiting(false)
               toaster.show({message: "Redo started.", intent: Intent.SUCCESS});
               refresh()

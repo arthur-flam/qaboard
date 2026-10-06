@@ -13,6 +13,11 @@ describe('ArtifactsCallout', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('renders nothing for commits whose artifacts were never saved', () => {
+    const { container } = render(<ArtifactsCallout deleted={false} artifacts={{ok: false, exists: false, problems: ['The artifacts folder does not exist: /x']}} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('warns about artifacts deleted behind QA-Board\'s back', () => {
     const problems = ["The subproject's qaboard.yaml is missing from /x: runs would use the parent project's configuration, and be saved in the wrong project."]
     render(<ArtifactsCallout deleted={false} artifacts={{ok: false, problems}} onRestore={() => {}} />)

@@ -49,13 +49,19 @@ from .models import Project, CiCommit, Batch, Output
 now = datetime.datetime.utcnow()
 
 
-def mark_artifacts_deleted(hexsha, project_prefix, by):
-    """Marks as deleted the artifacts of a commit in all projects of a repository, after deleting its whole artifacts folder."""
+def mark_artifacts_deleted(hexsha, project_prefix, deleted_dir, by):
+    """Marks as deleted the artifacts of a commit in the projects of a repository whose artifacts were in a folder we deleted."""
     db_session.expunge_all() # don't save the helper CiCommit objects
     commits = (db_session.query(CiCommit)
                .filter(CiCommit.hexsha.startswith(hexsha))
                .filter(or_(CiCommit.project_id == project_prefix, CiCommit.project_id.startswith(f"{project_prefix}/"))))
     for commit in commits:
+        try:
+            if not Path(commit.artifacts_dir).resolve().is_relative_to(Path(deleted_dir).resolve()):
+                continue # stored in another artifacts root
+        except Exception as e:
+            print(f"WARNING: {commit}: {e}")
+            continue
         commit.deleted = True
         commit.data = {**(commit.data or {}), 'artifacts_deleted': {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "by": by}}
         db_session.add(commit)
@@ -151,7 +157,7 @@ def clean_untracked_hwalg_artifacts(clean_untracked_artifacts, artifacts_roots, 
                     # __pycache__ can be owned by a different user that the one that created the folder...
                     print(e)
                 # ci_commit is only a helper, not the commits QA-Board knows: tell them their artifacts are gone
-                mark_artifacts_deleted(hexsha, 'CDE-Users/HW_ALG', by="clean_untracked_hwalg_artifacts")
+                mark_artifacts_deleted(hexsha, 'CDE-Users/HW_ALG', artifact_dir, by="clean_untracked_hwalg_artifacts")
                 # return
 
 
@@ -278,8 +284,11 @@ def clean(project_ids, before, can_delete_reference_branch, can_delete_outputs, 
         project_can_delete_reference_branch = can_delete_reference_branch or gc_config.get('can_delete_reference_branch')
         project_before = before if before else gc_config.get('after', '1month')
         try:
-            old_treshold = now - parse_time(project_before)
-        except AssertionError as e:
+            # an empty value would mean "delete everything"
+            if not isinstance(project_before, str) or not project_before.strip():
+                raise ValueError(f"expected a duration like 1month or 2weeks, got {project_before!r}")
+            old_treshold = now - parse_time(project_before.strip())
+        except Exception as e:
             secho(f'[ERROR] storage.garbage.after: {e}', fg='red')
             totals["errors"] += 1
             continue
@@ -332,12 +341,19 @@ def clean(project_ids, before, can_delete_reference_branch, can_delete_outputs, 
             if project_can_delete_artifacts:
                 secho(f"  Deleting artifacts", fg='cyan', dim=True)
                 # Files that the other subprojects still use are kept
-                summary = commit.delete(keep=gc_config_artifacts.get('keep', []), dryrun=dryrun, session=db_session, by="garbage collection")
-                deleted_artifacts = True
+                keep = gc_config_artifacts.get('keep', []) or []
+                try:
+                    summary = commit.delete(keep=[keep] if isinstance(keep, str) else keep, dryrun=dryrun, session=db_session, by="garbage collection")
+                except Exception as e:
+                    # e.g. an unreadable folder: don't stop the cleanup of the other commits
+                    secho(f"  ERROR: could not delete the artifacts: {e}", fg='red')
+                    summary = {"nb_deleted": 0, "errors": [str(e)]}
+                # we keep the commit if something went wrong, so that we try again next time
+                deleted_artifacts = not summary["errors"]
                 totals["artifacts"] += 1
                 totals["artifacts_files"] += summary["nb_deleted"]
                 totals["errors"] += len(summary["errors"])
-            if nb_outputs_deleted or deleted_artifacts:
+            if nb_outputs_deleted or (project_can_delete_artifacts and summary["nb_deleted"]):
                 totals["commits"] += 1
             if not dryrun:
                 db_session.add(commit)

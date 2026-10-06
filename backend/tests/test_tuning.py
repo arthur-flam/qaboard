@@ -92,3 +92,24 @@ def test_check_tuning_request_without_batches_files(tmp_path):
     ci_commit = make_commit(tmp_path, config)
     check = check_tuning_request(ci_commit, {"batch_label": "x", "selected_group": "smoke", "tuning_search": {"search_type": "grid"}})
     assert "No batches are defined" in " ".join(check["errors"])
+
+
+def test_check_tuning_request_platforms_as_objects(tmp_path):
+    # the web app shows platforms as {name, label}
+    from backend.api.tuning import check_tuning_request
+    config = {"project": {"name": "repo"}, "inputs": {"batches": "sub/batches.yaml", "platforms": [{"name": "linux", "label": "Linux"}, {"name": "s8"}]}}
+    ci_commit = make_commit(tmp_path, config, batches={"smoke": {}})
+    data = {"batch_label": "x", "selected_group": "smoke", "tuning_search": {"search_type": "grid"}}
+    assert check_tuning_request(ci_commit, {**data, "platform": "linux"})["errors"] == []
+    assert "Unknown platform" in " ".join(check_tuning_request(ci_commit, {**data, "platform": "windows"})["errors"])
+
+
+def test_check_tuning_request_with_missing_artifacts_does_not_block(tmp_path):
+    # starting restores the artifacts (and the batches files) first, then checks again
+    from backend.api.tuning import check_tuning_request
+    config = {"project": {"name": "repo"}, "inputs": {"batches": "sub/batches.yaml"}}
+    ci_commit = make_commit(tmp_path, config)
+    ci_commit.artifacts_status = lambda max_checked_files=500: {"ok": False, "problems": ["The artifacts were deleted."]}
+    check = check_tuning_request(ci_commit, {"batch_label": "x", "selected_group": "smoke", "tuning_search": {"search_type": "grid"}})
+    assert check["errors"] == []
+    assert any("until the artifacts are back" in w for w in check["warnings"])

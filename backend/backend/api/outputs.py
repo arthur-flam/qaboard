@@ -84,17 +84,21 @@ def output_redo(output_id):
   except NoResultFound:
     return jsonify({"error": f"Cannot find output {output_id}"}), 400
   try:
-    success = output.redo(user=g.user['user_name'])
+    restored = output.batch.ci_commit.ensure_artifacts(user=g.user['user_name'])
+    success = output.redo(user=g.user['user_name'], check_artifacts=False)
   except ArtifactsUnavailable as e:
     db_session.add(output.batch.ci_commit)
     db_session.commit()
     return jsonify(e.to_dict()), 409
   except Exception as e:
+    db_session.add(output.batch.ci_commit)
+    db_session.commit()
     return jsonify({"error": f"{e}"}), 500
   db_session.add(output.batch.ci_commit)
   db_session.commit()
+  warning = restored["message"] if restored else None
   if success:
-    return '{"status": "OK"}'
+    return jsonify({"status": "OK", "warning": warning})
   else:
     return jsonify({"error": "The run failed to start. Check the 'redo.log' files in the output directories to know more."}), 500
 

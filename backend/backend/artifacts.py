@@ -9,6 +9,7 @@ This module answers two questions:
   files at the repository root (e.g. the root qaboard.yaml, binaries), so deleting a subproject's artifacts
   must keep the files that other subprojects still use.
 """
+import os
 import json
 import fnmatch
 from pathlib import Path
@@ -88,23 +89,29 @@ def artifacts_status(artifacts_dir: Path, repo_artifacts_dir: Path, is_subprojec
     "nb_missing_files": nb_missing_files,
     "nb_checked_files": nb_checked_files,
     "artifacts_dir": str(artifacts_dir),
+    "exists": artifacts_dir.is_dir(),
   }
 
 
 
 class Protected:
   """Files and folders, relative to a commit's repository artifacts folder, that a deletion must keep."""
-  def __init__(self, files: Iterable[str] = (), dirs: Iterable[str] = ()):
-    self.files: Set[str] = set(files)
+  def __init__(self, files: Iterable[str] = (), dirs: Iterable[str] = (), all_but: Optional[str] = None):
+    self.files: Set[str] = {normalize(f) for f in files}
     # "" would be the repository folder itself: the root project is protected by its manifests' files
-    self.dirs: List[str] = [d for d in dirs if d not in ('', '.')]
+    self.dirs: List[str] = [normalize(d) for d in dirs if normalize(d) != '.']
+    # when we can't know what a sibling uses, we protect everything outside of our own folder
+    self.all_but = normalize(all_but) if all_but is not None else None
 
   def __bool__(self):
-    return bool(self.files or self.dirs)
+    return bool(self.files or self.dirs or self.all_but is not None)
 
   def __call__(self, relative_path: str) -> bool:
     """Is this path, or something it contains, protected?"""
-    path = Path(relative_path).as_posix()
+    path = normalize(relative_path)
+    if self.all_but is not None and self.all_but != '.':
+      if not (path == self.all_but or path.startswith(f"{self.all_but}/")):
+        return True
     if path in self.files:
       return True
     for d in self.dirs:
@@ -114,14 +121,21 @@ class Protected:
     return any(f.startswith(prefix) for f in self.files)
 
 
-def protected_by_siblings(repo_artifacts_dir: Path, siblings: Iterable[Tuple[Path, Path]]) -> Protected:
+def normalize(relative_path: str) -> str:
+  # "sub/a/../b/x" is "sub/b/x"
+  return Path(os.path.normpath(str(relative_path))).as_posix()
+
+
+def protected_by_siblings(repo_artifacts_dir: Path, siblings: Iterable[Tuple[Path, Path]], own_dir: Optional[Path] = None) -> Protected:
   """
   The files other (sub)projects of the same commit still need.
   siblings: (repo_artifacts_dir, artifacts_dir) of each commit that was not deleted.
+  own_dir: the artifacts folder of the commit we delete
   """
   repo_artifacts_dir = Path(repo_artifacts_dir)
   files: Set[str] = set()
   dirs: List[str] = []
+  all_but = None
   for sibling_repo_dir, sibling_dir in siblings:
     if Path(sibling_repo_dir) != repo_artifacts_dir:
       continue # stored elsewhere, nothing is shared
@@ -129,13 +143,26 @@ def protected_by_siblings(repo_artifacts_dir: Path, siblings: Iterable[Tuple[Pat
       dirs.append(Path(sibling_dir).relative_to(repo_artifacts_dir).as_posix())
     except ValueError:
       continue
-    for manifest in manifests(Path(sibling_dir)):
+    try:
+      sibling_manifests = manifests(Path(sibling_dir))
+    except Exception:
+      sibling_manifests = []
+    if not sibling_manifests:
+      # Saved before manifests existed, or unreadable: we can't tell what it uses.
+      # We keep everything but our own folder.
+      files.update(CONFIG_NAMES)
+      if own_dir is not None:
+        try:
+          all_but = Path(own_dir).relative_to(repo_artifacts_dir).as_posix()
+        except ValueError:
+          pass
+    for manifest in sibling_manifests:
       try:
         files.update(read_manifest(manifest).keys())
       except Exception:
         # we can't tell what it uses: keep its whole folder, and what's at the repository's root
         files.update(CONFIG_NAMES)
-  return Protected(files, dirs)
+  return Protected(files, dirs, all_but=all_but)
 
 
 def is_kept(group: str, file: str, keep: Iterable[str]) -> bool:

@@ -40,7 +40,8 @@ template_re = re.compile(r'\$\{\s*([\w.]+)\s*\}')
 def recreate_settings(*configs: Optional[Dict]) -> Optional[Dict]:
   """The first `recreate_artifacts` found in the configs (e.g. the project's latest qaboard.yaml, then the commit's)."""
   for config in configs:
-    if config and config.get('recreate_artifacts'):
+    # configs come from unauthenticated API calls: they may be anything
+    if isinstance(config, dict) and config.get('recreate_artifacts'):
       return config['recreate_artifacts']
   return None
 
@@ -63,19 +64,22 @@ def template_variables(ci_commit, user=None) -> Dict[str, str]:
   }
 
 
-def fill(value: Any, variables: Dict[str, str]) -> Any:
+# In these, values are URL-quoted: e.g. a branch named "a&token=x" or "../other-job" can't change the URL
+URL_KEYS = ('url', 'build_url')
+
+def fill(value: Any, variables: Dict[str, str], in_url=False) -> Any:
   """Replaces ${commit.id}-like templates, recursively. Raises KeyError for unknown variables."""
   if isinstance(value, str):
     def replace(match):
       name = match.group(1)
       if name not in variables:
         raise KeyError(f"Unknown variable ${{{name}}}. Available: {', '.join(sorted(variables))}")
-      return str(variables[name])
+      return quote(str(variables[name]), safe='') if in_url else str(variables[name])
     return template_re.sub(replace, value)
   if isinstance(value, list):
-    return [fill(v, variables) for v in value]
+    return [fill(v, variables, in_url) for v in value]
   if isinstance(value, dict):
-    return {k: fill(v, variables) for k, v in value.items()}
+    return {k: fill(v, variables, in_url or k in URL_KEYS) for k, v in value.items()}
   return value
 
 
@@ -93,6 +97,9 @@ def validate(settings: Any, variables: Optional[Dict[str, str]] = None) -> List[
     return [f"`recreate_artifacts.{kind}` should be a mapping"]
   if kind == 'gitlabCI' and not spec.get('job_name'):
     errors.append("`recreate_artifacts.gitlabCI` needs a `job_name`")
+  if kind == 'gitlabCI' and 'project_id' in spec:
+    # anyone can send a qaboard.yaml: we only start jobs of the project's own repository with the server's token
+    errors.append("`recreate_artifacts.gitlabCI.project_id` is not supported: QA-Board uses the project's own repository")
   if kind == 'jenkins' and not spec.get('build_url'):
     errors.append("`recreate_artifacts.jenkins` needs a `build_url`")
   if kind == 'webhook':
@@ -108,25 +115,32 @@ def validate(settings: Any, variables: Optional[Dict[str, str]] = None) -> List[
   return errors
 
 
-def describe(settings: Dict) -> str:
-  if 'gitlabCI' in settings:
-    return f"the GitlabCI job \"{settings['gitlabCI'].get('job_name')}\""
-  if 'jenkins' in settings:
-    return f"the Jenkins job {settings['jenkins'].get('build_url')}"
-  if 'webhook' in settings:
-    return f"a webhook to {urlparse(str(settings['webhook'].get('url'))).hostname}"
+def describe(settings: Any) -> str:
+  if not isinstance(settings, dict):
+    return "?"
+  spec = lambda kind: settings[kind] if isinstance(settings[kind], dict) else {}
+  try:
+    if 'gitlabCI' in settings:
+      return f"the GitlabCI job \"{spec('gitlabCI').get('job_name')}\""
+    if 'jenkins' in settings:
+      return f"the Jenkins job {spec('jenkins').get('build_url')}"
+    if 'webhook' in settings:
+      return f"a webhook to {urlparse(str(spec('webhook').get('url'))).hostname}"
+  except Exception:
+    pass
   return "?"
 
 
 def in_progress(recreation: Optional[Dict], now=None) -> bool:
-  if not recreation or recreation.get('status') != 'triggered':
+  if not isinstance(recreation, dict) or recreation.get('status') != 'triggered':
     return False
   now = now or datetime.datetime.now(datetime.timezone.utc)
   try:
     at = datetime.datetime.fromisoformat(recreation['at'])
-  except Exception:
+    # timestamps in the future can't be ours
+    return datetime.timedelta(0) <= now - at < IN_PROGRESS_FOR
+  except Exception: # missing, invalid, without timezone...
     return False
-  return now - at < IN_PROGRESS_FOR
 
 
 def trigger(settings: Dict, ci_commit, user=None) -> Dict:
@@ -166,7 +180,7 @@ def _trigger_gitlab(spec, ci_commit) -> Optional[str]:
     from .config import git_server
     gitlab_host = git_server
   gitlab_api = gitlab_api_url(gitlab_host)
-  project_id = quote(str(spec.get('project_id', ci_commit.project.id_git)), safe='')
+  project_id = quote(str(ci_commit.project.id_git), safe='')
   jobs = gitlab_commit_jobs(gitlab_api, project_id, ci_commit.hexsha)
   matching_jobs = sorted([j for j in jobs if j['name'] == spec['job_name']], key=lambda j: j['id'])
   if not matching_jobs:
@@ -174,7 +188,7 @@ def _trigger_gitlab(spec, ci_commit) -> Optional[str]:
   job = matching_jobs[-1]
   # https://docs.gitlab.com/ee/api/jobs.html#run-a-job / #retry-a-job
   action = 'play' if job['status'] == 'manual' else 'retry'
-  if job['status'] in ('created', 'pending', 'running', 'waiting_for_resource', 'preparing'):
+  if job['status'] in ('created', 'pending', 'running', 'waiting_for_resource', 'preparing', 'scheduled'):
     return job.get('web_url') # already on its way
   r = requests.post(f"{gitlab_api}/projects/{project_id}/jobs/{job['id']}/{action}", headers=gitlab_headers(), timeout=60)
   r.raise_for_status()
@@ -196,12 +210,15 @@ def _trigger_webhook(spec) -> Optional[str]:
   kwargs = {k: spec[k] for k in ('params', 'json', 'data', 'headers') if k in spec}
   if 'auth' in spec:
     kwargs['auth'] = (spec['auth']['username'], spec['auth']['password'])
-  r = requests.request(method, spec['url'], timeout=60, verify=spec.get('verify', True), **kwargs)
+  # no redirects: the server would follow them to any address
+  r = requests.request(method, spec['url'], timeout=60, allow_redirects=False, **kwargs)
   r.raise_for_status()
   try:
     body = r.json()
-    if isinstance(body, dict):
-      return body.get('web_url') or body.get('url')
+    web_url = body.get('web_url') or body.get('url') if isinstance(body, dict) else None
   except Exception:
-    pass
+    return None
+  # we only show users links to the CI that answered, not what other services may answer
+  if isinstance(web_url, str) and len(web_url) < 2000 and urlparse(web_url).scheme in ('http', 'https') and urlparse(web_url).hostname == urlparse(spec['url']).hostname:
+    return web_url
   return None

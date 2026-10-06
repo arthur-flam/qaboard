@@ -387,7 +387,7 @@ class CommitNavbar extends React.Component {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo of deleted outputs requested."});
                 axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
-                  .then(() => {
+                  .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
                     this.setState({waiting: false})
                     toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
                     this.refresh()
@@ -408,7 +408,7 @@ class CommitNavbar extends React.Component {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo of failed outputs requested."});
                 axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_failed: true})
-                  .then(() => {
+                  .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
                     this.setState({waiting: false})
                     toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
                     this.refresh()
@@ -429,7 +429,7 @@ class CommitNavbar extends React.Component {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo requested."});
                 axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: false})
-                  .then(() => {
+                  .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
                     this.setState({waiting: false})
                     toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
                     this.refresh()

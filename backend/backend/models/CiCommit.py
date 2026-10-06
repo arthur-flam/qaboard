@@ -188,7 +188,10 @@ class CiCommit(Base):
         print(command, tmp_dir_path / self.project.id_relative)
         subprocess.run(command, cwd=tmp_dir_path / self.project.id_relative, check=True)
       finally:
-        self.project.repo.git.worktree("remove", "--force", tmp_dir_path)
+        try:
+          self.project.repo.git.worktree("remove", "--force", tmp_dir_path)
+        except Exception as e: # the artifacts were saved, git will prune the worktree later
+          print(f"WARNING: could not remove the git worktree {tmp_dir_path}: {e}")
 
 
   def artifacts_status(self, max_checked_files=MAX_CHECKED_FILES):
@@ -285,7 +288,7 @@ class CiCommit(Base):
       summary["errors"].append(str(e))
       return summary
     siblings = self.sibling_commits(session) if session is not None else []
-    is_protected = protected_by_siblings(self.repo_artifacts_dir, [(c.repo_artifacts_dir, c.artifacts_dir) for c in siblings])
+    is_protected = protected_by_siblings(self.repo_artifacts_dir, [(c.repo_artifacts_dir, c.artifacts_dir) for c in siblings], own_dir=self.artifacts_dir)
     if siblings:
       print(f"  keeping the files used by: {', '.join(c.project_id for c in siblings)}")
 

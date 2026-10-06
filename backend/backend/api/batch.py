@@ -135,6 +135,8 @@ def redo_batch():
   except:
     return jsonify({"error": "Batch not found"}), 404
   try:
+    # Raises ArtifactsUnavailable if the artifacts are missing and can't be restored right now
+    restored = batch.ci_commit.ensure_artifacts(user=g.user['user_name'])
     success = batch.redo(
       user=g.user['user_name'],
       only_failed=data.get('only_failed', False),
@@ -146,12 +148,15 @@ def redo_batch():
     db_session.commit()
     return jsonify(e.to_dict()), 409
   except Exception as e:
+    db_session.add(batch.ci_commit)
+    db_session.commit()
     return jsonify({"error": f"{e}"}), 500
   # the artifacts may have been restored
   db_session.add(batch.ci_commit)
   db_session.commit()
+  warning = restored["message"] if restored else None
   if success:
-    return '{"status": "OK"}'
+    return jsonify({"status": "OK", "warning": warning})
   else:
     return jsonify({"error": "Some runs failed to start. Check the 'redo.log' files in the output directories to know more."}), 500
 

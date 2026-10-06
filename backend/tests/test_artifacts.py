@@ -218,3 +218,65 @@ def test_in_progress():
   assert not recreate_artifacts.in_progress({"status": "triggered", "at": old}, now=now)
   assert not recreate_artifacts.in_progress({"status": "failed", "at": recent}, now=now)
   assert not recreate_artifacts.in_progress(None, now=now)
+
+
+@pytest.mark.parametrize("settings", [{"gitlabCI": "build"}, {"webhook": None}, {"jenkins": ["x"]}, "build", None, [1]])
+def test_describe_never_raises(settings):
+  assert isinstance(recreate_artifacts.describe(settings), str)
+
+
+def test_recreate_settings_ignores_invalid_configs():
+  assert recreate_artifacts.recreate_settings("x", ["y"], None) is None
+
+
+def test_gitlab_project_must_be_the_project_repository(tmp_path):
+  errors = recreate_artifacts.validate({"gitlabCI": {"job_name": "deploy", "project_id": "ops/infra"}})
+  assert any("project_id" in e for e in errors)
+
+
+def test_values_are_quoted_in_urls(tmp_path):
+  c = commit(tmp_path)
+  c.branch = "a&token=x/../../other"
+  variables = recreate_artifacts.template_variables(c)
+  filled = recreate_artifacts.fill({"url": "https://ci/hook?b=${commit.branch}", "json": {"b": "${commit.branch}"}}, variables)
+  assert filled["url"] == "https://ci/hook?b=a%26token%3Dx%2F..%2F..%2Fother"
+  assert filled["json"]["b"] == "a&token=x/../../other"
+
+
+def test_webhook_does_not_follow_redirects_nor_echo_other_hosts(tmp_path, monkeypatch):
+  seen = {}
+  class Response:
+    def raise_for_status(self): pass
+    def json(self): return {"url": "http://internal-service/secret"}
+  def request(method, url, **kwargs):
+    seen.update(kwargs)
+    return Response()
+  monkeypatch.setattr(recreate_artifacts.requests, "request", request)
+  recreation = recreate_artifacts.trigger({"webhook": {"url": "https://ci/hook", "verify": False}}, commit(tmp_path))
+  assert recreation["status"] == "triggered" and recreation["web_url"] is None
+  assert seen["allow_redirects"] is False and "verify" not in seen
+
+
+def test_in_progress_rejects_forged_timestamps():
+  now = datetime.datetime(2026, 10, 6, 12, tzinfo=datetime.timezone.utc)
+  assert not recreate_artifacts.in_progress({"status": "triggered", "at": "2099-01-01T00:00:00+00:00"}, now=now)
+  assert not recreate_artifacts.in_progress({"status": "triggered", "at": "2026-10-06T11:59:00"}, now=now) # no timezone
+  assert not recreate_artifacts.in_progress("triggered", now=now)
+
+
+def test_sibling_without_manifests_keeps_everything_but_our_folder(repo):
+  # e.g. the root project's artifacts were saved before manifests existed
+  is_protected = protected_by_siblings(repo, [(repo, repo)], own_dir=repo / "sub/a")
+  assert is_protected("qaboard.yaml")
+  assert is_protected("build/bin/tool")
+  assert is_protected("sub/b/qaboard.yaml")
+  assert not is_protected("sub/a/qaboard.yaml")
+  deleted = []
+  rmtree_except(repo, repo, is_protected, lambda p: deleted.append(p.relative_to(repo).as_posix()) or 1)
+  assert deleted == ["sub/a"]
+
+
+def test_dotdot_paths_are_normalized(repo):
+  is_protected = protected_by_siblings(repo, [(repo, repo / "sub/b")])
+  assert is_protected("sub/a/../b/data.bin")
+  assert is_protected("./qaboard.yaml")

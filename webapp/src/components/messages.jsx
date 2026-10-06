@@ -138,7 +138,7 @@ class BatchStatusMessages extends React.Component {
     this.setState({waiting_redo: true})
     toaster.show({message: "Redo requested."});
     post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
-      .then(() => {
+      .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
         this.setState({waiting_redo: false})
         toaster.show({message: `Redo ${batch.label}.`, intent: Intent.PRIMARY});
         this.refresh()

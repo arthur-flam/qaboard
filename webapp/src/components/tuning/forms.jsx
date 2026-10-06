@@ -349,7 +349,9 @@ class TuningForm extends Component {
     let updated_commit = has_commit && (prevProps.commit === null || prevProps.commit === undefined || prevProps.commit.id !== this.props.commit.id);
     if (updated_commit && selected_group) this.getGroupInfo(selected_group);
     const checked_fields = ['experiment_name', 'selected_group', 'platform', 'search_type', 'search_options', 'parameter_search', 'parameter_search_auto']
-    if (updated_commit || checked_fields.some(f => prevState[f] !== this.state[f])) this.scheduleCheck();
+    // e.g. the artifacts were recreated
+    const updated_artifacts = has_commit && (prevProps.commit?.deleted !== this.props.commit.deleted || prevProps.commit?.artifacts?.ok !== this.props.commit.artifacts?.ok)
+    if (updated_commit || updated_artifacts || checked_fields.some(f => prevState[f] !== this.state[f])) this.scheduleCheck();
   }
 
   componentWillUnmount() {
@@ -388,14 +390,15 @@ class TuningForm extends Component {
   // Asks the server what would go wrong if we started now (missing artifacts, unknown batch...)
   scheduleCheck = () => {
     clearTimeout(this.check_timeout)
+    // answers to checks of older settings are ignored
+    this.check_id = (this.check_id ?? 0) + 1
     this.check_timeout = setTimeout(this.check, 500)
   }
 
   check = () => {
     const { project, commit } = this.props;
     if (!commit?.id) return;
-    const check_id = (this.check_id ?? 0) + 1
-    this.check_id = check_id
+    const check_id = this.check_id
     post(`/api/v1/commit/${commit.id}/batch/check?project=${project}`, this.request())
       .then(response => {
         if (this.check_id !== check_id) return; // a newer check was sent
@@ -551,7 +554,7 @@ class TuningForm extends Component {
       intent: Intent.SUCCESS
     });
     post(`/api/v1/commit/${commit.id}/batch?project=${project}`, this.request())
-      .then(() => {
+      .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
         this.setState({ submitted: false });
         toaster.show({
           message: "Acknowledged! You can select the batch here ➡️",
@@ -570,6 +573,7 @@ class TuningForm extends Component {
         const submission = error.response?.data?.submission
         const errors = error.response?.data?.errors
         if (Array.isArray(errors)) {
+          this.check_id = (this.check_id ?? 0) + 1 // ignore checks still in flight
           this.setState({check: {errors, warnings: error.response.data.warnings ?? []}})
         }
         toaster.show({
@@ -589,7 +593,8 @@ class TuningForm extends Component {
     const { experiment_name, selected_group, selected_group_info, error } = this.state;
     const { user, platform, android_device } = this.state;
     const { tests, message } = selected_group_info;
-    const check_errors = this.state.check?.errors ?? []
+    // the inputs already say when the name or the batch are missing
+    const check_errors = (experiment_name && selected_group) ? (this.state.check?.errors ?? []) : []
     const check_warnings = this.state.check?.warnings ?? []
     const { combinations, language } = this.state
     let total_runs = combinations * tests.length;

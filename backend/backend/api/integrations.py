@@ -135,8 +135,12 @@ def gitlab_commit_jobs(gitlab_api, project_id, commit_id):
       headers=headers,
       timeout=60,
     )
+    r.raise_for_status()
     total_pages = int(r.headers['X-Total-Pages']) if r.headers.get('X-Total-Pages') else 0
-    jobs.extend(r.json())
+    page_jobs = r.json()
+    if not isinstance(page_jobs, list):
+      raise ValueError(f"Unexpected answer from GitLab when listing the jobs: {page_jobs}")
+    jobs.extend(page_jobs)
     page += 1
   return jobs
 

@@ -7,6 +7,7 @@ import sys
 import json
 import uuid
 import datetime
+import fnmatch
 import itertools
 import subprocess
 from shlex import quote
@@ -134,7 +135,8 @@ def get_group():
 
     commit_id = request.args.get("commit")
     if not commit_id:
-        return jsonify({"error": "Missing the commit"}), 400
+        # e.g. the form asks before the commit is loaded
+        return jsonify({"tests": []})
     ci_commit = find_commit(project_id, commit_id)
     if not ci_commit:
         return jsonify({"error": f"Commit {commit_id} was not found in {project_id}"}), 404
@@ -460,8 +462,11 @@ def check_tuning_request(ci_commit, data):
         warnings.append("Automated tuning creates one batch per iteration: give it a more specific name than \"default\".")
 
     platforms = config.get('inputs', {}).get('platforms') if isinstance(config.get('inputs'), dict) else None
-    if data.get('platform') and platforms and data['platform'] not in platforms:
-        errors.append(f"Unknown platform {data['platform']!r}. Available in qaboard.yaml: {', '.join(map(str, platforms))}")
+    if isinstance(platforms, list):
+        # the web app shows them as {name, label}
+        platforms = [str(p.get('name')) if isinstance(p, dict) else str(p) for p in platforms]
+        if data.get('platform') and platforms and str(data['platform']) not in platforms:
+            errors.append(f"Unknown platform {data['platform']!r}. Available in qaboard.yaml: {', '.join(platforms)}")
 
     errors.extend(check_tuning_search(data.get('tuning_search')))
 
@@ -492,9 +497,17 @@ def check_tuning_request(ci_commit, data):
         warnings.extend(batches_errors)
         batches = list(resolve_aliases(selected_group, merged_batches['aliases']))
         batches = pipeline_batches(batches, merged_batches)
-        unknown = [b for b in batches if b not in merged_batches]
-        if unknown:
-            defined = sorted(k for k in merged_batches if k not in ('aliases', 'groups', 'database'))
+        defined = sorted(k for k in merged_batches if k not in ('aliases', 'groups', 'database'))
+        # `qa batch` also accepts wildcards (batch-*), and input paths (semi-deprecated)
+        unknown = [b for b in batches if b not in merged_batches and not fnmatch.filter(defined, b)]
+        as_inputs = [b for b in unknown if '/' in b or '.' in b]
+        unknown = [b for b in unknown if b not in as_inputs]
+        if as_inputs:
+            warnings.append(f"Not defined as batches, so they will be used as input paths: {', '.join(as_inputs)}")
+        if unknown and not artifacts["ok"]:
+            # the batches files are in the artifacts: starting restores them first, then checks again
+            warnings.append(f"Can't check the batch {', '.join(unknown)} until the artifacts are back.")
+        elif unknown:
             hint = f" Defined: {', '.join(defined[:20])}{'...' if len(defined) > 20 else ''}" if defined else " No batches are defined: check `inputs.batches` in qaboard.yaml, and that the batches files are in the artifacts."
             errors.append(f"Unknown batch{'es' if len(unknown) > 1 else ''}: {', '.join(unknown)}.{hint}")
     return {
@@ -538,10 +551,11 @@ def start_tuning(hexsha):
         return jsonify({"error": f"Commit {hexsha} was not found in {project_id}"}), 404
 
     check = check_tuning_request(ci_commit, data)
+    restored_message = None
     if not check["artifacts"]["ok"]:
         # We never run from missing artifacts: e.g. without its qaboard.yaml, a subproject's runs would be saved in the parent project
         try:
-            ci_commit.ensure_artifacts(user=user)
+            restored = ci_commit.ensure_artifacts(user=user)
         except ArtifactsUnavailable as e:
             db_session.add(ci_commit)
             db_session.commit()
@@ -549,6 +563,7 @@ def start_tuning(hexsha):
         db_session.add(ci_commit)
         db_session.commit()
         # the batches files come from the artifacts
+        restored_message = restored["message"] if restored else None
         check = check_tuning_request(ci_commit, data)
     if check["errors"]:
         return jsonify({"error": " ".join(check["errors"]), "errors": check["errors"], "warnings": check["warnings"]}), 400
@@ -676,4 +691,4 @@ def start_tuning(hexsha):
     if submission["status"] == "failed":
         error_log = (log_dir / 'log.txt').read_text() if (log_dir / 'log.txt').exists() else submission.get("error", "Failed to start batch")
         return jsonify({"error": error_log, "cmd": runner, "submission": submission}), 500
-    return jsonify({"cmd": runner, "stdout": "OK", "submission": submission})
+    return jsonify({"cmd": runner, "stdout": "OK", "submission": submission, "warning": restored_message})

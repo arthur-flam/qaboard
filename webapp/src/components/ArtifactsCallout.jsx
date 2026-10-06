@@ -15,8 +15,10 @@ export const ArtifactsCallout = ({ deleted, artifacts, waiting, onRestore }) => 
   const docs_root = useContext(ReactReduxContext)?.store?.getState()?.siteConfig?.docs_root ?? "/"
   const recreation = artifacts?.recreation
   const deletion = artifacts?.deletion
-  const recreating = recreation?.status === 'triggered'
-  if (!deleted && artifacts?.ok !== false && !recreating) return null
+  const recreating = artifacts?.recreating ?? recreation?.status === 'triggered'
+  // commits whose artifacts were never saved (e.g. projects that don't use `qa save-artifacts`) are not a problem
+  const broken = artifacts?.ok === false && artifacts?.exists !== false
+  if (!deleted && !broken && !recreating) return null
 
   const problems = (artifacts?.problems ?? []).filter(p => p !== "The artifacts were deleted.")
   const title = recreating
