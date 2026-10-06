@@ -1,8 +1,6 @@
 """
 Bitbucket Cloud (bitbucket.org). Bitbucket Data Center can be used as a "generic" host, without webhooks.
 """
-import re
-
 from .base import GitHost, hmac_sha256, same_secret
 
 
@@ -27,9 +25,13 @@ class BitbucketHost(GitHost):
     return (((payload.get('repository') or {}).get('links') or {}).get('html') or {}).get('href')
 
   @classmethod
+  def is_push(cls, payload, headers):
+    return headers.get('X-Event-Key', 'repo:push') == 'repo:push'
+
+  @classmethod
   def parse_push(cls, payload, headers):
     # https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/#Push
-    if headers.get('X-Event-Key', 'repo:push') != 'repo:push':
+    if not cls.is_push(payload, headers):
       return None
     repo = payload['repository']
     links = repo.get('links') or {}
@@ -64,13 +66,27 @@ class BitbucketHost(GitHost):
     }
 
 
+def parse_raw_author(raw):
+  """
+  "Name <email>" => ("Name", "email"), else (None, None).
+  Payloads come from anyone: no regular expressions that backtrack (it's linear in the length).
+  """
+  if not isinstance(raw, str):
+    return None, None
+  name, bracket, rest = raw.partition('<')
+  email, closing, _ = rest.partition('>')
+  if not bracket or not closing:
+    return None, None
+  return name.strip(), email
+
+
 def bitbucket_user(author):
   """Commit authors are {raw: "Name <email>", user: {display_name, nickname, links}}"""
-  match = re.match(r'\s*(.*?)\s*<([^>]*)>', author.get('raw') or '')
+  name, email = parse_raw_author(author.get('raw'))
   user = author.get('user') or {}
   return {
-    "name": match.group(1) if match else user.get('display_name'),
-    "email": match.group(2) if match else None,
+    "name": name if email is not None else user.get('display_name'),
+    "email": email,
     "username": user.get('nickname'),
     "avatar_url": ((user.get('links') or {}).get('avatar') or {}).get('href'),
   }

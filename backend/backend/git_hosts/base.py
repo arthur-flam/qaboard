@@ -2,6 +2,7 @@
 What all git hosts have in common. Each type of host (GitLab, GitHub...) refines it in its own module.
 """
 import re
+import copy
 import hmac
 import base64
 import hashlib
@@ -56,6 +57,31 @@ def branch_from_ref(ref):
   return re.sub(r'^refs/(heads|tags)/', '', ref or '')
 
 
+class CredentialsStayOnHost(requests.Session):
+  """
+  Follows redirects, but only sends credentials to the host of the first URL.
+  requests only removes the Authorization header when redirected to another host, and only compares
+  with the previous hop: tokens in other headers (GitLab's Private-Token) and cookies would be sent along.
+  """
+  def __init__(self, url, sensitive_headers=()):
+    super().__init__()
+    self.origin_url = url
+    self.sensitive_headers = {'Authorization', 'Cookie', 'Private-Token', *sensitive_headers}
+
+  def rebuild_auth(self, prepared_request, response):
+    super().rebuild_auth(prepared_request, response)
+    # like requests, we allow http => https on the same host
+    if self.should_strip_auth(self.origin_url, prepared_request.url):
+      for header in self.sensitive_headers:
+        prepared_request.headers.pop(header, None)
+
+
+def request_keeping_credentials_on_host(method, url, sensitive_headers=(), **kwargs):
+  """Like requests.request, but tokens (headers, cookies) are not sent to other hosts when redirected."""
+  with CredentialsStayOnHost(url, sensitive_headers) as session:
+    return session.request(method, url, **kwargs)
+
+
 class GitHost:
   """
   A git server, e.g. https://github.com or https://gitlab.example.com.
@@ -83,9 +109,21 @@ class GitHost:
     self.hostnames = {self.hostname, *[hostname_of(h) for h in hostnames if hostname_of(h)]}
     self.token = token or ''
     self.webhook_secret = webhook_secret or ''
+    self._api_url = api_url
     self.api_url = (api_url or self.default_api_url() or '').rstrip('/') or None
     self.name = name or self.hostname
     self.user_avatar_url = user_avatar_url or self.default_user_avatar_url
+    # Hosts from QABOARD_GITHUB_HOSTS have no scheme: we use the one of the repositories' web_url (see GitHosts.for_repo)
+    self.scheme_from_repositories = False
+
+  def with_scheme(self, scheme):
+    """The same host, at e.g. http:// instead of https://"""
+    if self.url.startswith(f"{scheme}://"):
+      return self
+    host = copy.copy(self)
+    host.url = f"{scheme}://{self.url.split('://', 1)[1]}"
+    host.api_url = (self._api_url or host.default_api_url() or '').rstrip('/') or None
+    return host
 
   def __repr__(self):
     # Never show the token: it's used as a cache key...
@@ -116,26 +154,48 @@ class GitHost:
     """
     Environment variables for git commands, that authenticate us with the host's token.
     Unlike credentials in clone URLs, they are not saved in the clones' .git/config or shown in errors.
-    The header is only sent to this host's URL, and curl doesn't forward it when redirected elsewhere.
+
+    git asks its credential helpers for a password when the host answers "401 Unauthorized", and only uses
+    the helpers configured for the URL it is talking to. When the host redirects git to another host, git
+    talks to that host from then on (http.followRedirects=initial): it doesn't get the token.
+    (A http.<url>.extraHeader would be sent there: git reads its config once, for the first URL.)
+    Redirects on the same host keep working, e.g. GitHub's for renamed repositories, or http => https.
     """
     if not self.token:
       return {}
-    user, password = self.token.split(':', 1) if ':' in self.token else (self.token_user, self.token)
-    credentials = base64.b64encode(f"{user}:{password}".encode()).decode()
-    # https://git-scm.com/docs/git-config#Documentation/git-config.txt-httpltURLgt (git>=2.31 for GIT_CONFIG_COUNT)
+    user, password = self.credentials()
+    # https://git-scm.com/docs/gitcredentials (git>=2.31 for GIT_CONFIG_COUNT)
+    helper = '!f() { test "$1" = get && printf "username=%s\\npassword=%s\\n" "$QABOARD_GIT_USERNAME" "$QABOARD_GIT_PASSWORD"; }; f'
+    urls = [self.url]
+    parsed = urlparse(self.url)
+    if parsed.scheme == 'http' and parsed.port in (None, 80):
+      urls.append(f"https://{parsed.hostname}{parsed.path}")
+    config = [
+      ("credential.helper", ""), # resets the list: other helpers (e.g. "store") could save the token on disk
+      *[(f"credential.{url}.helper", helper) for url in urls],
+    ]
+    env = {"GIT_CONFIG_COUNT": str(len(config))}
+    for i, (key, value) in enumerate(config):
+      env[f"GIT_CONFIG_KEY_{i}"] = key
+      env[f"GIT_CONFIG_VALUE_{i}"] = value
     return {
-      "GIT_CONFIG_COUNT": "1",
-      "GIT_CONFIG_KEY_0": f"http.{self.url}/.extraHeader",
-      "GIT_CONFIG_VALUE_0": f"Authorization: Basic {credentials}",
+      **env,
+      "QABOARD_GIT_USERNAME": user,
+      "QABOARD_GIT_PASSWORD": password,
       "GIT_TERMINAL_PROMPT": "0",
     }
+
+  def credentials(self):
+    """(user, password) for git"""
+    return tuple(self.token.split(':', 1)) if ':' in self.token else (self.token_user, self.token)
 
   def redact(self, text):
     """Removes our token from e.g. error messages."""
     if not self.token:
       return text
-    credentials = self.git_env()['GIT_CONFIG_VALUE_0'].split(' ')[-1]
-    for secret in (self.token, self.token.split(':')[-1], credentials, quote(self.token, safe='')):
+    user, password = self.credentials()
+    basic = base64.b64encode(f"{user}:{password}".encode()).decode()
+    for secret in (self.token, password, basic, quote(self.token, safe=''), quote(password, safe='')):
       text = text.replace(secret, '***')
     return text
 
@@ -153,7 +213,7 @@ class GitHost:
       raise ValueError(f"No API for {self}")
     headers = {**self.api_headers(), **kwargs.pop('headers', {})}
     kwargs.setdefault('timeout', 30)
-    return requests.request(method, f"{self.api_url}{path}", headers=headers, **kwargs)
+    return request_keeping_credentials_on_host(method, f"{self.api_url}{path}", headers=headers, sensitive_headers=self.api_headers(), **kwargs)
 
 
   # ==========================================
@@ -175,6 +235,11 @@ class GitHost:
   @classmethod
   def check_webhook_secret(cls, headers, body, secret):
     return False
+
+  @classmethod
+  def is_push(cls, payload, headers):
+    """Is the webhook a push event? Cheap: we call it before checking the webhook's secret."""
+    return True
 
   @classmethod
   def parse_push(cls, payload, headers):

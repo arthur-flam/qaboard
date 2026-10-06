@@ -33,9 +33,13 @@ class GiteaHost(GitHost):
     return (payload.get('repository') or {}).get('html_url')
 
   @classmethod
-  def parse_push(cls, payload, headers):
+  def is_push(cls, payload, headers):
     event = headers.get('X-Forgejo-Event') or headers.get('X-Gitea-Event') or headers.get('X-Gogs-Event') or 'push'
-    if event != 'push':
+    return event == 'push'
+
+  @classmethod
+  def parse_push(cls, payload, headers):
+    if not cls.is_push(payload, headers):
       return None
     repo = payload['repository']
     owner = repo.get('owner') or {}

@@ -33,9 +33,13 @@ class GitHubHost(GitHost):
     return (payload.get('repository') or {}).get('html_url')
 
   @classmethod
+  def is_push(cls, payload, headers):
+    return headers.get('X-GitHub-Event', 'push') == 'push'
+
+  @classmethod
   def parse_push(cls, payload, headers):
     # https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
-    if headers.get('X-GitHub-Event', 'push') != 'push':
+    if not cls.is_push(payload, headers):
       return None
     repo = payload['repository']
     owner = repo.get('owner') or {}

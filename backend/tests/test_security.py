@@ -9,11 +9,13 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import requests # before the `auth` fixture stubs simplejson, that requests would use
 from flask import g
 
 from backend.shell_utils import quote, is_shell_safe, shell_safe, safe_user_name, lsf_bridge_command
 
 from .git_payloads import gitlab_push, github_push, gitea_push, bitbucket_push
+from .test_git_hosts import FakeProjects
 
 
 # Values with characters that are special to the shell
@@ -221,16 +223,96 @@ def test_repos_refuse_paths_outside_the_clone_directory(git_utils, tmp_path):
   assert not (tmp_path / "outside").exists()
 
 
+def git(*args, cwd=None):
+  env = {"GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@example.com", "GIT_COMMITTER_NAME": "a", "GIT_COMMITTER_EMAIL": "a@example.com", "HOME": str(cwd or "/tmp")}
+  return subprocess.run(["git", *args], cwd=cwd, env={**__import__("os").environ, **env}, check=True, capture_output=True, encoding="utf-8").stdout
+
+
+class LocalHost:
+  """A git host whose repositories are local folders"""
+  def __init__(self, root):
+    self.root = root
+  def for_repo(self, git=None, project_url=None):
+    return self
+  def clone_url(self, path):
+    return str(self.root / path)
+  def git_env(self):
+    return {}
+  def redact(self, text):
+    return text
+
+
+@pytest.fixture
+def local_repos(git_utils, tmp_path):
+  """Repos that clone from tmp_path/remote/<path> to tmp_path/git/<path>"""
+  for path in ("org/repo", "org/other", "org/broken"):
+    git("init", "-q", str(tmp_path / "remote" / path))
+    (tmp_path / "remote" / path / "src").mkdir()
+    (tmp_path / "remote" / path / "src" / "file.txt").write_text("content")
+    git("add", ".", cwd=tmp_path / "remote" / path)
+    git("commit", "-q", "-m", "init", cwd=tmp_path / "remote" / path)
+  return git_utils.Repos(LocalHost(tmp_path / "remote"), tmp_path / "git")
+
+
+def test_repos_never_delete_what_they_did_not_clone(local_repos, tmp_path):
+  clones = tmp_path / "git"
+  assert local_repos.get("org/repo").working_tree_dir == str(clones / "org" / "repo")
+  local_repos.get("org/other")
+  # e.g. push webhooks for repositories named "org" or "org/repo/src"
+  for path in ["org", "org/repo/src", "org/repo/src/file.txt", "org/repo/missing", "org/repo/src/missing/x"]:
+    with pytest.raises(ValueError):
+      local_repos.get(path)
+  assert (clones / "org" / "repo" / "src" / "file.txt").read_text() == "content"
+  assert local_repos.get("org/other").head.commit
+  # A folder that is not a clone
+  (clones / "org" / "folder").mkdir()
+  (clones / "org" / "folder" / "data.txt").write_text("data")
+  with pytest.raises(ValueError):
+    local_repos.get("org/folder")
+  assert (clones / "org" / "folder" / "data.txt").exists()
+  # ...unless it's empty
+  (clones / "org" / "broken").mkdir()
+  assert local_repos.get("org/broken").head.commit
+  assert not list(clones.glob("org/.*"))
+
+
+def test_repos_replace_broken_clones(local_repos, tmp_path):
+  clones = tmp_path / "git"
+  local_repos.get("org/broken")
+  (clones / "org" / "broken" / ".git" / "HEAD").unlink() # git can't read it anymore
+  (clones / "org" / "broken" / "untracked.txt").write_text("x")
+  repo = local_repos.get("org/broken")
+  assert repo.head.commit and not (clones / "org" / "broken" / "untracked.txt").exists()
+  assert not list(clones.glob("org/.*")) # temporary folders are removed
+  # A broken clone with other clones inside is not ours to delete
+  local_repos.get("org/repo")
+  (clones / "org" / "broken" / ".git" / "HEAD").unlink()
+  (clones / "org" / "broken" / "nested").mkdir()
+  (clones / "org" / "broken" / "nested" / ".git").mkdir()
+  with pytest.raises(ValueError):
+    local_repos.get("org/broken")
+  assert (clones / "org" / "broken" / "nested" / ".git").exists()
+
+
+def test_failed_clones_leave_nothing_behind(local_repos, tmp_path):
+  with pytest.raises(RuntimeError):
+    local_repos.get("org/does-not-exist")
+  assert sorted(p.name for p in (tmp_path / "git" / "org").iterdir()) == []
+
+
 UNTRUSTED_URLS = ["https://attacker.example.com/org/repo", "ext::sh -c id", "file:///etc", "git@attacker.example.com:org/repo"]
 
 def credentials(host):
-  """What git sends to the host: (the URL where the header is sent, user:password)"""
-  import base64
+  """What git gets from its credential helper: (the URLs where it can be used, user:password)"""
   env = host.git_env()
   if not env:
     return None
-  assert env["GIT_CONFIG_KEY_0"] == f"http.{host.url}/.extraHeader"
-  return host.url, base64.b64decode(env["GIT_CONFIG_VALUE_0"].removeprefix("Authorization: Basic ")).decode()
+  config = {env[f"GIT_CONFIG_KEY_{i}"]: env[f"GIT_CONFIG_VALUE_{i}"] for i in range(int(env["GIT_CONFIG_COUNT"]))}
+  assert config.pop("credential.helper") == "" # no other helpers
+  urls = [key.removeprefix("credential.").removesuffix(".helper") for key in config]
+  assert all("QABOARD_GIT_PASSWORD" in helper for helper in config.values())
+  assert not any(key.startswith("http.") for key in config)
+  return (urls[0] if len(urls) == 1 else urls), f"{env['QABOARD_GIT_USERNAME']}:{env['QABOARD_GIT_PASSWORD']}"
 
 
 def test_tokens_are_only_sent_to_their_hosts():
@@ -277,9 +359,120 @@ def test_configured_hosts_tokens():
   for host in hosts:
     assert not host.token or host.token not in repr(host)
     assert "token" not in json.dumps(host.public())
+  # git follows http => https redirects on the same host
+  http = hosts_from({"GITLAB_HOST": "http://gitlab-srv/gitlab", "GITLAB_ACCESS_TOKEN": "t"}).default
+  assert credentials(http) == (["http://gitlab-srv/gitlab", "https://gitlab-srv/gitlab"], "oauth2:t")
 
 
-# ==========================================
+class Servers:
+  """Two local HTTP servers with different hostnames, that log what they receive and can redirect to each other"""
+  def __init__(self):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    self.log, self.routes = [], {}
+    servers = self
+    class Handler(BaseHTTPRequestHandler):
+      def log_message(self, *args):
+        pass
+      def do_GET(self):
+        servers.log.append((self.server.name, self.path, dict(self.headers)))
+        for prefix, route in servers.routes.get(self.server.name, {}).items():
+          if self.path.startswith(prefix):
+            status, headers, body = route(self.path[len(prefix):]) if callable(route) else route
+            break
+        else:
+          status, headers, body = 404, {}, b""
+        self.send_response(status)
+        for k, v in {**headers, "Content-Length": str(len(body))}.items():
+          self.send_header(k, v.format(a=servers.a, b=servers.b) if isinstance(v, str) else v)
+        self.end_headers()
+        self.wfile.write(body)
+    self.servers = []
+    for name in ("a", "b"):
+      server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+      server.name = name
+      threading.Thread(target=server.serve_forever, daemon=True).start()
+      self.servers.append(server)
+    # Different hostnames for the same machine
+    self.a = f"http://127.0.0.1:{self.servers[0].server_address[1]}"
+    self.b = f"http://localhost:{self.servers[1].server_address[1]}"
+
+  def received(self, name):
+    return [(path, headers) for server, path, headers in self.log if server == name]
+
+  def close(self):
+    for server in self.servers:
+      server.shutdown()
+      server.server_close()
+
+
+@pytest.fixture
+def servers():
+  servers = Servers()
+  yield servers
+  servers.close()
+
+
+UNAUTHORIZED = (401, {"WWW-Authenticate": 'Basic realm="git"'}, b"")
+
+def git_version():
+  try:
+    out = subprocess.run(["git", "--version"], capture_output=True, encoding="utf-8").stdout
+  except OSError:
+    return (0,)
+  return tuple(int(x) for x in out.split()[2].split(".")[:2])
+
+
+@pytest.mark.skipif(git_version() < (2, 31), reason="needs git>=2.31 for GIT_CONFIG_COUNT")
+def test_git_doesnt_send_tokens_to_other_hosts_when_redirected(servers, tmp_path):
+  import os
+  from backend.git_hosts import GitLabHost
+  host = GitLabHost(servers.a, token="secret-token")
+  env = {**os.environ, "HOME": str(tmp_path), **host.git_env()}
+  clone = lambda path: subprocess.run(["git", "clone", f"{servers.a}/{path}", str(tmp_path / "clones" / path)], env=env, capture_output=True, encoding="utf-8")
+  authorizations = lambda name: [h.get("Authorization") for _, h in servers.received(name)]
+  # Redirected to another host, that serves a repository (with git's "dumb" HTTP protocol: static files)
+  git("init", "-q", str(tmp_path / "src"))
+  git("commit", "-q", "--allow-empty", "-m", "init", cwd=tmp_path / "src")
+  git("clone", "-q", "--bare", str(tmp_path / "src"), str(tmp_path / "bare"))
+  git("update-server-info", cwd=tmp_path / "bare")
+  def static(path):
+    file = tmp_path / "bare" / path.split("?")[0]
+    return (200, {}, file.read_bytes()) if file.is_file() else (404, {}, b"")
+  servers.routes = {"a": {"/org/repo/": (301, {"Location": "{b}/other/repo/info/refs?service=git-upload-pack"}, b"")}, "b": {"/other/repo/": static}}
+  assert clone("org/repo").returncode == 0
+  assert len(servers.received("b")) > 2 and not any(authorizations("b"))
+  assert not any(authorizations("a")) # it didn't ask
+  # Redirected to another host, that asks for credentials
+  servers.log.clear()
+  servers.routes = {"a": {"/org/repo": (301, {"Location": "{b}/other/repo/info/refs?service=git-upload-pack"}, b"")}, "b": {"/": UNAUTHORIZED}}
+  assert clone("org/repo2").returncode != 0
+  assert servers.received("b") and not any(authorizations("b"))
+  # On the same host, we authenticate when asked
+  servers.log.clear()
+  servers.routes = {"a": {"/org/repo": (301, {"Location": "{a}/other/repo/info/refs?service=git-upload-pack"}, b""), "/other/repo": UNAUTHORIZED}}
+  assert clone("org/repo3").returncode != 0
+  import base64
+  assert "Basic " + base64.b64encode(b"oauth2:secret-token").decode() in authorizations("a")
+
+
+def test_api_tokens_and_cookies_stay_on_their_host(servers):
+  from backend.git_hosts import GitLabHost
+  from backend.git_hosts.base import request_keeping_credentials_on_host
+  host = GitLabHost(servers.a, token="secret-token")
+  servers.routes = {
+    "a": {"/api/v4/same": (302, {"Location": "{a}/api/v4/ok"}, b""), "/api/v4/ok": (200, {}, b"[]"), "/api/v4/users": (302, {"Location": "{b}/elsewhere"}, b"")},
+    "b": {"/elsewhere": (302, {"Location": "{b}/again"}, b""), "/again": (200, {}, b"[]")},
+  }
+  assert host.api("GET", "/same").ok
+  assert [h.get("Private-Token") for _, h in servers.received("a")] == ["secret-token", "secret-token"]
+  assert host.api("GET", "/users").ok # like gitlab_users
+  host.api("GET", "/users", headers={"Authorization": "Bearer x"}, cookies={"_gitlab_session": "cookie"})
+  request_keeping_credentials_on_host("GET", f"{servers.a}/api/v4/users", cookies={"_gitlab_session": "cookie"})
+  assert len(servers.received("b")) >= 4
+  for _, headers in servers.received("b"):
+    assert not {"Private-Token", "Authorization", "Cookie"} & set(headers), headers
+
 # Webhook secret
 # ==========================================
 
@@ -292,6 +485,7 @@ def webhooks(monkeypatch):
   module = importlib.util.module_from_spec(spec)
   spec.loader.exec_module(module)
   module.committers = MagicMock() # no redis
+  module.Project = FakeProjects()
   return module
 
 
@@ -340,12 +534,95 @@ def test_github_webhook_signature(webhooks, dummy_app):
   webhooks.update_project.assert_called_once()
 
 
-def test_webhooks_from_unknown_hosts_are_refused(webhooks, dummy_app):
+def test_webhooks_from_unknown_hosts_are_refused(webhooks, dummy_app, monkeypatch):
   configure(webhooks, QABOARD_WEBHOOK_SECRET="s3cret")
   payload = github_push(html_url="https://attacker.example.com/org/repo")
-  assert post(webhooks, dummy_app, "github", payload, {"X-Hub-Signature-256": signature("wrong", payload)})[1] == 401
-  assert post(webhooks, dummy_app, "github", payload, {"X-Hub-Signature-256": signature("s3cret", payload)})[1] == 403
+  for secret in ("wrong", "s3cret"):
+    assert post(webhooks, dummy_app, "github", payload, {"X-Hub-Signature-256": signature(secret, payload)})[1] == 403
+  # ...before we parse them
+  from backend.git_hosts import BitbucketHost
+  parse_push = MagicMock()
+  monkeypatch.setattr(BitbucketHost, "parse_push", parse_push)
+  payload = bitbucket_push()
+  payload["repository"]["links"]["html"]["href"] = "https://attacker.example.com/org/repo"
+  assert post(webhooks, dummy_app, "bitbucket", payload, {})[1] == 403
+  parse_push.assert_not_called()
   webhooks.update_project.assert_not_called()
+
+
+def test_hosts_without_a_secret_refuse_webhooks_if_others_have_one(webhooks, dummy_app):
+  import json
+  # No QABOARD_WEBHOOK_SECRET: github.com (always there, for backward compatibility) has no secret
+  configure(webhooks, QABOARD_GIT_HOSTS=json.dumps([{"type": "gitlab", "url": "https://gitlab.example.com", "webhook_secret": "gitlab-secret"}]))
+  assert webhooks.git_hosts.find("github.com").webhook_secret == ""
+  status = lambda endpoint, payload, headers={}: post(webhooks, dummy_app, endpoint, payload, headers)[1]
+  assert status("github", github_push(), {}) == 401
+  assert status("github", github_push(), {"X-Hub-Signature-256": signature("", github_push())}) == 401
+  assert status("gitlab", gitlab_push(), {}) == 401
+  webhooks.update_project.assert_not_called()
+  assert status("gitlab", gitlab_push(), {"X-Gitlab-Token": "gitlab-secret"}) == 200
+
+
+def test_pushes_cant_change_the_host_of_a_project(webhooks, dummy_app):
+  configure(webhooks)
+  # Project ids are repository paths: "group/repo" on GitLab is the same project as "group/repo" on GitHub
+  webhooks.Project = FakeProjects({
+    "group/repo": {"git": {"hosting_type": "gitlab", "host": "https://gitlab.example.com", "path_with_namespace": "group/repo", "web_url": "https://gitlab.example.com/group/repo"}},
+    "org/repo": {"git": {"path_with_namespace": "org/repo"}}, # created by the CLI: we don't know its host
+    "old/repo": {"git": {"hosting_type": "gitea", "host": "https://gitea.removed.example.com", "web_url": "https://gitea.removed.example.com/old/repo"}},
+  })
+  payload = github_push()
+  payload["repository"]["full_name"] = "group/repo"
+  response, status = post(webhooks, dummy_app, "github", payload, {})
+  assert status == 409 and "gitlab.example.com" in response.get_json()["error"]
+  webhooks.update_project.assert_not_called()
+  assert post(webhooks, dummy_app, "gitlab", gitlab_push(), {})[1] == 200
+  assert post(webhooks, dummy_app, "github", github_push(), {})[1] == 200
+  payload["repository"]["full_name"] = "old/repo"
+  assert post(webhooks, dummy_app, "github", payload, {})[1] == 200 # its host is not configured anymore
+  # Older data, without "host"
+  webhooks.Project = FakeProjects({"group/repo": {"git": {"path_with_namespace": "group/repo", "web_url": "https://gitlab-alias/group/repo"}}})
+  payload["repository"]["full_name"] = "group/repo"
+  assert post(webhooks, dummy_app, "github", payload, {})[1] == 409
+
+
+def test_webhooks_are_refused_if_the_configuration_is_invalid(webhooks, dummy_app):
+  configure(webhooks, QABOARD_GIT_HOSTS='[{"type": "github", "url": "https://github.com", "webhook_secret": "s", "typo": 1}]')
+  assert post(webhooks, dummy_app, "github", github_push(), {})[1] == 503
+  webhooks.update_project.assert_not_called()
+
+
+def test_webhooks_size(webhooks, dummy_app):
+  configure(webhooks)
+  webhooks.MAX_WEBHOOK_SIZE = 1000
+  assert post(webhooks, dummy_app, "github", {**github_push(), "padding": "x" * 1000}, {})[1] == 413
+  assert post(webhooks, dummy_app, "github", github_push(), {})[1] == 200
+
+
+def test_bitbucket_authors_are_parsed_in_linear_time():
+  import time
+  from backend.git_hosts.bitbucket import parse_raw_author, bitbucket_user
+  assert parse_raw_author("Emma <emma@example.com>") == ("Emma", "emma@example.com")
+  assert parse_raw_author("  Emma Smith   <emma@example.com> ") == ("Emma Smith", "emma@example.com")
+  assert parse_raw_author("Emma") == (None, None)
+  assert parse_raw_author("Emma <emma") == (None, None)
+  assert parse_raw_author(None) == (None, None)
+  assert bitbucket_user({"raw": "Emma", "user": {"display_name": "E"}})["name"] == "E"
+  start = time.monotonic()
+  for raw in ["\t" * 15000 + "<", " " * 100_000 + "<" + "x" * 100_000, "<" * 100_000]:
+    parse_raw_author(raw)
+  assert time.monotonic() - start < 1
+
+
+def test_webhooks_ignore_pings_from_unknown_hosts(webhooks, dummy_app):
+  configure(webhooks, QABOARD_WEBHOOK_SECRET="s3cret")
+  # Organization webhooks' pings have no repository
+  response, status = post(webhooks, dummy_app, "github", {"zen": "x", "hook_id": 1}, {"X-GitHub-Event": "ping"})
+  assert status == 200 and response.get_json()["status"] == "ignored"
+  # Repository webhooks' pings are checked, to help setting the secret
+  ping = {"zen": "x", "repository": github_push()["repository"]}
+  assert post(webhooks, dummy_app, "github", ping, {"X-GitHub-Event": "ping"})[1] == 401
+  assert post(webhooks, dummy_app, "github", ping, {"X-GitHub-Event": "ping", "X-Hub-Signature-256": signature("s3cret", ping)})[1] == 200
 
 
 def test_per_host_webhook_secrets(webhooks, dummy_app):

@@ -29,7 +29,11 @@ QABOARD_GIT_HOSTS='[
 | `name` | Shown to users |
 | `user_avatar_url` | Users' avatars, with `{url}` and `{username}`. Default for GitHub: `{url}/{username}.png`. For GitLab, only for users who didn't upload an avatar (default: `QABOARD_AVATAR_URL`) |
 
-The `/api/v1/config` endpoint tells the web app the type and URL of each host, never their tokens.
+The server reads tokens and webhook secrets (including the variables named by `token_env` and `webhook_secret_env`) from its **environment** only, not from the CLI's shared secrets file (`QA_SECRETS`): it may have e.g. a CI token that isn't meant for the server. Other settings can also come from the site package.
+
+The `/api/v1/config` endpoint tells the web app the type, URL and name of each host, never their tokens or their other hostnames. It's public: the web app needs it to build links to the code, and the hosts' URLs are in the projects' `web_url` anyway.
+
+If a setting is invalid (e.g. `QABOARD_GIT_HOSTS` is not valid JSON, or an entry has an unknown key), the server still starts and migrations still run: it logs the error, ignores what's invalid, and **refuses all webhooks** (`503`) until it's fixed, since it can't know which webhook secrets you meant.
 
 ### Tokens
 | Host | To clone private repositories | For CI integrations |
@@ -39,15 +43,21 @@ The `/api/v1/config` endpoint tells the web app the type and URL of each host, n
 | Gitea/Forgejo | `read:repository` | |
 | Bitbucket | a repository access token with *Read*, or `user:app_password` | |
 
-Clones are authenticated with an HTTP header given to git in its environment (git 2.31+), only for the host's URL: tokens are not saved in the clones' `.git/config`.
+Clones are authenticated by a git credential helper given in git's environment (git 2.31+), only for the host's URL: tokens are not saved in the clones' `.git/config`. git uses it when the host asks for credentials (`401`), so if the host redirects git to another host, that host doesn't get the token. Redirects on the same host keep working (e.g. `http` to `https`, or GitHub's for renamed repositories). Likewise, API calls only send the token (and the `GITLAB_AUTH` session cookies) to the host they were made to.
+
+Clones are in `$QABOARD_DATA_GIT_DIR/<group>/<repo>` (default: `$QABOARD_DATA_DIR/git`). Repositories are cloned in a temporary folder next to it, then renamed. The server never deletes a folder it didn't clone: a repository path inside a clone, or that has clones inside it (e.g. `group`), is refused. A clone that git can't read anymore is cloned again, and replaced.
 
 ### Backward compatibility
 The variables we used before still work, and are merged with `QABOARD_GIT_HOSTS`:
-- `GITLAB_HOST` (default: *https://gitlab.com*) with `GITLAB_ACCESS_TOKEN`. `QABOARD_GITLAB_HOSTS` lists other GitLab hostnames that get the same token.
-- github.com with `GITHUB_ACCESS_TOKEN`. `QABOARD_GITHUB_HOSTS` lists GitHub Enterprise hostnames that get the same token.
+- `GITLAB_HOST` (default: *https://gitlab.com*) with `GITLAB_ACCESS_TOKEN`. Without a scheme (`gitlab-srv`), we use `https://`. If it has credentials (`https://user:password@gitlab-srv`) and there is no `GITLAB_ACCESS_TOKEN`, they're used to clone.
+- `QABOARD_GITLAB_HOSTS` (comma-separated): hostnames like `gitlab-alias` are other names of `GITLAB_HOST` (the same server, token and users). URLs like `https://gitlab2.example.com` are other GitLab servers that get `GITLAB_ACCESS_TOKEN`. To give them their own token, use `QABOARD_GIT_HOSTS`.
+- github.com with `GITHUB_ACCESS_TOKEN`. `QABOARD_GITHUB_HOSTS` lists GitHub Enterprise hostnames that get the same token. Without a scheme, we use the one of the repositories' `web_url` (`https` by default).
 - If `QABOARD_GIT_HOSTS` lists one of those hosts without a token, it gets the token above.
+- A GitLab and a GitHub host can have the same hostname (e.g. `GITLAB_HOST` is a GitHub Enterprise server that is also in `QABOARD_GITHUB_HOSTS`): GitHub repositories use the GitHub one.
 
-The **default host**, used for projects that don't say where they are hosted, is `GITLAB_HOST` if it's set, else the first host of `QABOARD_GIT_HOSTS`. Pushes to `/webhook/gitlab` from unknown hostnames are attributed to it, like before. Pushes from other unknown hosts are refused (`403`).
+The **default host**, used for projects that don't say where they are hosted, is `GITLAB_HOST` if it's set, else the first host of `QABOARD_GIT_HOSTS`. Pushes to `/webhook/gitlab` from unknown hostnames are attributed to it, like before, and so are GitLab projects whose `data.git.host` is not configured anymore. Pushes from other unknown hosts are refused (`403`).
+
+github.com is always known, even without a `GITHUB_ACCESS_TOKEN`: public GitHub repositories can send their push events without any configuration, like before.
 
 Like the CLI, the server also reads these settings from the site package (e.g. `qaboard-site-sirc`).
 
@@ -61,7 +71,15 @@ Each repository should send its push events to QA-Board (see [Project setup](/do
 | Gitea, Forgejo | `/webhook/gitea` or `/webhook/forgejo` | *Secret* (`X-Gitea-Signature`, `X-Forgejo-Signature`) |
 | Bitbucket Cloud | `/webhook/bitbucket` | *Secret* (`X-Hub-Signature`) |
 
-Set a secret: without it, anyone who can reach the server can send fake push events. Other events (e.g. GitHub's `ping`) are answered with `200` and ignored.
+Set a secret: without it, anyone who can reach the server can send fake push events. If any host has a secret (or `QABOARD_WEBHOOK_SECRET` is set), push events for hosts without one are refused: otherwise anyone could send a push event that claims its repository is on such a host, e.g. github.com. Other events (e.g. GitHub's `ping`) are answered with `200` and ignored.
+
+| Status | Why |
+|--------|-----|
+| `401` | The secret is wrong or missing, or the host has no secret while others have one |
+| `403` | The repository is on a host that isn't configured. We don't look further into the payload |
+| `409` | A project with this repository path is already on another git host (project ids are repository paths, they don't say on which host). To move a repository to another host, delete the project, or update its `data.git` |
+| `413` | The payload is over 25MB, the most GitHub sends |
+| `503` | The git hosts settings are invalid, see the server's logs |
 
 Push events from all hosts are stored the same way, in the projects' `data.git`:
 ```json

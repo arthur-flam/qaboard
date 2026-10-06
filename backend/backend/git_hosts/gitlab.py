@@ -3,8 +3,6 @@ GitLab (gitlab.com or self-managed)
 """
 import time
 
-import requests
-
 from .base import GitHost, same_secret, is_email
 from ..hybrid_cache import hybrid_cache
 
@@ -35,9 +33,13 @@ class GitLabHost(GitHost):
     return (payload.get('project') or {}).get('web_url')
 
   @classmethod
+  def is_push(cls, payload, headers):
+    return payload.get('object_kind', 'push') in ('push', 'tag_push')
+
+  @classmethod
   def parse_push(cls, payload, headers):
     # https://docs.gitlab.com/ee/user/project/integrations/webhook_events.html#push-events
-    if payload.get('object_kind', 'push') not in ('push', 'tag_push'):
+    if not cls.is_push(payload, headers):
       return None
     committers = [
       {"name": c['author'].get('name'), "email": c['author'].get('email')}
@@ -100,12 +102,7 @@ def gitlab_users(host):
   users_db = {}
   page = 1
   while True:
-    r = requests.get(
-      f"{host.api_url}/users",
-      headers=host.api_headers(),
-      params={'per_page': 100, 'page': page},
-      timeout=60,
-    )
+    r = host.api('GET', '/users', params={'per_page': 100, 'page': page}, timeout=60)
     r.raise_for_status()
     users_on_page = r.json()
     if not users_on_page:

@@ -126,8 +126,12 @@ integrations:
 ```
 The menu shows the status of the workflow's latest run for the commit, with a link to it. Clicking starts the workflow (you need to be logged in), and QA-Board follows the run it started.
 
+The server starts workflows with its own token, so it only starts the workflows that the project's `qaboard.yaml` lists, on the project's repository, with the inputs (and `ref`, if you set one) of the integration, and only for users who can access the project. `${...}` templates in `workflow`, `inputs` and `ref` match any value.
+
 :::note
 GitHub runs workflows on the latest commit of a branch or tag, not on a given commit. If the branch moved on, use an input to tell your workflow which commit to check out.
+
+GitHub doesn't say which run a dispatch started: QA-Board follows the latest run started by a dispatch on that branch or tag since you clicked. If someone else starts the same workflow on the same branch at the same time, it may show their run.
 :::
 
 The QA-Board server needs a GitHub token that can read the repository's actions, and write them to start workflows (fine-grained token: *Actions: Read and write*). See [Git hosts](backend-admin/git-hosts).

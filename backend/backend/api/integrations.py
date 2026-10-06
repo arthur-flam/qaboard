@@ -17,8 +17,10 @@ from requests.auth import HTTPBasicAuth
 from backend import app
 from ..config import qaboard_data_dir
 from ..git_hosts import git_hosts
+from ..git_hosts.base import request_keeping_credentials_on_host
 from ..git_utils import check_project_path
-from .auth import login_required
+from ..models import Project
+from .auth import login_required, is_authorized_user
 
 # We love our proxies
 import urllib3
@@ -111,6 +113,10 @@ def api_host(url, type):
   We only send tokens to the hosts they belong to, never to a URL we're given.
   """
   host = git_hosts.find(url, type) if url else git_hosts.of_type(type)
+  if not host and type == 'gitlab':
+    # e.g. the project's data.git.host is not configured anymore. Like before hosts were configurable,
+    # GitLab projects are on GITLAB_HOST: the token still only goes to a configured host.
+    host = git_hosts.of_type('gitlab')
   if not host:
     raise IntegrationError(f"Unknown {type} host: {url}. Add it to QABOARD_GIT_HOSTS.", 403)
   if not host.token:
@@ -152,9 +158,8 @@ def proxy_gitlab():
     cookies = {'_gitlab_session': gitlab_cookies[hostname]}
   else:
     cookies = {}
-  # print(url)
-  r = requests.get(url, cookies=cookies, verify=False)
-  session = Session()
+  # e.g. avatars redirect to object storage: the session cookie stays on GitLab
+  r = request_keeping_credentials_on_host('GET', url, cookies=cookies, verify=False, timeout=60)
   resp = make_response(r.content, r.status_code)
   for k, v in r.headers.items():
     resp.headers.set(k, v)
@@ -276,13 +281,94 @@ def gitlab_play_manual_job():
 # GitHub Actions: workflow runs
 # ==========================================
 # qaboard.yaml: integrations: [{text: "Benchmark", githubActions: {workflow: "benchmark.yml", inputs: {...}}}]
-# The web app sends {host, repo, commit_id, workflow, run_id?} to get the status, and {host, repo, workflow, ref, inputs} to start it.
+# The web app sends {project, host, repo, commit_id, workflow, run_id?, ref?, dispatched_at?} to get the status,
+# and {project, host, repo, workflow, ref, inputs} to start it.
+# We use the server's token: users can only see and start the workflows of the projects they can access,
+# on the project's repository, that the project's qaboard.yaml lists.
 
-def github_workflow(data):
-  host = api_host(data.get('host'), 'github')
-  repo = data['repo']
+def github_workflow(data, dispatch=False):
+  project_id = data.get('project')
+  if not isinstance(project_id, str) or not project_id:
+    raise IntegrationError("Missing `project`", 400)
+  if not is_authorized_user(None, project_id):
+    raise IntegrationError("Forbidden: You don't have permission to access this project", 403)
+  project = Project.query.filter(Project.id == project_id).one_or_none()
+  if not project:
+    raise IntegrationError(f"Unknown project: {project_id}", 404)
+  project_data = project.data or {}
+  git = project_data.get('git') or {}
+  config = project_data.get('qatools_config') or {}
+  repo = git.get('path_with_namespace') or project.id_git
+  if data.get('repo') != repo:
+    raise IntegrationError(f"The repository of {project_id} is {repo}", 403)
   check_project_path(repo) # e.g. org/repo
-  return host, repo, quote(str(data['workflow']), safe='')
+  try:
+    host = git_hosts.for_repo(git, (config.get('project') or {}).get('url'))
+  except ValueError as e:
+    raise IntegrationError(str(e), 403)
+  if host.type != 'github' or (data.get('host') and not host.matches(data['host'])):
+    raise IntegrationError(f"The repository of {project_id} is on {host.url}", 403)
+  if not host.token:
+    raise IntegrationError(f"Missing a token for {host.url}: set it in QABOARD_GIT_HOSTS (or GITHUB_ACCESS_TOKEN)", 500)
+  workflow = data.get('workflow')
+  if isinstance(workflow, int) and not isinstance(workflow, bool):
+    workflow = str(workflow) # workflow ids
+  declared =[i for i in iter_integrations(config.get('integrations')) if isinstance(i.get('githubActions'), dict)]
+  matching = [i['githubActions'] for i in declared if isinstance(workflow, str) and '/' not in workflow and matches_template(i['githubActions'].get('workflow'), workflow)]
+  if not matching:
+    raise IntegrationError(f"The qaboard.yaml of {project_id} has no githubActions integration with workflow {workflow!r}", 403)
+  if dispatch:
+    inputs = data.get('inputs') or {}
+    allowed = lambda i: inputs_match(i.get('inputs') or {}, inputs) and ('ref' not in i or matches_template(i['ref'], data.get('ref')))
+    if not isinstance(inputs, dict) or not any(allowed(i) for i in matching):
+      raise IntegrationError(f"The inputs or ref don't match the githubActions integrations of {project_id}", 403)
+  return host, repo, quote(workflow, safe='')
+
+
+def iter_integrations(integrations):
+  """All the integrations in qaboard.yaml, also in sub-menus"""
+  for integration in integrations if isinstance(integrations, list) else []:
+    if isinstance(integration, dict):
+      yield integration
+      yield from iter_integrations(integration.get('sub'))
+
+
+def matches_template(template, value):
+  """
+  Is `value` what the web app could make from `template`, e.g. "bench-${project.name}.yml"?
+  ${...} parts match anything. (No regular expressions: templates come from qaboard.yaml)
+  """
+  number = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+  if number(template) and isinstance(value, str) or isinstance(template, str) and number(value):
+    return str(template) == str(value) # e.g. workflow ids
+  if not isinstance(template, str) or not isinstance(value, str):
+    return template == value
+  literals, rest = [], template
+  while '${' in rest:
+    before, _, after = rest.partition('${')
+    literals.append(before)
+    _, closing, rest = after.partition('}')
+    if not closing:
+      return False
+  if not literals:
+    return template == value
+  literals.append(rest)
+  first, *middle, last = literals
+  if len(value) < len(first) + len(last) or not value.startswith(first) or not value.endswith(last):
+    return False
+  position, end = len(first), len(value) - len(last)
+  for literal in middle:
+    position = value.find(literal, position, end)
+    if position < 0:
+      return False
+    position += len(literal)
+  return True
+
+
+def inputs_match(declared, inputs):
+  if not isinstance(declared, dict):
+    return False
+  return set(inputs) == set(declared) and all(matches_template(declared[k], v) for k, v in inputs.items())
 
 def workflow_run_status(run):
   """A GitHub Actions run, with a status like GitLab's (that the web app knows)"""
@@ -309,6 +395,23 @@ def workflow_run_status(run):
   }
 
 
+def dispatched_run(host, repo, workflow, ref, dispatched_at):
+  """
+  The latest run started by a dispatch on this ref since `dispatched_at`, e.g. 2026-10-06T12:00:00Z.
+  If someone else started the workflow on the same ref at the same time, it can be theirs.
+  """
+  if not isinstance(dispatched_at, str) or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', dispatched_at):
+    raise IntegrationError(f"Invalid dispatched_at: {dispatched_at!r}", 400)
+  r = host.api('GET', f"/repos/{repo}/actions/workflows/{workflow}/runs", params={
+    "event": "workflow_dispatch",
+    "branch": ref,
+    "created": f">={dispatched_at}",
+    "per_page": 1,
+  })
+  runs = r.json().get('workflow_runs') if r.ok else None
+  return runs[0] if runs else None
+
+
 @app.route("/api/v1/github/workflow", methods=['POST'])
 @app.route("/api/v1/github/workflow/", methods=['POST'])
 def github_workflow_run():
@@ -322,6 +425,11 @@ def github_workflow_run():
       r = host.api('GET', f"/repos/{repo}/actions/runs/{quote(str(data['run_id']), safe='')}")
       r.raise_for_status()
       run = r.json()
+    elif data.get('dispatched_at') and data.get('ref'):
+      # We started it, but didn't find it yet: on the branch's latest commit, maybe not this one
+      run = dispatched_run(host, repo, workflow, data['ref'], data['dispatched_at'])
+      if not run:
+        return jsonify({"status": "pending", "dispatched_at": data['dispatched_at']})
     else:
       # https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow
       r = host.api('GET', f"/repos/{repo}/actions/workflows/{workflow}/runs", params={"head_sha": data['commit_id'], "per_page": 1})
@@ -344,8 +452,10 @@ def github_workflow_dispatch():
   """
   data = request.get_json()
   try:
-    host, repo, workflow = github_workflow(data)
-    started_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=10)
+    host, repo, workflow = github_workflow(data, dispatch=True)
+    if not isinstance(data.get('ref'), str) or not data['ref']:
+      raise IntegrationError("Missing `ref`: the branch or tag to run the workflow on", 400)
+    dispatched_at = f"{datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=10):%Y-%m-%dT%H:%M:%SZ}"
     # https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event
     r = host.api('POST', f"/repos/{repo}/actions/workflows/{workflow}/dispatches", json={
       "ref": data['ref'],
@@ -356,16 +466,11 @@ def github_workflow_dispatch():
     # GitHub doesn't tell us which run it started: we look for it for a few seconds
     for _ in range(8):
       time.sleep(1.5)
-      r = host.api('GET', f"/repos/{repo}/actions/workflows/{workflow}/runs", params={
-        "event": "workflow_dispatch",
-        "branch": data['ref'],
-        "created": f">={started_at:%Y-%m-%dT%H:%M:%SZ}",
-        "per_page": 1,
-      })
-      runs = r.json().get('workflow_runs') if r.ok else None
-      if runs:
-        return jsonify(workflow_run_status(runs[0]))
-    return jsonify({"status": "pending"})
+      run = dispatched_run(host, repo, workflow, data['ref'], dispatched_at)
+      if run:
+        return jsonify(workflow_run_status(run))
+    # The web app sends it back when it asks for the status, and we look again
+    return jsonify({"status": "pending", "dispatched_at": dispatched_at})
   except IntegrationError as e:
     return integration_error(e)
   except Exception as e:

@@ -39,8 +39,9 @@ class GitHostClient:
     return {}
 
   def request(self, method, path, **kwargs):
-    import requests
-    r = requests.request(method, f"{self.api_url}{path}", headers=self.headers(), timeout=60, **kwargs)
+    url = f"{self.api_url}{path}"
+    with credentials_stay_on_host(url, self.headers()) as session:
+      r = session.request(method, url, headers=self.headers(), timeout=60, **kwargs)
     r.raise_for_status()
     return r
 
@@ -50,6 +51,21 @@ class GitHostClient:
   def statuses(self, commit_id: str, ref: Optional[str] = None) -> List[Dict]:
     """The CI jobs of a commit, as [{name, status, allow_failure}] with GitLab's statuses: success, failed, canceled, running..."""
     raise NotImplementedError
+
+
+def credentials_stay_on_host(url, headers):
+  """
+  A requests session that follows redirects, but doesn't send our token to another host.
+  requests only removes the Authorization header, not e.g. GitLab's Private-Token.
+  """
+  import requests
+  class Session(requests.Session):
+    def rebuild_auth(self, prepared_request, response):
+      super().rebuild_auth(prepared_request, response)
+      if self.should_strip_auth(url, prepared_request.url):
+        for header in {'Authorization', 'Private-Token', 'Cookie', *headers}:
+          prepared_request.headers.pop(header, None)
+  return Session()
 
 
 class GitLab(GitHostClient):
@@ -205,10 +221,17 @@ def detect_git_host(env=None) -> Optional[GitHostClient]:
 
   # Other CIs (e.g. Jenkins)
   host = (find(project_url) if project_url else None) or {}
+  hostname = hostname_of(project_url) or ''
+  # GITHUB_ACCESS_TOKEN is only sent to the GitHub hosts we know about, not to any hostname that looks like one
+  github_hostnames = {'github.com', *[hostname_of(h.strip()) for h in str(site_config('QABOARD_GITHUB_HOSTS', '') or '').split(',') if h.strip()]}
+  trusted = True
   if host:
     type, url = host.get('type'), host['url'].rstrip('/')
-  elif 'github' in (hostname_of(project_url) or ''):
-    type, url = 'github', f"https://{hostname_of(project_url)}"
+  elif hostname in github_hostnames:
+    type, url = 'github', f"https://{hostname}"
+  elif 'github' in hostname:
+    click.secho(f"WARNING: we don't send GITHUB_ACCESS_TOKEN to {hostname}. Add it to QABOARD_GITHUB_HOSTS or QABOARD_GIT_HOSTS.", fg='yellow', err=True)
+    type, url, trusted = 'github', f"https://{hostname}", False
   else:
     # Before hosts were configurable, we assumed GITLAB_HOST
     type, url = 'gitlab', site_config('GITLAB_HOST', 'https://gitlab.com')
@@ -219,7 +242,7 @@ def detect_git_host(env=None) -> Optional[GitHostClient]:
     url=url,
     api_url=host.get('api_url') or default_api_url(type, url),
     repo=(repo_path_of(project_url) if type == 'github' else None) or project.get('name'),
-    token=host_token(host) or site_config(token_variable),
+    token=host_token(host) or (site_config(token_variable) if trusted else None),
   )
 
 
