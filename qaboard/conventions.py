@@ -5,7 +5,6 @@ import os
 import re
 import json
 import hashlib
-import subprocess
 from pathlib import Path
 from typing import List, Dict, Union, Optional
 
@@ -104,7 +103,6 @@ def slugify_hash(s, maxlength=32):
 
 
 def deserialize_config(configuration: str) -> List:
-  # print("[deserialize] before : ", configuration)
   if configuration == '-':
     return []
   configurations: List = []
@@ -142,20 +140,16 @@ def deserialize_config(configuration: str) -> List:
           pass
   if configuration_part:
       configurations.append(configuration_part)
-  # print("[deserialize] after: ", configurations)
   return configurations
 
 
 def serialize_config(configurations: List) -> str:
-  # print("[serialize] before: ", configurations)
   if not configurations:
     return '-'
   if isinstance(configurations, str):
     return configurations
   configurations = [json.dumps(c, sort_keys=True) if isinstance(c, dict) else (c if c is not None else "null") for c in configurations]
-  # print("[serialize] during", configurations)
   configuration = ":".join(configurations)
-  # print("[serialize] after: ", configuration)
   return configuration
 
 

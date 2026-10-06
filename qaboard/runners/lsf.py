@@ -9,7 +9,6 @@ If you run into issues with LSF
 Note:
 - Windows compatibility is not garanteed since we rely on shell features (heredocs) and 
 """
-import re
 import os
 import random
 import shutil
@@ -25,7 +24,6 @@ from click import secho
 from .base import BaseRunner
 from .job import Job
 from ..run import RunContext
-from ..api import get_output
 from ..utils import getenvs
 
 

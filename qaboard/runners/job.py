@@ -5,7 +5,7 @@ import sys
 import time
 from copy import deepcopy
 from dataclasses import dataclass, field, asdict
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, List, Dict, Any
 
 import click
 
