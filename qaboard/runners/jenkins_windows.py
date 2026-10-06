@@ -43,7 +43,7 @@ import re
 import time
 from typing import List, Dict, Any
 
-from click import secho
+from typer import secho
 
 from .base import BaseRunner
 from .job import Job

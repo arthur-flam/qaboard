@@ -4,7 +4,7 @@ title: Installing QA-Board's client
 sidebar_label: Client Installation
 ---
 
-You need to install QA-Board's CLI client: `qa`. It wraps and runs your code.
+You need to install QA-Board's CLI client: `qa`. It wraps and runs your code. It needs Python 3.10 or newer.
 
 ### Open-source (default)
 ```bash
@@ -34,7 +34,10 @@ Environment variables (e.g. `QABOARD_HOST`, `QABOARD_PROTOCOL`) **always overrid
 To make sure the installation was successful, try printing a list of `qa`'s CLI commands:
 
 ```bash
+qa --version
 qa --help
+# optional: complete commands and options with <Tab>
+qa --install-completion
 
 # If you get errors about not using a utf8 locale, you can likely:
 #   export LC_ALL=C.utf8 LANG=C.utf8

@@ -1,10 +1,11 @@
+import os
 import json
 import copy
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Any
 
-import click
+import typer
 
 from .conventions import serialize_config, output_dirs_for_input_part
 from .utils import merge, input_metadata
@@ -28,7 +29,8 @@ class RunContext():
     batch: Optional[str] = None # the name of the --batch it comes from
 
     input_metadata: Dict = field(default_factory=dict)
-    click_context: Optional[click.Context] = None
+    # The CLI context (typer.Context): its .obj and .params. Named for backward compatibility.
+    click_context: Optional[Any] = None
 
     # If we're in a batch, how we want the job to be executed by an async job runner
     # TODO: At some point we may prefer to give users tuning parameters via "configurations" only,
@@ -80,14 +82,14 @@ class RunContext():
           with metrics_path.open() as f:
             is_failed = json.load(f).get('is_failed', True)
             if verbose and is_failed:
-                click.secho(f"[ERROR] Failed run! More info at: {self.output_directory}/log.txt", fg='red', err=True)
+                typer.secho(f"[ERROR] Failed run! More info at: {self.output_directory}/log.txt", fg='red', err=True)
             return is_failed
       else:
           if verbose:
             if not self.output_dir.exists():
-              click.secho(f'[ERROR] Failed run! The ouput directory does not exist. It usually implies that your disk/quota is full. ({self.output_dir})', fg='red', err=True)
+              typer.secho(f'[ERROR] Failed run! The ouput directory does not exist. It usually implies that your disk/quota is full. ({self.output_dir})', fg='red', err=True)
             else:
-              click.secho(f'[ERROR] Failed run! Could not find {metrics_path}. It usually means that your run/job was killed before it got a change to update QA-Board', fg='red', err=True)
+              typer.secho(f'[ERROR] Failed run! Could not find {metrics_path}. It usually means that your run/job was killed before it got a change to update QA-Board', fg='red', err=True)
           return True
 
     @staticmethod
@@ -108,14 +110,16 @@ class RunContext():
 
     @staticmethod
     def from_click_run_context(ctx, config):
-        if ctx.params['input_path'].is_absolute():
-            database_str, *input_path_parts = ctx.params['input_path'].parts
-            database = Path(database_str)
-            input_path = Path(*input_path_parts)
+        from .iterators import local_input_path, local_database, split_absolute
+        input_path = Path(local_input_path(str(ctx.params['input_path'])))
+        if input_path.anchor: # not is_absolute(): on Windows, \algo\inputs has no drive
+            if not input_path.is_absolute(): # on Windows, use the current drive, like batches do
+                input_path = Path(os.path.abspath(input_path))
+            database, input_path = split_absolute(input_path)
             ctx.obj["database"] = database
         else:
-            database = ctx.obj['database']
-            input_path = ctx.params['input_path']
+            database = local_database(ctx.obj['database'])
+            ctx.obj["database"] = database
         
         database_is_absolute = database.is_absolute()
         # we resolve all the time to handle users that ask for both //db/path and /db//path ...
@@ -126,8 +130,8 @@ class RunContext():
             ctx.obj["database"] = database
         input_path_absolute = (database / input_path).resolve()
         if not input_path_absolute.exists():
-            click.secho(f"[ERROR] {input_path_absolute} cannot be found", fg='red')
-            exit(1)
+            typer.secho(f"[ERROR] {input_path_absolute} cannot be found", fg='red', err=True)
+            raise typer.Exit(1)
 
         if not ctx.params.get('output_path'):
             assert input_path_absolute.relative_to(database)

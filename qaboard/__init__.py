@@ -1,12 +1,12 @@
-# The version is only defined in pyproject.toml
-try:
-  from importlib.metadata import version, PackageNotFoundError
-except ImportError: # python 3.7
-  from importlib_metadata import version, PackageNotFoundError # type: ignore
-try:
-  __version__ = version('qaboard')
-except PackageNotFoundError: # e.g. used from a checkout via PYTHONPATH, without being installed
-  __version__ = 'unknown'
+def __getattr__(name):
+  # The version is only defined in pyproject.toml. Read lazily: importlib.metadata is slow to import.
+  if name == '__version__':
+    from importlib.metadata import version, PackageNotFoundError
+    try:
+      return version('qaboard')
+    except PackageNotFoundError: # e.g. used from a checkout via PYTHONPATH, without being installed
+      return 'unknown'
+  raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 from .check_for_updates import check_for_updates

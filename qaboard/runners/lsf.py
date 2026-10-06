@@ -20,7 +20,7 @@ from pathlib import Path
 from dataclasses import dataclass, fields, replace, asdict
 from typing import Optional, List, Dict, Any, cast
 
-from click import secho
+from typer import secho
 
 from .base import BaseRunner
 from .job import Job
@@ -129,7 +129,7 @@ class LsfRunner(BaseRunner):
     # live, then LSF's job report. With -I (blocking), the output goes to the terminal, so we don't redirect it.
     lsf_log_file = (self.output_dir / "log.lsf.txt").resolve() if self.output_dir else None
     script = " ".join([
-      # the click python package hates ascii locales, for good reasons
+      # the click python package (used by typer) hates ascii locales, for good reasons
       "  LC_ALL=en_US.utf8 LANG=en_US.utf8" if self.command else '  ',
       # forces a non-interactive matplotlib backend
       "MPLBACKEND=agg" if self.command else '',
@@ -274,7 +274,7 @@ class LsfRunner(BaseRunner):
         lines.extend([f"  {runner.command if runner.command else 'echo OK'}", "  ;;"])
         cases.append("\n".join(lines))
       script = "\n".join([
-        # the click python package hates ascii locales, for good reasons
+        # the click python package (used by typer) hates ascii locales, for good reasons
         # and we force a non-interactive matplotlib backend
         "export LC_ALL=en_US.utf8 LANG=en_US.utf8 MPLBACKEND=agg",
         'case "$LSB_JOBINDEX" in',

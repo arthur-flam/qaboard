@@ -7,7 +7,7 @@ import sys
 import json
 from pathlib import Path
 
-import click
+import typer
 
 from qaboard.site_config import site_config, site_entry_points
 
@@ -35,40 +35,45 @@ def ensure_cli_backward_compatibility():
     def renamed_deprecated(arg):
         for before, after in renamings:
             if arg == before:
-                click.secho(f'[DEPRECATION WARNING]: "{before}" was replaced by "{after}" and will be removed in a future release.', fg='yellow')
+                typer.secho(f'[DEPRECATION WARNING]: "{before}" was replaced by "{after}" and will be removed in a future release.', fg='yellow')
                 return after
         return arg
     sys.argv = [renamed_deprecated(arg) for arg in sys.argv]
     if '--lsf-sequential' in sys.argv:
-        click.secho('[DEPRECATION WARNING]: "--lsf-sequential" was replaced with "--runner local"', fg='yellow', bold=True)
+        typer.secho('[DEPRECATION WARNING]: "--lsf-sequential" was replaced with "--runner local"', fg='yellow', bold=True)
 
 
 
 def cased_path(path):
-    # Adapted from
-    # https://stackoverflow.com/questions/3692261/in-python-how-can-i-get-the-correctly-cased-path-for-a-file/14742779#14742779
+    """
+    On Windows, the path with the case it has on disk (or None if it doesn't exist).
+    Each part gets a wildcard on its last letter, e.g. C:\\Dat[a]: glob then lists folders, and matches case-insensitively.
+    Adapted from https://stackoverflow.com/questions/3692261/in-python-how-can-i-get-the-correctly-cased-path-for-a-file/14742779#14742779
+    """
     if os.name != 'nt':
       return path
     import glob
-    dirs = str(path).split('\\')
-    # For absolute paths with drive names ("\\host\volume\..."), we must have the correct case at least at the beginning...
-    # Still, then, we could always call .upper() if the length of the first part is 1 (drive letter..)
-    if not dirs[0] and not dirs[1]:
-      dirs = [f'\\\\{dirs[2]}\\{dirs[3]}', *dirs[4:]]
-      test_name = [dirs[0]]
-    elif not dirs[0]: # absolute paths like "\c\Users\..."
-      dirs = [f'\\{dirs[1]}', *dirs[3:]]
-      test_name = [dirs[0]]      
-    elif dirs[0].endswith(':'): # e.g. C:\\
-      test_name = [dirs[0]]
-    else: # relative paths
-      test_name = ["%s[%s]" % (dirs[0][:-1], dirs[0][-1])]
-    for d in dirs[1:]:
-        test_name += ["%s[%s]" % (d[:-1], d[-1])]
-    res = glob.glob('\\'.join(test_name))
+    pattern = cased_path_pattern(path)
+    res = glob.glob(pattern)
     if not res: #File not found
         return None
     return Path(res[0])
+
+
+def cased_path_pattern(path) -> str:
+    """The glob pattern used by cased_path(). The anchor (drive, \\\\host\\share\\, \\) is kept as-is."""
+    import glob
+    from pathlib import PureWindowsPath
+    windows_path = PureWindowsPath(path)
+    anchor = windows_path.anchor
+    parts = windows_path.parts[1:] if anchor else windows_path.parts
+    def any_case(part: str) -> str:
+      # glob only compares case-insensitively the parts with a wildcard
+      for i in reversed(range(len(part))):
+        if part[i].isalpha():
+          return glob.escape(part[:i]) + f'[{part[i]}]' + glob.escape(part[i+1:])
+      return glob.escape(part)
+    return anchor + '\\'.join(any_case(p) for p in parts)
 
 
 
@@ -97,19 +102,31 @@ mappings = _load_path_mappings()
 re_algo_inputs = re.compile(r"\\\\netapp\\vol23_algo\\([^\\]+)[\\_]inputs")
 
 
+def _after_prefix(path: str, prefix: str, sep: str, ignore_case: bool = False):
+  """The rest of `path` if it is `prefix` or inside it (/algo matches /algo/x, not /algo2), else None."""
+  prefix = prefix.rstrip(sep)
+  head = path[:len(prefix)]
+  if (head.lower() == prefix.lower()) if ignore_case else (head == prefix):
+    rest = path[len(prefix):]
+    if not rest or rest.startswith(sep):
+      return rest
+  return None
+
+
 def windows_to_linux(path : str) -> str:
   path = path.replace('/', '\\')
   for path_windows, path_linux in mappings:
-    path_windows_re = re.escape(path_windows)
-    if re.match(path_windows_re, path, re.IGNORECASE):
-      path = re.sub(path_windows_re, path_linux, path, count=1, flags=re.IGNORECASE)
+    rest = _after_prefix(path, path_windows, '\\', ignore_case=True)
+    if rest is not None:
+      path = path_linux.rstrip('/') + rest
       break
   return path.replace('\\', '/')
 
 def linux_to_windows(path : str) -> str:
   for path_windows, path_linux in mappings:
-    if path.startswith(path_linux):
-      path = path.replace(path_linux, path_windows)
+    rest = _after_prefix(path, path_linux, '/')
+    if rest is not None:
+      path = path_windows.rstrip('\\') + rest
       break
   path = path.replace('/', '\\')
   match_algo_inputs = re_algo_inputs.match(path)
@@ -137,6 +154,6 @@ def fix_linux_permissions(path: Path):
         hook(path)
         return
   except Exception as e:
-    click.secho(f'WARNING: fix_permissions hook failed: {e}', err=True)
+    typer.secho(f'WARNING: fix_permissions hook failed: {e}', err=True)
     return
-  click.secho("... No fix_permissions hook installed, skipping", err=True, fg='yellow')
+  typer.secho("... No fix_permissions hook installed, skipping", err=True, fg='yellow')

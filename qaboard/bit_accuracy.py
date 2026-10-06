@@ -8,18 +8,18 @@ import filecmp
 import fnmatch
 from pathlib import Path
 
-import click
-from click import secho
+import typer
+from typer import secho
 
 from .conventions import make_batch_conf_dir, output_dirs_for_input_part, slugify_hash
 from .iterators import iter_inputs
-from .utils import PathType, checked_cde_attrs
+from .utils import checked_cde_attrs
 from .config import commit_id, project, subproject, outputs_commit_root, outputs_commit, is_ci, default_platform, config
-from .config import user, default_batches_files
+from .config import user
 
 
 def default_cmp(file_1, file_2):
-    filecmp.cmp(str(file_1), str(file_2), shallow=False)
+    return filecmp.cmp(str(file_1), str(file_2), shallow=False)
 
 cmp_func = default_cmp
 # In some cases you want to implement your own file comparaison.
@@ -43,8 +43,8 @@ if custom_cmp:
   except Exception as e:
     import traceback
     exc_type, exc_value, exc_traceback = sys.exc_info()
-    click.secho(f'ERROR: Error importing the custom cmp function.', fg='red', err=True, bold=True)
-    click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
+    typer.secho(f'ERROR: Error importing the custom cmp function.', fg='red', err=True, bold=True)
+    typer.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
 
 
 def is_same_content(filename, meta_1, meta_2):
@@ -56,7 +56,7 @@ def is_same_content(filename, meta_1, meta_2):
       if attr not in meta_1 or attr not in meta_2
     ]
     if missing_attrs:
-      click.secho(f'WARNING: The following image attributes are missing in the manifest: {filename} {missing_attrs}', fg="yellow", err=True)
+      typer.secho(f'WARNING: The following image attributes are missing in the manifest: {filename} {missing_attrs}', fg="yellow", err=True)
     return all(
       meta_1[attr] == meta_2[attr]
       for attr in checked_cde_attrs
@@ -70,7 +70,7 @@ def is_same_content(filename, meta_1, meta_2):
     ]
     # warn if the RAW is missing attributes, but don't fail since some RAWs don't have imgprops file.
     if missing_attrs:
-      click.secho(f'WARNING: The following image attributes are missing in the manifest: {filename} {missing_attrs}', fg="yellow", err=True)
+      typer.secho(f'WARNING: The following image attributes are missing in the manifest: {filename} {missing_attrs}', fg="yellow", err=True)
 
     # we compare both data and metadata for raw files
     return (
@@ -249,10 +249,10 @@ def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, manifest_name='m
     # print('dir_new', dir_new) # (dir_new / "manifest.outputs.json").resolve())
     # print('dir_ref', dir_ref) # (dir_ref / "manifest.outputs.json").resolve())
     if not dir_ref.exists():
-      click.secho(f"ERROR: No reference for {run_identifier}", fg='red')
+      typer.secho(f"ERROR: No reference for {run_identifier}", fg='red')
       missing_runs = True
     if not dir_new.exists():
-      click.secho(f"ERROR: Missing run for {run_identifier}", fg='red')
+      typer.secho(f"ERROR: Missing run for {run_identifier}", fg='red')
       missing_runs = True
 
 
@@ -275,7 +275,7 @@ def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, manifest_name='m
       # print(dir_ref)
       # print(comparison)
     else:
-      click.secho(f"ERROR: Could not find {manifest_name} in all runs", fg='red')
+      typer.secho(f"ERROR: Could not find {manifest_name} in all runs", fg='red')
       bit_accurate = False
       return bit_accurate
     run_identifier = f"{run_identifier}  @{manifest_name}"
@@ -285,18 +285,18 @@ def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, manifest_name='m
     bit_accurate = True
     if strict:
       if comparison['only_in_1']:
-        click.secho(run_identifier, fg='red', bold=True, err=True)
-        click.secho(f'{dir_new}', fg='red', err=True, dim=True)        
-        click.secho(f"ERROR: ({len(comparison['only_in_1'])}) file(s) are not present in the reference run:", fg='red')
+        typer.secho(run_identifier, fg='red', bold=True, err=True)
+        typer.secho(f'{dir_new}', fg='red', err=True, dim=True)        
+        typer.secho(f"ERROR: ({len(comparison['only_in_1'])}) file(s) are not present in the reference run:", fg='red')
         for p in comparison['only_in_1']:
-          click.secho(f'➖ {p}', fg='red', dim=True)
+          typer.secho(f'➖ {p}', fg='red', dim=True)
         bit_accurate = False
       if comparison['only_in_2']:
-        click.secho(run_identifier, fg='red', bold=True, err=True)
-        click.secho(f'{dir_new}', fg='red', err=True, dim=True)
-        click.secho(f"ERROR: {len(comparison['only_in_2'])} file(s) existing in the reference run are not present:", fg='red')
+        typer.secho(run_identifier, fg='red', bold=True, err=True)
+        typer.secho(f'{dir_new}', fg='red', err=True, dim=True)
+        typer.secho(f"ERROR: {len(comparison['only_in_2'])} file(s) existing in the reference run are not present:", fg='red')
         for p in comparison['only_in_2']:
-          click.secho(f'➕  {p}', fg='red', dim=True)
+          typer.secho(f'➕  {p}', fg='red', dim=True)
         # print(comparisons)
         # exit(0)
         bit_accurate = False
@@ -304,46 +304,38 @@ def is_bit_accurate(dir_new, dir_ref, ba_context, strict=False, manifest_name='m
     # print(comparisons['mismatch'])
     nothing_was_compared = not (len(comparison['match']) + len(comparison['mismatch']) + len(comparison['errors']) )
     if nothing_was_compared and bit_accurate:
-      click.echo(click.style(f'🤔  {run_identifier}', fg='yellow') + click.style(' 0 files compared', fg='yellow', dim=True), err=True)
+      typer.echo(typer.style(f'🤔  {run_identifier}', fg='yellow') + typer.style(' 0 files compared', fg='yellow', dim=True), err=True)
 
     if comparison['errors']:
       bit_accurate = False
-      click.secho("ERROR: While trying to read those files:", fg='red', bold=True)
-      click.secho(f'{dir_new}', fg='red', err=True, dim=True)
+      typer.secho("ERROR: While trying to read those files:", fg='red', bold=True)
+      typer.secho(f'{dir_new}', fg='red', err=True, dim=True)
       for p in comparison['errors']:
-        click.secho(f"⚠️  {p}", fg='red')
+        typer.secho(f"⚠️  {p}", fg='red')
 
     if comparison['mismatch']:
       bit_accurate = False
-      click.secho(run_identifier, fg='red', bold=True, err=True)
-      click.secho(f'{dir_new}', fg='red', err=True, dim=True)
-      click.secho(f"ERROR: Mismatch for:", fg='red')
+      typer.secho(run_identifier, fg='red', bold=True, err=True)
+      typer.secho(f'{dir_new}', fg='red', err=True, dim=True)
+      typer.secho(f"ERROR: Mismatch for:", fg='red')
       for p in comparison['mismatch']:
-        click.secho(f'❌  {p}', fg='red', dim=True)
+        typer.secho(f'❌  {p}', fg='red', dim=True)
 
     if bit_accurate and not nothing_was_compared:
-      click.secho(f"✔️  {run_identifier}", fg='green', err=True)
+      typer.secho(f"✔️  {run_identifier}", fg='green', err=True)
     return bit_accurate
 
 
 
-@click.command()
-@click.pass_context
-@click.option('--batch', '-b', 'batches', required=True, multiple=True, help="Only check bit-accuracy for this batch of inputs+configs+database.")
-@click.option('--batches-file', 'batches_files', type=PathType(),  default=default_batches_files, multiple=True, help="YAML file listing batches of inputs+config+database selected from the database.")
-@click.option('--strict', is_flag=True, help="By default only files existing in current/ref runs are checked. This files ensure we fail if some files exist in one run and not the other.")
 def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
-    """
-    Checks the bit accuracy of the results in the current output directory
-    versus the latest commit on origin/develop.
-    """
+    """Checks the bit accuracy of the results versus the manifests saved in the database. CLI: qaboard/cli/results.py"""
     # Some projects run costly metadata logic only at the batch level
     # to skip runs. They rely on this to identify metadata calls at the run-level
     # behaviour needs to match for bit-accuracy checks 
     os.environ['QA_BATCH']= 'true'
 
     commit_dir = outputs_commit if (is_ci or ctx.obj['share']) else Path()
-    click.secho(f'Current directory  : {commit_dir}', fg='cyan', bold=True, err=True)
+    typer.secho(f'Current directory  : {commit_dir}', fg='cyan', bold=True, err=True)
     all_bit_accurate = True
     nb_compared = 0
     missing_runs = 0
@@ -351,13 +343,13 @@ def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
       inputs_manifest_exists =  (run_context.database / run_context.rel_input_path / "manifest.inputs.json").exists()
       outputs_manifest_exists = (run_context.database / run_context.rel_input_path / "manifest.outputs.json").exists()
       if not inputs_manifest_exists:
-        click.secho(f"[WARNING] no input manifest for {run_context.database / run_context.rel_input_path}", fg='yellow')
+        typer.secho(f"[WARNING] no input manifest for {run_context.database / run_context.rel_input_path}", fg='yellow')
       if not outputs_manifest_exists:
-        click.secho(f"[WARNING] no output manifest for {run_context.database / run_context.rel_input_path}", fg='yellow')
+        typer.secho(f"[WARNING] no output manifest for {run_context.database / run_context.rel_input_path}", fg='yellow')
         if not inputs_manifest_exists: continue
       nb_compared += 1
       if run_context.input_path.is_file():
-        click.secho('ERROR: check_bit_accuracy_manifest only works for inputs that are folders', fg='red', err=True)
+        typer.secho('ERROR: check_bit_accuracy_manifest only works for inputs that are folders', fg='red', err=True)
         # otherwise the manifest is at input_path.parent/manifest.json in the database and input_path.stem/manifest.json in the results
         exit(1)
 
@@ -374,8 +366,8 @@ def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
         try:
           assert commit_dirs
         except Exception:
-          click.secho(f"ERROR: Missing run: {run_context.rel_input_path}", fg='red')
-          click.secho(f"       nothing at {commit_dir_ / batch_conf_dir / run_context.rel_input_path}", fg='red')
+          typer.secho(f"ERROR: Missing run: {run_context.rel_input_path}", fg='red')
+          typer.secho(f"       nothing at {commit_dir_ / batch_conf_dir / run_context.rel_input_path}", fg='red')
           missing_runs += 1
         for commit_dir_ in commit_dirs:
           if inputs_manifest_exists:
@@ -393,45 +385,29 @@ def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
           all_bit_accurate = all_bit_accurate and input_is_bit_accurate
 
     if missing_runs:
-      click.secho(f"ERROR: {missing_runs} runs are missing!", bg='red', underline=True, bold=True)
+      typer.secho(f"ERROR: {missing_runs} runs are missing!", bg='red', underline=True, bold=True)
       exit(1)
     if not all_bit_accurate:
-      click.secho("\nError: you are not bit-accurate versus the manifest.", bg='red', underline=True, bold=True)
-      click.secho("Reminder: the manifest lists the expected inputs/outputs for each test. It acts as an explicit gatekeeper against changes", fg='red', dim=True)
+      typer.secho("\nError: you are not bit-accurate versus the manifest.", bg='red', underline=True, bold=True)
+      typer.secho("Reminder: the manifest lists the expected inputs/outputs for each test. It acts as an explicit gatekeeper against changes", fg='red', dim=True)
       if not run_context.database.is_absolute():
-        click.secho("If that's what you wanted, update and commit all manifests.", fg='red')
-        # click.secho("If that's what you wanted, update all manifests using:", fg='red')
-        # click.secho("$ qa batch * --save-manifests-in-database", fg='red')
-        # click.secho("$ git add        # your changes", fg='red')
-        # click.secho("$ git commit     # now retry your CI", fg='red')
+        typer.secho("If that's what you wanted, update and commit all manifests.", fg='red')
+        # typer.secho("If that's what you wanted, update all manifests using:", fg='red')
+        # typer.secho("$ qa batch * --save-manifests-in-database", fg='red')
+        # typer.secho("$ git add        # your changes", fg='red')
+        # typer.secho("$ git commit     # now retry your CI", fg='red')
       else:
-        click.secho("To update the manifests for all tests, run:", fg='red')
-        click.secho("$ qa batch --save-manifests --batch *", fg='red')
+        typer.secho("To update the manifests for all tests, run:", fg='red')
+        typer.secho("$ qa batch --save-manifests --batch *", fg='red')
       exit(1)
 
     if not nb_compared:
-      click.secho("\nWARNING: Nothing was compared! It's not likely to be what you expected...", fg='yellow', underline=True, bold=True)
+      typer.secho("\nWARNING: Nothing was compared! It's not likely to be what you expected...", fg='yellow', underline=True, bold=True)
 
 
-
-@click.command()
-@click.pass_context
-@click.option(
-    "--reference",
-    default=config.get('project', {}).get('reference_branch', 'master'),
-    help="Branch, tag or commit used as reference."
-)
-@click.option('--batch', '-b', 'batches', multiple=True, help="Only check bit-accuracy for those batches of inputs+configs+database.")
-@click.option('--batches-file', 'batches_files', type=PathType(),  default=default_batches_files, multiple=True, help="YAML file listing batches of inputs+config+database selected from the database.")
-@click.option('--strict', is_flag=True, help="By default only files existing in current/ref runs are checked. This files ensure we fail if some files exist in one run and not the other.")
-@click.option('--reference-label', default = None, help="Compare against another label on the same batch")
-@click.option('--reference-platform', help="Compare against a difference platform.")
 
 def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference_label, reference_platform):
-    """
-    Checks the bit accuracy of the results in the current output directory
-    versus the latest commit on origin/develop.
-    """
+    """Checks the bit accuracy of the results versus a reference commit. CLI: qaboard/cli/results.py"""
     from .config import is_in_git_repo, commit_branch, is_ci, outputs_project_root, repo_root
     from .gitlab import lastest_successful_ci_commit
     from .api import qaboard_url
@@ -444,29 +420,28 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
     os.environ['QA_BATCH']= 'true'
 
     if not is_in_git_repo:
-      click.secho("You are not in a git repository, maybe in an artifacts folder. `check_bit_accuracy` is unavailable.", fg='yellow', dim=True)
+      typer.secho("You are not in a git repository, maybe in an artifacts folder. `check_bit_accuracy` is unavailable.", fg='yellow', dim=True)
       exit(1)
 
 
     if is_ci and commit_branch == reference:
-      click.secho(f'We are on branch {reference}', fg='cyan', bold=True, err=True)
-      click.secho(f"Comparing bit-accuracy against this commit's ({commit_id[:8]}) parents.", fg='cyan', bold=True, err=True)
+      typer.secho(f'We are on branch {reference}', fg='cyan', bold=True, err=True)
+      typer.secho(f"Comparing bit-accuracy against this commit's ({commit_id[:8]}) parents.", fg='cyan', bold=True, err=True)
       # It will work until we try to rebase merge requests.
       # We really should use Gitlab' API (or our database) to ask about previous pipelines on the branch
       reference_commits = git_parents(commit_id)
     else:
       # ideally we should do something smarter...
       # https://stackoverflow.com/questions/18222634/given-a-git-refname-can-i-detect-whether-its-a-hash-tag-or-branch
-      if "origin" not in reference:
-        origin_reference = f"origin/{reference}"
+      origin_reference = reference if "origin" in reference else f"origin/{reference}"
       origin_latest_commit = latest_commit(origin_reference)
       if origin_latest_commit != origin_reference: # it was a commit
-        click.secho(f'Comparing bit-accuracy versus the latest remote commit of {origin_reference}', fg='cyan', bold=True, err=True)
+        typer.secho(f'Comparing bit-accuracy versus the latest remote commit of {origin_reference}', fg='cyan', bold=True, err=True)
         reference_commits = [origin_latest_commit]
       else:
-        click.secho(f'Comparing bit-accuracy versus {reference}', fg='cyan', bold=True, err=True)
+        typer.secho(f'Comparing bit-accuracy versus {reference}', fg='cyan', bold=True, err=True)
         reference_commits = [reference]
-    click.secho(f"{commit_id[:8]} versus {reference_commits}.", fg='cyan', err=True)
+    typer.secho(f"{commit_id[:8]} versus {reference_commits}.", fg='cyan', err=True)
 
     # This where the new results are located
     commit_dir = outputs_commit_root if (is_ci or ctx.obj['share']) else Path()
@@ -523,7 +498,7 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
     for reference_commit in reference_commits:
       # if the reference commit is pending or failed, we wait or maybe pick a parent
       reference_commit = lastest_successful_ci_commit(reference_commit) # TODO: don't do this if passed a commit hash
-      click.secho(f'Current directory  : {commit_dir}', fg='cyan', bold=True, err=True)
+      typer.secho(f'Current directory  : {commit_dir}', fg='cyan', bold=True, err=True)
       reference_rootproject_ci_dir = outputs_project_root / get_commit_dirs(reference_commit, repo_root)
       if user in reference_rootproject_ci_dir.parts:
         reference_rootproject_ci_dir_ = Path(str(reference_rootproject_ci_dir).replace(user, '*'))
@@ -532,7 +507,7 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
         reference_rootproject_ci_dirs = list(start.glob(end))
         all_bit_accurate = True
         missing_run = True
-        click.secho(f"Reference directories: {reference_rootproject_ci_dirs}", fg='cyan', bold=True, err=True)
+        typer.secho(f"Reference directories: {reference_rootproject_ci_dirs}", fg='cyan', bold=True, err=True)
         for ba_context in ba_contexts:
           for reference_rootproject_ci_dir in reference_rootproject_ci_dirs:
             dir_ref = reference_rootproject_ci_dir / ba_context["output_dir_suffix"]
@@ -541,21 +516,21 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
               all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], dir_ref, ba_context, strict=strict) and all_bit_accurate
               all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], dir_ref, ba_context, strict=strict, manifest_name='manifest.inputs.json') and all_bit_accurate
           if missing_run:
-            click.secho(f"ERROR: No reference for '{ba_context['rel_input_path']}'", fg='red')
+            typer.secho(f"ERROR: No reference for '{ba_context['rel_input_path']}'", fg='red')
             all_bit_accurate = False
       else:
-        click.secho(f"Reference directory: {reference_rootproject_ci_dir}", fg='cyan', bold=True, err=True)
+        typer.secho(f"Reference directory: {reference_rootproject_ci_dir}", fg='cyan', bold=True, err=True)
         all_bit_accurate = True
         for ba_context in ba_contexts:
           all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], reference_rootproject_ci_dir / ba_context["output_dir_suffix"], ba_context, strict=strict) and all_bit_accurate
           all_bit_accurate = is_bit_accurate(commit_dir / ba_context["output_dir_suffix"], reference_rootproject_ci_dir / ba_context["output_dir_suffix"], ba_context, strict=strict, manifest_name='manifest.inputs.json') and all_bit_accurate
     if not all_bit_accurate:
-      click.secho(f"\nERROR: results are not bit-accurate to {reference_commits}.", bg='red', bold=True)
+      typer.secho(f"\nERROR: results are not bit-accurate to {reference_commits}.", bg='red', bold=True)
       if is_ci:
-        click.secho(f"\nTo investigate, go to", fg='red', underline=True)
+        typer.secho(f"\nTo investigate, go to", fg='red', underline=True)
         for reference_commit in reference_commits:
           url = f"{qaboard_url}/{project.as_posix()}/commit/{commit_id}?reference={reference_commit}&selected_views=bit_accuracy"
           if batches:
             url = f"{url}&batch={batches[0]}"
-          click.secho(url, fg='red')
+          typer.secho(url, fg='red')
       exit(1)

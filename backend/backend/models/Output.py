@@ -22,7 +22,7 @@ from qaboard.api import dir_to_url
 from backend.models import Base
 from backend.fs_utils import rm_empty_parents, rmtree
 from backend.storage import check_storage_path, check_inside
-from backend.shell_utils import quote, safe_user_name, lsf_bridge_command
+from backend.shell_utils import quote, safe_user_name, lsf_bridge_command, qa_redo_command
 
 
 
@@ -226,37 +226,15 @@ class Output(Base):
       command_id = uuid.uuid4()
     extra_parameters = json.dumps(self.extra_parameters, sort_keys=True)
     job_options = self.data.get("job_options", {}) or {}
-    job_options_cli = []
-    if not job_options:
-      # for backward compatibility, it's a good defaut at SIRC
-      job_options_cli = ["--lsf-max-memory", "20000"]
-    elif job_options.get('type') == "lsf":
-      # TODO: support other runners... maybe create an ad-hoc functions in their classes...
-      if 'queue' in job_options:
-        job_options_cli += ["--lsf-queue", quote(str(job_options['queue']))]
-      if 'max_memory' in job_options and job_options['max_memory'] != 0:
-        job_options_cli += ["--lsf-max-memory", quote(str(job_options['max_memory']))]
-      if 'resources' in job_options and job_options['resources']:
-        job_options_cli += ["--lsf-resources", quote(str(job_options['resources']))]
-      if 'max_threads' in job_options and job_options['max_threads'] != 0:
-        job_options_cli += ["--lsf-threads", quote(str(job_options['max_threads']))]
-    command = ' '.join([
-      'qa',
-      '--label', quote(self.batch.label),
-      '--configuration', quote(self.configuration),
-      '--database', quote(str(self.test_input.database)),
-      '--type', quote(str(self.output_type)),
-      '--tuning', quote(extra_parameters),
-      'batch',
-      '--no-wait',
-      *job_options_cli,
-      '--action-on-existing=run',
-      '--action-on-pending=run',
-      # "--" so that an input path can't be parsed as an option
-      '--',
-      quote(str(self.test_input.path)),
-      # FIXME: if forwarded_args in parsed(self.configuration), add it..
-    ])
+    command = qa_redo_command(
+      label=self.batch.label,
+      configuration=self.configuration,
+      database=self.test_input.database,
+      output_type=self.output_type,
+      extra_parameters=extra_parameters,
+      input_path=self.test_input.path,
+      job_options=job_options,
+    )
 
     # CI results are saved under the CI user's folder (QABOARD_DEFAULT_USER), runs started here under the user's
     ci_user = os.environ.get('QABOARD_DEFAULT_USER', 'qaboard')

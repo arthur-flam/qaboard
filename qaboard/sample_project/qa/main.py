@@ -4,7 +4,7 @@ Sample implementation of a CLI wrapper with QA-Board.
 import sys
 import subprocess
 from pathlib import Path
-import click
+import typer
 
 # Whis will identify runs through GitlabCI or Jenkins.
 from qaboard.config import is_ci
@@ -14,7 +14,7 @@ def run(context):
   """
   Runs you code, creates files under context.output_dir, and returns metrics.
   """
-  click.secho("Edit qa/main.py to run *your* code using the context", fg='blue', bold=True)
+  typer.secho("Edit qa/main.py to run *your* code using the context", fg='blue', bold=True)
   useful_context_keys = (
     'output_dir',         # Where you're expected to save results
     'input_path',         # .database / .rel_input_path
@@ -29,20 +29,23 @@ def run(context):
   for key in useful_context_keys:
     value = getattr(context, key)
     cli_formatter[key] = value
-    click.secho(f"  .{key}:  {value}", fg='blue')
+    typer.secho(f"  .{key}:  {value}", fg='blue')
   # A common thing to do is running an executable: compiled code, python2.7 code
   # or import some python code and run it!
 
   # To get started with minimal effort and as example,
   # we run the extra CLI flags passed by the user.
+  # WARNING: replace this with your own code! Running forwarded_args through a shell lets anyone who can create
+  #          a run in QA-Board choose a command, that runs as whoever clicks "Redo" on it.
+  #          See https://github.com/Samsung/qaboard/blob/master/SECURITY.md
   arg_format = lambda a: a.format(**cli_formatter)
   command = " ".join([arg_format(a) for a in context.forwarded_args])
 
   if command:
-    click.secho("Below we run the CLI flags you gave qa:", fg='blue', bold=True)
-    click.secho(f"> {command}", fg='blue')
+    typer.secho("Below we run the CLI flags you gave qa:", fg='blue', bold=True)
+    typer.secho(f"> {command}", fg='blue')
   else:
-    click.secho(f"Try to run something! eg:  qa {' '.join(sys.argv[1:])}"+ " 'echo {input_path} => {output_dir}'", fg='blue', bold=True)
+    typer.secho(f"Try to run something! eg:  qa {' '.join(sys.argv[1:])}"+ " 'echo {input_path} => {output_dir}'", fg='blue', bold=True)
     return {"is_failed": False}
 
   if context.dryrun:
@@ -72,7 +75,7 @@ def run(context):
     return {"is_failed": True, "returncode": returncode}
   return {"is_failed": False}
 
-  click.secho("Edit qa/main.py: create plots/graphs, return metrics...", fg='cyan', bold=True)
+  typer.secho("Edit qa/main.py: create plots/graphs, return metrics...", fg='cyan', bold=True)
   return {"is_failed": False}
 
 

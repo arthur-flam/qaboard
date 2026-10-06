@@ -11,9 +11,9 @@ from functools import lru_cache
 from urllib.parse import quote, unquote, urlparse
 from typing import Any, Dict, Optional, List
 
-import click
+import typer
 
-from .config import project, commit_id, is_ci, available_metrics
+from .config import project, commit_id, is_ci, available_metrics, ignore_config_errors
 from .run import RunContext
 
 from .site_config import site_config, user_secret, as_requests_verify
@@ -28,13 +28,13 @@ elif qaboard_host:
   qaboard_url = f"{qaboard_protocol}://{qaboard_host}"
 else:
   qaboard_url = site_config('QABOARD_URL', 'http://localhost:5151')
-  if qaboard_url == 'http://localhost:5151':
-    click.secho(f"WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
-    click.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
-    click.secho(f"         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
-    click.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
-    click.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
-    click.secho(f"       > If your organization has a site package (e.g. qaboard-site-sirc), install it.", fg='yellow', err=True)
+  if qaboard_url == 'http://localhost:5151' and not ignore_config_errors:
+    typer.secho(f"WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
+    typer.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
+    typer.secho(f"         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
+    typer.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
+    typer.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
+    typer.secho(f"       > If your organization has a site package (e.g. qaboard-site-sirc), install it.", fg='yellow', err=True)
 
 api_prefix = site_config('QABOARD_API_PREFIX', f"{qaboard_url}/api/v1")
 # Whether requests to the API check TLS certificates: true (default), false, or the path to a CA bundle.
@@ -77,11 +77,11 @@ def print_url(ctx, status="starting"):
   commit_url = f"{qaboard_url}/{project.as_posix()}/commit/{commit_id[:10] if commit_id else ''}{f'?batch={quote(batch_label)}' if batch_label != 'default' else ''}"
   if is_ci or ctx.obj['share']:
     if status == "starting":
-      click.echo(click.style("Results: ", bold=True) + click.style(commit_url, underline=True, bold=True), err=True)
+      typer.echo(typer.style("Results: ", bold=True) + typer.style(commit_url, underline=True, bold=True), err=True)
     elif status == "failure":
-      click.echo(
-        click.style("[FAILED] Read the full logs at: ", bold=True, fg='red') +
-        click.style(
+      typer.echo(
+        typer.style("[FAILED] Read the full logs at: ", bold=True, fg='red') +
+        typer.style(
           f"{commit_url}{'?' if batch_label == 'default' else '&'}selected_views=logs",
           fg='red',
           underline=True,
@@ -170,32 +170,32 @@ def notify_qa_database(object_type='output', **kwargs):
     "qaboard_metrics": _metrics,
   })
   if 'QA_VERBOSE' in os.environ:
-    click.secho(url, fg='cyan', err=True)
-    click.secho(str(data), fg='cyan', dim=True, err=True)
+    typer.secho(url, fg='cyan', err=True)
+    typer.secho(str(data), fg='cyan', dim=True, err=True)
 
   try:
     import simplejson
     data = simplejson.dumps(data, ignore_nan=True, cls=makeNumpyEncoder())
     r = requests.post(url, data=data, headers=headers, verify=api_verify)
     if 'QA_VERBOSE' in os.environ:
-      click.secho(r.text, fg='cyan', dim=True, err=True)
+      typer.secho(r.text, fg='cyan', dim=True, err=True)
     r.raise_for_status()
     try:
       return r.json()
     except Exception:
-      click.secho(f"WARNING: Can't understand the server response: {r.text}", fg='yellow', err=True)
+      typer.secho(f"WARNING: Can't understand the server response: {r.text}", fg='yellow', err=True)
   except Exception as e:
-    click.secho(f'WARNING: [{e}] Failed to update QA-Board.', fg='yellow', bold=True, err=True)
-    click.secho(url, fg='yellow', err=True)
+    typer.secho(f'WARNING: [{e}] Failed to update QA-Board.', fg='yellow', bold=True, err=True)
+    typer.secho(url, fg='yellow', err=True)
     data = json.loads(data)
     for k in ['qaboard_config', 'qaboard_metrics', 'inputs_settings']:
       if k in data:
         del data[k]
-    click.secho(str(data), fg='yellow', err=True)
+    typer.secho(str(data), fg='yellow', err=True)
     try:
-      click.secho(str(r.request.headers), fg='yellow', dim=True, err=True)
-      # click.secho(str(r.request.body), fg='yellow', dim=True, err=True)
-      click.secho(f'{r.status_code}: {r.text}', fg='yellow', dim=True, err=True)
+      typer.secho(str(r.request.headers), fg='yellow', dim=True, err=True)
+      # typer.secho(str(r.request.body), fg='yellow', dim=True, err=True)
+      typer.secho(f'{r.status_code}: {r.text}', fg='yellow', dim=True, err=True)
     except Exception:
       pass
 
@@ -208,9 +208,9 @@ def get_output(output_id):
     r.raise_for_status()
     return r.json()
   except Exception:
-    click.secho(f'WARNING: Failed to contact the QA-Board server. (GET Output {output_id})', fg='yellow', bold=True, err=True)
+    typer.secho(f'WARNING: Failed to contact the QA-Board server. (GET Output {output_id})', fg='yellow', bold=True, err=True)
     try:
-      click.secho(f'{r.status_code}: {r.text}', fg='yellow', dim=True, err=True)
+      typer.secho(f'{r.status_code}: {r.text}', fg='yellow', dim=True, err=True)
     except Exception:
       pass
 
@@ -235,8 +235,8 @@ def batch_info(reference, batch, is_branch=False, project=project, metrics: Opti
   except Exception as e:
     if ignore_errors:
       return {}
-    click.secho(r.text, fg='red', err=True)
-    click.secho(f'[ERROR]: Failed to get info from QA-Board. ({url} | {params})', fg='red', bold=True, err=True)
+    typer.secho(r.text, fg='red', err=True)
+    typer.secho(f'[ERROR]: Failed to get info from QA-Board. ({url} | {params})', fg='red', bold=True, err=True)
     raise e
   if 'batches' not in data:
     raise ValueError(f'We could not get the results for {batch} batch {reference}')

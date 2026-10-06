@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, asdict
 from typing import Optional, List, Dict, Any, Callable
 
-import click
+import typer
 
 from ..run import RunContext 
 from ..api import url_to_dir, get_outputs, get_output, notify_qa_database
@@ -38,7 +38,7 @@ class Job():
         output_db = get_output(self.id)
         failed = not output_db or output_db["is_failed"]
         if failed and verbose:
-          click.secho(f'ERROR: Failed run! More info in QA-Board or at: {self.output_directory}', fg='red', err=True)
+          typer.secho(f'ERROR: Failed run! More info in QA-Board or at: {self.output_directory}', fg='red', err=True)
         return failed
       else:
         return self.run_context.is_failed(verbose)
@@ -88,9 +88,9 @@ class JobGroup():
       # local runs write on the local filesystem, no need to wait for a sync
       if not is_offline and self.Runner.type != 'local':
         sync_time = 30
-        click.secho(f'[WARNING] Since we could not access the status of the runs via the QA-Board server', fg='yellow', bold=True, err=True)
-        click.secho(f'          We will fall back to looking at output folders directly.', fg='yellow', err=True)
-        click.secho(f'          Due to filesystem sync it might not always work well, so we sleeping for {sync_time}s.', fg='yellow', err=True)
+        typer.secho(f'[WARNING] Since we could not access the status of the runs via the QA-Board server', fg='yellow', bold=True, err=True)
+        typer.secho(f'          We will fall back to looking at output folders directly.', fg='yellow', err=True)
+        typer.secho(f'          Due to filesystem sync it might not always work well, so we sleeping for {sync_time}s.', fg='yellow', err=True)
         time.sleep(sync_time)
       # If we don't have jobs, either we were offline or something aweful happenned
       return any(job.run_context.is_failed(verbose=True) for job in self.jobs)

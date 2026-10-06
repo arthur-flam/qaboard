@@ -25,7 +25,7 @@ from qaboard.conventions import deserialize_config, batches_files
 from backend import app, db_session
 from ..models import CiCommit, Project
 from ..config import qaboard_data_shared_dir
-from ..shell_utils import safe_user_name, lsf_bridge_command
+from ..shell_utils import safe_user_name, lsf_bridge_command, qa_batch_option
 from ..storage import check_storage_path, UnsafePathError
 from .auth import login_required
 
@@ -196,8 +196,7 @@ def get_group():
             'batch',
             *list(itertools.chain.from_iterable((('--batches-file', quote(str(f))) for f in batches_paths))),
             '--list',
-            '--',
-            quote(request.args["name"]),
+            qa_batch_option(request.args["name"]),
         ])
         cmd = '\n'.join([*envrcs, cmd])
         print(cmd)

@@ -52,3 +52,44 @@ def lsf_bridge_command(user: str, script_path) -> str:
     .replace('{user}', user)
     .replace('{bsub_command}', command)
     .replace('{command}', command))
+
+
+def qa_batch_option(batch) -> str:
+  """
+  `--batch=NAME` for `qa batch`, as one shell word. Unlike a positional BATCH, it can't be taken for an option,
+  even if it starts with "-". (`qa ... -- NAME` doesn't work: what comes after "--" is given to the user's code.)
+  """
+  return '--batch=' + quote(str(batch))
+
+
+def qa_redo_command(label, configuration, database, output_type, extra_parameters: str, input_path, job_options) -> str:
+  """The `qa batch` command that runs a single output again (see Output.redo)."""
+  job_options_cli = []
+  if not job_options:
+    # for backward compatibility, it's a good defaut at SIRC
+    job_options_cli = ["--lsf-max-memory", "20000"]
+  elif job_options.get('type') == "lsf":
+    # TODO: support other runners... maybe create an ad-hoc functions in their classes...
+    if 'queue' in job_options:
+      job_options_cli += ["--lsf-queue", quote(str(job_options['queue']))]
+    if 'max_memory' in job_options and job_options['max_memory'] != 0:
+      job_options_cli += ["--lsf-max-memory", quote(str(job_options['max_memory']))]
+    if 'resources' in job_options and job_options['resources']:
+      job_options_cli += ["--lsf-resources", quote(str(job_options['resources']))]
+    if 'max_threads' in job_options and job_options['max_threads'] != 0:
+      job_options_cli += ["--lsf-max-threads", quote(str(job_options['max_threads']))]
+  return ' '.join([
+    'qa',
+    '--label', quote(str(label)),
+    '--configuration', quote(str(configuration)),
+    '--database', quote(str(database)),
+    '--type', quote(str(output_type)),
+    '--tuning', quote(extra_parameters),
+    'batch',
+    '--no-wait',
+    *job_options_cli,
+    '--action-on-existing=run',
+    '--action-on-pending=run',
+    qa_batch_option(input_path),
+    # FIXME: if forwarded_args in parsed(self.configuration), add it..
+  ])

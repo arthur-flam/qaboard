@@ -2,7 +2,7 @@
 import os
 import shlex
 
-import click
+import typer
 
 
 def fix_permissions(path):
@@ -10,7 +10,7 @@ def fix_permissions(path):
     from getpass import getuser
     from qaboard.compat import windows_to_linux_path
 
-    click.secho("... Fixing linux file permissions", err=True)
+    typer.secho("... Fixing linux file permissions", err=True)
     try:
         # Windows does not set file permissions correctly on the shared storage,
         # it does not respect umask 0: files are not world-writable.
@@ -39,7 +39,7 @@ def fix_permissions(path):
         # was also created it will have permissions too restrictive too,
         # and it will break other commits!
         chmod = f'{ssh} {user}@{hostname} \'chmod -R 777 "{windowsize(path)}"; chmod 777 "{windowsize(path.parent)}"\''
-        click.secho(chmod, err=True)
+        typer.secho(chmod, err=True)
         os.system(chmod)
     except Exception as e:
-        click.secho(f'WARNING: {e}', err=True)
+        typer.secho(f'WARNING: {e}', err=True)

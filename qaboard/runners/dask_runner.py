@@ -35,7 +35,6 @@ import os
 import sys
 import json
 import math
-import asyncio
 import time
 import signal
 import threading
@@ -44,7 +43,7 @@ from pathlib import Path
 from dataclasses import dataclass, field, replace, fields
 from typing import Optional, List, Dict, Any, Set
 
-from click import secho
+from typer import secho
 
 from .base import BaseRunner
 from .job import Job
@@ -223,6 +222,7 @@ def job_to_task(job: Job, job_options: Dict[str, Any]) -> Dict[str, Any]:
 
 def run_tasks(tasks: List[Dict[str, Any]], job_options: Dict[str, Any]):
   """Executes the tasks on dask workers, with at most `concurrency` in flight. Blocks until all are done."""
+  import asyncio
   from distributed import Client, Event, wait # type: ignore
   options = dict_to_DaskOptions(job_options)
   command_id = job_options['command_id']

@@ -55,6 +55,17 @@ Code that runs as the server's user can read its credentials (database, GitLab t
 *Mitigations*: only expose the server to trusted networks; set `QABOARD_STORAGE_ROOTS` as narrowly as you can; make sure users can't write to the artifacts folders.
 *Planned*: an option to require API tokens on these endpoints, and running the tests listing without access to the server's credentials.
 
+### Redo replays settings stored with results
+Since results are sent without authentication (see above), their stored settings can come from anyone who can reach the server. "Redo" and tuning run them again with `qa`, as the user who clicked:
+- configurations and tuning parameters can set environment variables for `qa` and the processes it starts, with `{"ENV": {...}}`;
+- a `forwarded_args` key in them becomes `context.forwarded_args`, which some entrypoints run as a command. The sample entrypoint created by `qa init` does.
+
+So someone could create a run, then get a colleague to click "Redo" on it, and run commands as them. It needs network access to the server and a user who clicks Redo on a run they don't know.
+
+*Mitigations*: only expose the server to trusted networks; in your entrypoint, don't run `context.forwarded_args` or other parameters through a shell (`subprocess.run([...])` instead of `shell=True`); only redo runs you trust.
+
+*Planned*: requiring API tokens to send results, see above.
+
 ### Insecure defaults in `docker-compose.yml`
 - RabbitMQ is published on ports 5672/15672 with the `guest:guest` account. Celery workers run the shell commands given in the tasks they receive, so **anyone who can reach RabbitMQ can run commands on the workers**.
 - Flower is published on port 8888 without authentication.
