@@ -29,6 +29,9 @@ from .settings import LLM  # noqa: E402
 from .ui import UI  # noqa: E402
 
 
+# password, db_password, aws_secret_access_key, client_secret... but not tokenizer, num_tokens or passwords_list
+KEY_NAME = r'(?<![A-Za-z0-9])(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)(?:[_-][A-Za-z0-9]{1,12}){0,3}'
+
 # Values that look like credentials are replaced before anything is sent to the LLM
 SECRET_VALUES = re.compile(
   r'-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)'
@@ -49,10 +52,11 @@ SECRET_VALUES = re.compile(
   r'|\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
   # credentials in URLs: https://user:password@host
   r'|://(?P<url>[^/\s:@]+:[^/\s@]+)@'
-  # password = "...", api_key: '...'
-  r'|(?i:(?:password|passwd|secret|token|api_?key|access_?key|private_?key)\w*["\']?[ \t]{0,3}[:=][ \t]{0,3}["\'])(?P<quoted>(?!https?://)[^"\'\s/]{8,})(?=["\'])'
-  # unquoted in config files, if it looks random enough (has a digit, no variable)
-  r'|(?im:(?:password|passwd|secret|token|api_?key|access_?key|private_?key)\w*[ \t]{0,3}[:=][ \t]{0,3})(?P<unquoted>(?=[^\s"\'$({]*\d)[^\s"\'$({#,;]{12,})$'
+  # password = "...", DB_PASSWORD=..., client_secret: '...'. Values must look random (have a digit), so that
+  # tokenizer = "bert-base-uncased" or "token_type": "access_token" stay readable.
+  r'|(?i:' + KEY_NAME + r'["\']?[ \t]{0,3}[:=][ \t]{0,3}["\'])(?P<quoted>(?=[^"\'\s]{0,200}\d)(?!https?://)[^"\'\s/]{8,200})(?=["\'])'
+  # unquoted, in config files: only characters keys are made of, up to the end of the line
+  r'|(?im:' + KEY_NAME + r'[ \t]{0,3}[:=][ \t]{0,3}(?P<unquoted>(?=[A-Za-z0-9+/=_-]{0,200}\d)[A-Za-z0-9+/=_-]{12,200})(?=[ \t]*\r?$))'
 )
 READ_BUDGET = 400_000      # characters of the project the agent may read in total
 MAX_LINES = 400            # per read
@@ -220,7 +224,10 @@ def make_agent(model) -> 'Agent[Deps, Outcome]':
         content = read_text(safe_path(deps.root, rel))
       except (UnsafePath, OSError):
         continue
-      for number, line in enumerate(redact(content or '').splitlines(), start=1):
+      if not content or not compiled.search(content):
+        continue
+      # Redacting is slow: only for files that match
+      for number, line in enumerate(redact(content).splitlines(), start=1):
         if compiled.search(line):
           hits.append(f"{rel}:{number}: {line.strip()[:200]}")
           if len(hits) >= 60:

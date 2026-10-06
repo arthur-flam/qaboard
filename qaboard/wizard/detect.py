@@ -7,7 +7,7 @@ import subprocess
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Tuple
 
 
@@ -194,7 +194,8 @@ def guess_inputs(database: Path, limit: int = 3000, seconds: float = 3) -> Input
   suffix, files = max(by_suffix.items(), key=lambda kv: len(kv[1]))
   folders: Dict[str, List[str]] = {}
   for f in files:
-    folders.setdefault(str(Path(f).parent), []).append(Path(f).name)
+    folders.setdefault(PurePosixPath(f).parent.as_posix(), []).append(PurePosixPath(f).name)
+  folders.pop('.', None)
   # Sequences: most folders hold many files, and start with the same file name
   if len(folders) > 1 and sum(len(names) >= 5 for names in folders.values()) >= 0.8 * len(folders):
     first_names = Counter(sorted(names)[0] for names in folders.values())

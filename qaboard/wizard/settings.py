@@ -210,9 +210,23 @@ def with_scheme(url: str) -> List[str]:
   return [f'https://{url}', f'http://{url}']
 
 
-def shadowing_settings() -> List[str]:
-  """Settings that win over a saved QABOARD_URL."""
-  return [name for name in ('QABOARD_HOST', 'QABOARD_HOSTNAME', 'QABOARD_API_PREFIX') if site_config(name)]
+def shadowing_settings(keys: List[str]) -> Dict[str, List[str]]:
+  """For settings we save in ~/.qaboard/secrets.yaml, the settings that would win over them."""
+  shadowed = {}
+  for key in keys:
+    # Environment variables win over the secrets file (see site_config)
+    shadows = [key] if os.environ.get(key) else []
+    if key == 'QABOARD_URL':
+      # see get_qaboard_url
+      if site_config('QABOARD_HOSTNAME') and site_config('QABOARD_PORT'):
+        shadows += ['QABOARD_HOSTNAME', 'QABOARD_PORT']
+      elif site_config('QABOARD_HOST'):
+        shadows.append('QABOARD_HOST')
+      if site_config('QABOARD_API_PREFIX'):
+        shadows.append('QABOARD_API_PREFIX')
+    if shadows:
+      shadowed[key] = shadows
+  return shadowed
 
 
 def is_local(url: str) -> bool:

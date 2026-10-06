@@ -31,7 +31,7 @@ from rich.text import Text
 
 from ..config import find_configs
 from ..site_config import site_config, site_qaboard_config, site_qaboard_config_path
-from .changes import ChangeSet, diff_text
+from .changes import ChangeSet, UnsafePath, diff_text
 from .detect import ProjectFacts, detect, git, guess_inputs
 from .settings import LLM, Server, chat_models, save_user_settings, shadowing_settings, suggest_model, user_settings_path
 from .ui import UI, is_interactive
@@ -185,7 +185,7 @@ class Wizard:
     except OSError:
       defines_run = False
     if defines_run:
-      self.ui.info("qa/main.py already defines run(): it stays the entrypoint, unchanged.")
+      self.ui.info("qa/main.py already defines run(): it stays the entrypoint.")
     else:
       self.entrypoint = 'qa/qaboard_main.py'
       self.ui.info(f"qa/ already holds your own files: the QA-Board entrypoint will be [bold]{self.entrypoint}[/bold].")
@@ -196,7 +196,7 @@ class Wizard:
     if site_database:
       try:
         from ..conventions import location_from_spec
-        base = location_from_spec(site_database)
+        base = location_from_spec(site_database, {'project': self.answers['name'], 'subproject': ''})
       except Exception:
         ui.info("Test inputs are stored where your site's defaults say.")
         return
@@ -238,8 +238,14 @@ class Wizard:
       ui.hint("Each folder will be one input (inputs.use_parent_folder).")
     else:
       ui.ok(f"Found {inputs.count}{'+' if inputs.count >= 3000 else ''} [bold]{escape(inputs.glob)}[/bold] files, e.g. {escape(', '.join(examples))}")
+    if inputs.use_parent_folder and not ui.confirm("Is each folder one input?", default=True):
+      self.answers['glob'] = ui.ask("Which files are inputs? (glob)", default=f"*{Path(inputs.glob).suffix}")
+      self.answers['use_parent_folder'] = False
+      self.answers['examples'] = []
+      return
     self.answers['glob'] = ui.ask("Which files identify inputs? (glob)", default=inputs.glob)
-    self.answers['use_parent_folder'] = inputs.use_parent_folder
+    # A different glob: the folders were probably not the inputs
+    self.answers['use_parent_folder'] = inputs.use_parent_folder and self.answers['glob'] == inputs.glob
     self.answers['examples'] = examples
 
   # 2. Server ---------------------------------------------------------------
@@ -276,11 +282,7 @@ class Wizard:
       login = config.get('login_type')
       ui.ok(f"Connected to [bold]{escape(server.url)}[/bold]" + (f" [dim](login: {escape(str(login))})[/dim]" if login else ''))
       if server.url != Server.from_settings().url:
-        shadows = shadowing_settings()
-        if shadows:
-          ui.warn(f"{', '.join(shadows)} {'is' if len(shadows) == 1 else 'are'} set and win over a saved URL: update {'it' if len(shadows) == 1 else 'them'} instead.")
-        else:
-          self.to_save['QABOARD_URL'] = server.url
+        self.to_save['QABOARD_URL'] = server.url
       self.step_token(server, config)
     self.save_settings("the server settings")
     self.ask_storage()
@@ -338,6 +340,8 @@ class Wizard:
     if not self.to_save:
       return
     path = short_path(user_settings_path())
+    for name, shadows in sorted(shadowing_settings(list(self.to_save)).items()):
+      ui.warn(f"{', '.join(shadows)} {'is' if len(shadows) == 1 else 'are'} set and will win over the {name} saved in {path}: change {'it' if len(shadows) == 1 else 'them'} too.")
     names = ', '.join(sorted(self.to_save))
     if self.dryrun:
       ui.hint(f"Dry run: would save {names} to {path}")
@@ -360,15 +364,21 @@ class Wizard:
         if rel != 'qa/main.py':
           self.ui.hint(f"{target} already exists, we keep yours.")
         continue
-      content = (SAMPLE_PROJECT / rel).read_text()
+      content = (SAMPLE_PROJECT / rel).read_text().replace('Edit qa/main.py', f'Edit {self.entrypoint}')
       if rel == 'qa/batches.yaml' and self.answers.get('examples'):
         content = content.replace("    - A.jpg\n    - B.jpg\n", ''.join(f"    - {yaml_scalar(e)}\n" for e in self.answers['examples']))
       changes.stage(target, content)
     # `qa run` saves results in output/, they don't belong in git
     if facts.is_git and git(self.root, 'check-ignore', '-q', 'output/x') is None:
       gitignore = self.root / '.gitignore'
-      current = gitignore.read_text(errors='replace') if gitignore.is_file() else ''
-      changes.stage('.gitignore', current + ('' if not current or current.endswith('\n') else '\n') + "# Local results of `qa run`\noutput/\n")
+      try:
+        current = gitignore.read_text(errors='replace') if gitignore.is_file() else ''
+      except OSError:
+        current = ''
+      try:
+        changes.stage('.gitignore', current + ('' if not current or current.endswith('\n') else '\n') + "# Local results of `qa run`\noutput/\n")
+      except (UnsafePath, OSError):
+        self.ui.hint("Add output/ to your .gitignore: `qa run` saves results there.")
     return changes
 
   def qaboard_yaml(self) -> str:
@@ -394,9 +404,18 @@ class Wizard:
     if answers.get('storage'):
       key = 'windows' if os.name == 'nt' else 'linux'
       content = content.replace(f"storage:\n  linux: {DEFAULT_STORAGE}\n", f"storage:\n  {key}: {yaml_scalar(answers['storage'])}\n")
-    site = site_qaboard_config()
+    site = copy.deepcopy(site_qaboard_config())
     if site:
-      content = use_site_defaults(content, site)
+      # What the user just answered wins over the site's defaults
+      inputs: Dict[str, Any] = site['inputs'] if isinstance(site.get('inputs'), dict) else {}
+      if answers.get('glob'):
+        for key in ('globs', 'glob', 'use_parent_folder'):
+          inputs.pop(key, None)
+      if answers.get('storage'):
+        site.pop('storage', None)
+      if self.entrypoint != 'qa/main.py' and isinstance(site.get('project'), dict):
+        site['project'].pop('entrypoint', None)
+      content = use_site_defaults(content, {k: v for k, v in site.items() if v != {}})
     return content
 
   # 3. AI -------------------------------------------------------------------
@@ -426,7 +445,12 @@ class Wizard:
     if hint:
       self.answers['hint'] = hint
     ui.info(f"Working with [bold]{escape(llm.model or '')}[/bold] at {escape(llm.host)}. Press Ctrl+C to stop.")
-    agent = make_agent(build_model(llm))
+    try:
+      agent = make_agent(build_model(llm))
+    except Exception as e:
+      ui.fail(f"Could not set up the AI assistant: {escape(str(e))}")
+      ui.note("Continuing with the template.")
+      return changes
     template = copy.deepcopy(changes)
     accepted, accepted_outcome = copy.deepcopy(changes), None   # what we go back to if a round fails
     deps = Deps(changes=changes, facts=facts, ui=ui)
@@ -517,7 +541,10 @@ class Wizard:
       if models is None and status == 404 and not llm.base_url.endswith('/v1'):
         candidate, _, _ = llm.list_models(llm.base_url + '/v1')
         if candidate is not None and ui.confirm(f"{escape(llm.base_url)} answers 404. Did you mean {escape(llm.base_url)}/v1?", default=True):
-          self.set_base_url(llm, llm.base_url + '/v1')
+          # Same server: the key stays valid
+          llm.base_url = llm.base_url + '/v1'
+          if 'QABOARD_LLM_BASE_URL' in self.to_save or 'QABOARD_LLM_API_KEY' in self.to_save:
+            self.to_save['QABOARD_LLM_BASE_URL'] = llm.base_url
           continue
       if models is not None:
         count = len(chat_models(models))
@@ -650,7 +677,7 @@ class Wizard:
     if self.storage_is_ready():
       steps.add_row("qa --share batch my-batch", "share the results in QA-Board")
     parts: List[Any] = [
-      Text("✔ QA-Board is set up, and qa/main.py calls your code\n" if wired else "✔ QA-Board files created. Next, make qa/main.py call your code\n", style='bold green'),
+      Text(f"✔ QA-Board is set up, and {self.entrypoint} calls your code\n" if wired else f"✔ QA-Board files created. Next, make {self.entrypoint} call your code\n", style='bold green'),
       steps,
     ]
     if self.todo:

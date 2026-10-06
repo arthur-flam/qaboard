@@ -238,6 +238,27 @@ class TestSettings(TempDir):
     self.assertEqual(with_scheme('qaboard-srv:5151/'), ['https://qaboard-srv:5151', 'http://qaboard-srv:5151'])
     self.assertEqual(with_scheme('http://qa'), ['http://qa'])
 
+  def test_redaction(self):
+    from qaboard.wizard.agent import redact
+    secrets = ['db_password=Xk3jsd9fj2kslq1\nuser=bob\n', 'DB_PASSWORD=hunter2isgreat99\r\nx=1\r\n', 'password = "hunter2hunter2"',
+               'aws_secret_access_key = wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY1\nfoo', 'url = "https://oauth2:FAKE123@gitlab.example.com/g/p.git"']
+    for text in secrets:
+      self.assertIn('[REDACTED]', redact(text), text)
+    code = ['tokenizer = "bert-base-uncased"', '"token_type": "access_token"', 'password_field = "password"', 'max_tokens = 1000000000000',
+            'TOKEN_URL=https://auth.example.com/oauth2/token', 'secret_key = settings.SECRET_KEY_V2', 'tokenizer_name = "Qwen2.5-7B"']
+    for text in code:
+      self.assertEqual(redact(text), text)
+    import time
+    start = time.monotonic()
+    redact('token' * 50000 + 'password' * 8000)
+    self.assertLess(time.monotonic() - start, 2, "no catastrophic backtracking")
+
+  def test_shadowing_settings(self):
+    from qaboard.wizard.settings import shadowing_settings
+    with mock.patch.dict(os.environ, {'QABOARD_URL': 'http://old', 'QABOARD_HOST': 'old-qa', 'QA_TOKEN': 't', 'QABOARD_HOSTNAME': 'h', 'QABOARD_PORT': ''}):
+      os.environ.pop('QABOARD_API_PREFIX', None)
+      self.assertEqual(shadowing_settings(['QABOARD_URL', 'QA_TOKEN', 'QABOARD_LLM_MODEL']), {'QABOARD_URL': ['QABOARD_URL', 'QABOARD_HOST'], 'QA_TOKEN': ['QA_TOKEN']})
+
   def test_describe_llm_error(self):
     from qaboard.wizard import describe_llm_error
     error = Exception("status_code: 500, model_name: m, body: {...}")
@@ -321,6 +342,28 @@ class TestWizard(TempDir):
     with mock.patch.dict(os.environ, env):
       self.assertEqual(self.run_wizard(ai=True), 1)
     self.assertFalse((self.root / 'qaboard.yaml').exists(), "fails before writing anything")
+
+  def test_gitignore_symlink_outside(self):
+    make_project(self.root)
+    outside = Path(tempfile.mkdtemp())
+    self.addCleanup(lambda: __import__('shutil').rmtree(outside))
+    (outside / 'gitignore').write_text('*.o\n')
+    (self.root / '.gitignore').symlink_to(outside / 'gitignore')
+    self.assertEqual(self.run_wizard(ai=False), 0)
+    self.assertEqual((outside / 'gitignore').read_text(), '*.o\n')
+
+  def test_answers_win_over_site_defaults(self):
+    make_project(self.root)
+    site = self.root.parent / f'{self.root.name}-site.yaml'
+    site.write_text(yaml.safe_dump({'inputs': {'database': {'linux': '/datasets'}, 'globs': '*.raw', 'use_parent_folder': False}}))
+    self.addCleanup(site.unlink)
+    wizard = Wizard(quiet_ui(), dryrun=True, ai=False, model=None, root=self.root)
+    wizard.answers = {'name': 'acme/x', 'reference_branch': 'main', 'url': None, 'glob': 'Frame_000.jpg', 'use_parent_folder': True}
+    with mock.patch.dict(os.environ, {**self.env, 'QABOARD_SITE_CONFIG': str(site)}):
+      config = yaml.safe_load(wizard.qaboard_yaml())
+    self.assertEqual(config['inputs']['globs'], 'Frame_000.jpg')
+    self.assertTrue(config['inputs']['use_parent_folder'])
+    self.assertNotIn('database', config['inputs'], "still inherited from the site")
 
   def test_inputs_answers(self):
     make_project(self.root)
@@ -440,6 +483,18 @@ class TestAIFlow(TempDir):
     with mock.patch.dict(os.environ, {'QABOARD_LLM_BASE_URL': 'https://llm.example.com/v1'}), \
          mock.patch.object(LLM, 'list_models', lambda self, base_url=None: (['other-coder'], 'ok', 200)):
       self.assertEqual(wizard.configure_llm(llm).model, 'my-model')
+
+  def test_v1_hint_keeps_the_key(self):
+    wizard = Wizard(quiet_ui(), dryrun=True, ai=True, model='m', root=self.root)
+    llm = LLM(base_url='https://llm.example.com', api_key='k', model='m', verify=True)
+    def list_models(self, base_url=None):
+      url = base_url or self.base_url
+      if not url.endswith('/v1'):
+        return None, 'HTTP 404', 404
+      return (['m'], 'ok', 200) if self.api_key == 'k' else (None, 'the API key was rejected', 401)
+    with mock.patch.dict(os.environ, {'QABOARD_LLM_BASE_URL': 'https://llm.example.com'}), mock.patch.object(LLM, 'list_models', list_models):
+      configured = wizard.configure_llm(llm)
+    self.assertEqual((configured.base_url, configured.api_key), ('https://llm.example.com/v1', 'k'))
 
   def test_failed_refine_keeps_the_accepted_round(self):
     """Refine, then the LLM fails: we keep the first round's changes, not the template."""
