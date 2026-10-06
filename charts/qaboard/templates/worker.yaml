@@ -36,6 +36,13 @@ spec:
           env: {{- include "qaboard.backendEnv" . | nindent 12 }}
             - name: QABOARD_WORKER_CONCURRENCY
               value: {{ .Values.worker.concurrency | quote }}
+          # Restarts it if it can't reach the queue anymore
+          livenessProbe:
+            exec: {command: ["python", "/qaboard/backend/worker_healthcheck.py"]}
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 3
           resources: {{- toYaml .Values.worker.resources | nindent 12 }}
           volumeMounts:
             - {name: data, mountPath: /var/qaboard}

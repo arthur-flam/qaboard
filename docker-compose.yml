@@ -119,6 +119,13 @@ services:
     - data:/var/qaboard
     env_file: *backend-env-file
     environment: *backend-environment
+    # deployments/deploy.py waits for it to be healthy
+    healthcheck:
+      test: ["CMD", "python", "/qaboard/backend/worker_healthcheck.py"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
     # Running tasks finish before the worker stops (e.g. during deploys)
     stop_grace_period: 5m
 

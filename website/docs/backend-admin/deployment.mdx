@@ -10,7 +10,7 @@ QA-Board is deployed with docker compose, by `deployments/deploy.py`. It gives:
 - **Fast rollbacks**: the images of the last versions stay on the host.
 - Migrations run once, before the backend is updated: if they fail, nothing running is changed.
 - The database, redis, etc. are only restarted if their configuration changed. nginx configuration changes are reloaded without a restart.
-- The `worker` (background tasks, e.g. "Redo" from the webapp) is restarted when the backend's image changes. It finishes its running tasks first (up to 5 minutes), meanwhile new tasks wait in the queue.
+- The `worker` (background tasks, e.g. "Redo" from the webapp) is restarted after the backend, when its image changes. It finishes its running tasks first (up to 5 minutes), meanwhile new tasks wait in the queue. If it's not healthy, the deploy fails (after recording the new version): check its logs.
 
 ## Environments
 An environment is an env file that sets the compose files, the compose project and a few settings:

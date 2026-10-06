@@ -14,6 +14,11 @@ args=(
 )
 
 if [ -n "${UWSGI_UID:-}" ]; then
+  # Like init.sh: without $SECRET_KEY, a key is generated in this file, maybe by root (e.g. the migrations)
+  secret_key="${QABOARD_DATA_DIR:-/var/qaboard}/secret_key"
+  if [ -f "$secret_key" ]; then
+    chown "$UWSGI_UID${UWSGI_GID:+:$UWSGI_GID}" "$secret_key"
+  fi
   # The whole process runs as the user, not only the tasks (the code reads files that may be readable only by them)
   groups=--clear-groups
   id "$UWSGI_UID" > /dev/null 2>&1 && groups=--init-groups
