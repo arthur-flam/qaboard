@@ -1,11 +1,15 @@
 """
-`qa init`: a wizard that sets up a project with QA-Board.
+`qa wizard` (or `qa init`): sets up a project with QA-Board, and helps improve the integration when run again.
 
+Setup:
 1. Project: detects the git remote, default branch, languages, build and CI; asks where test inputs live.
 2. Server: finds and checks the QA-Board server, optionally logs in to get an API token.
 3. AI assistant (optional, `pip install qaboard[wizard]`): an agent adapts qa/main.py to the project's code,
    through any OpenAI-compatible API: OpenAI, a company gateway set by the site package, ollama, vLLM...
-4. Review: every change is shown before anything is written, and written atomically.
+4. Review: one approval for every change, shown before anything is written, and written atomically.
+
+Run again on a project that uses QA-Board, it checks its health (entrypoint, inputs, batches, metrics, visualizations,
+server, token) and offers to chat with the AI assistant, which edits qa/ and qaboard.yaml until the next review.
 
 Modules:
 - changes.py: staged changes, path safety, atomic writes - the only way the wizard writes to the project
@@ -34,7 +38,7 @@ from ..site_config import site_config, site_qaboard_config, site_qaboard_config_
 from .changes import ChangeSet, UnsafePath, diff_text
 from .detect import ProjectFacts, detect, git, guess_inputs
 from .settings import LLM, Server, chat_models, save_user_settings, shadowing_settings, suggest_model, user_settings_path
-from .ui import UI, is_interactive
+from .ui import GUIDE_GREETINGS, UI, is_interactive
 
 
 SAMPLE_PROJECT = Path(__file__).resolve().parent.parent / 'sample_project'
@@ -100,29 +104,177 @@ class Wizard:
     self.server_online = False
     self.database: Optional[Path] = None     # where inputs are, to check example inputs exist
     self.entrypoint = 'qa/main.py'
-    self.outcome = None                      # what the AI agent did
+    self.chat: Optional[Chat] = None         # the conversation with the AI assistant
+    self.wired = False                       # whether the AI changed the entrypoint
+    self.guiding = False                     # the project already used QA-Board
+    self.try_input: Optional[str] = None     # an input the AI suggests to try
     self.todo: List[str] = []                # what the AI says the user should check
 
   def run(self) -> int:
     ui = self.ui
-    ui.banner("qa init · set up QA-Board for this project" + ("  [dry run]" if self.dryrun else ""))
-
+    dry = "  [dry run]" if self.dryrun else ""
     configs = find_configs(self.root)
     if configs:
-      ui.ok("This project already has a QA-Board configuration:")
-      for _, path in configs:
-        ui.hint(escape(str(path)))
-      ui.hint(f"Edit it to change settings, see {DOCS}/project-init")
-      return 0
-
-    ui.steps_total = 3 if self.ai is False else 4
+      ui.banner("qa wizard · your project uses QA-Board: let's check it, and make it better" + dry, greetings=GUIDE_GREETINGS)
+      return self.guide(configs)
+    ui.banner("qa wizard · set up QA-Board for this project" + dry)
+    ui.steps = ['Project', 'Server', *([] if self.ai is False else ['AI assistant']), 'Review']
     facts = self.step_project()
     self.step_server()
     template = self.template_changes(facts)
     changes = copy.deepcopy(template)
     if self.ai is not False:
       changes = self.step_ai(facts, changes)
-    return self.step_review(facts, changes)
+    return self.step_review(facts, changes, template)
+
+  # Guide: the project already uses QA-Board ---------------------------------
+  def guide(self, configs: List) -> int:
+    ui = self.ui
+    self.guiding = True
+    config_path = configs[-1][1]
+    self.root = config_path.parent.resolve()
+    config: Dict[str, Any] = merged(site_qaboard_config(), *[c for c, _ in configs])
+    project = section(config, 'project')
+    self.answers['name'] = project.get('name') or self.root.name
+    self.entrypoint = str(project.get('entrypoint') or 'qa/main.py')
+    with ui.spinner("Checking your project…"):
+      facts = detect(self.root)
+      checks = self.health(config, config_path)
+    table = Table.grid(padding=(0, 1))
+    table.add_column(no_wrap=True)
+    table.add_column(style='dim', no_wrap=True)
+    table.add_column()
+    for icon, label, detail in checks:
+      table.add_row(icon, label, detail)
+    ui.panel(table, title=f"🩺 {escape(self.answers['name'])}")
+    if not ui.interactive:
+      ui.hint("Run `qa wizard` in a terminal to fix or improve things with its help.")
+      return 0
+
+    changes = ChangeSet(self.root, extra_writable=('.gitignore',))
+    while True:
+      pending = len(changes.pending())
+      options = []
+      if ai_available():
+        options.append(('c', "Chat with the AI assistant: wire your code, metrics, visualizations, batches, CI..."))
+      options += [('s', "Check the QA-Board server and your API token"), ('a', "Set up the AI assistant: API, key, model")]
+      if pending:
+        options.append(('r', f"Review and write the {pending} changed file{'s' if pending > 1 else ''}"))
+      options.append(('q', "Quit"))
+      if not ai_available():
+        self.hint_install_ai()
+      default = 'r' if pending else ('c' if ai_available() else 'q')
+      action = ui.choose("What would you like to do?", options, default=default)
+      if action == 'c':
+        self.guide_chat(facts, changes)
+      elif action == 's':
+        self.step_server(storage=False)
+      elif action == 'a':
+        if self.configure_llm(LLM.from_settings(self.model)):
+          self.save_settings("the AI settings")
+      elif action == 'r':
+        return self.step_review(facts, changes)
+      else:
+        if pending and not ui.confirm(f"Quit without writing the {pending} changed file{'s' if pending > 1 else ''}?", default=False):
+          continue
+        return 0
+
+  def guide_chat(self, facts: ProjectFacts, changes: ChangeSet):
+    ui = self.ui
+    if self.chat:
+      self.chat.loop()
+      return
+    if not self.start_chat(facts, changes) or not self.chat:
+      return
+    ui.hint("For instance: \"make qa/main.py run my CLI\", \"add a PSNR metric\", \"show output.png in the web app\", "
+            "\"how do I run this in GitLab CI?\"")
+    message = ui.chat_input()
+    if not message:
+      return
+    from .agent import project_brief
+    if self.chat.say(project_brief(facts, self.answers, self.entrypoint, setup=False) + f"\n\nThe user asks: {message}"):
+      self.save_settings("the AI settings")
+    self.chat.loop()
+
+  def health(self, config: Dict[str, Any], config_path: Path) -> List[tuple]:
+    """What's set up, and what could be better: (icon, label, detail)."""
+    ok, todo, bad = '[green]✔[/green]', '[yellow]▲[/yellow]', '[red]✘[/red]'
+    checks = [(ok, 'config', escape(short_path(config_path)))]
+
+    entrypoint = self.root / self.entrypoint
+    try:
+      code = entrypoint.read_text(errors='replace')
+    except OSError:
+      code = None
+    if code is None:
+      checks.append((bad, 'entrypoint', f"{escape(self.entrypoint)} is missing"))
+    elif 'def run(' not in code:
+      checks.append((bad, 'entrypoint', f"{escape(self.entrypoint)} has no run(context) function"))
+    elif 'to run *your* code using the context' in code:
+      checks.append((todo, 'entrypoint', f"{escape(self.entrypoint)} is still the template: it doesn't call your code yet"))
+    else:
+      checks.append((ok, 'entrypoint', escape(self.entrypoint)))
+
+    inputs = section(config, 'inputs')
+    database = None
+    if inputs.get('database'):
+      try:
+        from ..conventions import location_from_spec
+        database = location_from_spec(inputs['database'], {'project': self.answers['name'], 'subproject': ''})
+        database = database if database.is_absolute() else self.root / database
+      except Exception:
+        database = None
+    self.database = database
+    globs = inputs.get('globs', inputs.get('glob'))
+    if database and database.is_dir():
+      checks.append((ok, 'inputs', escape(str(database)) + (f" [dim]({escape(str(globs))})[/dim]" if globs else '')))
+    else:
+      checks.append((todo, 'inputs', f"{escape(str(database)) if database else 'no inputs.database'}: not a folder we can read here"))
+
+    batch_files = inputs.get('batches') or []
+    batch_files = [batch_files] if isinstance(batch_files, str) else batch_files
+    names: List[str] = []
+    for spec in batch_files:
+      if not isinstance(spec, str) or spec == 'super':
+        continue
+      path = Path(spec) if Path(spec).is_absolute() else self.root / spec
+      try:
+        names += [k for k in (yaml.safe_load(path.read_text()) or {}) if not str(k).startswith('.')]
+      except Exception:
+        pass
+    checks.append((ok, 'batches', escape(', '.join(names[:6]) + (', ...' if len(names) > 6 else ''))) if names else (todo, 'batches', "no batches yet: add some to run `qa batch NAME`"))
+
+    outputs = section(config, 'outputs')
+    metrics: Dict[str, Any] = {}
+    metrics_spec = outputs.get('metrics')
+    if isinstance(metrics_spec, str):
+      try:
+        metrics = (yaml.safe_load((self.root / metrics_spec).read_text()) or {}).get('available_metrics') or {}
+      except Exception:
+        metrics = {}
+    own = [m for m in metrics if m != 'is_failed']
+    checks.append((ok, 'metrics', escape(', '.join(own[:6]) + (', ...' if len(own) > 6 else ''))) if own else (todo, 'metrics', "only is_failed: describe the metrics your code computes"))
+    visualizations = outputs.get('visualizations') or []
+    checks.append((ok, 'outputs', f"{len(visualizations)} visualization{'s' if len(visualizations) > 1 else ''}") if visualizations else (todo, 'outputs', "no visualizations: show your output files in the web app"))
+
+    server = Server.from_settings()
+    online, message, _ = (False, '', {}) if server.is_default else server.probe()
+    self.server, self.server_online = server, online
+    if server.is_default:
+      checks.append((todo, 'server', "not set up: choose s below, or set QABOARD_URL"))
+    elif not online:
+      checks.append((todo, 'server', f"{escape(server.url)}: {escape(message)}"))
+    else:
+      user = server.whoami(server.token) if server.token else None
+      checks.append((ok, 'server', escape(server.url) + (f" [dim](logged in as {escape(user)})[/dim]" if user else " [dim](no API token)[/dim]")))
+
+    if not ai_available():
+      checks.append((todo, 'AI assistant', f"not installed: {escape(INSTALL_AI)}"))
+    else:
+      llm = LLM.from_settings(self.model)
+      ready = llm.api_key or llm.is_local or llm.provider == 'anthropic'
+      checks.append((ok if ready else todo, 'AI assistant', f"{escape(llm.model or 'model to choose')} · {escape(llm.label)}" if ready else "not set up yet"))
+    return checks
 
   # 1. Project --------------------------------------------------------------
   def step_project(self) -> ProjectFacts:
@@ -237,7 +389,7 @@ class Wizard:
       ui.ok(f"Found {inputs.count}+ folders of [bold]{escape(inputs.glob)}[/bold]-like sequences, e.g. {escape(', '.join(examples))}")
       ui.hint("Each folder will be one input (inputs.use_parent_folder).")
     else:
-      ui.ok(f"Found {inputs.count}{'+' if inputs.count >= 3000 else ''} [bold]{escape(inputs.glob)}[/bold] files, e.g. {escape(', '.join(examples))}")
+      ui.ok(f"Found {inputs.count}{'+' if inputs.count >= 3000 else ''} [bold]{escape(inputs.glob)}[/bold] file{'s' if inputs.count != 1 else ''}, e.g. {escape(', '.join(examples))}")
     if inputs.use_parent_folder and not ui.confirm("Is each folder one input?", default=True):
       self.answers['glob'] = ui.ask("Which files are inputs? (glob)", default=f"*{Path(inputs.glob).suffix}")
       self.answers['use_parent_folder'] = False
@@ -249,18 +401,20 @@ class Wizard:
     self.answers['examples'] = examples
 
   # 2. Server ---------------------------------------------------------------
-  def step_server(self):
+  def step_server(self, storage: bool = True):
     ui = self.ui
     ui.step("QA-Board server")
     server = Server.from_settings()
     self.server = server
-    online, message, config = False, '', {}
+    online, message = False, ''
+    config: Dict[str, Any] = {}
     if server.is_default:
       ui.hint(f"Ask your admins for its URL. To start one: {DOCS}/deploy")
       typed = ui.ask("QA-Board URL (empty if you don't have one yet)", default='') if ui.interactive else ''
       if not typed:
-        ui.note("No server for now: `qa run` works without one, and you can run `qa init` again or set QABOARD_URL later.")
-        self.ask_storage()
+        ui.note("No server for now: `qa run` works without one, and you can run `qa wizard` again or set QABOARD_URL later.")
+        if storage:
+          self.ask_storage()
         return
       with ui.spinner("Calling the server…"):
         online, message, config = server.probe_typed(typed)
@@ -285,7 +439,8 @@ class Wizard:
         self.to_save['QABOARD_URL'] = server.url
       self.step_token(server, config)
     self.save_settings("the server settings")
-    self.ask_storage()
+    if storage:
+      self.ask_storage()
 
   def step_token(self, server: Server, config: Dict[str, Any]):
     ui = self.ui
@@ -423,84 +578,44 @@ class Wizard:
     ui = self.ui
     ui.step("AI assistant")
     if not ai_available():
-      ui.info("An AI assistant can adapt qa/main.py to your code. To enable it:")
-      ui.note(f"[bold]{escape(INSTALL_AI)}[/bold]    or    [bold]{escape(RUN_AI)}[/bold]")
+      self.hint_install_ai()
       ui.hint("Continuing with the template: it's commented, and easy to edit by hand.")
       return changes
 
-    llm = LLM.from_settings(self.model)
     ui.note("It reads your code and wires qa/main.py and qaboard.yaml to it. It can't run commands, never reads files "
-            "that look like secrets, can only change qa/ and qaboard.yaml, and you review everything.")
-    if not self.ai and not ui.confirm(f"Let an AI adapt qa/main.py to your code? [dim](it reads your code through {escape(llm.host)})[/dim]", default=True):
+            "that look like secrets, can only change qa/ and qaboard.yaml, and you review everything before it's written.")
+    if not self.ai and not ui.confirm(f"Let an AI adapt {self.entrypoint} to your code?", default=True):
       return changes
-
-    configured = self.configure_llm(llm)
-    if not configured:
-      ui.note("Skipping the AI assistant, using the template.")
+    chat = self.start_chat(facts, changes)
+    if not chat:
       return changes
-    llm = configured
-
-    from .agent import Deps, make_agent, build_model, run_agent, project_brief, READ_BUDGET
     hint = ui.ask("Anything it should know? (e.g. \"the CLI is build/denoise --in X --out Y\", empty to skip)", default='')
     if hint:
       self.answers['hint'] = hint
-    ui.info(f"Working with [bold]{escape(llm.model or '')}[/bold] at {escape(llm.host)}. Press Ctrl+C to stop.")
-    try:
-      agent = make_agent(build_model(llm))
-    except Exception as e:
-      ui.fail(f"Could not set up the AI assistant: {escape(str(e))}")
-      ui.note("Continuing with the template.")
-      return changes
-    template = copy.deepcopy(changes)
-    accepted, accepted_outcome = copy.deepcopy(changes), None   # what we go back to if a round fails
-    deps = Deps(changes=changes, facts=facts, ui=ui)
-    prompt, history = project_brief(facts, self.answers, self.entrypoint), None
-    while True:
-      before_round = copy.deepcopy(changes)
-      try:
-        result = run_agent(agent, deps, prompt, history)
-      except KeyboardInterrupt:
-        ui.warn("Stopped the AI assistant.")
-        if self.show_round(before_round, changes) and ui.confirm("Keep the changes it made in this round?", default=False):
-          return changes
-        self.outcome = accepted_outcome
-        return accepted
-      except Exception as e:
-        ui.fail(f"The AI assistant failed: {escape(describe_llm_error(e))}")
-        if ui.interactive and ui.confirm("Try again?", default=False):
-          deps.changes = changes = copy.deepcopy(before_round)
-          continue
-        ui.note("Continuing with the template." if accepted_outcome is None else "Keeping the changes from the previous round.")
-        self.outcome = accepted_outcome
-        return accepted
-
+    from .agent import project_brief
+    if chat.say(project_brief(facts, self.answers, self.entrypoint, setup=True)):
       # Settings are only saved once they've proven to work
       self.save_settings("the AI settings")
-      self.outcome = result.output
-      self.todo = list(dict.fromkeys([*self.todo, *result.output.todo]))
-      usage = result.usage() if callable(result.usage) else result.usage
-      tokens = (getattr(usage, 'input_tokens', 0) or 0) + (getattr(usage, 'output_tokens', 0) or 0)
-      requests = getattr(usage, 'requests', 0)
-      ui.ok(f"Done in {requests} step{'s' if requests != 1 else ''}" + (f", {tokens / 1000:.0f}k tokens" if tokens >= 1000 else f", {tokens} tokens" if tokens else ''))
-      self.show_outcome()
-      changed = self.show_round(before_round, changes)
-      if not ui.interactive:
-        return changes
-      if not changed:
-        ui.info("The AI didn't change anything.")
-      options = [('a', "Accept, then review all files")] if changed or history else []
-      options += [('r', "Refine: tell the AI what to change"), ('t', "Throw away the AI changes, use the template")]
-      action = ui.choose("What now?", options, default=options[0][0])
-      if action == 'a':
-        return changes
-      if action == 't':
-        self.outcome, self.todo = None, []
-        return template
-      accepted, accepted_outcome = copy.deepcopy(changes), self.outcome
-      feedback = ui.ask("What should it change")
-      prompt, history = feedback or "Double-check your work.", result.all_messages()
-      deps.questions_left = 2
-      deps.read_budget = READ_BUDGET
+    if ui.interactive:
+      chat.loop()
+    return changes
+
+  def start_chat(self, facts: ProjectFacts, changes: ChangeSet) -> Optional['Chat']:
+    llm = self.configure_llm(LLM.from_settings(self.model))
+    if not llm:
+      self.ui.note("Skipping the AI assistant.")
+      return None
+    try:
+      self.chat = Chat(self, llm, facts, changes)
+    except Exception as e:
+      self.ui.fail(f"Could not set up the AI assistant: {escape(str(e))}")
+      return None
+    self.ui.info(f"Working with [bold]{escape(llm.model or '')}[/bold] · {escape(llm.label)}. Ctrl+C stops it.")
+    return self.chat
+
+  def hint_install_ai(self):
+    self.ui.info("An AI assistant can adapt qa/main.py to your code, add metrics, visualizations... To enable it:")
+    self.ui.note(f"[bold]{escape(INSTALL_AI)}[/bold]    or    [bold]{escape(RUN_AI)}[/bold]")
 
   def show_round(self, before: ChangeSet, after: ChangeSet) -> bool:
     """Shows what a round of the AI changed. Returns whether it changed anything."""
@@ -521,19 +636,33 @@ class Wizard:
 
   def configure_llm(self, llm: LLM) -> Optional[LLM]:
     ui = self.ui
-    ui.hint("It works with any OpenAI-compatible API: OpenAI, your company's LLM gateway, ollama, vLLM, LiteLLM...")
-    if site_config('QABOARD_LLM_BASE_URL'):
-      ui.ok(f"Using the LLM API at [bold]{escape(llm.host)}[/bold] [dim](from your settings)[/dim]")
-    else:
-      self.set_base_url(llm, ui.ask("API base URL", default=llm.base_url))
+    if site_config('QABOARD_LLM_BASE_URL') or site_config('QABOARD_LLM_PROVIDER'):
+      ui.ok(f"Using {escape(llm.label)} [dim](from your settings)[/dim]")
+    elif ui.interactive:
+      default = 'a' if llm.provider == 'anthropic' else ('o' if llm.is_openai else 'c')
+      choice = ui.choose("Which API?", [
+        ('a', "Anthropic: Claude"),
+        ('o', "OpenAI"),
+        ('c', "Another OpenAI-compatible API: your company's gateway, ollama, vLLM, LiteLLM..."),
+      ], default=default)
+      if choice == 'a' and llm.provider != 'anthropic':
+        llm = LLM.from_settings(self.model, provider='anthropic')
+      elif choice in ('o', 'c') and llm.provider != 'openai':
+        llm = LLM.from_settings(self.model, provider='openai')
+      if choice == 'c':
+        self.set_base_url(llm, ui.ask("API base URL", default='' if llm.is_openai else llm.base_url))
+      if llm.provider != LLM.guess_provider():
+        self.to_save['QABOARD_LLM_PROVIDER'] = llm.provider
 
     models = None
+    # Claude: the SDK also finds credentials by itself (ANTHROPIC_AUTH_TOKEN, `ant auth login`...)
+    sdk_credentials = llm.provider == 'anthropic' and not llm.api_key and llm.list_models()[0] is not None
     while True:
       if llm.is_insecure:
         ui.warn(f"{escape(llm.base_url)} doesn't use https: your code and API key would be sent unencrypted.")
         if not ui.confirm("Use it anyway?", default=False):
           return None
-      if not llm.api_key and ui.interactive:
+      if not llm.api_key and ui.interactive and not sdk_credentials:
         if not self.ask_key(llm):
           return None
       with ui.spinner(f"Checking {llm.host}…"):
@@ -559,7 +688,7 @@ class Wizard:
       if action == 'e':
         self.set_base_url(llm, ui.ask("API base URL", default=llm.base_url))
       elif action == 'k':
-        llm.api_key = None
+        llm.api_key, sdk_credentials = None, False
       elif action == 't':
         break
       else:
@@ -598,6 +727,8 @@ class Wizard:
       ui.hint(f"Get a key at {escape(llm.key_url)}")
     elif llm.is_openai:
       ui.hint("Get a key at https://platform.openai.com/api-keys")
+    elif llm.is_anthropic_api:
+      ui.hint("Get a key at https://platform.claude.com, or log in with `ant auth login`")
     if llm.is_local:
       llm.api_key = ui.ask(f"API key for {escape(llm.host)} [dim](empty if your server doesn't need one)[/dim]", password=True) or None
       if not llm.api_key:
@@ -609,77 +740,90 @@ class Wizard:
     self.to_save['QABOARD_LLM_API_KEY'] = llm.api_key
     # A saved key goes with its API: never sent to another one configured later
     self.to_save['QABOARD_LLM_BASE_URL'] = llm.base_url
+    self.to_save['QABOARD_LLM_PROVIDER'] = llm.provider
     return True
 
-  def show_outcome(self):
-    if not self.outcome:
-      return
-    body = Text()
-    for item in self.outcome.summary:
-      body.append("• ", style='green')
-      body.append(f"{item}\n")
-    if self.todo:
-      body.append("\nTo check:\n", style='bold')
-      for item in self.todo:
-        body.append("• ", style='yellow')
-        body.append(f"{item}\n")
-    body.rstrip()
-    self.ui.panel(body, title="🤖 What the AI did")
-
   # 4. Review ---------------------------------------------------------------
-  def step_review(self, facts: ProjectFacts, changes: ChangeSet) -> int:
+  def step_review(self, facts: ProjectFacts, changes: ChangeSet, template: Optional[ChangeSet] = None) -> int:
+    """One review, one approval, for every change to the files QA-Board owns."""
     ui = self.ui
     ui.step("Review")
-    pending = changes.pending()
-    if not pending:
-      ui.info("Nothing to change.")
-      return 0
-    rows = []
-    for change in pending:
-      added, removed = changes.stats(change)
-      status = '[green]new[/green]' if change.original is None else '[yellow]modified[/yellow]'
-      rows.append((status, f"{escape(change.rel)}  [green]+{added}[/green]" + (f" [red]-{removed}[/red]" if removed else '')))
-    ui.facts(rows)
-    if ui.interactive and ui.confirm("Show the full files?", default=False):
-      with ui.pager():
-        for change in pending:
-          ui.diff(change.rel, changes.diff(change))
-
-    if self.dryrun:
-      ui.info("Dry run: nothing was written.")
-      return 0
-    if not ui.confirm("Write these files?", default=True):
-      raise Cancelled()
+    while True:
+      pending = changes.pending()
+      if not pending:
+        ui.info("Nothing to change.")
+        return 0
+      rows = []
+      for change in pending:
+        added, removed = changes.stats(change)
+        status = '[green]new[/green]' if change.original is None else '[yellow]modified[/yellow]'
+        rows.append((status, f"{escape(change.rel)}  [green]+{added}[/green]" + (f" [red]-{removed}[/red]" if removed else '')))
+      ui.facts(rows)
+      if self.dryrun:
+        ui.info("Dry run: nothing was written.")
+        return 0
+      if not ui.interactive:
+        break
+      options = [('w', f"Write {'it' if len(pending) == 1 else f'these {len(pending)} files'}"), ('d', "Show the changes")]
+      if self.chat:
+        options.append(('c', "Keep chatting with the assistant"))
+        if template is not None and any(changes.read(c.rel) != template.read(c.rel) for c in pending if c.rel in template.changes):
+          options.append(('t', "Use the plain template instead of the AI's changes"))
+      options.append(('q', "Quit without writing anything"))
+      action = ui.choose("All good?", options, default='w')
+      if action == 'd':
+        with ui.pager():
+          for change in pending:
+            ui.diff(change.rel, changes.diff(change))
+      elif action == 'c' and self.chat:
+        self.chat.loop()
+      elif action == 't' and template is not None:
+        changes = copy.deepcopy(template)
+        self.chat, self.todo, self.try_input = None, [], None
+        ui.ok("Back to the plain template.")
+      elif action == 'q':
+        raise Cancelled()
+      else:
+        break
     try:
       changes.apply()
     except Exception as e:
       ui.fail(f"Nothing was written: {escape(str(e))}")
       return 1
     ui.ok(f"Wrote {', '.join(c.rel for c in pending)}")
-    self.outro(facts, sorted({c.rel.split('/')[0] for c in pending}))
+    entrypoint = changes.changes.get(self.entrypoint)
+    self.wired = bool(self.chat) and entrypoint is not None and template is not None and \
+      self.entrypoint in template.changes and entrypoint.content != template.changes[self.entrypoint].content
+    self.outro(facts, sorted({c.rel.split('/')[0] for c in pending}), changes)
     return 0
 
-  def outro(self, facts: ProjectFacts, written: List[str]):
+  def outro(self, facts: ProjectFacts, written: List[str], changes: ChangeSet):
     ui = self.ui
-    candidates = [try_run_input(self.outcome.try_command) if self.outcome else None, *(self.answers.get('examples') or [])]
+    if self.chat:
+      self.try_input = self.chat.deps.try_input or self.try_input
+      self.todo = list(dict.fromkeys([*self.todo, *self.chat.deps.todo]))
+    candidates = [self.try_input, *(self.answers.get('examples') or [])]
     # Only suggest to run on an input that we know exists
     try_input = next((c for c in candidates if c and self.database and (self.database / c).exists()), None)
     try_command = f"qa run --input {shlex.quote(try_input)}" if try_input else "qa run --input path/to/input"
-    wired = self.outcome is not None
+    wired = self.wired
 
     steps = Table.grid(padding=(0, 2))
     steps.add_column(style='bold cyan', no_wrap=True)
     steps.add_column(style='dim')
-    if not wired:
+    if not wired and not self.guiding:
       steps.add_row(Text(f"$EDITOR {self.entrypoint}"), "make run(context) call your code")
     steps.add_row(Text(try_command), "run it on one input")
     steps.add_row("qa batch my-batch", "run on the inputs listed in qa/batches.yaml")
     if self.storage_is_ready():
       steps.add_row("qa --share batch my-batch", "share the results in QA-Board")
-    parts: List[Any] = [
-      Text(f"✔ QA-Board is set up, and {self.entrypoint} calls your code\n" if wired else f"✔ QA-Board files created. Next, make {self.entrypoint} call your code\n", style='bold green'),
-      steps,
-    ]
+    if self.guiding:
+      title = "✔ Your QA-Board integration is updated. Give it a try:\n"
+    elif wired:
+      title = f"✔ QA-Board is set up, and {self.entrypoint} calls your code\n"
+    else:
+      title = f"✔ QA-Board files created. Next, make {self.entrypoint} call your code\n"
+    parts: List[Any] = [Text(title, style='bold green'), steps]
     if self.todo:
       todo = Text("\nTo check:\n", style='bold')
       for item in self.todo:
@@ -690,8 +834,9 @@ class Wizard:
     footer = Text("\n")
     if facts.is_git:
       cd = f"cd {shlex.quote(str(self.root))} && " if self.root != Path.cwd().resolve() else ''
-      footer.append("Commit the new files:\n", style='dim')
-      footer.append(f"{cd}git add {' '.join(written)} && git commit -m 'Track results with QA-Board'\n", style='cyan')
+      footer.append("Commit the changes:\n" if self.guiding else "Commit the new files:\n", style='dim')
+      message = 'Improve the QA-Board integration' if self.guiding else 'Track results with QA-Board'
+      footer.append(f"{cd}git add {' '.join(written)} && git commit -m '{message}'\n", style='cyan')
     if self.server and self.server_online:
       footer.append(f"Once you run `qa --share batch` (or CI does), results show up at {self.server.url.rstrip('/')}/{self.answers['name']}\n", style='dim')
     if facts.ci:
@@ -700,6 +845,7 @@ class Wizard:
     parts.append(footer)
     ui.panel(Group(*parts), title="🎉 Next steps", style='green')
 
+    ui.celebrate()
     if try_input and ui.interactive and ui.confirm(f"Try [bold]{escape(try_command)}[/bold] now?", default=True):
       self.try_run(try_input)
 
@@ -724,6 +870,92 @@ class Wizard:
     if site_qaboard_config().get('storage'):
       return True
     return Path(self.answers.get('storage') or DEFAULT_STORAGE).is_dir()
+
+
+class Chat:
+  """
+  A conversation with the AI assistant. Its edits accumulate in the ChangeSet: nothing is written before
+  the user reviews them all at once.
+  """
+  def __init__(self, wizard: 'Wizard', llm: LLM, facts: ProjectFacts, changes: ChangeSet):
+    from .agent import Deps, make_agent, build_model
+    model, self.settings = build_model(llm)
+    self.agent = make_agent(model)
+    self.wizard = wizard
+    self.ui = wizard.ui
+    self.deps = Deps(changes=changes, facts=facts, ui=wizard.ui)
+    self.initial = copy.deepcopy(changes)
+    self.history: Optional[list] = None
+    self.turns = 0
+
+  def say(self, prompt: str) -> bool:
+    """One turn of the conversation. Returns whether it worked."""
+    from .agent import READ_BUDGET, run_agent
+    ui = self.ui
+    before = copy.deepcopy(self.deps.changes)
+    try:
+      result = run_agent(self.agent, self.deps, prompt, self.history, self.settings)
+    except KeyboardInterrupt:
+      self.restore(before)
+      ui.warn("Stopped. What the assistant changed in this turn was dropped.")
+      return False
+    except Exception as e:
+      self.restore(before)
+      ui.fail(f"The AI assistant failed: {escape(describe_llm_error(e))}")
+      if ui.interactive:
+        ui.hint("Send your message again to retry.")
+      return False
+    self.history = result.all_messages()
+    self.turns += 1
+    self.deps.read_budget, self.deps.questions_left = READ_BUDGET, 2
+    ui.assistant(result.output or "Done.")
+    self.wizard.show_round(before, self.deps.changes)
+    usage = result.usage() if callable(result.usage) else result.usage
+    tokens = (getattr(usage, 'input_tokens', 0) or 0) + (getattr(usage, 'output_tokens', 0) or 0)
+    requests = getattr(usage, 'requests', 0)
+    ui.console.print(f"[dim]  {requests} step{'s' if requests != 1 else ''}" + (f" · {tokens / 1000:.0f}k tokens" if tokens >= 1000 else '') + "[/dim]")
+    return True
+
+  def restore(self, snapshot: ChangeSet):
+    # The same ChangeSet object: the agent keeps working on it
+    self.deps.changes.changes = copy.deepcopy(snapshot.changes)
+
+  def loop(self):
+    """The user talks with the assistant until they're done."""
+    ui = self.ui
+    ui.hint("Ask for anything about the integration. An empty line when you're done: you'll review all the changes at once. "
+            "/diff shows them, /reset drops them.")
+    while True:
+      message = ui.chat_input()
+      if not message or message in ('/done', '/quit', '/exit', '/review'):
+        return
+      if message in ('/diff', '/changes'):
+        if not self.wizard.show_round(self.initial, self.deps.changes):
+          ui.info("No changes yet.")
+      elif message == '/reset':
+        self.restore(self.initial)
+        ui.ok("Dropped all the changes of this conversation.")
+      elif message.startswith('/'):
+        ui.hint("Commands: /diff, /reset, or an empty line when you're done.")
+      else:
+        self.say(message)
+
+
+def section(config: Dict[str, Any], key: str) -> Dict[str, Any]:
+  value = config.get(key)
+  return value if isinstance(value, dict) else {}
+
+
+def merged(*configs: Dict[str, Any]) -> Dict[str, Any]:
+  """Configurations merged key by key, later ones win (lists are replaced)."""
+  result: Dict[str, Any] = {}
+  for config in configs:
+    for key, value in (config or {}).items():
+      if isinstance(value, dict) and isinstance(result.get(key), dict):
+        result[key] = merged(result[key], value)
+      else:
+        result[key] = value
+  return result
 
 
 def try_run_input(command: Optional[str]) -> Optional[str]:

@@ -32,7 +32,7 @@ class QaGroup(TyperGroup):
     'run', 'batch', 'postprocess', 'sync', 'wait',
     'check-bit-accuracy', 'check-bit-accuracy-manifest',
     'optimize',
-    'get', 'init', 'save-artifacts',
+    'get', 'wizard', 'init', 'save-artifacts',
   )
 
   def list_commands(self, ctx):
@@ -134,7 +134,7 @@ def qa(
     ctx.obj = {}
 
   will_show_help = '-h' in sys.argv or '--help' in sys.argv
-  noop_command = 'init' in sys.argv
+  noop_command = 'init' in sys.argv or 'wizard' in sys.argv
   if root_qatools and root_qatools != Path().resolve() and not will_show_help and not noop_command:
     ctx.obj['previous_cwd'] = os.getcwd()
     typer.echo(typer.style("Working directory changed to: ", fg='blue') + typer.style(str(root_qatools), fg='blue', bold=True), err=True)

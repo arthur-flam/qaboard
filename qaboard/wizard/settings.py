@@ -7,6 +7,7 @@ Sites put their own defaults in their site package, so users only have to say ye
     "QABOARD_LLM_MODEL": "qwen3-coder",
     "QABOARD_LLM_KEY_URL": "https://wiki.example.com/how-to-get-an-llm-key",   # shown when asking for a key
     "QABOARD_LLM_VERIFY": "false",   # or the path to a CA bundle, like QABOARD_API_VERIFY
+    "QABOARD_LLM_PROVIDER": "openai",   # any OpenAI-compatible API, or "anthropic"
 """
 import os
 import tempfile
@@ -143,6 +144,12 @@ class Server:
     return r.json()['token']
 
 
+# Any OpenAI-compatible API (OpenAI, gateways, ollama, vLLM, LiteLLM...), or Anthropic's API (or one compatible with it)
+PROVIDERS = ('anthropic', 'openai')
+ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
+DEFAULT_ANTHROPIC_MODEL = 'claude-opus-5-5'
+
+
 @dataclass
 class LLM:
   base_url: str
@@ -150,6 +157,7 @@ class LLM:
   model: Optional[str]
   verify: Union[bool, str]
   key_url: Optional[str] = None   # where users get a key, set by sites
+  provider: str = 'openai'
 
   @property
   def host(self) -> str:
@@ -158,6 +166,18 @@ class LLM:
   @property
   def is_openai(self) -> bool:
     return self.base_url.startswith('https://api.openai.com/')
+
+  @property
+  def is_anthropic_api(self) -> bool:
+    return self.provider == 'anthropic' and urlparse(self.base_url).scheme == 'https' and self.host == 'api.anthropic.com'
+
+  @property
+  def label(self) -> str:
+    if self.is_anthropic_api:
+      return "Anthropic (Claude)"
+    if self.is_openai:
+      return "OpenAI"
+    return f"{'Anthropic-compatible' if self.provider == 'anthropic' else 'OpenAI-compatible'} API at {self.host}"
 
   @property
   def is_local(self) -> bool:
@@ -169,22 +189,59 @@ class LLM:
     return is_insecure(self.base_url)
 
   @staticmethod
-  def from_settings(model: Optional[str] = None) -> 'LLM':
-    base_url = site_config('QABOARD_LLM_BASE_URL') or os.getenv('OPENAI_BASE_URL') or OPENAI_BASE_URL
+  def guess_provider() -> str:
+    provider = (site_config('QABOARD_LLM_PROVIDER') or '').lower()
+    if provider in PROVIDERS:
+      return provider
+    base_url = site_config('QABOARD_LLM_BASE_URL')
+    if base_url:
+      return 'anthropic' if 'anthropic.com' in base_url else 'openai'
+    if os.getenv('OPENAI_BASE_URL') or os.getenv('OPENAI_API_KEY'):
+      return 'openai'
+    # Also without ANTHROPIC_API_KEY: the SDK finds credentials from `ant auth login` too
+    return 'anthropic'
+
+  @staticmethod
+  def from_settings(model: Optional[str] = None, provider: Optional[str] = None) -> 'LLM':
+    provider = provider or LLM.guess_provider()
+    env_base_url = os.getenv('ANTHROPIC_BASE_URL' if provider == 'anthropic' else 'OPENAI_BASE_URL')
+    base_url = site_config('QABOARD_LLM_BASE_URL') or env_base_url or (ANTHROPIC_BASE_URL if provider == 'anthropic' else OPENAI_BASE_URL)
     llm = LLM(
       base_url=base_url.rstrip('/'),
       api_key=site_config('QABOARD_LLM_API_KEY'),
       model=model or site_config('QABOARD_LLM_MODEL'),
       verify=as_requests_verify(site_config('QABOARD_LLM_VERIFY')),
       key_url=site_config('QABOARD_LLM_KEY_URL'),
+      provider=provider,
     )
-    # OPENAI_API_KEY is only sent where it's meant to go, never to another provider or a site's gateway
-    if not llm.api_key and (llm.is_openai or base_url == os.getenv('OPENAI_BASE_URL')):
-      llm.api_key = os.getenv('OPENAI_API_KEY')
+    # OPENAI_API_KEY / ANTHROPIC_API_KEY are only sent where they're meant to go, never to another provider or a site's gateway
+    official = llm.is_anthropic_api if provider == 'anthropic' else llm.is_openai
+    if not llm.api_key and (official or base_url == env_base_url):
+      llm.api_key = os.getenv('ANTHROPIC_API_KEY' if provider == 'anthropic' else 'OPENAI_API_KEY')
+    if not llm.model and llm.is_anthropic_api:
+      llm.model = DEFAULT_ANTHROPIC_MODEL
     return llm
+
+  def anthropic_client(self, base_url: Optional[str] = None, asynchronous: bool = False):
+    """The official SDK's client. Without a key, it finds credentials itself (ANTHROPIC_API_KEY, `ant auth login`...)."""
+    import anthropic
+    verify: Any = self.verify
+    if isinstance(verify, str):
+      import ssl
+      verify = ssl.create_default_context(capath=verify) if os.path.isdir(verify) else ssl.create_default_context(cafile=verify)
+    options: Dict[str, Any] = {'max_retries': 2}
+    if self.api_key:
+      options['api_key'] = self.api_key
+    if (base_url or self.base_url) != ANTHROPIC_BASE_URL:
+      options['base_url'] = base_url or self.base_url
+    if asynchronous:
+      return anthropic.AsyncAnthropic(http_client=anthropic.DefaultAsyncHttpxClient(verify=verify, timeout=300), **options)
+    return anthropic.Anthropic(http_client=anthropic.DefaultHttpxClient(verify=verify, timeout=TIMEOUT), **options)
 
   def list_models(self, base_url: Optional[str] = None) -> Tuple[Optional[List[str]], str, Optional[int]]:
     """The models the API offers (or None), a message, and the HTTP status. Also checks the API key."""
+    if self.provider == 'anthropic':
+      return self.list_anthropic_models(base_url)
     base_url = base_url or self.base_url
     session = requests_session(self.verify)
     headers = {'Authorization': f'Bearer {self.api_key}'} if self.api_key else {}
@@ -200,6 +257,25 @@ class LLM:
       return sorted(m['id'] for m in r.json()['data']), "ok", 200
     except Exception:
       return None, f"unexpected answer from {base_url}/models", r.status_code
+
+  def list_anthropic_models(self, base_url: Optional[str] = None) -> Tuple[Optional[List[str]], str, Optional[int]]:
+    try:
+      import anthropic
+    except ImportError:
+      return None, "the anthropic package is missing: pip install 'qaboard[wizard]'", None
+    try:
+      models = [m.id for m in self.anthropic_client(base_url).models.list(limit=100)]
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+      return None, "the API key was rejected", e.status_code
+    except anthropic.APIStatusError as e:
+      return None, f"HTTP {e.status_code} from {base_url or self.base_url}/v1/models", e.status_code
+    except anthropic.APIConnectionError:
+      return None, "could not connect", None
+    except Exception as e:
+      # e.g. no credentials at all
+      message = str(e).splitlines()[0][:200] if str(e) else type(e).__name__
+      return None, "no API key" if 'auth' in message.lower() or 'api_key' in message.lower() else message, 401 if 'auth' in message.lower() else None
+    return models, "ok", 200
 
 
 def with_scheme(url: str) -> List[str]:
@@ -257,8 +333,10 @@ def chat_models(models: List[str]) -> List[str]:
 
 def suggest_model(models: List[str]) -> Optional[str]:
   """A reasonable default among available models: a capable, general-purpose coding model."""
-  preferences = ('coder', 'claude', 'gpt-5', 'gpt-4.1', 'gpt-4o', 'qwen', 'deepseek', 'llama', 'mistral', 'gemini')
   chat_models_ = chat_models(models)
+  if DEFAULT_ANTHROPIC_MODEL in chat_models_:
+    return DEFAULT_ANTHROPIC_MODEL
+  preferences = ('coder', 'opus', 'sonnet', 'claude', 'gpt-5', 'gpt-4.1', 'gpt-4o', 'qwen', 'deepseek', 'llama', 'mistral', 'gemini')
   for preference in preferences:
     matches = [m for m in chat_models_ if preference in m.lower()]
     if matches:

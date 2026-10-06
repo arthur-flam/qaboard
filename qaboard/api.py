@@ -26,7 +26,7 @@ if qaboard_url_is_default and not ignore_config_errors:
   typer.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
   typer.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
   typer.secho(f"       > If your organization has a site package (e.g. qaboard-site-sirc), install it.", fg='yellow', err=True)
-  typer.secho(f"       > Or run `qa init` to set it up.", fg='yellow', err=True)
+  typer.secho(f"       > Or run `qa wizard` to set it up.", fg='yellow', err=True)
 
 api_prefix = site_config('QABOARD_API_PREFIX', f"{qaboard_url}/api/v1")
 # Whether requests to the API check TLS certificates: true (default), false, or the path to a CA bundle.

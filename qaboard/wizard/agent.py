@@ -6,16 +6,16 @@ The agent can't run commands and can't write anywhere but qa/ and qaboard.yaml: 
 read the project (minus secrets, which are also redacted from what it reads) and stage changes in a ChangeSet,
 that the user reviews before anything is written.
 """
+import dataclasses
 import fnmatch
 import os
 import re
 import ssl
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import yaml
-from pydantic import BaseModel, Field
 
 # Pydantic AI advertises its observability service in the terminal, not what users came for
 os.environ.setdefault('PYDANTIC_AI_NO_BANNER', '1')
@@ -73,12 +73,6 @@ def redact(text: str) -> str:
   return SECRET_VALUES.sub(replace, text)
 
 
-class Outcome(BaseModel):
-  summary: List[str] = Field(description="What you changed and why, one short sentence per item, for the user.")
-  try_command: Optional[str] = Field(None, description="A command to try the integration on one real input, like `qa run --input path/to/input`. Only if you know a real input.")
-  todo: List[str] = Field(default_factory=list, description="What the user still needs to do or check, if anything. Be concrete and brief.")
-
-
 @dataclass
 class Deps:
   changes: ChangeSet
@@ -87,6 +81,9 @@ class Deps:
   read_paths: Set[str] = field(default_factory=set)
   read_budget: int = READ_BUDGET
   questions_left: int = MAX_QUESTIONS
+  # What the agent tells the wizard, besides its answers
+  try_input: Optional[str] = None
+  todo: List[str] = field(default_factory=list)
 
   @property
   def root(self) -> Path:
@@ -94,14 +91,12 @@ class Deps:
 
 
 INSTRUCTIONS = """
-You integrate a software project with QA-Board, an experiment tracking tool for algorithm engineers.
-Users run their code on test inputs with the `qa` CLI, and compare outputs and metrics between commits in a web app.
-
-A template integration is already staged: qaboard.yaml, qa/main.py, qa/batches.yaml and qa/metrics.yaml.
-Your job: adapt it so that `qa run --input <some input>` really runs THIS project's code on one input.
+You are the QA-Board wizard's assistant. You help engineers integrate their project with QA-Board, an experiment
+tracking tool for algorithm engineers: they run their code on test inputs with the `qa` CLI, and compare outputs and
+metrics between commits in a web app. You talk with the user in a terminal: be friendly, concrete and brief.
 
 How the integration works:
-- `qa run -i INPUT` calls `run(context)` in qa/main.py (`project.entrypoint` in qaboard.yaml).
+- `qa run -i INPUT` calls `run(context)` in the entrypoint (`project.entrypoint` in qaboard.yaml, usually qa/main.py).
 - `context.input_path` (absolute pathlib.Path to the input), `context.rel_input_path` (relative to the database),
   `context.output_dir` (Path, exists, save every output file there), `context.configs` (list of configurations,
   user-defined meaning, often file names or dicts of parameters), `context.params` (dict, all dict configs merged with
@@ -115,30 +110,41 @@ How the integration works:
 - qaboard.yaml: `inputs.database` is where inputs are stored, `inputs.globs` identifies inputs when running a batch
   on a folder, `outputs.visualizations` lists output files to show in the web app (images, plotly JSON, text, HTML...),
   `artifacts` lists build outputs needed to run (binaries, configs) saved by `qa save-artifacts` in CI.
-- qa/batches.yaml defines named lists of inputs, run with `qa batch NAME`.
+- qa/batches.yaml defines named lists of inputs, run with `qa batch NAME`. Results are shared with `qa --share batch`, and in CI.
+- Docs: https://samsung.github.io/qaboard/docs (visualizations, computing-quantitative-metrics, batches-running-on-multiple-inputs,
+  ci-integration, specifying-configurations, tuning-workflows).
 
 How to work:
-1. Explore first: list files, read the README, the build files and the main entry points (CLI scripts, `main` functions,
-   argparse/click/typer definitions, executables built by CMake or Make...). Find how the code is run on one input
-   and what it outputs. Search before guessing. Read the staged template files before editing them.
-2. Make qa/main.py call the project's code: import its Python API if it has a clean one, otherwise run its CLI or
-   executable with subprocess (a list of arguments, check the return code, stream or print its output so it shows in
-   logs, run it with cwd=context.output_dir or pass output paths inside context.output_dir). Honor context.dryrun.
-   Parse the metrics the code prints or saves, if any, and return them.
-3. Keep edits focused: keep the template's helpful comments and structure where they still apply, remove the
-   placeholder parts that you replaced. Prefer `edit_file` for small changes to existing files.
-4. Update qaboard.yaml (globs, visualizations for outputs the code writes, artifacts if there is a build), qa/metrics.yaml
-   and qa/batches.yaml (only with input paths you actually saw or were told about) to match.
-5. Ask the user (ask_user) only when something essential can't be found in the code, like which of several programs
-   is the algorithm, or where test inputs are. Never ask for passwords, tokens or keys.
+1. Explore before answering or editing: list files, read the README, the build files and the entry points (CLI scripts,
+   `main` functions, argparse/click/typer definitions, executables built by CMake or Make...). Search before guessing.
+   Read a file before editing it.
+2. To make the entrypoint call the project's code: import its Python API if it has a clean one, otherwise run its CLI or
+   executable with subprocess (a list of arguments, check the return code, print its output so it shows in logs, write
+   outputs inside context.output_dir). Honor context.dryrun. Parse the metrics the code prints or saves, if any.
+3. Keep edits focused: keep helpful comments and structure, remove placeholders you replaced. Prefer `edit_file`.
+4. Keep qaboard.yaml, qa/metrics.yaml and qa/batches.yaml consistent with the code (only input paths you saw or were told about).
+5. When you know a real input to try the integration on, call `suggest_try_input`. Record what the user must still do
+   or check with `add_todo`.
+6. When something essential can't be found in the code, ask: with `ask_user` in the middle of a task, or simply end your
+   answer with the question. Never ask for passwords, tokens or keys.
 
-Rules: you can only write qaboard.yaml and files under qa/. Never put secrets in code. Don't invent files,
-functions or command-line flags that you haven't seen in the project. Write clear, simple Python 3, with a few comments.
-When done, give a short summary.
+Your edits are only staged: the user reviews all of them at the end and writes them in one go, so never tell them a file
+was saved. End each answer with a short summary of what you changed (if anything) and, when useful, one suggestion of
+what to do next. Use short Markdown: a few bullets, `code`, no headings, no tables.
+
+Rules: you can only write qaboard.yaml and files under qa/. Never put secrets in code. Don't invent files, functions or
+command-line flags that you haven't seen in the project. Write clear, simple Python 3, with a few comments.
 """.strip()
 
 
+# Models that take Anthropic's server-side refusal fallback ("fallbacks": "default")
+FALLBACK_MODELS = ('claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5')
+
+
 def build_model(llm: LLM):
+  """The Pydantic AI model for the configured API, and its settings."""
+  if llm.provider == 'anthropic':
+    return build_anthropic_model(llm)
   from openai import AsyncOpenAI, DefaultAsyncHttpxClient
   from pydantic_ai.models.openai import OpenAIChatModel
   from pydantic_ai.providers.openai import OpenAIProvider
@@ -155,11 +161,29 @@ def build_model(llm: LLM):
     http_client=DefaultAsyncHttpxClient(verify=verify, timeout=300),
     max_retries=2,
   )
-  return OpenAIChatModel(llm.model or '', provider=OpenAIProvider(openai_client=client))
+  return OpenAIChatModel(llm.model or '', provider=OpenAIProvider(openai_client=client)), {}
 
 
-def make_agent(model) -> 'Agent[Deps, Outcome]':
-  agent = Agent(model, deps_type=Deps, output_type=Outcome, instructions=INSTRUCTIONS, retries=5)
+def build_anthropic_model(llm: LLM):
+  """Claude, through the official anthropic SDK."""
+  from pydantic_ai.models.anthropic import AnthropicModel
+  from pydantic_ai.providers.anthropic import AnthropicProvider
+  if llm.verify is True and (os.environ.get('REQUESTS_CA_BUNDLE') or os.environ.get('CURL_CA_BUNDLE')):
+    llm = dataclasses.replace(llm, verify=os.environ.get('REQUESTS_CA_BUNDLE') or os.environ.get('CURL_CA_BUNDLE') or True)
+  model = AnthropicModel(llm.model or '', provider=AnthropicProvider(anthropic_client=llm.anthropic_client(asynchronous=True)))
+  settings: Dict[str, Any] = {}
+  if llm.is_anthropic_api:
+    # Agentic coding: high effort (Claude Opus 5.5 defaults to medium). The instructions and tools are the same
+    # every turn: cached, which makes a long chat much cheaper.
+    settings.update(anthropic_effort='high', anthropic_cache=True)
+    if llm.model in FALLBACK_MODELS:
+      # If a safety classifier declines a request, another model continues it instead of stopping
+      settings.update(anthropic_betas=['server-side-fallback-2026-07-01'], extra_body={'fallbacks': 'default'})
+  return model, settings
+
+
+def make_agent(model) -> 'Agent[Deps, str]':
+  agent = Agent(model, deps_type=Deps, output_type=str, instructions=INSTRUCTIONS, retries=5)
 
   # Tools are async, so they run one at a time on the event loop, even when the model calls several at once:
   # it keeps the output readable, and questions to the user don't overlap.
@@ -266,6 +290,21 @@ def make_agent(model) -> 'Agent[Deps, Outcome]':
     return stage(deps, path, content.replace(old_text, new_text))
 
   @agent.tool
+  async def suggest_try_input(ctx: RunContext[Deps], input_path: str) -> str:
+    """Records a real input (relative to inputs.database) the user can try the integration on with `qa run --input`."""
+    if not input_path or input_path.startswith('-') or '\n' in input_path:
+      raise ModelRetry("Give a single input path, relative to the database.")
+    ctx.deps.try_input = input_path
+    return "Noted: the wizard will offer to run it."
+
+  @agent.tool
+  async def add_todo(ctx: RunContext[Deps], item: str) -> str:
+    """Records something the user must still do or check (shown at the end). One short, concrete sentence."""
+    if item and item not in ctx.deps.todo:
+      ctx.deps.todo.append(item.strip()[:300])
+    return "Noted."
+
+  @agent.tool
   async def ask_user(ctx: RunContext[Deps], question: str) -> str:
     """Asks the user a short question, only when something essential can't be found in the project."""
     deps = ctx.deps
@@ -335,14 +374,14 @@ def activity(deps: Deps, icon: str, message: str, markup: bool = False):
   deps.ui.update(deps.ui.thinking())
 
 
-def run_agent(agent: 'Agent[Deps, Outcome]', deps: Deps, prompt: str, message_history: Optional[list] = None):
+def run_agent(agent: 'Agent[Deps, str]', deps: Deps, prompt: str, message_history: Optional[list] = None, model_settings: Optional[dict] = None):
   """Returns the result. Raises the model's errors, the caller tells the user what happened."""
   limits = UsageLimits(request_limit=60)
   with deps.ui.spinner(deps.ui.thinking()):
-    return agent.run_sync(prompt, deps=deps, message_history=message_history, usage_limits=limits)
+    return agent.run_sync(prompt, deps=deps, message_history=message_history, usage_limits=limits, model_settings=model_settings or None)  # type: ignore[arg-type]
 
 
-def project_brief(facts: ProjectFacts, answers: dict, entrypoint: str = 'qa/main.py') -> str:
+def project_brief(facts: ProjectFacts, answers: dict, entrypoint: str = 'qa/main.py', setup: bool = True) -> str:
   """What we tell the agent about the project to start with."""
   top_level = sorted({f.split('/')[0] + ('/' if '/' in f else '') for f in facts.files})
   lines = [
@@ -362,7 +401,13 @@ def project_brief(facts: ProjectFacts, answers: dict, entrypoint: str = 'qa/main
     lines.append(f"- Inputs are identified by: {answers['glob']}" + (" (each input is the folder containing it)" if answers.get('use_parent_folder') else ''))
   if answers.get('examples'):
     lines.append(f"- Example inputs (relative to the database): {', '.join(answers['examples'])}")
+  if setup:
+    lines.append("\nThe wizard staged a template integration: qaboard.yaml, the entrypoint, qa/batches.yaml and qa/metrics.yaml. "
+                 "Adapt it so that `qa run --input <some input>` really runs this project's code on one input.")
+  else:
+    lines.append(f"\nThe project already uses QA-Board: read qaboard.yaml and {entrypoint} before anything else. "
+                 "Then help the user with what they ask: improving the integration, metrics, visualizations, batches, CI, "
+                 "or explaining how QA-Board works.")
   if answers.get('hint'):
-    lines.append(f"- The user says: {answers['hint']}")
-  lines.append("\nAdapt the staged template to this project.")
+    lines.append(f"\nThe user says: {answers['hint']}")
   return '\n'.join(lines)

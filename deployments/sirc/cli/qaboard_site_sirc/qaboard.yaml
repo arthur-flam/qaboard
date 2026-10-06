@@ -4,7 +4,7 @@
 # - mappings are merged key by key,
 # - lists are replaced, unless they contain "super", e.g. `batches: [super, qa/batches.yaml]`,
 # - locations (storage, inputs.database) are replaced as a whole.
-# `qa init` writes the settings below as comments instead of the sample project's.
+# `qa wizard` writes the settings below as comments instead of the sample project's.
 #
 # To check what a project ends up with: `qa get config`. To ignore this file: QABOARD_SITE_CONFIG="".
 
@@ -20,7 +20,7 @@ runners:
     # concurrency: 0   # max number of jobs from the same `qa batch` running at the same time. 0 = unlimited.
 
 
-# TODO(SIRC): fill in the shared storage and datasets locations, then `qa init` will use them.
+# TODO(SIRC): fill in the shared storage and datasets locations, then `qa wizard` will use them.
 #             Projects currently use per-group locations like /algo/CIS/outputs/{user} and /algo/CIS_artifacts.
 # storage:
 #   outputs:

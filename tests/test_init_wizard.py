@@ -386,7 +386,7 @@ class TestAgent(TempDir):
 
   def scripted_model(self, steps):
     """Each step returns the tool calls of one model response. We record what the tools answered."""
-    from pydantic_ai.messages import ModelResponse, ToolCallPart, ModelRequest
+    from pydantic_ai.messages import ModelResponse, ToolCallPart, ModelRequest, TextPart
     from pydantic_ai.models.function import FunctionModel
     self.tool_results = []
     def model(messages, info):
@@ -396,8 +396,7 @@ class TestAgent(TempDir):
       index = sum(isinstance(m, ModelResponse) for m in messages)
       if index < len(steps):
         return ModelResponse(parts=[ToolCallPart(name, args) for name, args in steps[index]])
-      final = {'summary': ['Wired qa/main.py to denoise.py'], 'try_command': 'qa run --input a.png', 'todo': []}
-      return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, final)])
+      return ModelResponse(parts=[TextPart("I wired `qa/main.py` to `denoise.py`.")])
     return FunctionModel(model)
 
   def run_agent(self, steps):
@@ -416,11 +415,12 @@ class TestAgent(TempDir):
     changes.stage('qa/main.py', "def run(context):\n  return {'is_failed': False}\n")
     deps = Deps(changes=changes, facts=facts, ui=quiet_ui())
     result = run_agent(make_agent(self.scripted_model(steps)), deps, "go")
+    self.deps = deps
     return result, changes
 
   def test_reads_and_edits(self):
     result, changes = self.run_agent([
-      [('list_files', {'pattern': '*.py'})],
+      [('list_files', {'pattern': '*.py'}), ('suggest_try_input', {'input_path': 'a.png'}), ('add_todo', {'item': 'Check the metrics'})],
       [('read_file', {'path': 'qa/main.py'}), ('search', {'regex': 'argparse'})],
       [('edit_file', {'path': 'qa/main.py', 'old_text': "return {'is_failed': False}", 'new_text': "import subprocess\n  return {'is_failed': False}"})],
     ])
@@ -429,7 +429,8 @@ class TestAgent(TempDir):
     self.assertIn("denoise.py:1: import argparse", '\n'.join(self.tool_results))
     self.assertIn('import subprocess', changes.read('qa/main.py'))
     self.assertFalse((self.root / 'qa').exists(), "the agent only stages changes")
-    self.assertEqual(result.output.try_command, 'qa run --input a.png')
+    self.assertIn('denoise.py', result.output)
+    self.assertEqual((self.deps.try_input, self.deps.todo), ('a.png', ['Check the metrics']))
 
   def test_guardrails(self):
     _, changes = self.run_agent([
@@ -468,7 +469,7 @@ class TestAgent(TempDir):
     env = {**TestWizard.env, 'QABOARD_LLM_BASE_URL': 'https://llm.example.com/v1', 'QABOARD_LLM_API_KEY': 'k', 'QABOARD_LLM_MODEL': 'm'}
     with mock.patch.dict(os.environ, env), \
          mock.patch('qaboard.wizard.UI', lambda interactive: quiet_ui(interactive)), \
-         mock.patch.object(agent_module, 'build_model', lambda llm: model), \
+         mock.patch.object(agent_module, 'build_model', lambda llm: (model, {})), \
          mock.patch.object(LLM, 'list_models', lambda self, base_url=None: (['m'], 'ok', 200)):
       self.assertEqual(run_wizard(root=self.root, assume_yes=True, ai=True), 0)
     self.assertIn('# runs denoise.py', (self.root / 'qa' / 'main.py').read_text())
@@ -496,10 +497,10 @@ class TestAIFlow(TempDir):
       configured = wizard.configure_llm(llm)
     self.assertEqual((configured.base_url, configured.api_key), ('https://llm.example.com/v1', 'k'))
 
-  def test_failed_refine_keeps_the_accepted_round(self):
-    """Refine, then the LLM fails: we keep the first round's changes, not the template."""
+  def test_a_failed_turn_keeps_the_previous_ones(self):
+    """Chat: the first turn edits, the second fails. We keep the first turn's changes."""
     from qaboard.wizard import agent as agent_module
-    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.messages import ModelResponse, ToolCallPart, TextPart
     from pydantic_ai.models.function import FunctionModel
     calls = {'n': 0}
     def model(messages, info):
@@ -509,22 +510,27 @@ class TestAIFlow(TempDir):
       if calls['n'] == 2:
         return ModelResponse(parts=[ToolCallPart('edit_file', {'path': 'qa/main.py', 'old_text': 'def run(context):', 'new_text': 'def run(context):\n  # round 1'})])
       if calls['n'] == 3:
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {'summary': ['round 1'], 'todo': []})])
+        return ModelResponse(parts=[TextPart("Done with round 1.")])
+      if calls['n'] == 4:
+        return ModelResponse(parts=[ToolCallPart('edit_file', {'path': 'qa/main.py', 'old_text': '# round 1', 'new_text': '# round 2'})])
       raise RuntimeError("gateway 502")
     make_project(self.root)
     ui = quiet_ui(interactive=True)
-    answers = iter(['r', 'better please'])
-    ui.ask = lambda question, default='', password=False: next(answers) if 'change' in question else default
-    ui.choose = lambda question, options, default: next(answers)
-    ui.confirm = lambda question, default=True: False if 'Try again' in question else default
+    messages = iter(['better please', ''])
+    ui.chat_input = lambda: next(messages)
+    ui.choose = lambda question, options, default: default
+    ui.ask = lambda question, default='', password=False: default
+    ui.confirm = lambda question, default=True: default
     wizard = Wizard(ui, dryrun=True, ai=True, model='m', root=self.root)
     env = {**TestWizard.env, 'QABOARD_LLM_BASE_URL': 'https://llm.example.com/v1', 'QABOARD_LLM_API_KEY': 'k'}
-    with mock.patch.dict(os.environ, env), mock.patch.object(agent_module, 'build_model', lambda llm: FunctionModel(model)), \
+    with mock.patch.dict(os.environ, env), mock.patch.object(agent_module, 'build_model', lambda llm: (FunctionModel(model), {})), \
          mock.patch.object(LLM, 'list_models', lambda self, base_url=None: (['m'], 'ok', 200)):
       facts = wizard.step_project()
       changes = wizard.step_ai(facts, wizard.template_changes(facts))
-    self.assertIn('# round 1', changes.read('qa/main.py'))
-    self.assertEqual(wizard.outcome.summary, ['round 1'])
+    content = changes.read('qa/main.py')
+    self.assertIn('# round 1', content)
+    self.assertNotIn('# round 2', content, "the failed turn's edits are dropped")
+    self.assertEqual(wizard.chat.turns, 1)
 
 
 class FakeOpenAI:
@@ -560,8 +566,12 @@ class FakeOpenAI:
         if index < len(steps):
           calls = [(name, args) for name, args in steps[index]]
         else:
-          final = next(t['function']['name'] for t in body['tools'] if t['function']['name'] not in ('list_files', 'read_file', 'search', 'write_file', 'edit_file', 'ask_user'))
-          calls = [(final, {'summary': ['Done'], 'try_command': None, 'todo': ['Check the metrics']})]
+          self.reply({
+            'id': f'chatcmpl-{index}', 'object': 'chat.completion', 'created': 0, 'model': body['model'],
+            'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': 'Done: `qa/main.py` calls `denoise.py`.'}, 'finish_reason': 'stop'}],
+            'usage': {'prompt_tokens': 100, 'completion_tokens': 10, 'total_tokens': 110},
+          })
+          return
         tool_calls = [{'id': f'call_{index}_{i}', 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(args)}} for i, (name, args) in enumerate(calls)]
         self.reply({
           'id': f'chatcmpl-{index}', 'object': 'chat.completion', 'created': 0, 'model': body['model'],
@@ -602,6 +612,181 @@ class TestOpenAICompatibleAPI(TempDir):
     self.assertIn('argparse', everything_sent)
     self.assertNotIn('do-not-leak', everything_sent)
     self.assertNotIn('sk-must-not-be-sent', everything_sent)
+
+
+class FakeAnthropic:
+  """An Anthropic-compatible Messages API on localhost, that answers with scripted tool calls."""
+  def __init__(self, steps):
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    self.requests = []
+    fake = self
+
+    class Handler(BaseHTTPRequestHandler):
+      def log_message(self, *args):
+        pass
+
+      def reply(self, body):
+        data = json.dumps(body).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+      def do_GET(self):
+        fake.requests.append(('GET', self.path, self.headers.get('x-api-key'), ''))
+        models = [{'id': m, 'type': 'model', 'display_name': m, 'created_at': '2026-01-01T00:00:00Z'} for m in ('claude-haiku-4-5', 'claude-opus-5-5')]
+        self.reply({'data': models, 'has_more': False, 'first_id': models[0]['id'], 'last_id': models[-1]['id']})
+
+      def do_POST(self):
+        raw = self.rfile.read(int(self.headers['Content-Length'])).decode()
+        fake.requests.append(('POST', self.path, self.headers.get('x-api-key'), raw))
+        body = json.loads(raw)
+        index = sum(m['role'] == 'assistant' for m in body['messages'])
+        if index < len(steps):
+          content = [{'type': 'tool_use', 'id': f'toolu_{index}_{i}', 'name': name, 'input': args} for i, (name, args) in enumerate(steps[index])]
+          stop_reason = 'tool_use'
+        else:
+          content, stop_reason = [{'type': 'text', 'text': 'Done: `qa/main.py` calls `denoise.py`.'}], 'end_turn'
+        message = {'id': f'msg_{index}', 'type': 'message', 'role': 'assistant', 'model': body['model'], 'content': content,
+                   'stop_reason': stop_reason, 'stop_sequence': None, 'usage': {'input_tokens': 100, 'output_tokens': 10}}
+        if not body.get('stream'):
+          self.reply(message)
+          return
+        # Server-sent events, like the real API
+        events = [('message_start', {'type': 'message_start', 'message': {**message, 'content': [], 'stop_reason': None}})]
+        for i, block in enumerate(content):
+          if block['type'] == 'text':
+            start, delta = {'type': 'text', 'text': ''}, {'type': 'text_delta', 'text': block['text']}
+          else:
+            start, delta = {**block, 'input': {}}, {'type': 'input_json_delta', 'partial_json': json.dumps(block['input'])}
+          events += [
+            ('content_block_start', {'type': 'content_block_start', 'index': i, 'content_block': start}),
+            ('content_block_delta', {'type': 'content_block_delta', 'index': i, 'delta': delta}),
+            ('content_block_stop', {'type': 'content_block_stop', 'index': i}),
+          ]
+        events += [
+          ('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': stop_reason, 'stop_sequence': None}, 'usage': {'output_tokens': 10}}),
+          ('message_stop', {'type': 'message_stop'}),
+        ]
+        data = ''.join(f"event: {name}\ndata: {json.dumps(payload)}\n\n" for name, payload in events).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    self.url = f'http://127.0.0.1:{self.server.server_address[1]}'
+    threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+  def close(self):
+    self.server.shutdown()
+    self.server.server_close()
+
+
+@unittest.skipUnless(importlib.util.find_spec('anthropic') is not None and has_ai, "needs pip install qaboard[wizard]")
+class TestAnthropic(TempDir):
+  def test_wizard_with_claude(self):
+    make_project(self.root)
+    fake = FakeAnthropic([
+      [('list_files', {}), ('read_file', {'path': 'denoise.py'})],
+      [('read_file', {'path': '.env'}), ('read_file', {'path': 'qa/main.py'})],
+      [('edit_file', {'path': 'qa/main.py', 'old_text': 'def run(context):', 'new_text': 'def run(context):\n  # calls denoise.py'})],
+    ])
+    self.addCleanup(fake.close)
+    env = {**TestWizard.env, 'QABOARD_LLM_PROVIDER': 'anthropic', 'QABOARD_LLM_BASE_URL': fake.url, 'QABOARD_LLM_API_KEY': 'test-key',
+           'QABOARD_LLM_MODEL': '', 'ANTHROPIC_API_KEY': 'must-not-be-sent', 'OPENAI_API_KEY': ''}
+    with mock.patch.dict(os.environ, env), mock.patch('qaboard.wizard.UI', lambda interactive: quiet_ui(interactive)):
+      self.assertEqual(run_wizard(root=self.root, assume_yes=True, ai=True), 0)
+    self.assertIn('# calls denoise.py', (self.root / 'qa' / 'main.py').read_text())
+    posts = [r for r in fake.requests if r[0] == 'POST']
+    self.assertEqual(len(posts), 4)
+    self.assertTrue(all(r[1].startswith('/v1/messages') for r in posts))
+    self.assertTrue(all(r[2] == 'test-key' for r in fake.requests))
+    self.assertIn('"model": "claude-opus-5-5"', posts[0][3].replace('":"', '": "'), "picks Claude Opus 5.5 among the listed models")
+    everything_sent = ''.join(r[3] for r in fake.requests)
+    self.assertIn('argparse', everything_sent)
+    self.assertNotIn('do-not-leak', everything_sent)
+    self.assertNotIn('must-not-be-sent', everything_sent)
+
+  def test_settings(self):
+    base = {'QABOARD_LLM_PROVIDER': '', 'QABOARD_LLM_BASE_URL': '', 'QABOARD_LLM_API_KEY': '', 'QABOARD_LLM_MODEL': '',
+            'OPENAI_API_KEY': '', 'OPENAI_BASE_URL': '', 'ANTHROPIC_BASE_URL': '', 'ANTHROPIC_API_KEY': 'sk-ant-test'}
+    with mock.patch.dict(os.environ, base):
+      llm = LLM.from_settings()
+      self.assertEqual((llm.provider, llm.is_anthropic_api, llm.api_key, llm.model), ('anthropic', True, 'sk-ant-test', 'claude-opus-5-5'))
+    with mock.patch.dict(os.environ, {**base, 'QABOARD_LLM_PROVIDER': 'anthropic', 'QABOARD_LLM_BASE_URL': 'https://gateway.example.com'}):
+      llm = LLM.from_settings()
+      self.assertFalse(llm.api_key, "ANTHROPIC_API_KEY is only sent to Anthropic's API")
+      self.assertIn('Anthropic-compatible', llm.label)
+    with mock.patch.dict(os.environ, {**base, 'OPENAI_API_KEY': 'sk-openai'}):
+      self.assertEqual(LLM.from_settings().provider, 'openai')
+
+  def test_model_settings(self):
+    from qaboard.wizard.agent import build_model
+    llm = LLM(base_url='https://api.anthropic.com', api_key='k', model='claude-opus-5-5', verify=True, provider='anthropic')
+    _, settings = build_model(llm)
+    self.assertEqual(settings['anthropic_effort'], 'high')
+    self.assertEqual(settings['extra_body'], {'fallbacks': 'default'})
+    self.assertTrue(settings['anthropic_cache'])
+    gateway = LLM(base_url='https://gateway.example.com', api_key='k', model='claude-opus-5-5', verify=True, provider='anthropic')
+    self.assertEqual(build_model(gateway)[1], {}, "only Claude API features on Anthropic's API")
+
+
+class TestGuide(TempDir):
+  """Running the wizard again on a project that uses QA-Board."""
+  env = TestWizard.env
+
+  def setUp(self):
+    super().setUp()
+    make_project(self.root)
+    with mock.patch.dict(os.environ, self.env), mock.patch('qaboard.wizard.UI', lambda interactive: quiet_ui(interactive)):
+      run_wizard(root=self.root, assume_yes=True, ai=False)
+    self.before = {p: p.read_text() for p in self.root.rglob('*') if p.is_file() and '.git' not in p.parts}
+
+  def test_health_without_a_terminal(self):
+    ui = quiet_ui()
+    with mock.patch.dict(os.environ, self.env), mock.patch('qaboard.wizard.UI', lambda interactive: ui):
+      self.assertEqual(run_wizard(root=self.root, assume_yes=True), 0)
+    output = ui.console.file.getvalue()
+    self.assertIn("still the template", output)
+    self.assertIn("no visualizations", output)
+    self.assertEqual({p: p.read_text() for p in self.before}, self.before, "nothing is written")
+
+  @unittest.skipUnless(has_ai, "needs pip install qaboard[wizard]")
+  def test_chat_then_one_review(self):
+    from qaboard.wizard import agent as agent_module
+    from pydantic_ai.messages import ModelResponse, ToolCallPart, TextPart
+    from pydantic_ai.models.function import FunctionModel
+    calls = {'n': 0}
+    def model(messages, info):
+      calls['n'] += 1
+      steps = {
+        1: [ToolCallPart('read_file', {'path': 'qaboard.yaml'})],
+        2: [ToolCallPart('edit_file', {'path': 'qaboard.yaml', 'old_text': '  visualizations:\n', 'new_text': '  visualizations:\n  - path: output.png\n'})],
+        3: [TextPart("Added `output.png` to the visualizations.")],
+        4: [ToolCallPart('read_file', {'path': 'qa/main.py'})],
+        5: [ToolCallPart('edit_file', {'path': 'qa/main.py', 'old_text': 'def run(context):', 'new_text': 'def run(context):\n  # calls denoise.py'})],
+      }
+      return ModelResponse(parts=steps.get(calls['n'], [TextPart("Done.")]))
+    ui = quiet_ui(interactive=True)
+    messages = iter(['show output.png in the web app', 'and call denoise.py', ''])
+    choices = iter(['c', 'r', 'w'])
+    ui.chat_input = lambda: next(messages)
+    ui.choose = lambda question, options, default: next(choices)
+    ui.ask = lambda question, default='', password=False: default
+    ui.confirm = lambda question, default=True: default
+    env = {**self.env, 'QABOARD_LLM_BASE_URL': 'https://llm.example.com/v1', 'QABOARD_LLM_API_KEY': 'k', 'QABOARD_LLM_MODEL': 'm'}
+    with mock.patch.dict(os.environ, env), mock.patch('qaboard.wizard.UI', lambda interactive: ui), \
+         mock.patch.object(agent_module, 'build_model', lambda llm: (FunctionModel(model), {})), \
+         mock.patch.object(LLM, 'list_models', lambda self, base_url=None: (['m'], 'ok', 200)), \
+         mock.patch('qaboard.wizard.is_interactive', lambda assume_yes: True):
+      self.assertEqual(run_wizard(root=self.root), 0)
+    self.assertEqual(yaml.safe_load((self.root / 'qaboard.yaml').read_text())['outputs']['visualizations'], [{'path': 'output.png'}])
+    self.assertIn('# calls denoise.py', (self.root / 'qa' / 'main.py').read_text())
 
 
 if __name__ == '__main__':

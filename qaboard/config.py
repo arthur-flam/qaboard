@@ -23,7 +23,7 @@ from .site_config import site_config, site_qaboard_config, without_locations_fro
 config_has_error = False
 
 # Don't lots of verbose info if the users just wants the help, or start a new project
-ignore_config_errors = len(sys.argv)==1 or '--help' in sys.argv or '--version' in sys.argv or 'init' in sys.argv
+ignore_config_errors = len(sys.argv)==1 or '--help' in sys.argv or '--version' in sys.argv or 'init' in sys.argv or 'wizard' in sys.argv
 # When the code is imported we care less about warnings...
 ignore_config_errors = ignore_config_errors or not sys.argv or not sys.argv[0].endswith('qa')
 
@@ -63,7 +63,7 @@ if not qatools_configsxpaths:
   if not ignore_config_errors:
     typer.secho('ERROR: Could not find a `qaboard.yaml` configuration file.', fg='red', err=True)
     if 'QABOARD_TUNING' not in os.environ:
-      typer.secho('       If you are starting a new project, run `qa init`.', fg='red', err=True)
+      typer.secho('       If you are starting a new project, run `qa wizard`.', fg='red', err=True)
     else:
       typer.secho(f'       It seems "artifacts" are missing. To save them:', fg='red', err=True)
       typer.secho(f'       1. cd your/project', fg='red', err=True)

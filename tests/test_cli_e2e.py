@@ -97,7 +97,7 @@ class TestGlobal(QaProject):
 
   def test_help(self):
     result = self.qa('--help', check=0)
-    for command in ('run', 'batch', 'postprocess', 'sync', 'wait', 'get', 'init', 'save-artifacts',
+    for command in ('run', 'batch', 'postprocess', 'sync', 'wait', 'get', 'wizard', 'init', 'save-artifacts',
                     'check-bit-accuracy', 'check-bit-accuracy-manifest', 'optimize'):
       self.assertIn(command, result.stdout)
     # help doesn't complain about the configuration
@@ -109,7 +109,7 @@ class TestGlobal(QaProject):
     self.assertIn('--lsf-queue', result.stdout)
 
   def test_every_command_has_help(self):
-    for command in ('run', 'batch', 'postprocess', 'sync', 'wait', 'get', 'init', 'save-artifacts',
+    for command in ('run', 'batch', 'postprocess', 'sync', 'wait', 'get', 'wizard', 'init', 'save-artifacts',
                     'check-bit-accuracy', 'check-bit-accuracy-manifest', 'optimize'):
       with self.subTest(command=command):
         result = self.qa(command, '--help', check=0)
@@ -411,6 +411,9 @@ class TestInit(unittest.TestCase):
       self.assertTrue((Path(tmp) / 'qaboard.yaml').exists())
       self.assertTrue((Path(tmp) / 'qa' / 'main.py').exists())
       self.assertEqual(run_qa(tmp, 'get', 'project', check=0).stdout.strip(), 'someone/my-project')
+      # Run again, the wizard checks the project's health
+      result = run_qa(tmp, 'wizard', '--yes', check=0)
+      self.assertIn('still the template', result.stderr)
 
 
 class TestRunners(unittest.TestCase):

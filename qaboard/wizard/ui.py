@@ -7,6 +7,7 @@ import os
 import random
 import shutil
 import sys
+import time
 from contextlib import contextmanager
 from typing import Any, Iterator, List, Optional, Sequence
 
@@ -28,7 +29,17 @@ LOGO = r"""
  | (_) |/ _ \ |___| | _ \/ _ \/ _` || '_/ _` |
   \__\_\/_/ \_\     |___/\___/\__,_||_| \__,_|
 """
-LOGO_COLORS = ('#5c7cfa', '#4c6ef5', '#4263eb', '#3b5bdb', '#364fc7')
+# The banner's gradient, left to right
+GRADIENT = ('#4c6ef5', '#7950f2', '#be4bdb', '#f06595')
+ACCENT = '#7950f2'
+SPARKLES = '✦✧⋆✶·'
+CONFETTI_COLORS = ('#ff6b6b', '#fcc419', '#51cf66', '#339af0', '#cc5de8', '#f06595')
+
+GUIDE_GREETINGS = (
+  "Welcome back! Let's see how your project is doing.",
+  "Back for more? Let's make your results even easier to read.",
+  "Good to see you again. Here's how your integration looks.",
+)
 
 GREETINGS = (
   "Let's get your results out of the terminal and into a dashboard.",
@@ -40,31 +51,126 @@ GREETINGS = (
 THINKING = (
   "Reading the code", "Following the imports", "Looking for a main()", "Squinting at the build files",
   "Connecting the dots", "Drafting qa/main.py", "Double-checking paths", "Thinking about metrics",
+  "Counting pixels", "Asking the rubber duck", "Untangling argparse",
 )
+
+
+def blend(colors: Sequence[str], t: float) -> str:
+  """A color between those of a gradient, t in [0, 1]."""
+  t = min(max(t, 0.0), 1.0) * (len(colors) - 1)
+  i = min(int(t), len(colors) - 2)
+  a, b = colors[i], colors[i + 1]
+  rgb = [round(int(a[k:k + 2], 16) + (int(b[k:k + 2], 16) - int(a[k:k + 2], 16)) * (t - i)) for k in (1, 3, 5)]
+  return '#' + ''.join(f'{c:02x}' for c in rgb)
+
+
+def gradient(text: str, colors: Sequence[str] = GRADIENT, bold: bool = True) -> Text:
+  """Text colored with a horizontal gradient, the same for every line, so that blocks of text line up."""
+  lines = text.split('\n')
+  width = max((len(line) for line in lines), default=1) or 1
+  out = Text()
+  for n, line in enumerate(lines):
+    for x, char in enumerate(line):
+      out.append(char, style=f"{'bold ' if bold else ''}{blend(colors, x / width)}")
+    if n < len(lines) - 1:
+      out.append('\n')
+  return out
+
+
+def can_animate(console: Console) -> bool:
+  """Animations only in a real terminal, never in CI or logs."""
+  return (console.is_terminal and not console.is_dumb_terminal and not os.environ.get('CI')
+          and not os.environ.get('NO_COLOR') and not os.environ.get('QA_NO_ANIMATIONS'))
 
 
 class UI:
   def __init__(self, interactive: bool, console: Optional[Console] = None):
     self.console = console or Console(stderr=True, highlight=False)
     self.interactive = interactive
+    self.animate = interactive and can_animate(self.console)
     self._status: Optional[Any] = None
+    self.steps: List[str] = []
     self.step_index = 0
-    self.steps_total = 0
 
   # --- Layout -------------------------------------------------------------
-  def banner(self, subtitle: str):
-    logo = Text()
-    for line, color in zip(LOGO.strip('\n').splitlines(), LOGO_COLORS):
-      logo.append(line + '\n', style=f'bold {color}')
-    logo.append(f"\n{random.choice(GREETINGS)}\n", style='italic')
-    logo.append(subtitle, style='dim')
-    self.console.print(Panel(logo, border_style='#4263eb', padding=(0, 2), expand=False))
+  def banner(self, subtitle: str, greetings: Sequence[str] = GREETINGS):
+    logo = LOGO.strip('\n')
+    greeting = random.choice(greetings)
+
+    lines = logo.splitlines()
+    logo_width = max(len(line) for line in lines)
+    width = logo_width + 6
+
+    def frame(sparkles: int, seed: Optional[int] = None) -> Panel:
+      rng = random.Random(seed)
+      # a blank line above and below the logo, and a margin on its right: sparkles go there, never on the letters
+      canvas = [[' '] * width, *[list(line.ljust(width)) for line in lines], [' '] * width]
+      spots = [(y, x) for y in range(len(canvas)) for x in range(width)
+               if canvas[y][x] == ' ' and (y in (0, len(canvas) - 1) or x > logo_width)]
+      body = Text()
+      stars = dict(((y, x), rng.choice(SPARKLES)) for y, x in rng.sample(spots, min(sparkles, len(spots))))
+      for y, row in enumerate(canvas):
+        for x, char in enumerate(row):
+          if (y, x) in stars:
+            body.append(stars[(y, x)], style=f'bold {rng.choice(GRADIENT)}')
+          else:
+            body.append(char, style=f'bold {blend(GRADIENT, x / logo_width)}')
+        body.append('\n')
+      body.append(f"\n{greeting}\n", style='italic')
+      body.append(subtitle, style='dim')
+      return Panel(body, border_style=ACCENT, padding=(0, 2), expand=False)
+
+    if self.animate:
+      from rich.live import Live
+      with Live(frame(0), console=self.console, refresh_per_second=30, transient=True) as live:
+        for i in range(16):
+          live.update(frame(2 + i % 6))
+          time.sleep(0.04)
+    self.console.print(frame(5, seed=len(greeting)))
 
   def step(self, title: str):
+    """A tracker of the wizard's steps: done, current, to do."""
     self.step_index += 1
-    counter = f"{self.step_index}/{self.steps_total}" if self.steps_total else str(self.step_index)
     self.console.print()
-    self.console.rule(f"[bold]{counter} · {escape(title)}[/bold]", align='left', style='#4263eb')
+    if not self.steps:
+      self.console.rule(f"[bold]{escape(title)}[/bold]", align='left', style=ACCENT)
+      return
+    tracker = Text()
+    for n, name in enumerate(self.steps, start=1):
+      if n < self.step_index:
+        tracker.append(f"✔ {name}", style='green')
+      elif n == self.step_index:
+        tracker.append(f"◉ {name}", style=f'bold {ACCENT}')
+      else:
+        tracker.append(f"○ {name}", style='dim')
+      if n < len(self.steps):
+        tracker.append("  ─  ", style='dim')
+    self.console.rule(tracker, align='left', style=ACCENT, characters='─')
+
+  def assistant(self, markdown: str):
+    """What the AI assistant says."""
+    from rich.markdown import Markdown
+    self.console.print(Panel(Markdown(visible(markdown.strip()) or '…'), title="[bold]✨ assistant[/bold]", title_align='left',
+                             border_style=ACCENT, padding=(0, 1)))
+
+  def celebrate(self):
+    """A little confetti, in a real terminal."""
+    if not self.animate:
+      return
+    from rich.live import Live
+    width = min(self.console.width, 72)
+
+    def frame() -> Text:
+      text = Text()
+      for _ in range(2):
+        for _ in range(width):
+          text.append(random.choice(' ' * 6 + '*✦✧•⋆+'), style=random.choice(CONFETTI_COLORS))
+        text.append('\n')
+      return text
+    with Live(frame(), console=self.console, refresh_per_second=24, transient=True) as live:
+      for _ in range(16):
+        live.update(frame())
+        time.sleep(0.05)
 
   def ok(self, message: str):
     self.console.print(f"[green]✔[/green] {message}")
@@ -134,6 +240,16 @@ class UI:
       answer = prompt(default=default or None)
     return (answer or '').strip()
 
+  def chat_input(self) -> str:
+    """What the user says to the assistant. Empty without a terminal."""
+    if not self.interactive:
+      return ''
+    with self.paused():
+      try:
+        return self.console.input(f"\n[bold {ACCENT}]›[/bold {ACCENT}] ").strip()
+      except EOFError:
+        return ''
+
   def confirm(self, question: str, default: bool = True) -> bool:
     if not self.interactive:
       self._auto(question, 'yes' if default else 'no')
@@ -158,7 +274,7 @@ class UI:
   # --- Spinners -----------------------------------------------------------
   @contextmanager
   def spinner(self, message: str) -> Iterator[None]:
-    with self.console.status(message, spinner='dots') as status:
+    with self.console.status(message, spinner='star', spinner_style=ACCENT) as status:
       self._status = status
       try:
         yield
