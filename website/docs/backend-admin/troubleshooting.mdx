@@ -42,6 +42,12 @@ docker compose --env-file deployments/sirc/production.env ps -a
 df -h
 ```
 - Did a deploy just happen? Check the [GitLab environments page](deployment#rollbacks), and roll back if needed.
+- "Redo" in the webapp doesn't start runs? The `worker` runs them: read its logs, and check that redis is up.
+```bash
+deployments/deploy.py deployments/sirc/production.env compose logs -f --tail 100 worker
+# running tasks
+deployments/deploy.py deployments/sirc/production.env compose exec worker celery --app backend.celery_app inspect active
+```
 
 ## How to restart the containers
 Symptom:

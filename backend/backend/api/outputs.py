@@ -12,6 +12,7 @@ from backend import app, db_session
 from ..models import TestInput, CiCommit, Output
 from ..storage import check_storage_path, UnsafePathError
 from .auth import login_required
+from .jobs import queue_redo
 
 
 @app.route("/api/v1/output/<output_id>", methods=['GET'])
@@ -82,14 +83,7 @@ def output_redo(output_id):
     output = Output.query.filter(Output.id==output_id).one()
   except NoResultFound:
     return jsonify({"error": f"Cannot find output {output_id}"}), 400
-  try:
-    success = output.redo(user=g.user['user_name'])
-  except Exception as e:
-    return jsonify({"error": f"{e}"}), 500
-  if success:
-    return '{"status": "OK"}'
-  else:
-    return jsonify({"error": "The run failed to start. Check the 'redo.log' files in the output directories to know more."}), 500
+  return queue_redo([output.id], user=g.user['user_name'])
 
 
 @app.route("/api/v1/output/<output_id>/manifest", methods=['GET'])

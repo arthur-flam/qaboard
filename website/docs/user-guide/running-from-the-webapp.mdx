@@ -26,7 +26,7 @@ You don't need a terminal to start runs: the web app can redo runs, run a commit
 | Unblock a run stuck as pending | On its card, ☰ menu → **Mark as Failed** |
 | Delete runs or only their files | Card ☰ menu (one run), or commit bar menu (failed runs, the batch, several batches) |
 
-Redone runs use the commit's saved artifacts and the same input, configuration and parameters. The page refreshes by itself while runs are pending: follow their progress with the counters next to the filter box, or in the [Logs](commit-page.mdx#logs) view.
+Redone runs use the commit's saved artifacts and the same input, configuration and parameters. QA-Board submits them in the background, several at once: a notification tells you how many started, or why some didn't (their `log.txt` has the details). The page refreshes by itself while runs are pending: follow their progress with the counters next to the filter box, or in the [Logs](commit-page.mdx#logs) view.
 
 :::caution
 Delete actions are immediate. Milestones are protected: QA-Board won't delete batches or commits saved as [milestones](comparing-results.mdx#milestones).

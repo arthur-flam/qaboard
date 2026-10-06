@@ -20,6 +20,7 @@ import {
 import { fetchCommit } from "../actions/commit";
 import { linux_to_windows } from '../utils'
 import { toaster } from "../toaster"
+import { errorMessage, redo, redoToast } from "../utils/http";
 
 
 const on_copy = (text, format = 'config') => {
@@ -316,7 +317,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: Intent.DANGER});
               refresh()
             });
         }}
@@ -330,15 +331,11 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Requested Redo."});
-          axios.post(`/api/v1/output/redo/${id}/`, {is_pending: false, is_running: false})
-            .then(() => {
+          redo(`/api/v1/output/redo/${id}/`, {})
+            .then(result => toaster.show(redoToast(result)))
+            .catch(error => toaster.show({message: errorMessage(error), intent: Intent.DANGER}))
+            .finally(() => {
               setWaiting(false)
-              toaster.show({message: "Redo started.", intent: Intent.SUCCESS});
-              refresh()
-            })
-            .catch(error => {
-              setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
               refresh()
             });
         }}
@@ -360,7 +357,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: Intent.DANGER});
               refresh()
             });
         }}
@@ -382,7 +379,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: Intent.DANGER});
               refresh()
             });
         }}
@@ -503,7 +500,7 @@ class OutputTags extends React.Component {
                 })
                 .catch(error => {
                   this.setState({waiting: false})
-                  const error_str = error.response?.data?.error ?? JSON.stringify(error)
+                  const error_str = errorMessage(error)
                   if (error.message == "Network Error") {
                     const help_text = "Sorry we could not connect to CDEWebService. Please start WebCDE.exe (download from \\\\netapp\\Joint\\WebCDE\\WebCDE_Setup.exe)"
                     toaster.show({

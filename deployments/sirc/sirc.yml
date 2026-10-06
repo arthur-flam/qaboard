@@ -30,10 +30,10 @@ services:
         <<: *sirc-build-args
         GIT_SSL_VERIFY: "false"
         QABOARD_EXTRA: "sirc"
-    env_file:
+    env_file: &sirc-backend-env-file
       - .env
       - deployments/sirc/.env
-    environment:
+    environment: &sirc-backend-environment
     - GITLAB_HOST=http://gitlab-srv
     - UWSGI_UID=ispq
     - UWSGI_GID=uucp
@@ -60,7 +60,7 @@ services:
     # The server only writes, deletes or runs code in these folders (the shared storage mounted below)
     - QABOARD_STORAGE_ROOTS=/algo:/stage:/home:/raid:/sim:/data:/net
 
-    volumes:
+    volumes: &sirc-backend-volumes
     - ./services/backend/passwd:/etc/passwd
     - ./services/backend/ldap:/etc/ldap
     - /raid:/raid
@@ -75,6 +75,13 @@ services:
     - /algo:/algo:shared
     - /data:/data:shared
     - /net:/net:shared
+
+  # Runs the backend's background tasks: same configuration and storage
+  worker:
+    image: "gitlab-srv:4567/common-infrastructure/qaboard:backend${QABOARD_VERSION:+-$QABOARD_VERSION}"
+    env_file: *sirc-backend-env-file
+    environment: *sirc-backend-environment
+    volumes: *sirc-backend-volumes
 
   proxy:
     image: "gitlab-srv:4567/common-infrastructure/qaboard:proxy${QABOARD_VERSION:+-$QABOARD_VERSION}"

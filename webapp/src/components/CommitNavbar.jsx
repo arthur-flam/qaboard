@@ -32,6 +32,7 @@ import { shortId, linux_to_windows } from "../utils";
 import { fetchCommit } from "../actions/commit";
 import { updateSelected } from "../actions/selected";
 import { toaster } from "../toaster"
+import { errorMessage, redo, redoToast } from "../utils/http";
 
 
 class CommitMessage extends React.PureComponent {
@@ -127,7 +128,25 @@ class CommitNavbar extends React.Component {
       })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
+      });
+  }
+
+  redoBatch = (params, message) => {
+    const { batch } = this.props;
+    this.setState({waiting: true})
+    toaster.show({message});
+    redo(`/api/v1/batch/redo/`, {id: batch.id, ...params}, {
+      onQueued: ({outputs}) => toaster.show({message: `Submitting ${outputs} run${outputs > 1 ? 's' : ''}...`}),
+    })
+      .then(result => toaster.show(redoToast(result)))
+      .catch(error => toaster.show({message: errorMessage(error), intent: Intent.DANGER}))
+      .finally(() => {
+        this.setState({waiting: false})
+        this.refresh()
+        // the runs update their status when they start
+        setTimeout(this.refresh,  5*1000)
+        setTimeout(this.refresh, 15*1000)
       });
   }
 
@@ -145,7 +164,7 @@ class CommitNavbar extends React.Component {
       })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
       });
   }
 
@@ -382,20 +401,7 @@ class CommitNavbar extends React.Component {
               intent={Intent.WARNING}
               minimal
               disabled={this.state.waiting || commit?.deleted}
-              onClick={() => {
-                this.setState({waiting: true})
-                toaster.show({message: "Redo of deleted outputs requested."});
-                axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
-                  .then(() => {
-                    this.setState({waiting: false})
-                    toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
-                    this.refresh()
-                  })
-                  .catch(error => {
-                    this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
-                  });
-              }}
+              onClick={() => this.redoBatch({only_deleted: true}, "Redo of deleted outputs requested.")}
             />}
             {batch.failed_outputs > 0 && <MenuItem
               icon="redo"
@@ -403,20 +409,7 @@ class CommitNavbar extends React.Component {
               intent={Intent.WARNING}
               minimal
               disabled={this.state.waiting || commit?.deleted}
-              onClick={() => {
-                this.setState({waiting: true})
-                toaster.show({message: "Redo of failed outputs requested."});
-                axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_failed: true})
-                  .then(() => {
-                    this.setState({waiting: false})
-                    toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
-                    this.refresh()
-                  })
-                  .catch(error => {
-                    this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
-                  });
-              }}
+              onClick={() => this.redoBatch({only_failed: true}, "Redo of failed outputs requested.")}
             />}
             <MenuItem
               icon="redo"
@@ -424,23 +417,7 @@ class CommitNavbar extends React.Component {
               intent={Intent.WARNING}
               minimal
               disabled={this.state.waiting || commit?.deleted}
-              onClick={() => {
-                this.setState({waiting: true})
-                toaster.show({message: "Redo requested."});
-                axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: false})
-                  .then(() => {
-                    this.setState({waiting: false})
-                    toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
-                    this.refresh()
-                    setTimeout(this.refresh,  1*1000)
-                    setTimeout(this.refresh,  5*1000)
-                    setTimeout(this.refresh, 10*1000)
-                  })
-                  .catch(error => {
-                    this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
-                  });
-              }}
+              onClick={() => this.redoBatch({}, "Redo requested.")}
             />
             <MenuDivider/>
             <MenuItem
@@ -463,7 +440,7 @@ class CommitNavbar extends React.Component {
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: Intent.DANGER});
                     this.refresh()
                   });
               }}
@@ -488,7 +465,7 @@ class CommitNavbar extends React.Component {
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: Intent.DANGER});
                     this.refresh()
                   });
               }}
@@ -599,7 +576,7 @@ class CommitNavbar extends React.Component {
       })
       .catch(error => {
         this.setState({waiting: false, show_delete_batches_dialog: false });
-        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
         this.refresh()
       });
   }

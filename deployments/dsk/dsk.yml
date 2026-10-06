@@ -16,10 +16,10 @@ services:
       args:
         <<: *dsk-build-args
         QABOARD_EXTRA: "dsk"
-    env_file:
+    env_file: &dsk-backend-env-file
       - .env
       - deployments/dsk/.env
-    environment:
+    environment: &dsk-backend-environment
       - QABOARD_LOGIN_TYPE=${QABOARD_LOGIN_TYPE:-SAML}
       - QABOARD_LOGIN_REQUIRED=${QABOARD_LOGIN_REQUIRED:-}
       - QABOARD_TUNING_RUNNER=celery
@@ -28,6 +28,11 @@ services:
       - QABOARD_PROTOCOL=http
       - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//
       - 'QABOARD_IMAGE_SERVERS={"default": "/iiif", "raw,hex,cde": "/iiif/cde"}'
+
+  # Runs the backend's background tasks: same configuration
+  worker:
+    env_file: *dsk-backend-env-file
+    environment: *dsk-backend-environment
 
   frontend:
     build:
