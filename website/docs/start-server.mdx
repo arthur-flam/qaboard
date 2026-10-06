@@ -139,7 +139,12 @@ QA-Board can connect to external authentifications systems (LDAP, SAML). If need
 | `QABOARD_DOCS_ROOT`    | */* | Where the webapp's links to the docs point. By default, the docs served by this server at `/docs/`, which match its version |
 | `QABOARD_AVATAR_URL`   | _none_  | Avatar URL template for logged-in users, with a `{user_name}` placeholder |
 | `POSTHOG_API_KEY` / `POSTHOG_HOST` | _none_ | Enables [PostHog](https://posthog.com/) product analytics in the webapp |
-| `REDIS_HOST` / `REDIS_PORT` | redis / 6379 (set in *docker-compose.yml*) | Redis cache shared by the backend replicas. The backend still works if it's unreachable |
+| `REDIS_HOST` / `REDIS_PORT` | redis / 6379 (set in *docker-compose.yml*) | Redis cache shared by the backend replicas, and queue of the `worker`'s background tasks. The backend still works if it's unreachable, but can't start runs again from the webapp |
+| `QABOARD_TASKS_BROKER_URL` | *redis://$REDIS_HOST:$REDIS_PORT/1* | Queue of the background tasks (Celery broker), e.g. starting runs again from the webapp. They are run by the `worker` service, that needs the same environment and storage as the backend |
+| `QABOARD_WORKER_CONCURRENCY` | 2 | Background tasks run at the same time by the `worker` |
+| `QABOARD_REDO_CONCURRENCY` | 5 | Runs that a "Redo" submits at the same time (each can wait minutes on `QA_RUNNERS_LSF_BRIDGE`). With an ssh bridge, keep `QABOARD_WORKER_CONCURRENCY` × this at most the host's sshd `MaxStartups` (10 by default) |
+| `QABOARD_REDO_SUBMIT_TIMEOUT` | 1800 | Seconds after which we give up submitting a run |
+| `QABOARD_TASKS_EAGER` | _empty_ | For development without a `worker`: `true` runs background tasks in the HTTP requests |
 | `QABOARD_QUOTA_URL_TEMPLATE` | _none_ | Shows a "Quota" link, with `{user_name}` and `{project}` placeholders |
 | `QABOARD_SUPPORT_URL` | GitHub issues | Where users report bugs, can be a `mailto:` |
 | `CANTALOUPE_MEM_START` | 1g      | Starting memory for the image server (set in `services.cantaloupe.environment`) |

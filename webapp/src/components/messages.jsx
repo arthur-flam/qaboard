@@ -13,6 +13,7 @@ import {
 import { ConfigurationsTags, ExtraParametersTags } from './tags'
 import { fetchCommit } from "../actions/commit";
 import { toaster } from "../toaster"
+import { errorMessage, redo, redoToast, STILL_PENDING_MESSAGE } from "../utils/http";
 import { SubmissionCallout } from "./logs/BatchSubmissions"
 
 
@@ -42,7 +43,7 @@ class CommitWarningMessages extends React.Component {
 })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
         this.refresh()
       });
 
@@ -122,7 +123,7 @@ class BatchStatusMessages extends React.Component {
     })
     .catch(error => {
       console.log(error)
-      toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+      toaster.show({message: errorMessage(error), intent: Intent.DANGER});
       this.setState({waiting_stop: false, error });
     });
   }
@@ -141,15 +142,14 @@ class BatchStatusMessages extends React.Component {
     if (batch === undefined || batch === null) return;
     this.setState({waiting_redo: true})
     toaster.show({message: "Redo requested."});
-    post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
-      .then(() => {
+    redo(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true}, {
+      onQueued: ({outputs}) => toaster.show({message: `Submitting ${outputs} run${outputs > 1 ? 's' : ''}...`}),
+      onStillPending: () => toaster.show({message: STILL_PENDING_MESSAGE, intent: Intent.WARNING, timeout: 15000}),
+    })
+      .then(result => toaster.show(redoToast(result)))
+      .catch(error => toaster.show({message: errorMessage(error), intent: Intent.DANGER}))
+      .finally(() => {
         this.setState({waiting_redo: false})
-        toaster.show({message: `Redo ${batch.label}.`, intent: Intent.PRIMARY});
-        this.refresh()
-      })
-      .catch(error => {
-        this.setState({waiting_redo: false });
-        toaster.show({message: JSON.stringify(error.response ?? error), intent: Intent.DANGER});
         this.refresh()
       });
   }

@@ -25,6 +25,8 @@ that sets at least COMPOSE_FILE and COMPOSE_PROJECT_NAME. Variables from the she
    point nginx at them, then stop the old ones gracefully. If the new replicas are not healthy, they are removed
    and the old ones keep serving.
 5. Update the frontend/docs bundles (old bundles are kept, so clients with an old version keep working)
+   and the worker (background tasks). It finishes its running tasks before it stops (up to 5 minutes),
+   meanwhile new tasks wait in the queue. The deploy fails if it's not healthy, after step 6.
 6. Record the version for `rollback`/`status`, remove old images to keep the disk from filling up.
 
 No dependencies: runs with `python3` or `uv run`.
@@ -46,6 +48,8 @@ from typing import Dict, List, Optional
 ROOT = Path(__file__).resolve().parent.parent
 # Bundles copied to volumes by one-shot containers, updated after the backend
 STATIC_SERVICES = ["frontend", "website"]
+# Runs the backend's background tasks, updated after the backend
+WORKER_SERVICES = ["worker"]
 KEEP_IMAGES = 3  # versions kept locally for fast rollbacks
 DRAIN_SECONDS = 5  # after switching nginx to the new replicas, before stopping the old ones
 
@@ -254,7 +258,7 @@ class Deployment:
                      './wait-for-it.sh "${QABOARD_DB_HOST:-db}:${QABOARD_DB_PORT:-5432}" -t 120 -- /qaboard/backend/migrate.sh')
 
         # 3. Infrastructure (only recreated if they changed)
-        infra = [s for s in services if s not in ("backend", "proxy", *STATIC_SERVICES)]
+        infra = [s for s in services if s not in ("backend", "proxy", *STATIC_SERVICES, *WORKER_SERVICES)]
         if infra:
             self.up_services(infra, config, "--remove-orphans")
 
@@ -267,6 +271,12 @@ class Deployment:
             self.reconfigure_proxy(services)  # the proxy wasn't recreated: apply nginx config changes
         elif "proxy" in last:
             self.wait_proxy()
+        workers = [s for s in WORKER_SERVICES if s in services]
+        workers_healthy = True
+        if workers:
+            self.up_services(workers, config)
+            containers = [c for s in workers for c in self.containers(s, all_states=False)]
+            workers_healthy = bool(containers) and self.wait_healthy(containers)
 
         # 6. Bookkeeping
         if self.version and self.version != self.state.get("current"):
@@ -281,6 +291,9 @@ class Deployment:
         }])[-50:]
         self.state_path.write_text(json.dumps(self.state, indent=2))
         self.cleanup_images(config, ours)
+        if not workers_healthy:
+            die(f"Deployed {self.project} {self.version or ''}, but the worker is not healthy: \"Redo\" from the webapp won't work. "
+                f"Check: deployments/deploy.py {self.env_file} compose logs worker")
         log(f"✅ Deployed {self.project} {self.version or ''}")
 
     def rolling_update(self, service: str, replicas: int, services: List[str]) -> None:
@@ -395,7 +408,7 @@ class Deployment:
         source = source or self.settings.get("QABOARD_SEED_SOURCE") or die("Set QABOARD_SEED_SOURCE or pass --source")
         days = days or int(self.settings.get("QABOARD_SEED_DAYS") or 30)
         log(f"Seeding the database with the last {days} days of data: the backend is stopped meanwhile")
-        users = [s for s in ("backend", "flower", "cron-backup-db") if s in self.config()["services"]]
+        users = [s for s in ("backend", "worker", "flower", "cron-backup-db") if s in self.config()["services"]]
         self.compose("stop", *users)
         try:
             self.compose("exec", "-T", "db", "sh", "/opt/seed", source, str(days))
@@ -411,7 +424,7 @@ class Deployment:
         elif not dump.startswith("/"):
             dump = f"/backups/{dump}"
         log(f"Restoring {dump}: the backend is stopped meanwhile")
-        users = [s for s in ("backend", "flower", "cron-backup-db") if s in self.config()["services"]]
+        users = [s for s in ("backend", "worker", "flower", "cron-backup-db") if s in self.config()["services"]]
         self.compose("stop", *users)
         try:
             self.compose("exec", "-T", "db", "/opt/restore", dump)

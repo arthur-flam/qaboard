@@ -5,6 +5,7 @@ import os
 import json
 import uuid
 import fnmatch
+import signal
 import datetime
 import subprocess
 from pathlib import Path
@@ -25,6 +26,24 @@ from backend.storage import check_storage_path, check_inside
 from backend.shell_utils import quote, safe_user_name, lsf_bridge_command
 
 
+
+
+def submit_redo_script(user, script_path: Path, timeout=None) -> bool:
+  """
+  Runs a script from `Output.write_redo_script` as `user`, via the LSF bridge, with its logs in log.txt next to it.
+  It returns when the job was submitted, which can take minutes if the LSF queue is busy.
+  Raises subprocess.TimeoutExpired after `timeout` seconds.
+  """
+  # raises if the user or path are not safe to use in the LSF bridge
+  command = lsf_bridge_command(user, script_path)
+  logs_path = Path(script_path).parent / 'log.txt'
+  # In its own process group: on timeouts we stop ssh too, not only the shell
+  with subprocess.Popen(f'{command} > {quote(str(logs_path))} 2>&1', shell=True, start_new_session=True) as p:
+    try:
+      return p.wait(timeout=timeout) == 0
+    except subprocess.TimeoutExpired:
+      os.killpg(p.pid, signal.SIGKILL)
+      raise
 
 
 class Output(Base):
@@ -208,9 +227,10 @@ class Output(Base):
       return output
 
 
-  def redo(self, user, command_id=None):
+  def write_redo_script(self, user, command_id=None) -> Path:
     """
-    Re-run this output, as `user` (the logged-in user who requested it).
+    Writes the script that runs this output again, as `user` (the logged-in user who requested it).
+    Start it with `submit_redo_script`: unlike this method, it doesn't use the database so it can run in threads.
     Note: almost everything used here comes from unauthenticated API calls, so all values are quoted,
           and we only write and run code in the storage folders.
     """
@@ -294,16 +314,11 @@ class Output(Base):
         os.umask(prev_mask)
         raise e
       os.umask(prev_mask)
-    logs_path = self.output_dir / 'log.txt'
     script_path = self.output_dir / 'redo.sh'
     with script_path.open('w') as f:
       f.write(script)
     print(f'"{script_path}"')
-    # raises if the user or path are not safe to use in the LSF bridge
-    command = lsf_bridge_command(user, script_path)
-    p = subprocess.run(f'{command} > {quote(str(logs_path))} 2>&1', shell=True)
-    success = p.returncode == 0
-    return success
+    return script_path
 
 
   def delete(self, soft=True, ignore=None, filter=None, dryrun=False):

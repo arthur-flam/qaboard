@@ -97,6 +97,19 @@ backend:
     maxReplicas: 6
     targetCPUUtilizationPercentage: 70
 
+# Runs the backend's background tasks (e.g. starting runs again from the webapp), with redis as the queue.
+# It uses the backend's configuration, storage (backend.extraVolumes, backend.data) and scheduling options.
+worker:
+  enabled: true
+  replicas: 1
+  # Tasks per pod. Each one can wait minutes on the LSF bridge, and submits runs with QABOARD_REDO_CONCURRENCY threads.
+  # Mind sshd's MaxStartups (10 by default) on the LSF bridge host: concurrency x QABOARD_REDO_CONCURRENCY ssh at once
+  concurrency: 2
+  resources:
+    requests: {cpu: 100m, memory: 1Gi}
+    limits: {memory: 4Gi}
+  terminationGracePeriodSeconds: 300
+
 # Database migrations run in a Job before each upgrade (and after the first install)
 migrations:
   enabled: true
@@ -130,7 +143,8 @@ ingress:
   # - secretName: qaboard-tls
   tls: []
 
-# Cache only, no persistence needed
+# Cache, and queue of the worker's tasks. No persistence needed: on restarts, queued tasks are lost and users retry
+# Without it, set QABOARD_TASKS_BROKER_URL (e.g. redis://host:6379/1)
 redis:
   enabled: true
   image: redis:7

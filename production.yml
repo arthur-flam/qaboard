@@ -42,6 +42,11 @@ services:
     sysctls:
     - net.core.somaxconn=1024
 
+  worker:
+    restart: always
+    environment:
+    - FLASK_ENV=production
+
   proxy:
     restart: always
   cantaloupe:

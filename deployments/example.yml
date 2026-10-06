@@ -5,7 +5,7 @@
 
 services:
   backend:
-    environment:
+    environment: &backend-environment
       # Authentication: LOCAL (default), LDAP, or SAML
       # - QABOARD_LOGIN_TYPE=LDAP
       # - QABOARD_LDAP_HOST=ldap.example.com
@@ -28,6 +28,12 @@ services:
       # or run code anywhere else, e.g. in folders sent by a client. Separated by ":"
       # - QABOARD_STORAGE_ROOTS=/mnt/qaboard:/mnt/datasets
       []
+
+  # Runs the backend's background tasks (e.g. starting runs again from the webapp): it needs the backend's environment.
+  # If you mount storage volumes in the backend, anchor them too (`volumes: &backend-volumes`), see deployments/sirc/sirc.yml
+  worker:
+    environment: *backend-environment
+    # volumes: *backend-volumes
 
   # Uncomment to customize frontend:
   # frontend:

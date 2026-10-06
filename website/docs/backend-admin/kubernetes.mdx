@@ -18,7 +18,8 @@ helm upgrade --install qaboard charts/qaboard --namespace qaboard --create-names
 | backend | Deployment, 2+ replicas | Rolling updates with `maxUnavailable: 0`, readiness on `/api/v1/health`, a PodDisruptionBudget, spread on nodes. Optional HPA. |
 | proxy (nginx) | Deployment, 2 replicas | Init containers copy the frontend and docs bundles. TLS is done by the ingress. |
 | database | external, or CloudNativePG | `database.host` for a PostgreSQL managed by IT, or `database.cnpg.enabled` for an HA cluster (primary + replicas, automatic failover) with the [CloudNativePG operator](https://cloudnative-pg.io). `database.embedded` is only to try the chart. |
-| redis | Deployment | A cache, no persistence |
+| worker | Deployment (`worker.enabled`) | Runs the backend's background tasks (e.g. "Redo" from the webapp). Same image, configuration and storage as the backend. |
+| redis | Deployment | A cache, and the worker's queue. No persistence |
 | backups | CronJob (`backup.enabled`) | `pg_dump` to a volume. With CloudNativePG, prefer its continuous backups to S3/MinIO. |
 | cantaloupe, rabbitmq/flower | optional | |
 
@@ -56,6 +57,7 @@ Effort: the chart covers the generic parts. The work is mostly the storage mount
 ```bash
 kubectl -n qaboard get pods
 kubectl -n qaboard logs deploy/qaboard-backend          # one of the replicas
+kubectl -n qaboard logs deploy/qaboard-worker           # background tasks, e.g. "Redo" from the webapp
 kubectl -n qaboard logs job/qaboard-migrations          # failed migrations
 kubectl -n qaboard exec -it deploy/qaboard-backend -- bash
 helm -n qaboard history qaboard

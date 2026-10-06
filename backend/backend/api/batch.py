@@ -8,6 +8,7 @@ from ..models import CiCommit, Batch
 from ..storage import check_storage_path, UnsafePathError
 from .export_to_folder import filter_outputs
 from .auth import login_required
+from .jobs import queue_redo
 
 
 
@@ -133,18 +134,11 @@ def redo_batch():
     batch = Batch.query.filter(Batch.id == data['id']).one()
   except:
     return f"404 ERROR:\n Not found", 404
-  try:
-    success = batch.redo(
-      user=g.user['user_name'],
-      only_failed=data.get('only_failed', False),
-      only_deleted=data.get('only_deleted', False),
-    )
-  except Exception as e:
-    return jsonify({"error": f"{e}"}), 500
-  if success:
-    return '{"status": "OK"}'
-  else:
-    return jsonify({"error": "Some runs failed to start. Check the 'redo.log' files in the output directories to know more."}), 500
+  output_ids = batch.outputs_to_redo(
+    only_failed=data.get('only_failed', False),
+    only_deleted=data.get('only_deleted', False),
+  )
+  return queue_redo(output_ids, user=g.user['user_name'])
 
 @app.route('/api/v1/batch/rename', methods=['POST'])
 @app.route('/api/v1/batch/rename/', methods=['POST'])

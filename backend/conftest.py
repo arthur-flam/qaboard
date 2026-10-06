@@ -59,7 +59,16 @@ def pytest_configure():
     models_mod.CiCommit = MagicMock()
     models_mod.latest_successful_commit = MagicMock()
     models_mod.Batch = MagicMock()
+    models_mod.submit_redo_script = MagicMock()
     sys.modules['backend.models'] = models_mod
+
+    # Mock 'backend.database': it connects to the database when imported
+    database_mod = types.ModuleType('backend.database')
+    database_mod.__package__ = 'backend'
+    database_mod.Session = MagicMock()
+    database_mod.engine = MagicMock()
+    database_mod.db_session = backend_mod.db_session
+    sys.modules['backend.database'] = database_mod
     sys.modules['backend.backend'] = types.ModuleType('backend.backend')
 
     # Mock SQLAlchemy

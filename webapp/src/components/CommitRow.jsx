@@ -28,6 +28,7 @@ import { DoneAtTag } from "./DoneAtTag";
 import { CopyToClipboard } from "react-copy-to-clipboard";
 import { format, shortId, pretty_label, linux_to_windows } from "../utils";
 import { git_hostname, default_git_hostname } from "../utils"
+import { errorMessage } from "../utils/http";
 import { has_milestones } from './milestones'
 
 const CommitDetails = styled.div`
@@ -339,7 +340,7 @@ class CommitRow extends React.Component {
                       })
                       .catch(error => {
                         this.setState({waiting: false });
-                        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+                        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
                         this.refresh()    
                       });
                   }}
@@ -362,7 +363,7 @@ class CommitRow extends React.Component {
                       })
                       .catch(error => {
                         this.setState({waiting: false });
-                        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+                        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
                         this.refresh()    
                       });
                   }}

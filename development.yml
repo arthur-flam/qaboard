@@ -18,12 +18,12 @@ services:
     - ${QABOARD_DEV_PROXY_PORT_5001:-5001}:5001
 
   backend:
-    volumes:
+    volumes: &dev-backend-volumes
     - ./qaboard:/qaboard/qaboard
     - ./backend:/qaboard/backend
     - ${HOME}:${HOME}
     - ./pyproject.toml:/qaboard/pyproject.toml
-    environment:
+    environment: &dev-backend-environment
     - FLASK_APP=backend
     - FLASK_ENV=development
     - FLASK_DEBUG=1
@@ -63,6 +63,20 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5152/api/v1/health', timeout=5)"]
     # logging:
     #   driver: json-file
+
+  # Restart it after changing backend/backend/tasks.py. Or skip it: QABOARD_TASKS_EAGER=1 runs tasks in the requests
+  worker:
+    volumes: *dev-backend-volumes
+    environment: *dev-backend-environment
+    working_dir: /qaboard/backend
+    command: >
+      bash -c "
+      if id '${USER}' >/dev/null 2>&1; then
+        exec su '${USER}' -c 'uv run celery --app backend.celery_app worker --loglevel INFO --without-gossip --without-mingle';
+      else
+        exec uv run celery --app backend.celery_app worker --loglevel INFO --without-gossip --without-mingle;
+      fi
+      "
 
   frontend:
     build:

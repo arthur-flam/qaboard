@@ -7,6 +7,10 @@ services:
     # Don't share git clones with production
     - QABOARD_DATA_GIT_DIR=/var/qaboard/git
 
+  worker:
+    environment:
+    - QABOARD_DATA_GIT_DIR=/var/qaboard/git
+
   db:
     volumes:
     # Read-only: staging can be restored from production backups (deploy.py ... restore-db latest), never write them.

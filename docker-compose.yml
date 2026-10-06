@@ -80,10 +80,10 @@ services:
     - data:/var/qaboard
     # Secrets (SECRET_KEY, GITLAB_ACCESS_TOKEN...) come from env files, not from `environment`:
     # an entry without a value there, like `- SECRET_KEY`, would unset what env files define if the shell doesn't set it.
-    env_file:
+    env_file: &backend-env-file
     - path: .env
       required: false
-    environment:
+    environment: &backend-environment
     - UWSGI_PROCESSES=2
     - UWSGI_LISTEN_QUEUE_SIZE=100
     - QABOARD_DB_HOST
@@ -106,6 +106,28 @@ services:
       start_period: 120s
     # uwsgi finishes in-flight requests on SIGTERM
     stop_grace_period: 60s
+
+  # Runs the backend's background tasks (backend/backend/tasks.py), e.g. starting runs again from the webapp
+  # It shares the backend image and needs the same configuration and storage (site overlays must add them too)
+  worker:
+    image: "arthurflam/qaboard:backend${QABOARD_VERSION:+-$QABOARD_VERSION}"
+    command: ["./wait-for-it.sh", "${QABOARD_DB_HOST-db}:${QABOARD_DB_PORT-5432}", "--", "/qaboard/backend/worker.sh"]
+    depends_on:
+      - db
+      - redis
+    volumes:
+    - data:/var/qaboard
+    env_file: *backend-env-file
+    environment: *backend-environment
+    # deployments/deploy.py waits for it to be healthy
+    healthcheck:
+      test: ["CMD", "python", "/qaboard/backend/worker_healthcheck.py"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
+    # Running tasks finish before the worker stops (e.g. during deploys)
+    stop_grace_period: 5m
 
   frontend:
     image: "arthurflam/qaboard:frontend${QABOARD_VERSION:+-$QABOARD_VERSION}"

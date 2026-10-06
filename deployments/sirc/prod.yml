@@ -41,6 +41,13 @@ services:
         tag: qaboard.backend
         fluentd-address: "0.0.0.0:24224"
 
+  worker:
+    logging:
+      driver: "fluentd"
+      options:
+        tag: qaboard.worker
+        fluentd-address: "0.0.0.0:24224"
+
   cron-backup-db:
     volumes:
     - /home/ispq/qaboard_data_prod/database_backups:/backups
