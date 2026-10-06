@@ -106,6 +106,25 @@ def as_requests_verify(value):
     return value
 
 
+DEFAULT_QABOARD_URL = 'http://localhost:5151'
+
+def get_qaboard_url():
+    """
+    The QA-Board server's URL, and whether it's only the default because nothing configured it.
+    From QABOARD_HOSTNAME and QABOARD_PORT, QABOARD_HOST or QABOARD_URL (and QABOARD_PROTOCOL).
+    """
+    protocol = site_config('QABOARD_PROTOCOL', 'http')
+    hostname = site_config('QABOARD_HOSTNAME')
+    port = site_config('QABOARD_PORT')
+    host = site_config('QABOARD_HOST')
+    if hostname and port:
+        return f"{protocol}://{hostname}:{port}", False
+    if host:
+        return f"{protocol}://{host}", False
+    url = site_config('QABOARD_URL')
+    return (url, False) if url else (DEFAULT_QABOARD_URL, True)
+
+
 # Locations can be specified as a path, {linux, windows}, {outputs, artifacts}...
 # They are not merged key by key: when projects define them, they replace the site's.
 LOCATION_KEYS = (('storage',), ('inputs', 'database'))

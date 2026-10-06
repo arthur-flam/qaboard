@@ -23,7 +23,7 @@ from .site_config import site_config, site_qaboard_config, without_locations_fro
 config_has_error = False
 
 # Don't lots of verbose info if the users just wants the help, or start a new project
-ignore_config_errors = len(sys.argv)==1 or '--help' in sys.argv or '--version' in sys.argv or 'init' in sys.argv
+ignore_config_errors = len(sys.argv)==1 or '--help' in sys.argv or '--version' in sys.argv or 'init' in sys.argv or 'wizard' in sys.argv
 # When the code is imported we care less about warnings...
 ignore_config_errors = ignore_config_errors or not sys.argv or not sys.argv[0].endswith('qa')
 
@@ -63,7 +63,7 @@ if not qatools_configsxpaths:
   if not ignore_config_errors:
     typer.secho('ERROR: Could not find a `qaboard.yaml` configuration file.', fg='red', err=True)
     if 'QABOARD_TUNING' not in os.environ:
-      typer.secho('       If you are starting a new project, run `qatools init`.', fg='red', err=True)
+      typer.secho('       If you are starting a new project, run `qa wizard`.', fg='red', err=True)
     else:
       typer.secho(f'       It seems "artifacts" are missing. To save them:', fg='red', err=True)
       typer.secho(f'       1. cd your/project', fg='red', err=True)
@@ -125,9 +125,11 @@ else:
   # that have tons of small repos configured the name
   interpolation_vars = {"root_path": root_qatools, "project_path": project_dir}
   root_qatools_config['project']['name'] = expand_paths(root_qatools_config['project']['name'], interpolation_vars)
-  root_qatools_config['project']['url'] = expand_paths(root_qatools_config['project']['url'], interpolation_vars)
   config['project']['name'] = expand_paths(config['project']['name'], interpolation_vars)
-  config['project']['url'] = expand_paths(config['project']['url'], interpolation_vars)
+  # The URL is optional, e.g. for projects without a git remote yet
+  for c in (root_qatools_config, config):
+    if c['project'].get('url'):
+      c['project']['url'] = expand_paths(c['project']['url'], interpolation_vars)
 
 
   # We identify sub-qatools projects using the location of qaboard.yaml related to the project root
@@ -336,9 +338,9 @@ if commit_id and is_in_git_repo:
       commit_message = commit_message_
     commit_parents = commit_parents_str.split()
   except Exception as e:
-    print(e, file=sys.stderr)
     # may fail when working on the first commit in a repo, like in our tests
-    pass
+    if not ignore_config_errors:
+      print(e, file=sys.stderr)
 
 
 if root_qatools_config:

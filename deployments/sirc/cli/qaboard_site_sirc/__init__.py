@@ -13,6 +13,12 @@ defaults = {
     # We want to allow users to use the Gitlab API (limited scope: CI statuses) without having to login
     # to stay backward compatible and not have credentials in any repo
     "QA_SECRETS": '/home/ispq/.secrets.yaml' if os.name != 'nt' else '//mars/raid/users/ispq/.secrets.yaml',
+    # AI assistant of `qa wizard`: Claude, or any OpenAI-compatible API. Uncomment with SIRC's LLM gateway, so users only need a key.
+    # "QABOARD_LLM_PROVIDER": "openai",  # or "anthropic" if the gateway speaks Anthropic's Messages API
+    # "QABOARD_LLM_BASE_URL": "https://<llm-gateway>/v1",
+    # "QABOARD_LLM_MODEL": "<coding model>",
+    # "QABOARD_LLM_KEY_URL": "<page explaining how to get a key>",
+    # "QABOARD_LLM_VERIFY": "false",
     "QABOARD_UPGRADE_COMMAND": "pip install --upgrade git+ssh://git@gitlab-srv/common-infrastructure/qaboard",
     # Base qaboard.yaml for all projects: they are merged on top of it
     "QABOARD_SITE_CONFIG": str(Path(__file__).with_name("qaboard.yaml")),

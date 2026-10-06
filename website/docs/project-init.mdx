@@ -4,29 +4,96 @@ sidebar_label: Project Setup
 title: Adding QA-Board to your project
 ---
 
-Go at the root of your project's git repository and run:
+Go to the root of your project's git repository and run:
 
 ```bash
-qa init
-#=> 🎉🎉🎉
+qa wizard      # or its alias: qa init
 ```
 
-Along with previously existing files and directories, your root directory will now contain a structure similar to:
+The wizard sets up your project in a couple of minutes, and you can **run it again anytime**: it checks how your integration is doing, and helps you improve it.
+
+## Setting up a project
+1. **Your project**: it finds the project's name from the git remote, the default branch, the languages, build system and CI. It asks where your test inputs are stored, and guesses which files are inputs (e.g. `*.png`, or folders of frames like `clip/Frame_000.jpg`) to fill `inputs` and an example batch. When your site package defines where inputs are stored, it asks for the project's folder there.
+2. **QA-Board server**: it checks that your server answers, and can log you in to create a personal [API token](installation#api-token). The server URL (once it answered) and token are saved in `~/.qaboard/secrets.yaml`, readable only by you. Your password is used once and never saved. No server yet? Leave the URL empty: `qa run` works without one. Unless your site package says, it also asks where shared results (`qa --share`, CI) should be stored.
+3. **AI assistant** *(optional)*: you chat with an assistant that adapts `qa/main.py` to call your code. [Read more below](#ai-assistant).
+4. **Review**: you see every change, and approve them all at once. Writes are atomic: if one fails, nothing is left half-written. Finally, it offers to run your code on one of your inputs.
+
+Your root directory then contains:
 
 ```
 root-git-repository
 ├── qaboard.yaml       # configuration
+├── .gitignore         # output/ added: local results of `qa run`
 └── qa
-   ├── main.py         # sample entrypoint that runs your code
+   ├── main.py         # entrypoint that runs your code
    ├── batches.yaml    # examples of how to run multiple tests
    └── metrics.yaml    # examples of how to define KPIs
 ```
+
+The wizard only creates or changes `qaboard.yaml`, files under `qa/`, and `.gitignore`. It keeps the files of `qa/` that already exist: if you already have a `qa/main.py` without a `run()` function, the entrypoint is created as `qa/qaboard_main.py` instead.
+
+## Running it again
+On a project that already uses QA-Board, `qa wizard` checks its health: whether the entrypoint still is the template, where inputs are, the batches, the metrics your code reports, the visualizations shown in the web app, the server and your API token, and the AI assistant. Then it offers to:
+
+- **chat with the AI assistant**: "make qa/main.py run my CLI", "add a PSNR metric", "show output.png in the web app", "how do I run this in GitLab CI?"... Its changes add up while you talk, and you review them all at once at the end.
+- check the QA-Board server and your API token,
+- set up the AI assistant: API, key, model.
+
+Without a terminal, it only prints the health check.
+
+| Option | |
+|--------|-|
+| `qa wizard --yes` | No questions, use what the wizard detects. Implied when there is no terminal, e.g. in scripts and CI. Settings are never saved to `~/.qaboard/secrets.yaml` in this mode, and the wizard runs where you are, even in a subfolder of the repository. |
+| `qa --dryrun wizard` | Go through the wizard, but write nothing. |
+| `qa wizard --ai` / `--no-ai` | Use the AI assistant, or don't ask about it. Without a terminal, the assistant is only used with `--ai`, and its changes are written without review: check them with `git diff` before running them. |
+| `qa wizard --model NAME` | The LLM the AI assistant uses. |
+
+Animations only play in a terminal; set `QA_NO_ANIMATIONS=1` (or `NO_COLOR=1`) to turn them off.
+
+## AI assistant
+The assistant reads your code and wires `qa/main.py` to it: it finds how your code runs on one input (a Python API, a CLI, an executable built by CMake...), calls it from `run(context)`, honors `--dryrun`, and updates `qaboard.yaml`, `qa/metrics.yaml` and `qa/batches.yaml` to match. Then you can keep talking with it: ask questions, ask for changes. An empty line ends the conversation, `/diff` shows the changes so far, and `/reset` drops them. Nothing is written before the final review.
+
+Install it with:
+
+```bash
+pip install 'qaboard[wizard]'
+# or, without installing anything: uvx --from 'qaboard[wizard]' qa wizard
+```
+
+It works with **Claude**, through Anthropic's API, and with any LLM behind an **OpenAI-compatible API**: OpenAI, your company's LLM gateway, LiteLLM, ollama, vLLM... The wizard asks which API to use, a key and a model (it lists the models the API offers), and offers to save them once the assistant worked. With Claude, it uses Claude Opus 5.5 by default, and finds your credentials like Anthropic's SDK does: `ANTHROPIC_API_KEY`, or a login with `ant auth login`. A key is saved together with its base URL, so that the API set by a site package doesn't receive it (the environment still wins: `QABOARD_LLM_BASE_URL` set in your shell would). Settings can also come from the environment, `~/.qaboard/secrets.yaml` or your site package:
+
+| Setting | |
+|---------|-|
+| `QABOARD_LLM_PROVIDER` | `anthropic`, or `openai` for any OpenAI-compatible API. Default: guessed from the other settings. |
+| `QABOARD_LLM_BASE_URL` | Default: `$ANTHROPIC_BASE_URL` or `https://api.anthropic.com` for Claude, `$OPENAI_BASE_URL` or `https://api.openai.com/v1` otherwise. For ollama: `http://localhost:11434/v1` |
+| `QABOARD_LLM_API_KEY` | `$ANTHROPIC_API_KEY` and `$OPENAI_API_KEY` are used too, but only for Anthropic's and OpenAI's APIs, never sent to other hosts. For local servers, the key is optional. |
+| `QABOARD_LLM_MODEL` | Default for Claude: `claude-opus-5-5`. Otherwise, a model good at coding and tool calls gives the best results. |
+| `QABOARD_LLM_VERIFY` | TLS checks: `true` (default), `false`, or the path to a CA bundle, like `QABOARD_API_VERIFY`. |
+| `QABOARD_LLM_KEY_URL` | Where users get a key, shown when the wizard asks for one. |
+
+On Anthropic's API, the assistant uses a high effort (it's agentic coding work), caches its instructions to make long chats cheaper, and enables Anthropic's refusal fallback: if a safety classifier declines a request, another model continues it instead of stopping.
+
+What the assistant can and can't do:
+- It can list, read and search your project's files, and stage changes to `qaboard.yaml` and files under `qa/`. Nothing else: it can't run commands, and nothing is written before you accept.
+- It never reads files that look like secrets (`.env`, keys, `*secret*`, credentials, `.ssh/`, `.aws/`...), nor `.git/`, nor files outside the project through symlinks. Values that look like tokens, passwords or private keys are redacted from what it reads, and it can't write them. Credentials in your git remote's URL are never copied.
+- What it reads is sent to the API you configured. Use your company's gateway if your code can't leave it.
+- Read its changes before running them: they're code that runs on your machine, and an LLM can be misled by what it reads.
+
+:::tip For site packages
+Preconfigure the assistant for everyone in your site package's `defaults`, e.g. with your internal gateway:
+```python
+"QABOARD_LLM_PROVIDER": "openai",   # or "anthropic", for an Anthropic-compatible gateway
+"QABOARD_LLM_BASE_URL": "https://llm-gateway.example.com/v1",
+"QABOARD_LLM_MODEL": "your-coding-model",
+"QABOARD_LLM_KEY_URL": "https://wiki.example.com/llm-keys",
+```
+:::
 
 ## Site defaults
 Organizations can provide defaults for all projects (where results are stored, which task runner to use...) with a base `qaboard.yaml`:
 
 - Each project's `qaboard.yaml` is merged on top of it, and can override any setting. Mappings are merged key by key, lists are replaced unless they contain `super` (e.g. `batches: [super, qa/batches.yaml]`), and locations (`storage`, `inputs.database`) are replaced as a whole.
-- `qa init` doesn't copy the sample project's values for settings the site defines, it shows the site's values as comments instead.
+- `qa wizard` doesn't copy the sample project's values for settings the site defines, it shows the site's values as comments instead.
 - To check the configuration a project ends up with, run `qa get config`.
 
 The base configuration is found via the `QABOARD_SITE_CONFIG` environment variable, which site packages set (e.g. `qaboard-site-sirc` points to its `qaboard_site_sirc/qaboard.yaml`). Read [the installation docs](installation) to install your site package. Set `QABOARD_SITE_CONFIG=""` to ignore it.

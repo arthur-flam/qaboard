@@ -1,5 +1,5 @@
 """
-Commands about the project: get, init, save-artifacts.
+Commands about the project: get, wizard (and its alias init), save-artifacts.
 """
 import os
 import json
@@ -104,14 +104,47 @@ def get(
 
 
 @app.command(rich_help_panel=PANEL)
-def init(ctx: typer.Context):
+def wizard(
+  ctx: typer.Context,
+  yes: Annotated[bool, typer.Option(
+    '--yes', '-y',
+    help="Don't ask questions, use what the wizard detects. Implied without a terminal.",
+  )] = False,
+  ai: Annotated[Optional[bool], typer.Option(
+    '--ai/--no-ai', show_default=False,
+    help="Use the AI assistant, which adapts qa/main.py to your code: Claude, or any OpenAI-compatible API "
+         "(QABOARD_LLM_PROVIDER, QABOARD_LLM_BASE_URL, QABOARD_LLM_API_KEY, QABOARD_LLM_MODEL). Needs `pip install qaboard\\[wizard]`. "
+         "Default: ask, or no without a terminal.",
+  )] = None,
+  model: Annotated[Optional[str], typer.Option(
+    '--model', show_default=False,
+    help="LLM used by the AI assistant. Default: QABOARD_LLM_MODEL, or ask.",
+  )] = None,
+):
   """
-  Start a QA-Board project: creates qaboard.yaml and a sample entrypoint in qa/.
+  Set up QA-Board for your project, or check and improve its integration, with a wizard and an optional AI assistant.
 
-  Run it at the root of your git repository.
+  In a new project, it creates qaboard.yaml and an entrypoint in qa/. Run it again anytime: it checks the project's
+  health, and you can chat with the AI assistant to call your code, add metrics, visualizations, batches...
+  Nothing is written before you review the changes. With `qa --dryrun wizard`, nothing is written at all.
   """
-  from ..init import qa_init
-  qa_init(ctx)
+  from ..wizard import run_wizard
+  code = run_wizard(dryrun=ctx.obj['dryrun'], assume_yes=yes, ai=ai, model=model)
+  if code:
+    raise typer.Exit(code)
+
+
+@app.command(rich_help_panel=PANEL)
+def init(
+  ctx: typer.Context,
+  yes: Annotated[bool, typer.Option('--yes', '-y', help="Same as `qa wizard --yes`.")] = False,
+  ai: Annotated[Optional[bool], typer.Option('--ai/--no-ai', show_default=False, help="Same as `qa wizard --ai`.")] = None,
+  model: Annotated[Optional[str], typer.Option('--model', show_default=False, help="Same as `qa wizard --model`.")] = None,
+):
+  """
+  Same as `qa wizard`: set up QA-Board for your project.
+  """
+  wizard(ctx, yes=yes, ai=ai, model=model)
 
 
 @app.command(rich_help_panel=PANEL)

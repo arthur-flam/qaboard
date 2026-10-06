@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+# my experiments
+results*
+notes*.txt

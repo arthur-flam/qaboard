@@ -28,7 +28,7 @@ Global options describe *what* you run: the configurations, the label, the platf
 | `qa check-bit-accuracy-manifest` | Checks that outputs are the same as the manifests saved next to the inputs. |
 | `qa optimize` | [Optimizes parameters](auto-optimization): each evaluation is a `qa batch`. |
 | `qa get [VARIABLE]` | Prints the project's variables: commit, storage locations, output directory of a run... |
-| `qa init` | Starts a QA-Board project: creates *qaboard.yaml* and a sample entrypoint. See [project init](project-init). |
+| `qa wizard` | Sets up QA-Board for your project: creates *qaboard.yaml* and an entrypoint in *qa/*, optionally adapted to your code by an AI assistant (Claude, or any OpenAI-compatible API). Run it again to check the project's health and improve the integration. `qa init` is an alias. See [project setup](project-init). |
 | `qa save-artifacts` | Saves the commit's [artifacts](storage/artifacts) (binaries, configs...). |
 
 ## Giving arguments to your code

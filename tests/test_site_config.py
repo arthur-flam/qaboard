@@ -66,7 +66,7 @@ class TestSiteConfig(unittest.TestCase):
 
   def test_init(self):
     out = subprocess.run(
-      [sys.executable, '-m', 'qaboard', 'init'],
+      [sys.executable, '-m', 'qaboard', 'init', '--yes'],
       cwd=self.project,
       env={**os.environ, 'QABOARD_SITE_CONFIG': str(self.site_config), 'QABOARD_HOST': 'localhost:5151'},
       stdout=subprocess.PIPE,

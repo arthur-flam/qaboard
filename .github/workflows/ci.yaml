@@ -33,7 +33,7 @@ jobs:
           python-version: '3.11'
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra wizard
       - name: Lint with flake8
         # stop the build if there are Python syntax errors or undefined names
         run: uv run --no-sync flake8 backend qaboard --count --select=E9,F63,F7,F82 --show-source --statistics

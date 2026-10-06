@@ -56,7 +56,7 @@ export QABOARD_URL=http://my-server:5151
 Without any of them, `qa` uses `http://localhost:5151` and prints a warning.
 
 ## API token
-Some actions need a logged-in user (e.g. starting tuning or "redo" runs from scripts). Create an API token with a `POST` to `/api/v1/user/token/` while logged-in (there is no UI for it yet, e.g. use your browser's dev tools on the web application), and save it as `QA_TOKEN` in the environment, or in a per-user secrets file readable only by you:
+Some actions need a logged-in user (e.g. starting tuning or "redo" runs from scripts). `qa wizard` can log you in and save a token for you. Otherwise, create an API token with a `POST` to `/api/v1/user/token/` while logged-in (there is no UI for it yet, e.g. use your browser's dev tools on the web application), and save it as `QA_TOKEN` in the environment, or in a per-user secrets file readable only by you:
 
 ```yaml title="~/.qaboard/secrets.yaml (chmod 600, or set QA_USER_SECRETS to another path)"
 QA_TOKEN: <your token>

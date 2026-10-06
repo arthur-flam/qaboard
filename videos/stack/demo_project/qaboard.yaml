@@ -1,0 +1,34 @@
+# Small demo project used by `stack.sh seed`: a toy "denoiser" that writes images and metrics, with no dependencies.
+project:
+  name: demo/sample
+  # only used for links in the web app
+  url: https://git.example.com/demo/sample
+  type: git
+  entrypoint: qa/main.py
+  reference_branch: master
+
+inputs:
+  # inputs are paths relative to the project's root
+  database:
+    linux: .
+  globs: '*.json'
+  batches:
+  - qa/batches.yaml
+
+outputs:
+  metrics: qa/metrics.yaml
+  visualizations:
+  - name: Denoised
+    path: output.png
+  - name: Noisy input
+    path: noisy.png
+  - name: Ground truth
+    path: clean.png
+
+runners:
+  local:
+    concurrency: -1
+
+# Where results are saved with --share. The server reads them at the same path.
+storage:
+  linux: /mnt/qaboard

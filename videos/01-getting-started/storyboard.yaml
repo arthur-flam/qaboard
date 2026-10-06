@@ -1,0 +1,296 @@
+# QA-Board · Chapter 1 — From results_final_v3 to a dashboard
+#
+# Noa works on an image denoiser for a camera pipeline. Results live in folders named by mood, metrics in a text
+# file updated by hand, and nobody knows anymore whether the new version is better. Noa sets up QA-Board with
+# `qa wizard`, runs every test image in one command, and sees the results in the browser. The next change looks
+# better on average... and QA-Board shows where it isn't.
+#
+# Regenerate: uv run videos/make.py videos/01-getting-started   (see videos/README.md)
+# Narration lines are what a voice will say, and the captions. Keep them short: one idea per line.
+
+title: "QA-Board · Chapter 1 — From results_final_v3 to a dashboard"
+output: out/01-getting-started.mp4
+chapter: "QA-Board · <b>Chapter 1</b>"
+crossfade: 0.5
+voice:
+  provider: none            # elevenlabs: set voice_id here and ELEVENLABS_API_KEY in the environment
+
+vars:
+  home: /home/noa                                   # real paths on screen: ~/denoiser
+  demo: /home/noa/denoiser
+  venv: "{cache}/venv"
+  server: "http://qaboard.acme.internal"           # what viewers see
+  server_local: "http://localhost:5151"            # what the browser really loads (videos/stack)
+  project: "imaging/denoiser"                      # from the demo repo's git remote
+  batch: "%40noa%7C%20default"                      # `qa --share batch` by noa: "@noa| default"
+  # the image viewers of the web app, by their label
+  output: 'div:has(> div :text("new 400x300")) > div[id^="image-viewer-"]'
+  crops: 'div:has(> div :text("new 972x262")) > div[id^="image-viewer-"]'
+
+# Once, before recording: a fresh demo repository (with Noa's history and messy results folders),
+# a clean QA-Board, and the tools Noa uses.
+prepare:
+  - "test -x {venv}/bin/qa || (uv venv -q -p 3.12 {venv} && uv pip install -q --python {venv}/bin/python -e '{repo}[wizard]' numpy pillow)"
+  - "{videos}/stack/stack.sh reset > /dev/null && {videos}/stack/stack.sh up > /dev/null"
+  - "rm -rf {home} && mkdir -p {home} && python3 {repo}/examples/denoiser/make_history.py {demo} --upto 2 > /dev/null"
+  - "grep -q acme.internal /etc/hosts || echo '127.0.0.1 qaboard.acme.internal llm.acme.internal' >> /etc/hosts"
+
+# The browser: app preferences set before pages load
+browser:
+  local_storage:
+    qaboard.release-notes.last-seen: "2099-12-31"   # no "What's new" popup
+    controls-panel-expanded: "false"
+
+# The terminal Noa uses
+terminal:
+  cols: 100
+  rows: 26
+  ps1: '\[\e[1;38;5;141m\]noa@laptop\[\e[0m\] \[\e[38;5;81m\]~/denoiser\[\e[0m\] $ '
+  prompt: '~/denoiser $'
+  max_idle: 1.2
+
+env:
+  PATH: "{venv}/bin:/usr/local/bin:/usr/bin:/bin"
+  HOME: "{home}"
+  USER: noa
+  LOGNAME: noa
+  QA_NO_CHECK_FOR_UPDATES: "1"
+  GIT_PAGER: cat
+  GIT_AUTHOR_NAME: Noa Levi
+  GIT_AUTHOR_EMAIL: noa@example.com
+  GIT_COMMITTER_NAME: Noa Levi
+  GIT_COMMITTER_EMAIL: noa@example.com
+  QABOARD_SITE_CONFIG: ""
+  # The company's settings, like a site package would provide them
+  QABOARD_LLM_PROVIDER: anthropic
+  QABOARD_LLM_BASE_URL: "https://llm.acme.internal"
+  QABOARD_LLM_VERIFY: "{llm_cert}"
+  QABOARD_LLM_MODEL: claude-opus-5-5
+  QABOARD_LLM_API_KEY: demo-key
+  NO_COLOR: ""
+
+# The AI assistant's side of the conversation in `qa wizard` (a scripted model, see lib/fakellm.py)
+llm:
+  conversation: conversation.yaml
+  tls_hostname: llm.acme.internal
+  listen: 127.0.0.1
+  port: 443
+
+# qaboard.acme.internal (port 80) is the demo QA-Board (videos/stack, port 5151)
+forward:
+  - {from: 80, to: 5151}
+
+scenes:
+  # --- The pain -----------------------------------------------------------------------
+  - id: chat
+    type: chat
+    app: Team chat
+    channel: denoiser
+    topic: camera pipeline, image quality
+    hold: 2.5
+    messages:
+      - {who: Noa, initials: N, color: "#7950f2", time: "10:02", at: 0.6, text: "Pushed the bilateral filter 🎉 edges are <b>so</b> much sharper"}
+      - {who: Dan, initials: D, color: "#1c7ed6", time: "10:04", at: 3.2, text: "Nice! Sharper than the gaussian on what? And the night shots?"}
+      - {who: Noa, initials: N, color: "#7950f2", time: "10:05", at: 6.0, text: "Hmm, let me find the baseline… was it <code>results_final_v2</code>?"}
+      - {who: Maya, initials: M, color: "#e8590c", time: "10:05", at: 8.6, text: "Or <code>results_final_v3_REAL</code> 🙃 can you just post screenshots?"}
+      - {who: Noa, initials: N, color: "#7950f2", time: "10:07", at: 11.6, text: "here, from my laptop 👇", attach: ["{demo}/results_final_v3_REAL/parking_FINAL.png", "{demo}/results_final_v3_REAL/street_bilat.png", "{demo}/results_final_v3_REAL/street_gauss.png"]}
+    narration:
+      - "Monday morning. You pushed a better denoiser. <em>Probably</em> better."
+      - {text: "Better than what? On which images? Nobody really knows.", at: 5.5}
+
+  - id: folders
+    type: terminal
+    title: "noa@laptop: ~/denoiser"
+    cwd: "{demo}"
+    hold: 1.5
+    steps:
+      - run: ls
+      - pause: 1.5
+      - mark: notes
+      - run: cat notes.txt
+      - pause: 3
+      - mark: run
+      - run: python denoise.py data/noisy/night/parking.png --output /tmp/parking.png
+      - pause: 1
+    narration:
+      - "Your results live in folders named by mood."
+      - {text: "Your metrics, in a text file you update by hand.", at: {mark: notes, offset: 0.8}}
+      - {text: "And running everything again, on every image, for every change…", at: {mark: run}}
+      - "Let's be honest: nobody does that."
+
+  - id: promise
+    type: title
+    kicker: QA-Board
+    title: 'What if every commit<br>had its <span class="grad">results page</span>?'
+    subtitle: Inputs, outputs and metrics, side by side, for the whole team.
+    sparkles: true
+    hold: 3
+    narration:
+      - "QA-Board tracks your algorithm's results: every commit, every input, every metric."
+      - "Let's set it up. It takes two minutes."
+
+  # --- Setup with qa wizard ---------------------------------------------------------------
+  - id: wizard
+    type: terminal
+    title: "noa@laptop: ~/denoiser"
+    cwd: "{demo}"
+    max_idle: 1.0
+    hold: 2
+    before:
+      - "pip() { sleep 1.2; echo 'Successfully installed qaboard-1.2.0 pydantic-ai-slim-2.54.0 anthropic-1.11.0'; }"
+    steps:
+      - run: "pip install 'qaboard[wizard]'"
+      - run: qa wizard
+        wait: false
+      - mark: detect
+      - answer: {when: "Right\\?", text: "y"}
+      - answer: {when: "test inputs", text: "data/noisy"}
+      - answer: {when: "identify inputs", text: ""}
+      - mark: server
+      - answer: {when: "QA-Board URL", text: "qaboard.acme.internal"}
+      - answer: {when: "Log in now", text: "n"}
+      - answer: {when: "Save the server settings", text: "y"}
+      - answer: {when: "shared results go", text: ""}
+      - mark: ai
+      - answer: {when: "Let an AI", text: "y"}
+      - answer: {when: "Anything it should know", text: "We judge results with PSNR and SSIM against the clean images"}
+      - mark: assistant
+      - expect: "›"
+      - pause: 4.5
+      - mark: chat
+      - type: "How do I compare the gaussian and bilateral filters?"
+        cps: 22
+      - enter: true
+      - expect: "›"
+      - pause: 4
+      - enter: true
+      - mark: review
+      - expect: "All good"
+      - pause: 2
+      - answer: {when: "\\(w\\) ", text: "w"}
+      - mark: done
+      - expect: "Try qa run"
+      - pause: 3
+      - answer: {when: "now\\?", text: "y"}
+      - expect: "It ran"
+      - pause: 3
+    after:
+      - "echo @commit_wizard=$(git rev-parse HEAD)"
+    narration:
+      - {text: "One command: <em>qa wizard</em>.", at: 1}
+      - {text: "It looks at your project: the git remote, the languages, where your test images are.", at: {mark: detect, offset: 0.5}}
+      - {text: "It finds your QA-Board server…", at: {mark: server}}
+      - {text: "…and an AI assistant reads your code to call it: here, Claude, via the company gateway.", at: {mark: ai}}
+      - {text: "It explores, writes the integration, and tells you what it did.", at: {mark: assistant, offset: 2}}
+      - {text: "You can talk to it, like to a colleague.", at: {mark: chat}}
+      - {text: "You review everything once. Nothing is written before you say so.", at: {mark: review}}
+      - {text: "And it runs your code, for real, on one image.", at: {mark: done, offset: 2}}
+
+  - id: batch
+    type: terminal
+    title: "noa@laptop: ~/denoiser"
+    cwd: "{demo}"
+    hold: 2
+    steps:
+      - run: git add qa* .gitignore && git commit -qm "Track results with QA-Board"
+      - run: qa --share batch all
+    after:
+      - "echo @commit1=$(git rev-parse HEAD)"
+      - "echo @commit1_short=$(git rev-parse --short=10 HEAD)"
+    narration:
+      - "Now every test image, in one command."
+      - "With --share, results go to QA-Board, for the whole team."
+
+  # --- Results in the browser ----------------------------------------------------------------
+  - id: results
+    type: browser
+    # the reference is itself: the next commit doesn't exist yet in the story
+    url: "{server_local}/{project}/commit/{commit1}?reference={commit1}&batch={batch}&batch_ref={batch}&selected_views=summary"
+    display_url: "qaboard.acme.internal/{project}/commit/{commit1_short}"
+    zoom: 1.25
+    hold: 1.5
+    actions:
+      - pause: 1.5
+      - move: "text=PSNR"
+      - pause: 1.5
+      - click: 'a:has-text("Metrics Table")'
+      - pause: 3
+      - click: 'a:has-text("Visualizations")'
+      - wait: '[id^="image-viewer-"]'
+      - pause: 1
+      - move: 'input[placeholder="filter new outputs"]'
+      - type: {into: 'input[placeholder="filter new outputs"]', text: "fabric"}
+      - pause: 1.5
+      # the viewers: output, zoomed crops (noisy | output | ground truth), error; new and reference side by side
+      - scroll: {to: '{crops}'}
+      - focus: {at: '{crops}', scale: 2.0}
+      - pause: 4.5
+      - unfocus: true
+    narration:
+      - "Every input, its metrics, and the images your code wrote."
+      - {text: "Here, the fabric test chart: crisp, like it should be.", at: 12}
+
+  # --- The next change ----------------------------------------------------------------------
+  - id: change
+    type: terminal
+    title: "noa@laptop: ~/denoiser"
+    cwd: "{demo}"
+    hold: 1.5
+    before:
+      - "python3 {repo}/examples/denoiser/make_history.py {demo} --apply-next --no-commit > /dev/null"
+    steps:
+      - run: git diff
+      - pause: 2.5
+      - run: git commit -qam "Stronger smoothing for night shots"
+      - run: qa --share batch all
+    after:
+      - "echo @commit2=$(git rev-parse HEAD)"
+      - "echo @commit2_short=$(git rev-parse --short=10 HEAD)"
+    narration:
+      - "Back to work. Night shots are still noisy? Smooth a bit more."
+      - "Commit, and run the batch. Or let your CI do it."
+
+  - id: compare
+    type: browser
+    url: "{server_local}/{project}/commit/{commit2}?reference={commit1}&batch={batch}&batch_ref={batch}&selected_views=table-compare"
+    display_url: "qaboard.acme.internal/{project}/commit/{commit2_short}?reference={commit1_short}"
+    zoom: 1.25
+    hold: 1.5
+    actions:
+      - pause: 2
+      - focus: {at: "text=night/neon.png", scale: 1.35}
+      - pause: 1
+      - move: "text=night/parking.png"
+      - pause: 2.5
+      - move: "text=texture/fabric.png"
+      - pause: 2.5
+      - unfocus: true
+      - click: 'a:has-text("Visualizations")'
+      - wait: '[id^="image-viewer-"]'
+      - move: 'input[placeholder="filter new outputs"]'
+      - type: {into: 'input[placeholder="filter new outputs"]', text: "fabric"}
+      - pause: 1.5
+      # new | reference, side by side (the viewers are 1000px wide, see outputs.style in qaboard.yaml)
+      - scroll: {to: '{output}', block: end}   # centered, the "new | reference" labels would be under the app's header
+      - move: '{output}'
+      - focus: {at: '{output}', dx: 250, dy: -20, scale: 1.3}
+      - pause: 5.5
+      - unfocus: true
+    narration:
+      - "QA-Board compares it with the previous version."
+      - {text: "Night shots: much better. But look at the fabric.", at: 4.5}
+      - {text: "The texture is gone. You would have heard it from a customer.", at: 18.5}
+      - {text: "Now you know, before merging.", at: 23.5}
+
+  # --- Outro --------------------------------------------------------------------------------
+  - id: outro
+    type: title
+    kicker: Try it on your project
+    title: '<span class="grad">qa wizard</span>'
+    subtitle: "<code>pip install 'qaboard[wizard]'</code>"
+    next: "Next, <b>Chapter 2</b>: tuning parameters from your browser"
+    sparkles: true
+    hold: 3
+    narration:
+      - "That's QA-Board. Run qa wizard in your project."
+      - "Next time: tuning your algorithm's parameters, right from the browser."

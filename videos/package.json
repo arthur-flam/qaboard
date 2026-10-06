@@ -1,0 +1,11 @@
+{
+  "name": "qaboard-videos",
+  "private": true,
+  "description": "Assets for the scripted QA-Board videos: the stage page renders title cards, terminal replays and browser scenes",
+  "dependencies": {
+    "@fontsource/inter": "^5.1.0",
+    "@fontsource/jetbrains-mono": "^5.1.0",
+    "@xterm/addon-unicode11": "^0.8.0",
+    "@xterm/xterm": "^5.5.0"
+  }
+}

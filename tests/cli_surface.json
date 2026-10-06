@@ -426,7 +426,42 @@
     },
     "init": {
       "context_settings": {},
-      "params": {}
+      "params": {
+        "ai": {
+          "envvar": "QA_INIT_AI",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--ai"
+          ],
+          "required": false
+        },
+        "model": {
+          "envvar": "QA_INIT_MODEL",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--model"
+          ],
+          "required": false
+        },
+        "yes": {
+          "envvar": "QA_INIT_YES",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--yes",
+            "-y"
+          ],
+          "required": false
+        }
+      }
     },
     "optimize": {
       "context_settings": {
@@ -715,6 +750,45 @@
           "nargs": 1,
           "opts": [
             "--output-id"
+          ],
+          "required": false
+        }
+      }
+    },
+    "wizard": {
+      "context_settings": {},
+      "params": {
+        "ai": {
+          "envvar": "QA_WIZARD_AI",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--ai"
+          ],
+          "required": false
+        },
+        "model": {
+          "envvar": "QA_WIZARD_MODEL",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--model"
+          ],
+          "required": false
+        },
+        "yes": {
+          "envvar": "QA_WIZARD_YES",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--yes",
+            "-y"
           ],
           "required": false
         }

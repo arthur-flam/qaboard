@@ -149,7 +149,7 @@ class TestQaCli(unittest.TestCase):
       assert not os.system('git remote add origin git@gitlab-srv:common-infrastructure/qaboard.git')
       # assert not os.system('git remote add origin git@github.com:Samsung/qaboard.git')
       # assert not os.system('git remote add origin https://github.com/Samsung/qaboard.git')
-      assert not os.system('qa init')
+      assert not os.system('qa init --yes')
       assert not os.system('qa get project')
     os.chdir(prev)
 
