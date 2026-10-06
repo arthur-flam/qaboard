@@ -33,7 +33,7 @@
       "path": "qaboard.yaml",
       "why": "Show the output, a zoom, the error heatmap, and (hidden by default) the input and ground truth",
       "old_text": "  visualizations:\n  # - name: My image\n  #   path: output.jpg\n",
-      "new_text": "  visualizations:\n  - name: Output\n    path: output.png\n  - name: Zoom (noisy | output | ground truth)\n    path: zoom.png\n  - name: Error vs ground truth\n    path: error.png\n  - name: Noisy input\n    path: input.png\n    default_hidden: true\n  - name: Ground truth\n    path: ground_truth.png\n    default_hidden: true\n"
+      "new_text": "  # Bigger image viewers (CSS for the outputs' cards)\n  style:\n    width: 1000px\n  visualizations:\n  - name: Output\n    path: output.png\n  - name: Zoom (noisy | output | ground truth)\n    path: zoom.png\n  - name: Error vs ground truth\n    path: error.png\n  - name: Noisy input\n    path: input.png\n    default_hidden: true\n  - name: Ground truth\n    path: ground_truth.png\n    default_hidden: true\n"
     },
     {
       "tool": "write_file",

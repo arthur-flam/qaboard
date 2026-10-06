@@ -63,6 +63,9 @@ outputs:
 
   # To learn more about how to describe how results should be visualized:
   # http://qa-docs/docs/visualizations
+  # Bigger image viewers (CSS for the outputs' cards)
+  style:
+    width: 1000px
   visualizations:
   - name: Output
     path: output.png

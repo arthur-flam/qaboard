@@ -103,7 +103,8 @@ html, body {
   color: #c5cbe0; font-size: 18px; display: flex; align-items: center; padding: 0 18px; gap: 10px;
 }
 .browser .url .lock { color: var(--green); }
-.browser iframe { width: 100%; height: calc(100% - 52px); border: 0; display: block; background: #fff; }
+.browser .viewport { position: relative; height: calc(100% - 52px); overflow: hidden; }
+.browser iframe { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; display: block; background: #fff; transform-origin: 0 0; }
 
 /* --- Team chat (the pain) --------------------------------------------- */
 .chat { width: 1360px; height: 830px; display: flex; flex-direction: column; }
@@ -137,3 +138,7 @@ html, body {
 /* --- Outro ------------------------------------------------------------ */
 .next { margin-top: 64px; font-size: 30px; color: var(--muted); }
 .next b { color: var(--ink); }
+
+/* the camera is zoomed on the window: the chapter label would sit on top of it */
+#chapter { transition: opacity .6s; }
+body.zoomed #chapter { opacity: 0 !important; }

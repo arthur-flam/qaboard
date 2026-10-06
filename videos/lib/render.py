@@ -10,7 +10,8 @@ Renders scenes to video clips with Playwright, on the stage page (lib/stage), th
       - click: "text=night/parking"       # moves the cursor there, clicks for real
       - move: ".bp6-card"                 # just moves the cursor
       - scroll: {to: ".metrics"}          # or {by: 600}
-      - focus: {on: "img", scale: 1.8}    # zooms the camera on a part of the window
+      - move: {at: ".card", dy: -40}      # offsets in the app's pixels
+      - focus: {at: "img", scale: 1.8}    # zooms the camera on a part of the window (not `on:`, YAML reads it as true)
       - unfocus: true
       - pause: 1.5
       - until: 12                         # waits until the scene's clock reaches 12 s (narration)
@@ -99,11 +100,20 @@ class Driver:
   def locator(self, selector: str):
     return self.frame.locator(selector).first
 
-  def center(self, selector: str) -> Tuple[float, float]:
+  def center(self, selector: str, natural: bool = False, dx: float = 0, dy: float = 0) -> Tuple[float, float]:
+    """Where an element of the app is on the stage, with the camera (focus) applied unless `natural`."""
     locator = self.locator(selector)
     locator.wait_for(state='visible')
-    box = locator.bounding_box()
-    return box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+    locator.scroll_into_view_if_needed()
+    x, y = locator.evaluate("node => { const r = node.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] }")
+    return self.page.evaluate("([x, y, natural]) => stage.toStage(x, y, natural)", [x + dx, y + dy, natural])
+
+  @staticmethod
+  def target(value) -> Tuple[str, float, float]:
+    """A selector, or {at: selector, dx: .., dy: ..} (offsets in app pixels)."""
+    if isinstance(value, dict):
+      return value['at'], float(value.get('dx', 0)), float(value.get('dy', 0))
+    return value, 0.0, 0.0
 
   def run(self, actions: List[Dict[str, Any]]):
     for action in actions:
@@ -120,20 +130,23 @@ class Driver:
   def do_wait(self, selector, action):
     self.locator(selector).wait_for(state='visible')
 
-  def do_move(self, selector, action):
-    x, y = self.center(selector)
+  def do_move(self, value, action):
+    selector, dx, dy = self.target(value)
+    x, y = self.center(selector, dx=dx, dy=dy)
     self.page.evaluate("([x, y, ms]) => stage.cursorTo(x, y, ms)", [x, y, action.get('ms', 900)])
 
-  def do_click(self, selector, action):
-    x, y = self.center(selector)
+  def do_click(self, value, action):
+    selector, dx, dy = self.target(value)
+    x, y = self.center(selector, dx=dx, dy=dy)
     self.page.evaluate("([x, y, ms]) => stage.cursorTo(x, y, ms)", [x, y, action.get('ms', 900)])
     self.page.evaluate("([x, y]) => stage.ripple(x, y)", [x, y])
-    self.locator(selector).click()
+    # on the element itself: Playwright's hit-testing doesn't account for the zoomed iframe
+    self.locator(selector).evaluate("node => node.click()")
     self.frame.wait_for_load_state('networkidle')
 
-  def do_hover(self, selector, action):
-    self.do_move(selector, action)
-    self.locator(selector).hover()
+  def do_hover(self, value, action):
+    self.do_move(value, action)
+    self.locator(self.target(value)[0]).dispatch_event('mouseover')
 
   def do_scroll(self, value, action):
     if 'to' in value:
@@ -143,10 +156,8 @@ class Driver:
     self.page.wait_for_timeout(int(value.get('ms', 1200)))
 
   def do_focus(self, value, action):
-    if isinstance(value, dict) and 'x' in value:
-      x, y = value['x'], value['y']
-    else:
-      x, y = self.center(value['on'] if isinstance(value, dict) else value)
+    selector, dx, dy = self.target(value)
+    x, y = self.center(selector, natural=True, dx=dx, dy=dy)
     scale = (value.get('scale') if isinstance(value, dict) else None) or action.get('scale', 1.6)
     self.page.evaluate("([x, y, scale, ms]) => stage.focus(x, y, scale, ms)", [x, y, scale, action.get('ms', 1100)])
 

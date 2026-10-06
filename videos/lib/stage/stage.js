@@ -103,8 +103,22 @@
     },
 
     // --- Browser ------------------------------------------------------------
+    // Coordinates: the driver measures elements in the app (the iframe's own pixels) and converts them here to
+    // stage pixels, with the app's zoom and the camera (focus) applied, or not ("natural": what focus expects).
     setUrl(url) { $('.url .text').textContent = url; return true; },
-    frameBox() { const r = $('iframe').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
+    _zoom: null,
+
+    toStage(x, y, natural = false) {
+      const frame = $('iframe'), z = this.scene.zoom || 1;
+      const origin = offset(frame);
+      let px = origin.x + x * z, py = origin.y + y * z;
+      if (!natural && this._zoom) {
+        const { scale, dx, dy, cx, cy } = this._zoom;
+        px = cx + (px - cx) * scale + dx;
+        py = cy + (py - cy) * scale + dy;
+      }
+      return [px, py];
+    },
 
     cursorTo(x, y, ms = 900) {
       const c = $('#cursor');
@@ -122,28 +136,31 @@
       return true;
     },
 
-    // Zooms the window so that a point (page coordinates, before zoom) comes to the center
+    // Zooms the camera on a point (stage pixels, without zoom), to the middle of the space above the captions.
+    // The window keeps covering the screen down to the captions: the point gets as close as the window's edges allow.
     focus(x, y, scale = 1.6, ms = 1100) {
       const w = $('.window');
+      const { x: left, y: top } = offset(w);
+      const width = w.offsetWidth, height = w.offsetHeight;
+      const cx = left + width / 2, cy = top + height / 2;
+      const clamp = (d, c, size, lo, hi) => {
+        const half = size * scale / 2;
+        if (2 * half <= hi - lo) return (lo + hi) / 2 - c;
+        return Math.min(lo - c + half, Math.max(hi - c - half, d));
+      };
+      const dx = clamp((960 - cx) - (x - cx) * scale, cx, width, 0, 1920);
+      const dy = clamp((470 - cy) - (y - cy) * scale, cy, height, 0, 940);
       w.style.transitionDuration = `${ms}ms`;
-      const box = w.getBoundingClientRect();
-      // undo the current transform to get the window's natural position
-      const natural = { x: box.x, y: box.y, width: box.width, height: box.height };
-      if (this._zoom) {
-        natural.width /= this._zoom.scale; natural.height /= this._zoom.scale;
-        natural.x = 960 - natural.width / 2; natural.y = 540 - natural.height / 2;
-      }
-      const ox = x - natural.x, oy = y - natural.y;
-      const dx = (natural.width / 2 - ox) * scale, dy = (natural.height / 2 - oy) * scale;
-      w.style.transformOrigin = '50% 50%';
       w.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
-      this._zoom = { scale };
+      document.body.classList.add('zoomed');
+      this._zoom = { scale, dx, dy, cx, cy };
       return sleep(ms).then(() => true);
     },
     unfocus(ms = 900) {
       const w = $('.window');
       w.style.transitionDuration = `${ms}ms`;
       w.style.transform = '';
+      document.body.classList.remove('zoomed');
       this._zoom = null;
       return sleep(ms).then(() => true);
     },
@@ -208,10 +225,25 @@
   }
 
   function buildBrowser(root, s) {
-    root.appendChild(el('div', { class: 'window browser enter' }, `
+    const win = el('div', { class: 'window browser enter' }, `
       <div class="bar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
         <div class="url"><span class="lock">●</span><span class="text">${s.display_url || s.url || ''}</span></div></div>
-      <iframe src="${s.url || 'about:blank'}" name="app"></iframe>`));
+      <div class="viewport"><iframe src="${s.url || 'about:blank'}" name="app"></iframe></div>`);
+    // zoom: the app renders in a smaller viewport, scaled up, so that it reads well in a video
+    const z = s.zoom || 1, frame = $('iframe', win);
+    frame.style.width = `${100 / z}%`;
+    frame.style.height = `${100 / z}%`;
+    frame.style.transform = `scale(${z})`;
+    // the entrance animation would otherwise keep owning the window's transform (the camera)
+    win.addEventListener('animationend', () => win.classList.remove('enter'), { once: true });
+    root.appendChild(win);
+  }
+
+  // Position in the page without CSS transforms (the camera): where focus and the cursor start from
+  function offset(node) {
+    let x = 0, y = 0;
+    for (; node; node = node.offsetParent) { x += node.offsetLeft; y += node.offsetTop; }
+    return { x, y };
   }
 
   // An image file shows as a thumbnail with its file name, anything else as a file chip

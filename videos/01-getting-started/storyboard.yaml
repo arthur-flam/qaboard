@@ -23,6 +23,9 @@ vars:
   server_local: "http://localhost:5151"            # what the browser really loads (videos/stack)
   project: "imaging/denoiser"                      # from the demo repo's git remote
   batch: "%40noa%7C%20default"                      # `qa --share batch` by noa: "@noa| default"
+  # the image viewers of the web app, by their label
+  output: 'div:has(> div :text("new 400x300")) > div[id^="image-viewer-"]'
+  crops: 'div:has(> div :text("new 972x262")) > div[id^="image-viewer-"]'
 
 # Once, before recording: a fresh demo repository (with Noa's history and messy results folders),
 # a clean QA-Board, and the tools Noa uses.
@@ -189,7 +192,7 @@ scenes:
     cwd: "{demo}"
     hold: 2
     steps:
-      - run: git add qaboard.yaml qa .gitignore && git commit -qm "Track results with QA-Board"
+      - run: git add qa* .gitignore && git commit -qm "Track results with QA-Board"
       - run: qa --share batch all
     after:
       - "echo @commit1=$(git rev-parse HEAD)"
@@ -201,8 +204,10 @@ scenes:
   # --- Results in the browser ----------------------------------------------------------------
   - id: results
     type: browser
-    url: "{server_local}/{project}/commit/{commit1}?batch={batch}&batch_ref={batch}&selected_views=summary"
+    # the reference is itself: the next commit doesn't exist yet in the story
+    url: "{server_local}/{project}/commit/{commit1}?reference={commit1}&batch={batch}&batch_ref={batch}&selected_views=summary"
     display_url: "qaboard.acme.internal/{project}/commit/{commit1_short}"
+    zoom: 1.25
     hold: 1.5
     actions:
       - pause: 1.5
@@ -211,17 +216,19 @@ scenes:
       - click: 'a:has-text("Metrics Table")'
       - pause: 3
       - click: 'a:has-text("Visualizations")'
-      - wait: ".output-card"
-      - pause: 1.5
+      - wait: '[id^="image-viewer-"]'
+      - pause: 1
       - move: 'input[placeholder="filter new outputs"]'
       - type: {into: 'input[placeholder="filter new outputs"]', text: "fabric"}
-      - pause: 2.5
-      - focus: {on: ".output-card", scale: 1.45}
-      - pause: 4
+      - pause: 1.5
+      # the viewers: output, zoomed crops (noisy | output | ground truth), error; new and reference side by side
+      - scroll: {to: '{crops}'}
+      - focus: {at: '{crops}', scale: 2.0}
+      - pause: 4.5
       - unfocus: true
     narration:
       - "Every input, its metrics, and the images your code wrote."
-      - "Here, the fabric test chart: crisp, like it should be."
+      - {text: "Here, the fabric test chart: crisp, like it should be.", at: 12}
 
   # --- The next change ----------------------------------------------------------------------
   - id: change
@@ -247,10 +254,11 @@ scenes:
     type: browser
     url: "{server_local}/{project}/commit/{commit2}?reference={commit1}&batch={batch}&batch_ref={batch}&selected_views=table-compare"
     display_url: "qaboard.acme.internal/{project}/commit/{commit2_short}?reference={commit1_short}"
+    zoom: 1.25
     hold: 1.5
     actions:
       - pause: 2
-      - focus: {on: "text=Improvement report", scale: 1.35}
+      - focus: {at: "text=night/neon.png", scale: 1.35}
       - pause: 1
       - move: "text=night/parking.png"
       - pause: 2.5
@@ -258,12 +266,14 @@ scenes:
       - pause: 2.5
       - unfocus: true
       - click: 'a:has-text("Visualizations")'
-      - wait: ".output-card"
+      - wait: '[id^="image-viewer-"]'
       - move: 'input[placeholder="filter new outputs"]'
       - type: {into: 'input[placeholder="filter new outputs"]', text: "fabric"}
-      - pause: 2.5
-      - focus: {on: ".output-card", scale: 1.45}
-      - pause: 5
+      - pause: 1.5
+      # new | reference, side by side (the viewers are 1000px wide, see outputs.style in qaboard.yaml)
+      - scroll: {to: '{output}'}
+      - focus: {at: '{output}', dx: 250, scale: 1.3}
+      - pause: 5.5
       - unfocus: true
     narration:
       - "QA-Board compares it with the previous version."
