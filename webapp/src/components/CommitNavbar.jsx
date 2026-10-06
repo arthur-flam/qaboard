@@ -32,6 +32,7 @@ import { shortId, linux_to_windows } from "../utils";
 import { fetchCommit } from "../actions/commit";
 import { updateSelected } from "../actions/selected";
 import { toaster } from "../toaster"
+import { errorMessage, isArtifactsError } from "../utils/errors"
 
 
 class CommitMessage extends React.PureComponent {
@@ -127,7 +128,7 @@ class CommitNavbar extends React.Component {
       })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
       });
   }
 
@@ -145,7 +146,7 @@ class CommitNavbar extends React.Component {
       })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
       });
   }
 
@@ -381,7 +382,7 @@ class CommitNavbar extends React.Component {
               text="Redo Deleted Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo of deleted outputs requested."});
@@ -393,7 +394,7 @@ class CommitNavbar extends React.Component {
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
                   });
               }}
             />}
@@ -402,7 +403,7 @@ class CommitNavbar extends React.Component {
               text="Redo Failed Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo of failed outputs requested."});
@@ -414,7 +415,7 @@ class CommitNavbar extends React.Component {
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
                   });
               }}
             />}
@@ -423,7 +424,7 @@ class CommitNavbar extends React.Component {
               text="Redo All Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo requested."});
@@ -438,7 +439,7 @@ class CommitNavbar extends React.Component {
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
                   });
               }}
             />

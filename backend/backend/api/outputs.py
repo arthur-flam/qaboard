@@ -11,6 +11,7 @@ from qaboard.api import dir_to_url
 from backend import app, db_session
 from ..models import TestInput, CiCommit, Output
 from ..storage import check_storage_path, UnsafePathError
+from ..artifacts import ArtifactsUnavailable
 from .auth import login_required
 
 
@@ -84,8 +85,14 @@ def output_redo(output_id):
     return jsonify({"error": f"Cannot find output {output_id}"}), 400
   try:
     success = output.redo(user=g.user['user_name'])
+  except ArtifactsUnavailable as e:
+    db_session.add(output.batch.ci_commit)
+    db_session.commit()
+    return jsonify(e.to_dict()), 409
   except Exception as e:
     return jsonify({"error": f"{e}"}), 500
+  db_session.add(output.batch.ci_commit)
+  db_session.commit()
   if success:
     return '{"status": "OK"}'
   else:

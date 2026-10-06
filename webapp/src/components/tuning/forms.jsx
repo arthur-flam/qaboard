@@ -27,6 +27,7 @@ import {
   Tabs,
 } from "@blueprintjs/core";
 import { toaster } from "../../toaster"
+import { errorMessage, isArtifactsError } from "../../utils/errors"
 
 
 import templates from './templates'
@@ -329,6 +330,7 @@ class TuningForm extends Component {
   componentDidMount() {
     const { selected_group } = this.state;
     if (selected_group) this.getGroupInfo(selected_group);
+    this.scheduleCheck();
 
     // TODO: remove at some point, or expose via tuning.runners.lsf.forbidden_users...
     if (this.props.user === 'ispq') {
@@ -341,11 +343,69 @@ class TuningForm extends Component {
     }
   }
 
-  componentDidUpdate(prevProps) {
+  componentDidUpdate(prevProps, prevState) {
     const { selected_group } = this.state;
     const has_commit = this.props.commit !== undefined && this.props.commit !== null;
     let updated_commit = has_commit && (prevProps.commit === null || prevProps.commit === undefined || prevProps.commit.id !== this.props.commit.id);
     if (updated_commit && selected_group) this.getGroupInfo(selected_group);
+    const checked_fields = ['experiment_name', 'selected_group', 'platform', 'search_type', 'search_options', 'parameter_search', 'parameter_search_auto']
+    if (updated_commit || checked_fields.some(f => prevState[f] !== this.state[f])) this.scheduleCheck();
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.check_timeout)
+  }
+
+  // The batch's settings, as sent to the server
+  request = () => {
+    const { project, available_tests_files } = this.props;
+    const { experiment_name, platform, android_device, selected_group, overwrite, user } = this.state;
+    const { parameter_search, parameter_search_auto, search_type, search_options } = this.state;
+    let combinations = []
+    try {
+      combinations = search_type === 'optimize' ? parameter_search_auto : eval_combinations(parameter_search).combinations
+    } catch {
+      combinations = undefined
+    }
+    return {
+      project,
+      batch_label: experiment_name,
+      platform,
+      configuration: 'xxxxxxxxx',
+      tuning_search: {
+        search_type,
+        search_options: search_type!=='grid' ? search_options : {},
+        parameter_search: combinations,
+      },
+      selected_group,
+      groups: Object.values(available_tests_files ?? {}),
+      user,
+      android_device,
+      overwrite,
+    }
+  }
+
+  // Asks the server what would go wrong if we started now (missing artifacts, unknown batch...)
+  scheduleCheck = () => {
+    clearTimeout(this.check_timeout)
+    this.check_timeout = setTimeout(this.check, 500)
+  }
+
+  check = () => {
+    const { project, commit } = this.props;
+    if (!commit?.id) return;
+    const check_id = (this.check_id ?? 0) + 1
+    this.check_id = check_id
+    post(`/api/v1/commit/${commit.id}/batch/check?project=${project}`, this.request())
+      .then(response => {
+        if (this.check_id !== check_id) return; // a newer check was sent
+        this.setState({check: {errors: response.data.errors ?? [], warnings: response.data.warnings ?? []}})
+      })
+      .catch(error => {
+        if (this.check_id !== check_id) return;
+        // we don't block users if the check itself fails, the server checks again when they start
+        this.setState({check: {errors: [], warnings: [`Could not check the batch settings: ${errorMessage(error)}`]}})
+      })
   }
 
   getGroupInfo(group) {
@@ -484,37 +544,13 @@ class TuningForm extends Component {
   };
 
   onSubmit = () => {
-    const { project, commit, dispatch, available_tests_files } = this.props;
-    const {
-      experiment_name,
-      platform,
-      android_device,
-      selected_group,
-      overwrite,
-      user
-    } = this.state;
-    const { parameter_search, parameter_search_auto, search_type, search_options } = this.state;
+    const { project, commit, dispatch } = this.props;
     this.setState({ submitted: true });
     toaster.show({
       message: "Sent!",
       intent: Intent.SUCCESS
     });
-    post(`/api/v1/commit/${commit.id}/batch?project=${project}`, {
-      project,
-      batch_label: experiment_name,
-      platform,
-      configuration: 'xxxxxxxxx',
-      tuning_search: {
-        search_type,
-        search_options: search_type!=='grid' ? search_options : {},
-        parameter_search: search_type==='optimize' ? parameter_search_auto : eval_combinations(parameter_search).combinations,
-      },
-      selected_group,
-      groups: Object.values(available_tests_files),
-      user,
-      android_device,
-      overwrite,
-    })
+    post(`/api/v1/commit/${commit.id}/batch?project=${project}`, this.request())
       .then(() => {
         this.setState({ submitted: false });
         toaster.show({
@@ -532,12 +568,16 @@ class TuningForm extends Component {
         this.setState({ submitted: false });
         // The batch's page tells users why, and shows the logs
         const submission = error.response?.data?.submission
+        const errors = error.response?.data?.errors
+        if (Array.isArray(errors)) {
+          this.setState({check: {errors, warnings: error.response.data.warnings ?? []}})
+        }
         toaster.show({
           message: submission
             ? "The batch failed to start. Select it to see why, and its logs."
-            : `Something went wrong: ${error.response?.data?.error ?? error.message}`,
-          intent: Intent.DANGER,
-          timeout: 10000,
+            : isArtifactsError(error) ? errorMessage(error) : `The batch did not start: ${errorMessage(error)}`,
+          intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER,
+          timeout: 15000,
         });
         dispatch(fetchCommit({project, id: commit.id}))
       });
@@ -549,6 +589,8 @@ class TuningForm extends Component {
     const { experiment_name, selected_group, selected_group_info, error } = this.state;
     const { user, platform, android_device } = this.state;
     const { tests, message } = selected_group_info;
+    const check_errors = this.state.check?.errors ?? []
+    const check_warnings = this.state.check?.warnings ?? []
     const { combinations, language } = this.state
     let total_runs = combinations * tests.length;
     let time_intent =
@@ -657,6 +699,9 @@ class TuningForm extends Component {
       {!!message && <Callout intent={Intent.DANGER} title="Tuning may not work" icon="warning-sign" style={{marginBottom: '15px'}}>
         <span dangerouslySetInnerHTML={{__html: message}}></span>
       </Callout>}
+      {check_warnings.length > 0 && <Callout intent={Intent.WARNING} title="Before you start" icon="warning-sign" style={{marginBottom: '15px'}} data-testid="tuning-check-warnings">
+        <ul className={Classes.LIST}>{check_warnings.map(w => <li key={w}>{w}</li>)}</ul>
+      </Callout>}
       <FormGroup
         helperText={!experiment_name ? "(required)" : "Tip: You can add runs to an existing experiment"}
         label={`Experiment name:`}
@@ -702,7 +747,7 @@ class TuningForm extends Component {
               this.props.dispatch(updateSelected(this.props.project, { selected_views: 'groups' }))
             }}>Available Tests</Tag>.
             </p>
-          {error && <p><Tag icon='warning-sign' intent={Intent.DANGER}>{error.response?.data?.error ?? JSON.stringify(error)}</Tag></p>}
+          {error && <p><Tag icon='warning-sign' intent={Intent.DANGER}>{typeof error === 'string' ? error : errorMessage(error)}</Tag></p>}
           {this.state.selected_group_info_loading && <Icon icon="time"/>}
         </>}
         labelFor="selected-group"
@@ -766,10 +811,14 @@ class TuningForm extends Component {
                           : (this.state.experiment_name.length === 0 ? 'Please give a name to the tuning experiment (the input is above)' : (selected_group_info.tests.length === 0 ? "No inputs found in the batch you asked to use" : undefined))}
         intent={(!user || this.state.experiment_name.length === 0 || !total_runs) ? Intent.DANGER : undefined}
       >
+      {check_errors.length > 0 && <Callout intent={Intent.DANGER} title="Fix this to start" icon="error" style={{marginBottom: '10px'}} data-testid="tuning-check-errors">
+        <ul className={Classes.LIST}>{check_errors.map(e => <li key={e}>{e}</li>)}</ul>
+      </Callout>}
       <Button
         onClick={this.onSubmit}
         disabled={
           this.state.submitted ||
+          check_errors.length > 0 ||
           !user ||
           this.state.experiment_name.length === 0 ||
           (!total_runs && search_type !== "optimize") ||

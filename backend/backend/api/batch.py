@@ -6,6 +6,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from backend import app, db_session
 from ..models import CiCommit, Batch
 from ..storage import check_storage_path, UnsafePathError
+from ..artifacts import ArtifactsUnavailable
 from .export_to_folder import filter_outputs
 from .auth import login_required
 
@@ -132,15 +133,23 @@ def redo_batch():
   try:
     batch = Batch.query.filter(Batch.id == data['id']).one()
   except:
-    return f"404 ERROR:\n Not found", 404
+    return jsonify({"error": "Batch not found"}), 404
   try:
     success = batch.redo(
       user=g.user['user_name'],
       only_failed=data.get('only_failed', False),
       only_deleted=data.get('only_deleted', False),
     )
+  except ArtifactsUnavailable as e:
+    # we remember that the artifacts are missing, and that we asked to recreate them
+    db_session.add(batch.ci_commit)
+    db_session.commit()
+    return jsonify(e.to_dict()), 409
   except Exception as e:
     return jsonify({"error": f"{e}"}), 500
+  # the artifacts may have been restored
+  db_session.add(batch.ci_commit)
+  db_session.commit()
   if success:
     return '{"status": "OK"}'
   else:

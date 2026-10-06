@@ -20,6 +20,7 @@ import {
 import { fetchCommit } from "../actions/commit";
 import { linux_to_windows } from '../utils'
 import { toaster } from "../toaster"
+import { errorMessage, isArtifactsError } from "../utils/errors"
 
 
 const on_copy = (text, format = 'config') => {
@@ -316,7 +317,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
@@ -338,7 +339,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
@@ -360,7 +361,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
@@ -382,7 +383,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
@@ -503,7 +504,7 @@ class OutputTags extends React.Component {
                 })
                 .catch(error => {
                   this.setState({waiting: false})
-                  const error_str = error.response?.data?.error ?? JSON.stringify(error)
+                  const error_str = errorMessage(error)
                   if (error.message == "Network Error") {
                     const help_text = "Sorry we could not connect to CDEWebService. Please start WebCDE.exe (download from \\\\netapp\\Joint\\WebCDE\\WebCDE_Setup.exe)"
                     toaster.show({

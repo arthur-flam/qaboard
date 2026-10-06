@@ -100,7 +100,7 @@ QA-Board can connect to external authentifications systems (LDAP, SAML). If need
 
 | ENV Variable           | Default | Usage                                                |
 -------------------------|-------- |------------------------------------------------------|
-| `GITLAB_ACCESS_TOKEN`  | _none_  | Optional for some extra features. Get it with a `read_repository` scope at https://$gitlab-server/profile/personal_access_tokens |
+| `GITLAB_ACCESS_TOKEN`  | _none_  | Optional for some extra features. Playing or retrying GitlabCI jobs (integrations, `recreate_artifacts`) needs the `api` scope, otherwise `read_repository` is enough. Get it at https://$gitlab-server/profile/personal_access_tokens |
 | `SECRET_KEY`           | _generated_ | Signs the sessions. If unset, a key is generated once and saved in the backend's data volume. With several hosts/kubernetes, set the same value everywhere. |
 | `GITLAB_HOST`          | *https://gitlab.com* | e.g. *https://gitlab.com* or *http://my-gitlab-srv/*. Also used for git links in the UI |
 | `QABOARD_GITLAB_HOSTS` | _none_  | Comma-separated extra gitlab hostnames the backend may send `GITLAB_ACCESS_TOKEN` to |

@@ -208,18 +208,17 @@ class Output(Base):
       return output
 
 
-  def redo(self, user, command_id=None):
+  def redo(self, user, command_id=None, check_artifacts=True):
     """
     Re-run this output, as `user` (the logged-in user who requested it).
+    Raises ArtifactsUnavailable if the commit's artifacts are missing and can't be restored right now.
     Note: almost everything used here comes from unauthenticated API calls, so all values are quoted,
           and we only write and run code in the storage folders.
     """
     check_storage_path(self.output_dir)
     check_storage_path(self.batch.ci_commit.artifacts_dir)
-    # in case it was deleted without QA-Board being made aware
-    if not self.batch.ci_commit.artifacts_dir.exists():
-      print("Restoring artifacts")
-      self.batch.ci_commit.save_artifacts()
+    if check_artifacts:
+      self.batch.ci_commit.ensure_artifacts(user=user)
 
     user = safe_user_name(user)
     if not command_id:
@@ -311,18 +310,21 @@ class Output(Base):
     Delete the output's output files.
     It's soft by default, in that we still keep the metadata.
     For a full hard delete, you'll also want to `session.delete(output)`
+    With dryrun, nothing is deleted or changed.
     Raises UnsafePathError if the output directory is outside the storage folders.
     """
     output_dir = check_storage_path(self.output_dir)
     if not output_dir.exists():
-      self.deleted = True
       print(f"WARN: already deleted: {output_dir}")
+      if not dryrun:
+        self.deleted = True
       return
 
     if not soft:
       print(output_dir)
-      rmtree(output_dir)
-      rm_empty_parents(output_dir)
+      if not dryrun:
+        rmtree(output_dir)
+        rm_empty_parents(output_dir)
     else:
       # If a run crashes, or in case of network issues, the manifests may not be updated...
       manifest_path = output_dir / 'manifest.outputs.json'
@@ -332,9 +334,10 @@ class Output(Base):
             files = json.load(f)
         except Exception as e:
             print(f"{e}: corrupted manifest {manifest_path}")
-            rmtree(output_dir)
-            rm_empty_parents(output_dir)
-            self.deleted = True
+            if not dryrun:
+              rmtree(output_dir)
+              rm_empty_parents(output_dir)
+              self.deleted = True
             return
         for file in files.keys():
           if file in ['manifest.outputs.json', 'manifest.inputs.json']:
@@ -353,9 +356,9 @@ class Output(Base):
             rmtree(output_file)
             rm_empty_parents(output_dir)
       else:
-        self.delete(soft=False)
+        self.delete(soft=False, dryrun=dryrun)
         return
-    if not filter: # better not TODO: update .data.storage at least
+    if not filter and not dryrun: # better not TODO: update .data.storage at least
       self.deleted = True
 
 
