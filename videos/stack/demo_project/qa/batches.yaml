@@ -1,0 +1,6 @@
+demo:
+  inputs:
+  - scenes/rings.json
+  - scenes/stripes.json
+  - scenes/blobs.json
+  - scenes/checker.json

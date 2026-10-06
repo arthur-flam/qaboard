@@ -1,0 +1,12 @@
+# Only behind a TLS-intercepting proxy: stack.sh adds this overlay when QABOARD_DEMO_CA_BUNDLE points to a CA bundle.
+# The builds then use base images that trust it (built from ca/Dockerfile, the bundle is a build secret),
+# without changing the Dockerfiles: BuildKit replaces the FROM images with these named contexts.
+services:
+  backend:
+    build:
+      additional_contexts:
+        "python:3.13-slim-bookworm": docker-image://qaboard-demo-ca/python:3.13-slim-bookworm
+  frontend:
+    build:
+      additional_contexts:
+        "node:24": docker-image://qaboard-demo-ca/node:24

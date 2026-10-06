@@ -1,0 +1,63 @@
+{
+  "about": "What an AI assistant would do during `qa wizard` on the denoiser repository, as tool calls on the files the wizard staged (`qa wizard --yes --no-ai` defaults). edit_file: old_text matches exactly once; with optional=true, skip it when old_text isn't found (the user already answered that wizard question). write_file: the whole file. Like the wizard's tools, read_file a file before changing it. apply_edits.py applies them without an LLM.",
+  "reads": [
+    "README.md",
+    "denoise.py",
+    "denoiser/filters.py",
+    "denoiser/io.py",
+    "denoiser/metrics.py",
+    "qaboard.yaml",
+    "qa/main.py",
+    "qa/metrics.yaml",
+    "qa/batches.yaml"
+  ],
+  "edits": [
+    {
+      "tool": "edit_file",
+      "path": "qaboard.yaml",
+      "optional": true,
+      "why": "Inputs are the noisy test images in the repository (skipped if the wizard was told where inputs are)",
+      "old_text": "  database:\n    # Often databases are mounted at different locations on linux and windows...\n    linux: /\n    windows: C://\n",
+      "new_text": "  database:\n    # Relative to the root of the repository: works for everyone, and in CI\n    linux: data/noisy\n    windows: data/noisy\n"
+    },
+    {
+      "tool": "edit_file",
+      "path": "qaboard.yaml",
+      "optional": true,
+      "why": "Identify inputs when running a batch on a folder (skipped if the wizard already set a glob)",
+      "old_text": "  # globs: '*.jpg'\n",
+      "new_text": "  globs: '*.png'\n  # Each input's ground truth is at the same path under data/clean/ (qa/main.py uses denoiser.io.find_ground_truth)\n"
+    },
+    {
+      "tool": "edit_file",
+      "path": "qaboard.yaml",
+      "why": "Show the output, a zoom, the error heatmap, and (hidden by default) the input and ground truth",
+      "old_text": "  visualizations:\n  # - name: My image\n  #   path: output.jpg\n",
+      "new_text": "  visualizations:\n  - name: Output\n    path: output.png\n  - name: Zoom (noisy | output | ground truth)\n    path: zoom.png\n  - name: Error vs ground truth\n    path: error.png\n  - name: Noisy input\n    path: input.png\n    default_hidden: true\n  - name: Ground truth\n    path: ground_truth.png\n    default_hidden: true\n"
+    },
+    {
+      "tool": "write_file",
+      "path": "qa/main.py",
+      "why": "run(context) denoises the input with the project's code, saves images, returns PSNR/SSIM/runtime",
+      "content": "\"\"\"\nQA-Board integration of the denoiser.\n`qa run --input day/street.png` denoises data/noisy/day/street.png, saves images in the output directory,\nand returns PSNR/SSIM against data/clean/day/street.png.\n\"\"\"\nimport shutil\nimport sys\nimport time\nfrom pathlib import Path\n\nimport numpy as np\nimport typer\nfrom PIL import Image, ImageDraw, ImageFont\n\n# True in GitLab CI or Jenkins, if you need to behave differently there.\nfrom qaboard.config import is_ci  # noqa: F401\n\n# The project's code lives at the root of the repository\nsys.path.insert(0, str(Path(__file__).resolve().parent.parent))\nfrom denoiser import DEFAULT_METHOD, denoise  # noqa: E402\nfrom denoiser.io import find_ground_truth, load_image, save_image  # noqa: E402\nfrom denoiser.metrics import psnr, ssim  # noqa: E402\n\n\ndef run(context):\n  \"\"\"\n  Denoises context.input_path, saves images under context.output_dir, and returns metrics.\n\n  Parameters come from context.params: configs in qa/batches.yaml, or `qa --tuning '{\"strength\": 1.5}' run ...`\n    method:   gaussian | bilateral (default: the project's default)\n    strength: more is smoother (default: 1.0)\n  \"\"\"\n  method = context.params.get('method', DEFAULT_METHOD)\n  strength = float(context.params.get('strength', 1.0))\n  typer.secho(f\"Denoising {context.rel_input_path} with {method} (strength {strength:g})\", fg='blue')\n  if context.dryrun:\n    typer.secho(f\"  would save output.png, error.png and zoom.png in {context.output_dir}\", fg='blue')\n    return {\"is_failed\": False}\n\n  try:\n    noisy = load_image(context.input_path)\n  except OSError as e:\n    typer.secho(f\"Could not read {context.input_path}: {e}\", fg='red', err=True)\n    return {\"is_failed\": True}\n  start = time.perf_counter()\n  try:\n    output = denoise(noisy, method=method, strength=strength)\n  except ValueError as e:  # e.g. an unknown method\n    typer.secho(str(e), fg='red', err=True)\n    return {\"is_failed\": True}\n  runtime = time.perf_counter() - start\n\n  # Visualizations (qaboard.yaml: outputs.visualizations) compare these files between runs\n  save_image(context.output_dir / 'output.png', output)\n  shutil.copyfile(context.input_path, context.output_dir / 'input.png')\n  metrics = {\"is_failed\": False, \"runtime_ms\": 1000 * runtime}\n\n  gt_path = find_ground_truth(context.input_path)\n  if not gt_path:\n    typer.secho(\"No ground truth in data/clean/ for this input: no PSNR/SSIM\", fg='yellow', err=True)\n    return metrics\n  gt = load_image(gt_path)\n  shutil.copyfile(gt_path, context.output_dir / 'ground_truth.png')\n  save_image(context.output_dir / 'error.png', error_heatmap(output, gt))\n  zoom(noisy, output, gt).save(context.output_dir / 'zoom.png')\n\n  metrics.update({\n    \"psnr\": psnr(output, gt),\n    \"ssim\": ssim(output, gt),\n    \"psnr_gain\": psnr(output, gt) - psnr(noisy, gt),\n  })\n  print(f\"PSNR {metrics['psnr']:.2f} dB ({metrics['psnr_gain']:+.2f} dB)  SSIM {metrics['ssim']:.3f}  {metrics['runtime_ms']:.0f} ms\")\n  return metrics\n\n\n# A perceptually ordered colormap (black, purple, red, orange, yellow), like matplotlib's \"inferno\"\nINFERNO = np.array([(0, 0, 4), (40, 11, 84), (101, 21, 110), (159, 42, 99), (212, 72, 66), (245, 125, 21), (250, 193, 39), (252, 255, 164)], dtype=np.float32) / 255\n\n\ndef error_heatmap(output: np.ndarray, gt: np.ndarray, max_error: float = 0.1) -> np.ndarray:\n  \"\"\"Absolute error vs the ground truth. The scale is fixed, so that heatmaps compare between runs.\"\"\"\n  error = np.abs(output - gt).mean(axis=-1)\n  t = np.clip(error / max_error, 0, 1) * (len(INFERNO) - 1)\n  low = np.floor(t).astype(int).clip(max=len(INFERNO) - 2)\n  frac = (t - low)[..., None]\n  return INFERNO[low] * (1 - frac) + INFERNO[low + 1] * frac\n\n\ndef zoom(noisy: np.ndarray, output: np.ndarray, gt: np.ndarray, size=(80, 60), scale=4) -> Image.Image:\n  \"\"\"Noisy | output | ground truth, magnified on the most detailed part of the image.\"\"\"\n  w, h = size\n  detail = np.abs(np.diff(gt.mean(axis=-1), axis=0))[:, :-1] + np.abs(np.diff(gt.mean(axis=-1), axis=1))[:-1, :]\n  # most detailed crop on a coarse grid, so that it is the same for every run\n  best, x0, y0 = -1.0, 0, 0\n  for y in range(0, detail.shape[0] - h, h // 2):\n    for x in range(0, detail.shape[1] - w, w // 2):\n      score = float(detail[y:y + h, x:x + w].sum())\n      if score > best:\n        best, x0, y0 = score, x, y\n  gap, label_height = 6, 22\n  sheet = Image.new('RGB', (3 * w * scale + 2 * gap, h * scale + label_height), (24, 24, 28))\n  draw = ImageDraw.Draw(sheet)\n  try:\n    font = ImageFont.load_default(size=15)\n  except TypeError:  # older Pillow\n    font = ImageFont.load_default()\n  for i, (label, img) in enumerate([(\"noisy\", noisy), (\"output\", output), (\"ground truth\", gt)]):\n    crop = Image.fromarray(np.round(img[y0:y0 + h, x0:x0 + w] * 255).astype(np.uint8))\n    sheet.paste(crop.resize((w * scale, h * scale), Image.NEAREST), (i * (w * scale + gap), label_height))\n    draw.text((i * (w * scale + gap) + 6, 4), label, fill=(235, 235, 235), font=font)\n  return sheet\n"
+    },
+    {
+      "tool": "write_file",
+      "path": "qa/metrics.yaml",
+      "why": "Describe psnr, psnr_gain, ssim and runtime_ms",
+      "content": "# you must define metadata about all your objective figures of merits\navailable_metrics:\n  # loss:\n  #   label: My Loss Function  # defaults to the key\n  #   short_label: Loss        # defaults to the label\n  #   description: The was computed with.... # optional\n  #   smaller_is_better: true  # default\n  #   target: 0.01             # optionnal\n  #   # used for display\n  #   scale: 1.0               # default\n  #   suffix: %                # default: ''\n\n  psnr:\n    label: PSNR\n    description: Peak signal-to-noise ratio of the output vs the ground truth (data/clean/).\n    smaller_is_better: false\n    target: 30\n    suffix: \" dB\"\n    plot_scale: linear\n\n  psnr_gain:\n    label: PSNR gain\n    short_label: Gain\n    description: How much better the output's PSNR is than the noisy input's.\n    smaller_is_better: false\n    target: 6\n    suffix: \" dB\"\n    plot_scale: linear\n\n  ssim:\n    label: SSIM\n    description: Structural similarity of the output's luma vs the ground truth (1 is perfect).\n    smaller_is_better: false\n    target: 0.9\n    plot_scale: linear\n\n  runtime_ms:\n    label: Runtime\n    description: Time spent denoising (without reading and writing images).\n    smaller_is_better: true\n    target: 500\n    suffix: \" ms\"\n\n  is_failed:\n    label: Crashed\n    short_label: Crashed\n    description: This run crashed.\n    scale: 100\n    suffix: \"%\"\n    target: 0\n    smaller_is_better: true\n    plot_scale: linear # | default: log\n\n\n# Below we define which metrics the GUI should show\ndefault_metric: psnr\n\n# will be shown in the summary histogramms\nsummary_metrics:\n  - psnr\n  - ssim\n  - runtime_ms\n\n# will be shown in the results table and in the output cards\nmain_metrics:\n  - psnr\n  - ssim\n  - psnr_gain\n  - runtime_ms\n\n# In the history view, only those metrics will be available in the plot showing results over time\n# [OPTIONNAL]: defaults to the summary_metrics\ndashboard_evolution_metrics:\n  - psnr\n  - ssim\n  - runtime_ms\n# In the history view, only those metrics will be shown in the summary histograms\n# [OPTIONNAL]: defaults to the summary_metrics\n# dashboard_metrics:\n#   - is_failed\n"
+    },
+    {
+      "tool": "write_file",
+      "path": "qa/batches.yaml",
+      "why": "Batches: smoke, all, night, methods",
+      "content": "# Read about how you can define batches of runs here:\n#   https://samsung.github.io/qaboard/docs/batches-running-on-multiple-inputs/\n# Inputs are relative to inputs.database in qaboard.yaml (data/noisy).\n# Run them with `qa batch smoke`, `qa batch all`...\n\n# Two quick inputs to check that nothing is broken\nsmoke:\n  inputs:\n    - day/street.png\n    - night/parking.png\n\n# Every image in data/noisy/ (inputs.globs in qaboard.yaml identifies them)\nall:\n  inputs:\n    - '*'\n\nnight:\n  inputs:\n    - night\n\n# Compare the methods on every image: `qa batch methods`\nmethods:\n  inputs:\n    - '*'\n  matrix:\n    method: [gaussian, bilateral]\n  configs:\n    - method: ${matrix.method}\n\n\n# There is a lot of flexibility to specify different choices of databases, configurations,\n# create \"test matrices\", or use standard YAML features to avoid repetition\n"
+    }
+  ],
+  "try_input": "night/parking.png",
+  "todo": [
+    "Install the project's requirements where `qa` runs: pip install -r requirements.txt",
+    "Commit qaboard.yaml and qa/, then run `qa batch all` to get a baseline for every image"
+  ],
+  "assistant_message": "I wired QA-Board to your denoiser:\n- `qa/main.py` calls `denoiser.denoise()` on each input, saves `output.png`, a zoom (noisy | output | ground truth) and an error heatmap, and returns `psnr`, `ssim`, `psnr_gain` and `runtime_ms` against `data/clean/`\n- `method` and `strength` come from `context.params`, so you can compare or tune them later\n- `qaboard.yaml`: inputs are the `*.png` under `data/noisy`, with 5 image visualizations\n- `qa/batches.yaml`: `smoke`, `all`, `night`, and `methods` (gaussian vs bilateral)\n\nNext: try `qa run --input night/parking.png`, then `qa batch all`."
+}

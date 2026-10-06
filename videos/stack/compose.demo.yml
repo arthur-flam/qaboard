@@ -1,0 +1,69 @@
+# Overlay for a local demo stack (videos, screenshots). Used by stack.sh:
+#   docker compose -p qaboard-demo -f docker-compose.yml -f production.yml -f videos/stack/compose.demo.yml ...
+# Services: db, redis, backend, frontend (production build), proxy (nginx), cantaloupe (IIIF images).
+# Not started: rabbitmq, flower, website, pgadmin, cron-backup-db.
+#
+# Images are built from this checkout and tagged qaboard-demo:<service>, so they never shadow the published
+# arthurflam/qaboard:* images. Results live in $QABOARD_DEMO_STORAGE (default /mnt/qaboard), mounted at the
+# same path in the backend as on the host, where the `qa` CLI writes them.
+services:
+  backend:
+    image: qaboard-demo:backend
+    pull_policy: never
+    environment:
+    - QABOARD_STORAGE_ROOTS=${QABOARD_DEMO_STORAGE:-/mnt/qaboard}
+    - QABOARD_URL=http://localhost:${QABOARD_PORT_HTTP:-5151}
+    # A small machine is enough for a demo (production.yml defaults to 8-16 uwsgi workers)
+    - UWSGI_CHEAPER_INITIAL=2
+    - UWSGI_PROCESSES=4
+    - UWSGI_CHEAPER=1
+    # No celery/rabbitmq in the demo
+    - QABOARD_TUNING_RUNNER=local
+    # The default, {"default": "/iiif"}, makes the image viewers request /iiifmnt%2F...: the web app appends
+    # the image identifier right after the endpoint, which must point to cantaloupe's IIIF v2 API
+    - 'QABOARD_IMAGE_SERVERS={"default": "/iiif/2/"}'
+    volumes:
+    - ${QABOARD_DEMO_STORAGE:-/mnt/qaboard}:${QABOARD_DEMO_STORAGE:-/mnt/qaboard}
+
+  frontend:
+    image: qaboard-demo:frontend
+    pull_policy: never
+
+  proxy:
+    image: qaboard-demo:proxy
+    pull_policy: never
+    # docker-compose.yml also waits for flower, which we don't run
+    depends_on: !override
+    - backend
+    - cantaloupe
+    # Same as docker-compose.yml, but on hosts whose kernel has no IPv6 (some VMs/sandboxes), nginx refuses
+    # to start because of `listen [::]:80` in services/nginx/conf.d/qaboard.conf: we drop that line there.
+    command: >-
+      /bin/bash -c "
+        set -e;
+        sh /tmp/etc/nginx/configure.sh;
+        if [ ! -e /proc/net/if_inet6 ]; then sed -i '/listen .*ipv6only/d' /etc/nginx/conf.d/*.conf; fi;
+        exec nginx -g 'daemon off;'
+      "
+    volumes:
+    # nginx serves /s/<path> from /var/qaboard/<path>
+    - ${QABOARD_DEMO_STORAGE:-/mnt/qaboard}:/var/qaboard${QABOARD_DEMO_STORAGE:-/mnt/qaboard}:ro
+
+  cantaloupe:
+    image: qaboard-demo:cantaloupe
+    pull_policy: never
+    # docker-compose.yml mounts the host's / at /repository: only expose the results storage
+    volumes: !override
+    - cache_cantaloupe:/var/cache/cantaloupe
+    - /srv/cantaloupe
+    - ${QABOARD_DEMO_STORAGE:-/mnt/qaboard}:/repository${QABOARD_DEMO_STORAGE:-/mnt/qaboard}:ro
+    environment:
+      CANTALOUPE_MEM_START: 256m
+      CANTALOUPE_MEM_MAX: 1g
+      # Overrides base_uri from cantaloupe.properties. Without it, the image URLs in info.json lose the port
+      # (nginx forwards X-Forwarded-Port: 80) and the viewers request tiles from http://localhost/iiif/...
+      BASE_URI: http://localhost:${QABOARD_PORT_HTTP:-5151}
+    networks:
+      default:
+        # nginx's config proxies /flower/ to http://flower:8888 and refuses to start if "flower" doesn't resolve
+        aliases: [flower]

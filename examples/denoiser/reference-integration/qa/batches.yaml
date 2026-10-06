@@ -1,0 +1,32 @@
+# Read about how you can define batches of runs here:
+#   https://samsung.github.io/qaboard/docs/batches-running-on-multiple-inputs/
+# Inputs are relative to inputs.database in qaboard.yaml (data/noisy).
+# Run them with `qa batch smoke`, `qa batch all`...
+
+# Two quick inputs to check that nothing is broken
+smoke:
+  inputs:
+    - day/street.png
+    - night/parking.png
+
+# Every image in data/noisy/ (inputs.globs in qaboard.yaml identifies them)
+all:
+  inputs:
+    - '*'
+
+night:
+  inputs:
+    - night
+
+# Compare the methods on every image: `qa batch methods`
+methods:
+  inputs:
+    - '*'
+  matrix:
+    method: [gaussian, bilateral]
+  configs:
+    - method: ${matrix.method}
+
+
+# There is a lot of flexibility to specify different choices of databases, configurations,
+# create "test matrices", or use standard YAML features to avoid repetition

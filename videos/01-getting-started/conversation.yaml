@@ -1,0 +1,53 @@
+# The AI assistant's side of the conversation in `qa wizard` (chapter 1), played by lib/fakellm.py.
+# Each turn answers one user message; each step is one model response: tool calls (that the wizard runs for real),
+# or the final answer (Markdown). `think` is the delay before the response, to see the assistant at work.
+# The integration itself is the reviewed reference in examples/denoiser/reference-integration.
+
+turns:
+  # Turn 1: the wizard's brief ("adapt the staged template to this project")
+  - - think: 1.4
+      tools:
+        - [list_files, {}]
+        - [read_file, {path: README.md}]
+    - think: 1.1
+      tools:
+        - [read_file, {path: denoise.py}]
+        - [read_file, {path: denoiser/filters.py}]
+    - think: 0.9
+      tools:
+        - [search, {regex: "def (psnr|ssim|find_ground_truth)"}]
+        - [read_file, {path: denoiser/metrics.py}]
+        - [read_file, {path: denoiser/io.py}]
+    - think: 0.8
+      tools:
+        - [read_file, {path: qaboard.yaml}]
+        - [read_file, {path: qa/main.py}]
+        - [read_file, {path: qa/metrics.yaml}]
+        - [read_file, {path: qa/batches.yaml}]
+    - think: 2.2
+      tools:
+        - edits: ../../examples/denoiser/reference-integration/edits.json
+    - think: 0.6
+      tools:
+        - [suggest_try_input, {input_path: night/parking.png}]
+        - [add_todo, {item: "Commit qaboard.yaml and qa/, then run `qa --share batch all` for a baseline"}]
+    - think: 1.0
+      say: |
+        I wired QA-Board to your denoiser:
+        - `qa/main.py` calls `denoiser.denoise()` on each input, and saves `output.png`, a zoom (noisy · output · ground truth) and an error heatmap
+        - it returns `psnr`, `ssim` and `runtime_ms`, measured against `data/clean/`
+        - `method` and `strength` come from `context.params`: you can compare or tune them later
+        - `qa/batches.yaml`: `smoke`, `all`, `night`, and `methods` (gaussian vs bilateral)
+
+        Next: try it on one image, `qa run --input night/parking.png`.
+
+  # Turn 2: "How do I compare the gaussian and bilateral filters?"
+  - - think: 1.2
+      tools:
+        - [read_file, {path: qa/batches.yaml}]
+    - think: 1.4
+      say: |
+        Run the `methods` batch I added: `qa --share batch methods`.
+        It runs every image with both methods (a `matrix`), and QA-Board shows them side by side, with their metrics.
+
+        Later, you can also try other `strength` values right from the web app, without touching the code.
