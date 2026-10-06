@@ -407,7 +407,7 @@ class TestInit(unittest.TestCase):
       subprocess.run(['git', 'init', '-q'], cwd=tmp, check=True)
       # a remote that can't be reached: qa init still finds the project's name in its URL
       subprocess.run(['git', 'remote', 'add', 'origin', 'https://example.invalid/someone/my-project.git'], cwd=tmp, check=True)
-      run_qa(tmp, 'init', check=0)
+      run_qa(tmp, 'init', '--yes', check=0)
       self.assertTrue((Path(tmp) / 'qaboard.yaml').exists())
       self.assertTrue((Path(tmp) / 'qa' / 'main.py').exists())
       self.assertEqual(run_qa(tmp, 'get', 'project', check=0).stdout.strip(), 'someone/my-project')

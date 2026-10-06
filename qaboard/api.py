@@ -16,25 +16,17 @@ import typer
 from .config import project, commit_id, is_ci, available_metrics, ignore_config_errors
 from .run import RunContext
 
-from .site_config import site_config, user_secret, as_requests_verify
+from .site_config import site_config, user_secret, as_requests_verify, get_qaboard_url
 
-qaboard_protocol = site_config('QABOARD_PROTOCOL', 'http')
-qaboard_hostname = site_config('QABOARD_HOSTNAME')
-qaboard_port = site_config('QABOARD_PORT')
-qaboard_host = site_config('QABOARD_HOST')
-if qaboard_hostname and qaboard_port:
-  qaboard_url = f"{qaboard_protocol}://{qaboard_hostname}:{qaboard_port}"
-elif qaboard_host:
-  qaboard_url = f"{qaboard_protocol}://{qaboard_host}"
-else:
-  qaboard_url = site_config('QABOARD_URL', 'http://localhost:5151')
-  if qaboard_url == 'http://localhost:5151' and not ignore_config_errors:
-    typer.secho(f"WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
-    typer.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
-    typer.secho(f"         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
-    typer.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
-    typer.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
-    typer.secho(f"       > If your organization has a site package (e.g. qaboard-site-sirc), install it.", fg='yellow', err=True)
+qaboard_url, qaboard_url_is_default = get_qaboard_url()
+if qaboard_url_is_default and not ignore_config_errors:
+  typer.secho(f"WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
+  typer.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
+  typer.secho(f"         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
+  typer.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
+  typer.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
+  typer.secho(f"       > If your organization has a site package (e.g. qaboard-site-sirc), install it.", fg='yellow', err=True)
+  typer.secho(f"       > Or run `qa init` to set it up.", fg='yellow', err=True)
 
 api_prefix = site_config('QABOARD_API_PREFIX', f"{qaboard_url}/api/v1")
 # Whether requests to the API check TLS certificates: true (default), false, or the path to a CA bundle.

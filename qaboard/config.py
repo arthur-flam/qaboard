@@ -336,9 +336,9 @@ if commit_id and is_in_git_repo:
       commit_message = commit_message_
     commit_parents = commit_parents_str.split()
   except Exception as e:
-    print(e, file=sys.stderr)
     # may fail when working on the first commit in a repo, like in our tests
-    pass
+    if not ignore_config_errors:
+      print(e, file=sys.stderr)
 
 
 if root_qatools_config:

@@ -50,6 +50,10 @@ dev = [
     "types-setuptools",
     "types-simplejson",
 ]
+# AI assistant for `qa init`, that adapts qa/main.py to your code (any OpenAI-compatible API)
+wizard = [
+    "pydantic-ai-slim[openai]>=1.35",
+]
 # Runner that sends runs to a pool of dask workers, started on LSF with dask-jobqueue
 dask = [
     "distributed",

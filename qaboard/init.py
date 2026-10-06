@@ -1,19 +1,11 @@
 """
-Initialize a QA-Board project
-```
-qa init
-```
+Helpers for `qa init`, which is implemented in qaboard/wizard: showing the site defaults in a new qaboard.yaml.
 """
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
-import subprocess
-import shutil
 
-import typer
 import yaml
 
-from .config import find_configs
-from .site_config import site_qaboard_config, site_qaboard_config_path, LOCATION_KEYS
+from .site_config import LOCATION_KEYS
 
 
 Key = Tuple[str, ...]
@@ -77,84 +69,3 @@ def use_site_defaults(sample_config: str, site: Dict[str, Any]) -> str:
     "# Settings defined here take precedence.",
   ]
   return "\n".join([*header, *lines]) + "\n"
-
-
-
-def qa_init(ctx):
-  """Initialize a qatools repository"""
-  config_paths = [p for  _, p in find_configs(Path('.'))]
-  if config_paths:
-    typer.secho(f'You already have a qaboard.yaml configuration:', fg='green', bold=True, err=True)
-    for p in config_paths:
-      typer.secho(str(p), fg='green')
-    exit(0)
-
-  # Locate the sample project's configuration
-  qatools_dir = Path(__file__).resolve().parent
-
-  typer.secho('Creating a `qatools` configuration based on the sample project 🎉', fg='green')
-  sample_config = (qatools_dir / 'sample_project/qaboard.yaml').read_text()
-  site = site_qaboard_config()
-  if site:
-    typer.secho(f'Using the site defaults from {site_qaboard_config_path()} for: {", ".join(site)}', fg='green')
-    sample_config = use_site_defaults(sample_config, site)
-  if not ctx.obj['dryrun']:
-    Path('qaboard.yaml').write_text(sample_config)
-
-  typer.secho('...added qaboard.yaml', fg='green', dim=True)
-  if not ctx.obj['dryrun']:
-    shutil.copytree(str(qatools_dir/'sample_project/qa'), 'qa')
-
-  typer.secho('...added qa/', fg='green', dim=True)
-  typer.secho(
-    'If you need help configuring qatools. please read the tutorial at https://samsung.github.io/qaboard\n',
-    fg='blue'
-  )
-
-  # We try to tweak the sample configuration much as possible
-  try:
-    subprocess.run("git rev-parse --is-inside-work-tree", shell=True, stdout=subprocess.PIPE, check=True)
-  except Exception:
-    typer.secho('Warning: Could not find a git repository', fg='yellow')
-    exit(0)
-
-
-  try:
-    p = subprocess.run("git remote show", stdout=subprocess.PIPE, shell=True, check=True, encoding='utf-8')
-    remotes = p.stdout.strip().splitlines()
-    assert remotes
-    if len(remotes)>1:
-      print(f"We use the first of the git remotes: {remotes}")
-    remote = remotes[0]
-    print(f"git remote name: {remote}")
-
-    p = subprocess.run(f"git remote get-url {remote}", shell=True, stdout=subprocess.PIPE, check=True, encoding='utf-8')
-    url = p.stdout.strip()
-    print(f"git remote url: {url}")
-    if url.startswith('git'):
-      name = url.split(':')[-1].replace('.git', '')
-    else:
-      name =  '/'.join(url.split('/')[3:]).replace('.git', '')
-    print(f"project name: {name}")
-
-    # Needs to reach the remote
-    try:
-      p = subprocess.run(f"git remote show {remote}", stdout=subprocess.PIPE, shell=True, check=True, encoding='utf-8')
-      head_info = [l for l in p.stdout.strip().splitlines() if 'HEAD branch:' in l]
-      reference_branch = head_info[0].split(':')[1]
-    except Exception:
-      typer.secho('Warning: Could not find the remote HEAD, using master as reference branch', fg='yellow')
-      reference_branch = 'master'
-    print(f"reference_branch: {reference_branch}")
-
-    config = Path('qaboard.yaml')
-    with config.open() as f:
-      config_content = f.read()
-    config_content = config_content.replace('name: user/sample_project', f"name: {name}")
-    config_content = config_content.replace('url: git@github.com/user/sample_project', f"url: {url}")
-    config_content = config_content.replace('reference_branch: master', f'reference_branch: {reference_branch}')
-    with config.open('w') as f:
-      if not ctx.obj['dryrun']:
-        f.write(config_content)
-  except Exception:
-    typer.secho('Please edit qaboard.yaml with your project name and url ', fg='yellow')
