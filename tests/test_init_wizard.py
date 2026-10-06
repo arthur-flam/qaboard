@@ -329,8 +329,12 @@ class TestWizard(TempDir):
     self.assertIn('output/', (self.root / '.gitignore').read_text())
     config = yaml.safe_load((self.root / 'qaboard.yaml').read_text())
     self.assertNotIn('url', config['project'], "no placeholder URL")
-    # and qa works with it
-    env = {**os.environ, **self.env, 'QA_NO_CHECK_FOR_UPDATES': '1', 'PYTHONPATH': str(Path(__file__).resolve().parent.parent)}
+    # and qa works with it (with storage it can create, and outside of CI mode: the runner's commit isn't in this repo)
+    config['storage'] = {'linux': str(self.root / 'storage'), 'windows': str(self.root / 'storage')}
+    (self.root / 'qaboard.yaml').write_text(yaml.safe_dump(config))
+    ci_variables = ('CI', 'GIT_COMMIT', 'CI_COMMIT_SHA', 'CI_COMMIT_REF_NAME', 'CI_COMMIT_TAG', 'GITHUB_SHA', 'GITHUB_REF', 'GIT_BRANCH')
+    env = {k: v for k, v in os.environ.items() if k not in ci_variables}
+    env = {**env, **self.env, 'QA_NO_CHECK_FOR_UPDATES': '1', 'PYTHONPATH': str(Path(__file__).resolve().parent.parent)}
     out = subprocess.run([sys.executable, '-c', "import sys; sys.argv[0] = 'qa'; from qaboard.cli import main; main()", 'get', 'project'],
                          cwd=self.root, env=env, capture_output=True, text=True)
     self.assertEqual(out.returncode, 0, out.stderr)
