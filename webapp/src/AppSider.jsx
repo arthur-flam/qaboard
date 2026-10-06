@@ -552,7 +552,7 @@ const AppSider = () => {
   const user = useUser();
   const { project, project_data, selected, selected_views, new_commit, ref_commit, new_batch, ref_batch } = useComparison();
   const route = selected.route;
-  const { latest_commit } = useCommitsList({ enabled: !route.is_commit });
+  const { latest_commit } = useCommitsList({ enabled: !route.is_commit, ignore_search: true });
   // the commit whose integrations we show
   const commit = route.is_commit ? new_commit : latest_commit;
 

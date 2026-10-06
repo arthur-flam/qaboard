@@ -3,7 +3,7 @@
 //
 // Query keys start with the resource, then the project, so that we can invalidate e.g. all the
 // commit lists of a project with queryClient.invalidateQueries({ queryKey: ['commits', project] })
-import { queryOptions, keepPreviousData } from "@tanstack/react-query";
+import { queryOptions, infiniteQueryOptions, keepPreviousData } from "@tanstack/react-query";
 
 import { http } from "./http";
 import { normalize_projects, normalize_project, normalize_commit } from "./normalize";
@@ -62,9 +62,11 @@ export const userQuery = queryOptions({
 });
 
 
+// All the projects, with only what lists need from their data (git info, qaboard.yaml's project section):
+// sites have hundreds of projects. The rest comes with projectQuery.
 export const projectsQuery = queryOptions({
   queryKey: ['projects'],
-  queryFn: async ({ signal }) => normalize_projects((await http.get('/api/v1/projects', { signal })).data),
+  queryFn: async ({ signal }) => normalize_projects((await http.get('/api/v1/projects', { params: { summary: true }, signal })).data),
   staleTime: 60 * 1000,
 });
 
@@ -75,13 +77,17 @@ export const projectQuery = project => queryOptions({
   staleTime: 60 * 1000,
 });
 
-export const branchesQuery = project => queryOptions({
-  queryKey: ['branches', project],
+// The most recently active branches whose name contains `search`
+export const branches_limit = 50;
+export const branchesQuery = (project, search = '') => queryOptions({
+  queryKey: ['branches', project, search],
   queryFn: async ({ signal }) => {
-    const { data } = await http.get('/api/v1/project/branches', { params: { project }, signal });
+    const { data } = await http.get('/api/v1/project/branches', { params: { project, q: search, limit: branches_limit }, signal });
     return [...new Set(data.map(branch => branch.replace('origin/', '')))];
   },
   enabled: !!project,
+  // while users type, keep showing the previous matches
+  placeholderData: keepPreviousData,
   staleTime: 5 * 60 * 1000,
 });
 
@@ -105,6 +111,32 @@ export const commitsQuery = ({ project, branch, committer, from, to, metrics, ..
 });
 
 
+// The same, one page at a time, newest first. With `q`, the server searches the whole history
+// (unless from/to are given), e.g. "fix -wip branch:dev committer:alice" (see backend/backend/search.py).
+// Pages are {commits, has_more}.
+export const commits_page_size = 50;
+const commits_url = ({ branch, committer }) => committer ? '/api/v1/commits/' : `/api/v1/commits/${branch ?? ''}`;
+export const commitsPagesQuery = ({ project, branch, committer, from, to, metrics, q, page_size = commits_page_size }) => infiniteQueryOptions({
+  queryKey: ['commits', project, { branch, committer, from, to, metrics, q, page_size, pages: true }],
+  queryFn: async ({ signal, pageParam }) => {
+    const { data, headers } = await http.get(commits_url({ branch, committer }), {
+      params: { project, committer, from, to, q, metrics: JSON.stringify(metrics ?? {}), limit: page_size, offset: pageParam },
+      signal,
+    });
+    // servers that predate pagination answer with everything at once, without the header
+    return { commits: data.map(normalize_commit), has_more: headers?.get('X-Has-More') === 'true' };
+  },
+  initialPageParam: 0,
+  getNextPageParam: (last_page, pages, last_offset) => last_page.has_more ? last_offset + last_page.commits.length : undefined,
+  enabled: !!project,
+  placeholderData: keepPreviousData,
+  staleTime: 30 * 1000,
+});
+
+// Lists of commits, whether they are paginated or not
+export const commits_of = data => data?.pages ? data.pages.flatMap(page => page.commits) : (data ?? []);
+
+
 // Without an id, the server answers with the latest commit on the branch (by default the project's reference branch)
 export const commitQuery = ({ project, id, branch, batch }) => queryOptions({
   queryKey: ['commit', project, id ?? null, { branch, batch }],
@@ -124,8 +156,8 @@ export const commitQuery = ({ project, id, branch, batch }) => queryOptions({
 // Where to look for a commit in the cache: its own query, or else any list of commits that includes it
 export const findCachedCommit = (queryClient, project, id) => {
   if (!id) return undefined;
-  for (const [, commits] of queryClient.getQueriesData({ queryKey: ['commits', project] })) {
-    const commit = commits?.find(c => c.id === id);
+  for (const [, data] of queryClient.getQueriesData({ queryKey: ['commits', project] })) {
+    const commit = commits_of(data).find(c => c.id === id);
     if (commit) return commit;
   }
   return undefined;
