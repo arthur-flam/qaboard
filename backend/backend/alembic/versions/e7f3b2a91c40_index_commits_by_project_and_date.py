@@ -27,10 +27,15 @@ indexes = {
 
 def upgrade():
   # ci_commits is big in production: we don't lock writes while we build the indexes.
-  # CONCURRENTLY can't run in a transaction. If it fails, it leaves an INVALID index:
-  # DROP INDEX CONCURRENTLY it and run the migration again.
+  # CONCURRENTLY can't run in a transaction. If it fails, it leaves an INVALID index,
+  # that IF NOT EXISTS would keep: we drop it, and build it again.
   with op.get_context().autocommit_block():
     for name, columns in indexes.items():
+      is_invalid = op.get_bind().execute(sa.text(
+        "SELECT 1 FROM pg_index JOIN pg_class ON pg_class.oid = pg_index.indexrelid WHERE pg_class.relname = :name AND NOT pg_index.indisvalid"
+      ), {"name": name}).first()
+      if is_invalid:
+        op.drop_index(name, table_name='ci_commits', postgresql_concurrently=True, if_exists=True)
       op.create_index(name, 'ci_commits', columns, postgresql_concurrently=True, if_not_exists=True)
 
 

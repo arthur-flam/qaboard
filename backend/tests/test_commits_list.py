@@ -222,8 +222,8 @@ class TestBranches:
       response = api.get_branches()
     assert response.get_json() == ['feature/a', 'feature/b']
     query.limit.assert_called_with(50)
-    # users search for text, not LIKE patterns
-    api.CiCommit.branch.ilike.assert_called_with('%feat\\%\\_%', escape='\\')
+    # users search for text, not LIKE patterns, in the names we show (without origin/)
+    api.func.regexp_replace.return_value.ilike.assert_called_with('%feat\\%\\_%', escape='\\')
 
   def test_branches_limit(self, dummy_app, api):
     query = query_chain([])

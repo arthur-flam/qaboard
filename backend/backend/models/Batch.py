@@ -7,7 +7,7 @@ import uuid
 import datetime
 from pathlib import Path
 
-from sqlalchemy import ForeignKey, Integer, String, DateTime, Float, Text, text
+from sqlalchemy import ForeignKey, Integer, String, DateTime, Float, Numeric, Text, text, literal_column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import UniqueConstraint, Column
 from sqlalchemy.orm import relationship
@@ -223,7 +223,8 @@ def batches_stats(session, batch_ids, metrics_to_aggregate=None):
   """
   if not batch_ids:
     return {}
-  metrics = list(metrics_to_aggregate or {})[:max_aggregated_metrics]
+  # e.g. {"loss": 0.1}, a list of names, or anything clients send
+  metrics = [m for m in metrics_to_aggregate if isinstance(m, str)][:max_aggregated_metrics] if isinstance(metrics_to_aggregate, (dict, list)) else []
   # Output.metrics is JSON, stored as text: reading a key means parsing it. We read each metric once per output
   # (OFFSET 0 keeps postgres from inlining subqueries, it would read them again for each use).
   outputs = (session
@@ -237,11 +238,15 @@ def batches_stats(session, batch_ids, metrics_to_aggregate=None):
     .offset(0)
     .subquery()
   )
-  # We only aggregate numbers (not strings, booleans...), from valid outputs. Aggregates ignore NULLs.
+  # We only aggregate numbers (not strings, booleans...), from valid outputs, that fit in floats. Aggregates ignore NULLs.
+  def as_float(value):
+    number = cast(cast(value, Text), Numeric)
+    # nested CASEs: postgres evaluates them in order, but not the terms of AND
+    return case((func.json_typeof(value) == 'number', case((func.abs(number) < literal_column('1e308::numeric'), cast(number, Float)))))
   values = (session
     .query(
       outputs,
-      *[case((and_(outputs.c.is_valid, func.json_typeof(outputs.c[f'metric_{index}']) == 'number'), cast(cast(outputs.c[f'metric_{index}'], Text), Float))).label(f'value_{index}') for index in range(len(metrics))],
+      *[case((outputs.c.is_valid, as_float(outputs.c[f'metric_{index}']))).label(f'value_{index}') for index in range(len(metrics))],
     )
     .offset(0)
     .subquery()

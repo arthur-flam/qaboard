@@ -1,6 +1,7 @@
 """
 Describes a project
 """
+import os
 import re
 import sys
 import json
@@ -46,7 +47,11 @@ class Project(Base):
       qaboard_config = default_qaboard_config
     # We need it for every commit and batch we serialize, and only those keys matter
     storage_config = {k: qaboard_config[k] for k in ('storage', 'ci_root') if k in qaboard_config} if qaboard_config is not None else None
-    return dict(_storage_roots(self.id, self.id_git, self.id_relative, json.dumps(storage_config, sort_keys=True)))
+    args = (self.id, self.id_git, self.id_relative, json.dumps(storage_config, sort_keys=True), os.environ.get('QA_STORAGE'))
+    # Scripts that set QABOARD_NO_CACHE_USER change the {user} of storage paths as they go (e.g. scripts/migrate.py)
+    if 'QABOARD_NO_CACHE_USER' in os.environ:
+      return dict(_storage_roots.__wrapped__(*args))
+    return dict(_storage_roots(*args))
 
   @property
   def id_git(self) -> str:
@@ -149,7 +154,8 @@ class Project(Base):
 
 
 @lru_cache(maxsize=1024)
-def _storage_roots(project_id, id_git, id_relative, storage_config_json):
+def _storage_roots(project_id, id_git, id_relative, storage_config_json, qa_storage):
+  # qa_storage: $QA_STORAGE overrides the storage config, it's part of the cache key
   try:
     outputs_root, artifacts_root, subproject_for_artifacts = storage_roots(json.loads(storage_config_json), Path(project_id), Path(id_relative))
   except Exception as e:

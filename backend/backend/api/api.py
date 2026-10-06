@@ -120,7 +120,8 @@ def get_commits(branch=None):
 
   try:
     limit = int_arg('limit', min_value=1, max_value=max_commits)
-    offset = int_arg('offset', default=0)
+    # bigger offsets would overflow postgres' bigint
+    offset = int_arg('offset', default=0, max_value=10**12)
   except ValueError as e:
     return jsonify({"error": f"Invalid pagination: {e}"}), 400
   search_terms = parse_query(request.args.get('q', ''))
@@ -252,7 +253,8 @@ def get_branches():
               .filter(CiCommit.project_id==project_id, CiCommit.branch.isnot(None))
              )
   if search:
-    branches = branches.filter(CiCommit.branch.ilike(f'%{escape_like(search)}%', escape='\\'))
+    # what we show: names without origin/
+    branches = branches.filter(name.ilike(f'%{escape_like(search)}%', escape='\\'))
   branches = branches.group_by(name).order_by(latest.desc().nulls_last(), name).limit(limit or 50)
   return jsonify([b for b, _ in branches])
 
