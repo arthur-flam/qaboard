@@ -196,6 +196,10 @@ class LLM:
     base_url = site_config('QABOARD_LLM_BASE_URL')
     if base_url:
       return 'anthropic' if 'anthropic.com' in base_url else 'openai'
+    # A key saved without a provider is from before Claude was supported: OpenAI-compatible
+    key = site_config('QABOARD_LLM_API_KEY')
+    if key:
+      return 'anthropic' if key.startswith('sk-ant-') else 'openai'
     if os.getenv('OPENAI_BASE_URL') or os.getenv('OPENAI_API_KEY'):
       return 'openai'
     # Also without ANTHROPIC_API_KEY: the SDK finds credentials from `ant auth login` too
@@ -203,13 +207,15 @@ class LLM:
 
   @staticmethod
   def from_settings(model: Optional[str] = None, provider: Optional[str] = None) -> 'LLM':
-    provider = provider or LLM.guess_provider()
+    configured = LLM.guess_provider()
+    provider = provider or configured
     env_base_url = os.getenv('ANTHROPIC_BASE_URL' if provider == 'anthropic' else 'OPENAI_BASE_URL')
     base_url = site_config('QABOARD_LLM_BASE_URL') or env_base_url or (ANTHROPIC_BASE_URL if provider == 'anthropic' else OPENAI_BASE_URL)
     llm = LLM(
       base_url=base_url.rstrip('/'),
-      api_key=site_config('QABOARD_LLM_API_KEY'),
-      model=model or site_config('QABOARD_LLM_MODEL'),
+      # The configured key and model go with the configured API, never to another one
+      api_key=site_config('QABOARD_LLM_API_KEY') if provider == configured else None,
+      model=model or (site_config('QABOARD_LLM_MODEL') if provider == configured else None),
       verify=as_requests_verify(site_config('QABOARD_LLM_VERIFY')),
       key_url=site_config('QABOARD_LLM_KEY_URL'),
       provider=provider,
@@ -229,11 +235,16 @@ class LLM:
     if isinstance(verify, str):
       import ssl
       verify = ssl.create_default_context(capath=verify) if os.path.isdir(verify) else ssl.create_default_context(cafile=verify)
-    options: Dict[str, Any] = {'max_retries': 2}
+    # Always explicit: the SDK would otherwise use ANTHROPIC_BASE_URL
+    options: Dict[str, Any] = {'max_retries': 2, 'base_url': base_url or self.base_url}
     if self.api_key:
       options['api_key'] = self.api_key
-    if (base_url or self.base_url) != ANTHROPIC_BASE_URL:
-      options['base_url'] = base_url or self.base_url
+    elif not self.is_anthropic_api:
+      # An explicit (empty) key: the SDK must not look for Anthropic credentials (ANTHROPIC_API_KEY, profiles...)
+      # to send them to another host
+      options['api_key'] = ''
+    if not asynchronous:
+      options['max_retries'] = 0
     if asynchronous:
       return anthropic.AsyncAnthropic(http_client=anthropic.DefaultAsyncHttpxClient(verify=verify, timeout=300), **options)
     return anthropic.Anthropic(http_client=anthropic.DefaultHttpxClient(verify=verify, timeout=TIMEOUT), **options)
@@ -258,6 +269,13 @@ class LLM:
     except Exception:
       return None, f"unexpected answer from {base_url}/models", r.status_code
 
+  @property
+  def has_credentials(self) -> bool:
+    """Whether we know a key, or the SDK can find Anthropic credentials (environment, `ant auth login`)."""
+    if self.api_key or self.is_local:
+      return True
+    return self.is_anthropic_api and self.list_models()[0] is not None
+
   def list_anthropic_models(self, base_url: Optional[str] = None) -> Tuple[Optional[List[str]], str, Optional[int]]:
     try:
       import anthropic
@@ -269,6 +287,8 @@ class LLM:
       return None, "the API key was rejected", e.status_code
     except anthropic.APIStatusError as e:
       return None, f"HTTP {e.status_code} from {base_url or self.base_url}/v1/models", e.status_code
+    except anthropic.APITimeoutError:
+      return None, "connection timed out", None
     except anthropic.APIConnectionError:
       return None, "could not connect", None
     except Exception as e:
@@ -340,6 +360,8 @@ def suggest_model(models: List[str]) -> Optional[str]:
   for preference in preferences:
     matches = [m for m in chat_models_ if preference in m.lower()]
     if matches:
-      # the shortest name is usually the main model of its family, not a dated snapshot or a variant
-      return sorted(matches, key=lambda m: (len(m), m))[0]
+      # the shortest name is usually the main model of its family, not a dated snapshot or a variant;
+      # among those, the newest (claude-opus-4-6 over claude-opus-4-1)
+      shortest = min(len(m) for m in matches)
+      return max(m for m in matches if len(m) == shortest)
   return chat_models_[0] if chat_models_ else None

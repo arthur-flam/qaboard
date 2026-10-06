@@ -172,7 +172,7 @@ class ChangeSet:
       # The path could have become a symlink pointing elsewhere since it was staged
       self.check_writable(change.rel)
       if read_text(change.path) != change.original:
-        raise RuntimeError(f"{change.rel} changed while the wizard was running, nothing was written. Run `qa init` again.")
+        raise RuntimeError(f"{change.rel} changed while the wizard was running, nothing was written. Run `qa wizard` again.")
     done: List[Change] = []
     created_dirs: List[Path] = []
     try:

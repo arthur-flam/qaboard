@@ -175,7 +175,11 @@ def build_anthropic_model(llm: LLM):
   if llm.is_anthropic_api:
     # Agentic coding: high effort (Claude Opus 5.5 defaults to medium). The instructions and tools are the same
     # every turn: cached, which makes a long chat much cheaper.
-    settings.update(anthropic_effort='high', anthropic_cache=True)
+    settings.update(anthropic_cache=True)
+    # (Claude Haiku 4.5 and older models refuse it)
+    profile = model.profile
+    if (profile.get('anthropic_supports_effort') if isinstance(profile, dict) else getattr(profile, 'anthropic_supports_effort', False)):
+      settings.update(anthropic_effort='high')
     if llm.model in FALLBACK_MODELS:
       # If a safety classifier declines a request, another model continues it instead of stopping
       settings.update(anthropic_betas=['server-side-fallback-2026-07-01'], extra_body={'fallbacks': 'default'})
@@ -393,7 +397,11 @@ def project_brief(facts: ProjectFacts, answers: dict, entrypoint: str = 'qa/main
     f"- Number of files: {len(facts.files)}",
     f"- Top-level entries: {', '.join(top_level[:80])}",
   ]
-  if entrypoint != 'qa/main.py':
+  from pathlib import PurePosixPath
+  from .changes import is_writable
+  if not is_writable(PurePosixPath(entrypoint)):
+    lines.append(f"- The entrypoint is {entrypoint}: you can read it, but not edit it. Tell the user what to change in it.")
+  elif entrypoint != 'qa/main.py':
     lines.append(f"- The entrypoint is {entrypoint}, not qa/main.py: qa/main.py belongs to the project, don't change it.")
   if answers.get('database'):
     lines.append(f"- Test inputs are stored under: {answers['database']}")

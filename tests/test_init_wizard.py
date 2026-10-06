@@ -533,6 +533,36 @@ class TestAIFlow(TempDir):
     self.assertEqual(wizard.chat.turns, 1)
 
 
+@unittest.skipUnless(has_ai, "needs pip install qaboard[wizard]")
+class TestChat(TempDir):
+  def test_the_brief_is_sent_until_a_turn_works(self):
+    from qaboard.wizard import agent as agent_module, Chat
+    from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
+    from pydantic_ai.models.function import FunctionModel
+    prompts = []
+    def model(messages, info):
+      prompts.append(' '.join(str(p.content) for m in messages for p in m.parts if isinstance(p, UserPromptPart)))
+      if len(prompts) == 1:
+        raise RuntimeError("HTTP 400")
+      return ModelResponse(parts=[TextPart("Done.")])
+    make_project(self.root)
+    wizard = Wizard(quiet_ui(), dryrun=True, ai=True, model='m', root=self.root)
+    llm = LLM(base_url='https://llm.example.com/v1', api_key='k', model='m', verify=True)
+    with mock.patch.object(agent_module, 'build_model', lambda llm: (FunctionModel(model), {})):
+      chat = Chat(wizard, llm, detect(self.root), ChangeSet(self.root))
+    chat.brief = "THE BRIEF"
+    self.assertFalse(chat.say("Go ahead."))
+    self.assertTrue(chat.say("please retry"))
+    self.assertIn("THE BRIEF", prompts[-1])
+    self.assertIn("please retry", prompts[-1])
+    chat.deps.todo.append('stale')
+    messages = iter(['/reset', ''])
+    wizard.ui.chat_input = lambda: next(messages)
+    chat.loop()
+    self.assertIsNone(chat.history)
+    self.assertEqual(chat.deps.todo, [])
+
+
 class FakeOpenAI:
   """An OpenAI-compatible server on localhost, that answers chat completions with scripted tool calls."""
   def __init__(self, steps):
@@ -725,6 +755,30 @@ class TestAnthropic(TempDir):
     with mock.patch.dict(os.environ, {**base, 'OPENAI_API_KEY': 'sk-openai'}):
       self.assertEqual(LLM.from_settings().provider, 'openai')
 
+  def test_no_anthropic_credentials_to_other_hosts(self):
+    env = {'ANTHROPIC_API_KEY': 'sk-ant-personal', 'ANTHROPIC_BASE_URL': 'https://elsewhere.example.com'}
+    with mock.patch.dict(os.environ, env):
+      gateway = LLM(base_url='https://gateway.example.com', api_key=None, model='m', verify=True, provider='anthropic')
+      client = gateway.anthropic_client()
+      self.assertFalse(client.api_key, "the SDK must not pick ANTHROPIC_API_KEY for a gateway")
+      self.assertEqual(str(client.base_url).rstrip('/'), 'https://gateway.example.com')
+      official = LLM(base_url='https://api.anthropic.com', api_key=None, model='m', verify=True, provider='anthropic')
+      self.assertEqual(str(official.anthropic_client().base_url).rstrip('/'), 'https://api.anthropic.com', "not ANTHROPIC_BASE_URL")
+
+  def test_older_openai_settings(self):
+    base = {'QABOARD_LLM_PROVIDER': '', 'QABOARD_LLM_BASE_URL': '', 'OPENAI_API_KEY': '', 'OPENAI_BASE_URL': '', 'ANTHROPIC_API_KEY': ''}
+    with mock.patch.dict(os.environ, {**base, 'QABOARD_LLM_API_KEY': 'sk-proj-abc', 'QABOARD_LLM_MODEL': 'gpt-4.1'}):
+      llm = LLM.from_settings()
+      self.assertEqual((llm.provider, llm.is_openai, llm.api_key), ('openai', True, 'sk-proj-abc'))
+      switched = LLM.from_settings(provider='anthropic')
+      self.assertFalse(switched.api_key, "a key goes with its API")
+      self.assertEqual(switched.model, 'claude-opus-5-5')
+
+  def test_effort_only_where_supported(self):
+    from qaboard.wizard.agent import build_model
+    haiku = LLM(base_url='https://api.anthropic.com', api_key='k', model='claude-haiku-4-5', verify=True, provider='anthropic')
+    self.assertNotIn('anthropic_effort', build_model(haiku)[1])
+
   def test_model_settings(self):
     from qaboard.wizard.agent import build_model
     llm = LLM(base_url='https://api.anthropic.com', api_key='k', model='claude-opus-5-5', verify=True, provider='anthropic')
@@ -755,6 +809,17 @@ class TestGuide(TempDir):
     self.assertIn("still the template", output)
     self.assertIn("no visualizations", output)
     self.assertEqual({p: p.read_text() for p in self.before}, self.before, "nothing is written")
+
+  def test_odd_batches_and_subprojects(self):
+    (self.root / 'qa' / 'batches.yaml').write_text("2024:\n  inputs: [a.png]\n")
+    (self.root / 'sub').mkdir()
+    (self.root / 'sub' / 'qaboard.yaml').write_text("")
+    ui = quiet_ui()
+    with mock.patch.dict(os.environ, self.env), mock.patch('qaboard.wizard.UI', lambda interactive: ui):
+      self.assertEqual(run_wizard(root=self.root / 'sub', assume_yes=True), 0)
+    output = ui.console.file.getvalue()
+    self.assertIn('2024', output)
+    self.assertNotIn('is missing', output, "qa works from the top-most qaboard.yaml: so does the wizard")
 
   @unittest.skipUnless(has_ai, "needs pip install qaboard[wizard]")
   def test_chat_then_one_review(self):

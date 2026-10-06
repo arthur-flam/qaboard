@@ -247,7 +247,8 @@ class UI:
     with self.paused():
       try:
         return self.console.input(f"\n[bold {ACCENT}]›[/bold {ACCENT}] ").strip()
-      except EOFError:
+      except (EOFError, KeyboardInterrupt):
+        # ends the conversation, not the wizard: the changes are still reviewed
         return ''
 
   def confirm(self, question: str, default: bool = True) -> bool:
