@@ -18,7 +18,7 @@ from functools import wraps
 import fnmatch
 from typing import Callable, List, Set
 
-import click
+import typer
 
 
 # We store all tests that we may want to execute
@@ -40,7 +40,7 @@ def on_branch(branch):
     # commit_branch = 'abc' # for testing
 
     if func.__name__ in test_funcs_names:
-      click.secho(f"ERROR: Redefinition of {func.__name__}", fg='red')
+      typer.secho(f"ERROR: Redefinition of {func.__name__}", fg='red')
       exit(1)
     else:
       test_funcs_names.add(func.__name__)
@@ -61,23 +61,23 @@ def on_branch(branch):
 
 def run_tests() -> int:
   if not test_funcs:
-    click.secho("Warning: either you did not create tasks, or none were registered via `@on_branch`.", fg='yellow')
+    typer.secho("Warning: either you did not create tasks, or none were registered via `@on_branch`.", fg='yellow')
     exit(0)
 
-  click.secho(f"Running {len(test_funcs)} tasks", fg='green')
+  typer.secho(f"Running {len(test_funcs)} tasks", fg='green')
   if skipped_test_nb:
-    click.secho(f"{skipped_test_nb} skipped", dim=True)
+    typer.secho(f"{skipped_test_nb} skipped", dim=True)
   all_success = True
 
   def run_test(test):
-    click.secho(test.__name__, bold=True)
+    typer.secho(test.__name__, bold=True)
     return_code = test()
     return return_code
   
   from joblib import Parallel, delayed
   return_codes = Parallel(n_jobs=int(os.environ.get("QA_CI_HELPERS_N_JOBS", -1)), verbose=50)(delayed(run_test)(t) for t in test_funcs)
   if any((return_code is None for return_code in return_codes)):
-    click.secho(f"WARNING: Your test should return a return code (success==0)", fg='yellow', bold=True)
+    typer.secho(f"WARNING: Your test should return a return code (success==0)", fg='yellow', bold=True)
   return all((not return_code for return_code in return_codes))
 
 

@@ -140,8 +140,8 @@ def site_qaboard_config() -> Dict[str, Any]:
         if not isinstance(site_qaboard, dict):
             raise ValueError("expected a mapping at the top level")
     except (OSError, yaml.YAMLError, ValueError) as e:
-        import click
-        click.secho(f"ERROR: Could not read the site's base qaboard.yaml (QABOARD_SITE_CONFIG={site_config('QABOARD_SITE_CONFIG')}): {e}", fg='red', err=True)
+        import typer
+        typer.secho(f"ERROR: Could not read the site's base qaboard.yaml (QABOARD_SITE_CONFIG={site_config('QABOARD_SITE_CONFIG')}): {e}", fg='red', err=True)
         return {}
     # The project's identity can't have site-wide defaults
     for key in ('name', 'url'):

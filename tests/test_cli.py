@@ -5,8 +5,8 @@ from pathlib import Path
 
 import yaml
 import unittest
-import click
-from click.testing import CliRunner
+import typer
+from typer.testing import CliRunner
 
 os.environ['QA_TESTING'] = 'true'
 
@@ -53,7 +53,7 @@ class TestQaCli(unittest.TestCase):
       if result.exc_info and result.exception:
         import traceback
         exc_type, exc_value, exc_traceback = result.exc_info
-        click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red')
+        typer.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red')
         # traceback.print_exception(exc_type, exc_value, exc_traceback)
         # traceback.print_tb(exc_traceback)
       if result.exit_code:

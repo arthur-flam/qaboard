@@ -15,7 +15,7 @@ CHECK = """
 import json
 from unittest import mock
 with mock.patch('sentry_sdk.init') as sentry_init, mock.patch('qaboard.site_config._site_defaults', {}):
-  from qaboard.qa import init_sentry
+  from qaboard.cli.app import init_sentry
   init_sentry()
 calls = sentry_init.call_args_list
 print(json.dumps({'calls': len(calls), 'dsn': calls[0].kwargs.get('dsn') if calls else None,

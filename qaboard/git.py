@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 from typing import Tuple, Optional, Dict, List
 
-import click
+import typer
 
 
 def git_show(format: str, reference: Optional[str] = None) -> str:
@@ -28,7 +28,7 @@ def git_show(format: str, reference: Optional[str] = None) -> str:
   try:
     p.check_returncode()
   except Exception as e:
-    click.secho(p.stdout, fg='red', err=True)
+    typer.secho(p.stdout, fg='red', err=True)
     raise e
   return p.stdout.strip()
 
@@ -55,7 +55,7 @@ def latest_commit(reference: str) -> str:
     remotes = git_remotes()
     remote = remotes[-1] if remotes else None
     if len(remotes) > 1:
-      click.secho(f"WARNING: Multiple remotes found, defaulting to {remote}", fg='yellow')
+      typer.secho(f"WARNING: Multiple remotes found, defaulting to {remote}", fg='yellow')
 
     if remote:
       p = subprocess.run(

@@ -22,7 +22,7 @@ import json
 import subprocess
 from pathlib import Path
 
-import click
+import typer
 from qaboard.config import root_qatools, available_metrics
 
 
@@ -38,7 +38,7 @@ def aggregate():
         "--list-output-dirs",
         *sys.argv[1:],
     ]
-    click.secho(f"Aggregating: {' '.join(command)}", err=True, dim=True)
+    typer.secho(f"Aggregating: {' '.join(command)}", err=True, dim=True)
     process = subprocess.run(
         command,
         check=True,
@@ -52,7 +52,7 @@ def aggregate():
 
     # All paths are relative to the root of the repository
     if root_qatools != Path().resolve():
-        click.echo(click.style("Working	directory changed to: ", fg='cyan') + click.style(str(root_qatools), fg='cyan', bold=True), err=True)
+        typer.echo(typer.style("Working	directory changed to: ", fg='cyan') + typer.style(str(root_qatools), fg='cyan', bold=True), err=True)
         os.chdir(root_qatools)
 
 
@@ -63,7 +63,7 @@ def aggregate():
         output_dir = Path(output_dir)
         metrics_path = output_dir / 'metrics.json'
         if not metrics_path.exists():
-            click.secho('WARNING: Could not find expected metrics at "{metrics_path}"', fg='yellow')
+            typer.secho('WARNING: Could not find expected metrics at "{metrics_path}"', fg='yellow')
             continue
         with metrics_path.open() as f:
             metrics = json.load(f)

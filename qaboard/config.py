@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, Tuple, List, Optional, Union
 
 import yaml
-import click
+import typer
 
 from .utils import merge, getenvs
 from .git import git_head, git_show
@@ -23,7 +23,7 @@ from .site_config import site_config, site_qaboard_config, without_locations_fro
 config_has_error = False
 
 # Don't lots of verbose info if the users just wants the help, or start a new project
-ignore_config_errors = len(sys.argv)==1 or '--help' in sys.argv or 'init' in sys.argv
+ignore_config_errors = len(sys.argv)==1 or '--help' in sys.argv or '--version' in sys.argv or 'init' in sys.argv
 # When the code is imported we care less about warnings...
 ignore_config_errors = ignore_config_errors or not sys.argv or not sys.argv[0].endswith('qa')
 
@@ -61,15 +61,15 @@ qatools_config_paths = [q[1] for q in qatools_configsxpaths]
 if not qatools_configsxpaths:
   config_has_error = True
   if not ignore_config_errors:
-    click.secho('ERROR: Could not find a `qaboard.yaml` configuration file.', fg='red', err=True)
+    typer.secho('ERROR: Could not find a `qaboard.yaml` configuration file.', fg='red', err=True)
     if 'QABOARD_TUNING' not in os.environ:
-      click.secho('       If you are starting a new project, run `qatools init`.', fg='red', err=True)
+      typer.secho('       If you are starting a new project, run `qatools init`.', fg='red', err=True)
     else:
-      click.secho(f'       It seems "artifacts" are missing. To save them:', fg='red', err=True)
-      click.secho(f'       1. cd your/project', fg='red', err=True)
-      click.secho(f'       2. git checkout {os.environ.get("GIT_COMMIT", "your-commit")}', fg='red', err=True)
-      click.secho(f'       3. # build whatever is needed', fg='red', err=True)
-      click.secho(f'       4. qa save-artifacts', fg='red', err=True)
+      typer.secho(f'       It seems "artifacts" are missing. To save them:', fg='red', err=True)
+      typer.secho(f'       1. cd your/project', fg='red', err=True)
+      typer.secho(f'       2. git checkout {os.environ.get("GIT_COMMIT", "your-commit")}', fg='red', err=True)
+      typer.secho(f'       3. # build whatever is needed', fg='red', err=True)
+      typer.secho(f'       4. qa save-artifacts', fg='red', err=True)
 
 
 def expand_paths(value: str, interpolation_vars):
@@ -118,8 +118,8 @@ else:
     if root_qatools_config.get('project', {}).get('url') != config.get('project', {}).get('url'):
       config_has_error = True
       if not ignore_config_errors:
-        click.secho(f"ERROR: Don't redefine the project's URL in ./qaboard.yaml.", fg='red', bold=True, err=True)
-        click.secho(f"Changed from {root_qatools_config.get('project', {}).get('url')} to {config.get('project', {}).get('url')}", fg='red')
+        typer.secho(f"ERROR: Don't redefine the project's URL in ./qaboard.yaml.", fg='red', bold=True, err=True)
+        typer.secho(f"Changed from {root_qatools_config.get('project', {}).get('url')} to {config.get('project', {}).get('url')}", fg='red')
 
   # we support "prefix/{root_path.name}" to make configuration easier for groups
   # that have tons of small repos configured the name
@@ -138,8 +138,8 @@ else:
   if uncoherent_name:
     config_has_error = True
     if not ignore_config_errors:
-      click.secho(f"ERROR: Don't redefine <project.name> in ./qaboard.yaml", fg='red', bold=True, err=True)
-      click.secho(f"Changed from {root_qatools_config['project']['name']} to {config['project']['name']})", fg='red')
+      typer.secho(f"ERROR: Don't redefine <project.name> in ./qaboard.yaml", fg='red', bold=True, err=True)
+      typer.secho(f"Changed from {root_qatools_config['project']['name']} to {config['project']['name']})", fg='red')
   # make sure everything is consistent even if users call this directly
   config['project']['name'] = project.as_posix()
   root_qatools_config['project']['name'] = project_root.as_posix()
@@ -164,7 +164,7 @@ def storage_roots(config: Dict, project: Path, subproject: Path) -> Tuple[Path, 
     user_ = user
   try:
     if 'ci_root' in config:
-      # click.secho('DEPRECATION WARNING: the config key "ci_root" was renamed "storage"', fg='yellow', err=True)
+      # typer.secho('DEPRECATION WARNING: the config key "ci_root" was renamed "storage"', fg='yellow', err=True)
       config['storage'] = config['ci_root']
     config_storage: Union[str, Dict] = os.environ.get('QA_STORAGE', config.get('storage', {}))
     interpolation_vars = {"project": project, "subproject": subproject, "user": user_}
@@ -188,10 +188,10 @@ def storage_roots(config: Dict, project: Path, subproject: Path) -> Tuple[Path, 
     artifacts_root = Path()
     outputs_root = Path()
     if not ignore_config_errors:
-      click.secho('ERROR: Could not find the storage settings that define where outputs & artifacts are saved.', fg='red', err=True)
-      click.secho('Consider adding to qaboard.yaml:\n```storage:\n  linux: /mnt/qaboard\n  windows: "\\\\server\\share\\qaboard"\n```', fg='red', err=True, dim=True)
+      typer.secho('ERROR: Could not find the storage settings that define where outputs & artifacts are saved.', fg='red', err=True)
+      typer.secho('Consider adding to qaboard.yaml:\n```storage:\n  linux: /mnt/qaboard\n  windows: "\\\\server\\share\\qaboard"\n```', fg='red', err=True, dim=True)
       if not site_config('QABOARD_SITE_CONFIG'):
-        click.secho('If your organization has a site package (e.g. qaboard-site-sirc), install it to get default settings.', fg='red', err=True, dim=True)
+        typer.secho('If your organization has a site package (e.g. qaboard-site-sirc), install it to get default settings.', fg='red', err=True, dim=True)
   return outputs_root, artifacts_root, subproject_for_artifacts
 
 def mkdir(path: Path):
@@ -199,15 +199,15 @@ def mkdir(path: Path):
   if not path.exists():
     try:
       path.mkdir(parents=True)
-      click.secho(f'Created: {path}', fg='blue', err=True)
+      typer.secho(f'Created: {path}', fg='blue', err=True)
     except Exception:
       config_has_error = True
       if not ignore_config_errors:
-        click.secho(f'ERROR: The storage path does not exist: "{path}".', fg='red', err=True)
+        typer.secho(f'ERROR: The storage path does not exist: "{path}".', fg='red', err=True)
         if "/algo/" in str(path) and not Path(*path.parts[:3]).exists():
-          click.secho(f'INFO: To create storage locations for new projects, go to:', fg='blue', bold=True, err=True)
-          click.secho(f'      http://jenmaster1:8080/job/ALGO/job/CreateProjectStorage/build?delay=0sec', fg='blue', err=True)
-          click.secho(f'Products (HP1, 2X5...) are "Technology" projects, while CIS/KITT_ISP.. are "Group" projects.', fg='blue', err=True)
+          typer.secho(f'INFO: To create storage locations for new projects, go to:', fg='blue', bold=True, err=True)
+          typer.secho(f'      http://jenmaster1:8080/job/ALGO/job/CreateProjectStorage/build?delay=0sec', fg='blue', err=True)
+          typer.secho(f'Products (HP1, 2X5...) are "Technology" projects, while CIS/KITT_ISP.. are "Group" projects.', fg='blue', err=True)
 
 outputs_root: Optional[Path]
 artifacts_root: Optional[Path]
@@ -400,8 +400,8 @@ def get_default_database(inputs_settings):
   if not database:
     database = "."
     if not ignore_config_errors:
-      click.secho(f'WARNING: Could not find the default database location, defaulting to "."', fg='yellow', err=True)
-      click.secho(f'Consider adding to qaboard.yaml:\n```\ninputs:\n  database:\n    linux: /mnt/datasets\n    windows: "\\\\server\\datasets"\n```', fg='yellow', err=True, dim=True)
+      typer.secho(f'WARNING: Could not find the default database location, defaulting to "."', fg='yellow', err=True)
+      typer.secho(f'Consider adding to qaboard.yaml:\n```\ninputs:\n  database:\n    linux: /mnt/datasets\n    windows: "\\\\server\\datasets"\n```', fg='yellow', err=True, dim=True)
       ignore_config_errors = True
   return Path(database)
 
@@ -417,8 +417,8 @@ if metrics_file:
   metrics_file_path = Path(root_qatools / metrics_file)
   if not metrics_file_path.exists():
     if not ignore_config_errors:
-      click.secho(f'WARNING: Could not find the file containing metrics ({metrics_file})', fg='yellow', err=True)
-      click.secho(f'         It is defined in qaboard.yaml under outputs.metrics', fg='yellow', err=True, dim=True)
+      typer.secho(f'WARNING: Could not find the file containing metrics ({metrics_file})', fg='yellow', err=True)
+      typer.secho(f'         It is defined in qaboard.yaml under outputs.metrics', fg='yellow', err=True, dim=True)
       ignore_config_errors = True
   else:
     with metrics_file_path.open(errors="surrogateescape") as f:
@@ -427,8 +427,8 @@ if metrics_file:
       except Exception as e:
         config_has_error = True
         if not ignore_config_errors:
-          click.secho(f'ERROR: Unable to parse {metrics_file}', fg='red', err=True, bold=True)
-          click.secho(f'{e}', fg='red', err=True)
+          typer.secho(f'ERROR: Unable to parse {metrics_file}', fg='red', err=True, bold=True)
+          typer.secho(f'{e}', fg='red', err=True)
           ignore_config_errors = False
       available_metrics = _metrics.get('available_metrics', {})
       main_metrics = _metrics.get('main_metrics', [])

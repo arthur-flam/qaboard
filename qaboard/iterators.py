@@ -12,10 +12,10 @@ from copy import deepcopy
 from pathlib import Path
 from itertools import chain, product
 from dataclasses import replace
-from typing import List, Union, Dict, Tuple, Iterator, cast
+from typing import List, Union, Dict, Tuple, Iterator, Sequence, cast
 
 import yaml
-import click
+import typer
 
 from .conventions import pretty_hash, get_settings, location_from_spec
 from .utils import input_metadata, entrypoint_module
@@ -81,13 +81,13 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
     input_paths = [*database.glob("*"), database]
   if not input_paths:
     if 'QA_BATCH_FAIL_IF_EMPTY' in os.environ:
-      click.secho(f'ERROR: No inputs found for the batch "{path}" under {database}', fg='red', err=True)
+      typer.secho(f'ERROR: No inputs found for the batch "{path}" under {database}', fg='red', err=True)
       exit(1)
     else:
-      click.secho(f'WARNING: No inputs found for the batch "{path}" under {database}', fg='yellow', err=True)
+      typer.secho(f'WARNING: No inputs found for the batch "{path}" under {database}', fg='yellow', err=True)
       if 'QABOARD_TUNING' in os.environ and not database.is_absolute():
-        click.secho('         You look for your input inside the project directory, but we cannot find them...', fg='red', err=True)
-        click.secho('         Make sure that (1) your inputs are declared as artifacts, and (2) you called `qa save-artifacts`.', fg='red', err=True)
+        typer.secho('         You look for your input inside the project directory, but we cannot find them...', fg='red', err=True)
+        typer.secho('         Make sure that (1) your inputs are declared as artifacts, and (2) you called `qa save-artifacts`.', fg='red', err=True)
       return
 
   if not globs:
@@ -147,10 +147,10 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
 
   if not seen_inputs:
     if 'QA_BATCH_FAIL_IF_EMPTY' in os.environ:
-      click.secho(f'ERROR: No inputs found matching "{path}" [{globs}] under "{database}".', fg='red', err=True)
+      typer.secho(f'ERROR: No inputs found matching "{path}" [{globs}] under "{database}".', fg='red', err=True)
       raise ValueError 
     else:
-      click.secho(f'WARNING: No inputs found matching "{path}" [{globs}] under "{database}".', fg='yellow', err=True)
+      typer.secho(f'WARNING: No inputs found matching "{path}" [{globs}] under "{database}".', fg='yellow', err=True)
 
 
 def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exclude=None):
@@ -170,8 +170,8 @@ def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exc
       # we really could send a batch update to /our/ database here with all the metadata?
     except Exception as e:
       exc_type, exc_value, exc_traceback = sys.exc_info()
-      click.secho(f'[ERROR] The `iter_inputs` function in your entrypoint raised an exception:', fg='red', bold=True, err=True)
-      click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
+      typer.secho(f'[ERROR] The `iter_inputs` function in your entrypoint raised an exception:', fg='red', bold=True, err=True)
+      typer.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
     return
 
   globs = inputs_settings.get('globs', inputs_settings.get('glob'))
@@ -185,8 +185,8 @@ def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exc
 
 
 def iter_inputs(
-  batches: List[str],
-  batches_files: List[os.PathLike],
+  batches: Sequence[str],
+  batches_files: Sequence[os.PathLike],
   default_database: Path,
   default_configurations: List,
   default_platform: str,
@@ -207,15 +207,15 @@ def iter_inputs(
       batches_file_path = location_from_spec(batches_file, {"project": project, "subproject": subproject})
       new_batches = yaml.load(open(batches_file_path), Loader=yaml.SafeLoader)
       if new_batches is None:
-        click.secho(f"WARNING: no data in: {batches_file}", fg='yellow', err=True)
+        typer.secho(f"WARNING: no data in: {batches_file}", fg='yellow', err=True)
         continue
       if not isinstance(new_batches, dict):
-        click.secho(f"WARNING: Invalid YAML (expected mapping/dict) in: {batches_file}", fg='yellow', err=True)
+        typer.secho(f"WARNING: Invalid YAML (expected mapping/dict) in: {batches_file}", fg='yellow', err=True)
         continue
       if not new_batches:
         continue
     except Exception as e:
-      click.secho(f"ERROR: Invalid YAML: {batches_file}", err=True)
+      typer.secho(f"ERROR: Invalid YAML: {batches_file}", err=True)
       raise e
     # deep-merge the aliases
     old_aliases = available_batches.get('aliases', {})
@@ -249,16 +249,16 @@ def iter_inputs(
           available_batches['aliases'][new_batch].append(f"{new_batch}@{batches_file}")
           available_batches[f"{new_batch}@{batches_file}"] = new_batches[new_batch]
   if debug:
-    click.secho(str(available_batches), dim=True, err=True)
+    typer.secho(str(available_batches), dim=True, err=True)
 
   batch_aliases = available_batches.get('aliases', {})
   batches = list(resolve_aliases(batches, batch_aliases)) # type: ignore
   if not batches:
     if 'QA_BATCH_FAIL_IF_EMPTY' in os.environ:
-      click.secho(f'ERROR: No batch was chosen.', fg='red', err=True)
+      typer.secho(f'ERROR: No batch was chosen.', fg='red', err=True)
       raise ValueError 
     else:
-      click.secho(f'WARNING: No batch was chosen.', fg='yellow', err=True)
+      typer.secho(f'WARNING: No batch was chosen.', fg='yellow', err=True)
 
   if not default_inputs_settings:
     inputs_settings = get_settings(qatools_config.get('inputs', {}).get('types', {}).get('default', 'default'), qatools_config)
@@ -290,11 +290,11 @@ def iter_inputs(
 
   def check_batch(batch):
     if available_batches[batch] is None:
-      click.secho(f"WARNING: Cannot use empty batch definitions like '{batch}:'. Check your batch YAML.", fg='yellow', err=True)
-      click.secho(f"         If you want to run on all inputs consider using '{batch}: inputs:'.", fg='yellow', err=True)
+      typer.secho(f"WARNING: Cannot use empty batch definitions like '{batch}:'. Check your batch YAML.", fg='yellow', err=True)
+      typer.secho(f"         If you want to run on all inputs consider using '{batch}: inputs:'.", fg='yellow', err=True)
 
   for batch in batches:
-    if debug: click.secho(f'batch: {batch}', dim=True, err=True)
+    if debug: typer.secho(f'batch: {batch}', dim=True, err=True)
 
     # 1. Batches can directly match specifications from YAML files
     if batch in available_batches:
@@ -315,7 +315,7 @@ def iter_inputs(
       continue
 
     # 3. Batch can be directly paths to inputs (semi-deprecated...) 
-    if debug: click.secho(str(batch), bold=True, fg='cyan', err=True)
+    if debug: typer.secho(str(batch), bold=True, fg='cyan', err=True)
     inputs_iter = _iter_inputs(batch, run_context.database, inputs_settings, qatools_config)
     yield from (replace(run_context, input_path=i, database=d) for i, d in inputs_iter)
 
@@ -371,11 +371,11 @@ def parse_batch(batch_name, batch):
   """Returns an empty batch if there is an issue with the batch's content"""
   # Happens often when there is an orphan "my-batch:" in in the yaml file
   if batch is None:
-    click.secho(f'WARNING: Empty definition for the batch {batch_name}', fg='yellow', err=True)
+    typer.secho(f'WARNING: Empty definition for the batch {batch_name}', fg='yellow', err=True)
     return None
   if not isinstance(batch, dict):
-    click.secho(f'ERROR: The batch {batch_name} has the wrong type.', fg='red', bold=True, err=True)
-    click.secho(f'       Got {type(batch)} expected a dict with keys inputs/configuration/database...', fg='red', err=True) 
+    typer.secho(f'ERROR: The batch {batch_name} has the wrong type.', fg='red', bold=True, err=True)
+    typer.secho(f'       Got {type(batch)} expected a dict with keys inputs/configuration/database...', fg='red', err=True) 
     exit(1)
   return batch
 
@@ -505,7 +505,7 @@ def iter_batch(batch: Dict, default_run_context: RunContext, qatools_config, def
           for location, location_configurations in l.items():
             locations_and_configs.append((location, location_configurations))
         else:
-          click.secho(f'ERROR: Could not understand the inputs in the batch ({locations_and_configs}).', fg='red', err=True)
+          typer.secho(f'ERROR: Could not understand the inputs in the batch ({locations_and_configs}).', fg='red', err=True)
           raise ValueError
 
     for location, location_configurations in locations_and_configs:
@@ -538,7 +538,7 @@ def iter_batch(batch: Dict, default_run_context: RunContext, qatools_config, def
           location_run_context.configurations = [*location_run_context.configurations, *list(flatten(location_configurations))]
         else: # string?
           location_run_context.configurations =  [*location_run_context.configurations, location_configurations]
-      if debug: click.secho(str(location_run_context.database / location), bold=True, fg='cyan', err=True)
+      if debug: typer.secho(str(location_run_context.database / location), bold=True, fg='cyan', err=True)
       inputs_iter = _iter_inputs(location, location_run_context.database, location_inputs_settings, qatools_config, only=batch.get('only'), exclude=batch.get('exclude'))
       yield from (replace(location_run_context, input_path=i, database=d) for i, d in inputs_iter)
 
@@ -575,12 +575,12 @@ def iter_parameters(tuning_search=None, filetype='json', extra_parameters=None):
   n_iter = tuning_search.get('search_options', {}).get('n_iter')
   if not parameter_search:
     params_iterator = [{}]
-  elif tuning_search['search_type'] == 'grid':
+  elif tuning_search.get('search_type', 'grid') == 'grid':
     # http://scikit-learn.org/stable/modules/generated/sklearn.model_selection.ParameterSampler.html#sklearn.model_selection.ParameterSampler
     from sklearn.model_selection import ParameterGrid
     # from search import ParameterGrid
     params_iterator = ParameterGrid(parameter_search)
-  elif tuning_search['search_type'] == 'sampler':
+  elif tuning_search.get('search_type') == 'sampler':
     from sklearn.model_selection import ParameterSampler
     # from search import ParameterSampler
     params_iterator = ParameterSampler(parameter_search, n_iter=n_iter)
@@ -589,7 +589,7 @@ def iter_parameters(tuning_search=None, filetype='json', extra_parameters=None):
 
   for counter, params_ in enumerate(params_iterator):
     if n_iter and counter >= n_iter and n_iter > 0:
-        click.secho(f"Stopping tuning combination after {n_iter} iterations", fg='yellow', err=True)
+        typer.secho(f"Stopping tuning combination after {n_iter} iterations", fg='yellow', err=True)
         return
     # the search overrides the extra parameters specified earlier
     params = {**extra_params, **params_}

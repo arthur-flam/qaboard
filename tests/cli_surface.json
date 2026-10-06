@@ -1,0 +1,840 @@
+{
+  "commands": {
+    "batch": {
+      "context_settings": {
+        "allow_interspersed_args": true,
+        "ignore_unknown_options": true
+      },
+      "params": {
+        "action_on_existing": {
+          "envvar": "QA_BATCH_ACTION_ON_EXISTING",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--action-on-existing"
+          ],
+          "required": false
+        },
+        "action_on_pending": {
+          "envvar": "QA_BATCH_ACTION_ON_PENDING",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--action-on-pending"
+          ],
+          "required": false
+        },
+        "batch_names": {
+          "envvar": null,
+          "is_flag": false,
+          "kind": "argument",
+          "multiple": false,
+          "nargs": -1,
+          "opts": [
+            "batch_names"
+          ],
+          "required": false
+        },
+        "batches": {
+          "envvar": "QA_BATCH_BATCHES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batch",
+            "-b"
+          ],
+          "required": false
+        },
+        "batches_files": {
+          "envvar": "QA_BATCH_BATCHES_FILES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batches-file"
+          ],
+          "required": false
+        },
+        "dask_concurrency": {
+          "envvar": "QA_BATCH_DASK_CONCURRENCY",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--dask-concurrency"
+          ],
+          "required": false
+        },
+        "list_contexts": {
+          "envvar": "QA_BATCH_LIST_CONTEXTS",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--list"
+          ],
+          "required": false
+        },
+        "list_inputs": {
+          "envvar": "QA_BATCH_LIST_INPUTS",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--list-inputs"
+          ],
+          "required": false
+        },
+        "list_output_dirs": {
+          "envvar": "QA_BATCH_LIST_OUTPUT_DIRS",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--list-output-dirs"
+          ],
+          "required": false
+        },
+        "local_concurrency": {
+          "envvar": "QA_BATCH_LOCAL_CONCURRENCY",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--local-concurrency"
+          ],
+          "required": false
+        },
+        "local_timeout": {
+          "envvar": "QA_BATCH_LOCAL_TIMEOUT",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--local-timeout"
+          ],
+          "required": false
+        },
+        "lsf_concurrency": {
+          "envvar": "QA_BATCH_LSF_CONCURRENCY",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--lsf-concurrency"
+          ],
+          "required": false
+        },
+        "lsf_max_memory": {
+          "envvar": "QA_BATCH_LSF_MAX_MEMORY",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--lsf-max-memory"
+          ],
+          "required": false
+        },
+        "lsf_max_threads": {
+          "envvar": "QA_BATCH_LSF_MAX_THREADS",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--lsf-max-threads"
+          ],
+          "required": false
+        },
+        "lsf_options": {
+          "envvar": "QA_BATCH_LSF_OPTIONS",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--lsf-options"
+          ],
+          "required": false
+        },
+        "lsf_priority": {
+          "envvar": "QA_BATCH_LSF_PRIORITY",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--lsf-priority"
+          ],
+          "required": false
+        },
+        "lsf_queue": {
+          "envvar": "QA_BATCH_LSF_QUEUE",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--lsf-queue"
+          ],
+          "required": false
+        },
+        "lsf_resources": {
+          "envvar": "QA_BATCH_LSF_RESOURCES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--lsf-resources"
+          ],
+          "required": false
+        },
+        "no_wait": {
+          "envvar": "QA_BATCH_NO_WAIT",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--no-wait"
+          ],
+          "required": false
+        },
+        "prefix_outputs_path": {
+          "envvar": "QA_BATCH_PREFIX_OUTPUTS_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--prefix-outputs-path"
+          ],
+          "required": false
+        },
+        "runner": {
+          "envvar": "QA_BATCH_RUNNER",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--runner"
+          ],
+          "required": false
+        },
+        "tuning_search_dict": {
+          "envvar": "QA_BATCH_TUNING_SEARCH_DICT",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--tuning-search"
+          ],
+          "required": false
+        },
+        "tuning_search_file": {
+          "envvar": "QA_BATCH_TUNING_SEARCH_FILE",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--tuning-search-file"
+          ],
+          "required": false
+        }
+      }
+    },
+    "check-bit-accuracy": {
+      "context_settings": {},
+      "params": {
+        "batches": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_BATCHES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batch",
+            "-b"
+          ],
+          "required": false
+        },
+        "batches_files": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_BATCHES_FILES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batches-file"
+          ],
+          "required": false
+        },
+        "reference": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_REFERENCE",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--reference"
+          ],
+          "required": false
+        },
+        "reference_label": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_REFERENCE_LABEL",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--reference-label"
+          ],
+          "required": false
+        },
+        "reference_platform": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_REFERENCE_PLATFORM",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--reference-platform"
+          ],
+          "required": false
+        },
+        "strict": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_STRICT",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--strict"
+          ],
+          "required": false
+        }
+      }
+    },
+    "check-bit-accuracy-manifest": {
+      "context_settings": {},
+      "params": {
+        "batches": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_MANIFEST_BATCHES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batch",
+            "-b"
+          ],
+          "required": true
+        },
+        "batches_files": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_MANIFEST_BATCHES_FILES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batches-file"
+          ],
+          "required": false
+        },
+        "strict": {
+          "envvar": "QA_CHECK_BIT_ACCURACY_MANIFEST_STRICT",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--strict"
+          ],
+          "required": false
+        }
+      }
+    },
+    "get": {
+      "context_settings": {},
+      "params": {
+        "as_json": {
+          "envvar": "QA_GET_AS_JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--json"
+          ],
+          "required": false
+        },
+        "input_path": {
+          "envvar": "QA_GET_INPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--input",
+            "-i"
+          ],
+          "required": false
+        },
+        "output_path": {
+          "envvar": "QA_GET_OUTPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--output",
+            "-o"
+          ],
+          "required": false
+        },
+        "variable": {
+          "envvar": null,
+          "is_flag": false,
+          "kind": "argument",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "variable"
+          ],
+          "required": false
+        }
+      }
+    },
+    "init": {
+      "context_settings": {},
+      "params": {}
+    },
+    "optimize": {
+      "context_settings": {
+        "ignore_unknown_options": true
+      },
+      "params": {
+        "batches": {
+          "envvar": "QA_OPTIMIZE_BATCHES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batch",
+            "-b"
+          ],
+          "required": true
+        },
+        "batches_files": {
+          "envvar": "QA_OPTIMIZE_BATCHES_FILES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batches-file"
+          ],
+          "required": false
+        },
+        "checkpoint": {
+          "envvar": "QA_OPTIMIZE_CHECKPOINT",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--checkpoint"
+          ],
+          "required": false
+        },
+        "config_file": {
+          "envvar": "QA_OPTIMIZE_CONFIG_FILE",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--config-file"
+          ],
+          "required": true
+        },
+        "forwarded_args": {
+          "envvar": null,
+          "is_flag": false,
+          "kind": "argument",
+          "multiple": false,
+          "nargs": -1,
+          "opts": [
+            "forwarded_args"
+          ],
+          "required": false
+        },
+        "parallel_param_sampling": {
+          "envvar": "QA_OPTIMIZE_PARALLEL_PARAM_SAMPLING",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--parallel-param-sampling"
+          ],
+          "required": false
+        }
+      }
+    },
+    "postprocess": {
+      "context_settings": {
+        "ignore_unknown_options": true
+      },
+      "params": {
+        "forwarded_args": {
+          "envvar": null,
+          "is_flag": false,
+          "kind": "argument",
+          "multiple": false,
+          "nargs": -1,
+          "opts": [
+            "forwarded_args"
+          ],
+          "required": false
+        },
+        "input_path": {
+          "envvar": "QA_POSTPROCESS_INPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--input",
+            "-i"
+          ],
+          "required": true
+        },
+        "output_path": {
+          "envvar": "QA_POSTPROCESS_OUTPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--output",
+            "-o"
+          ],
+          "required": false
+        }
+      }
+    },
+    "run": {
+      "context_settings": {
+        "allow_interspersed_args": false,
+        "ignore_unknown_options": true
+      },
+      "params": {
+        "forwarded_args": {
+          "envvar": null,
+          "is_flag": false,
+          "kind": "argument",
+          "multiple": false,
+          "nargs": -1,
+          "opts": [
+            "forwarded_args"
+          ],
+          "required": false
+        },
+        "input_path": {
+          "envvar": "QA_RUN_INPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--input",
+            "-i"
+          ],
+          "required": true
+        },
+        "keep_previous": {
+          "envvar": "QA_RUN_KEEP_PREVIOUS",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--keep-previous"
+          ],
+          "required": false
+        },
+        "no_postprocess": {
+          "envvar": "QA_RUN_NO_POSTPROCESS",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--no-postprocess"
+          ],
+          "required": false
+        },
+        "output_path": {
+          "envvar": "QA_RUN_OUTPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--output",
+            "-o"
+          ],
+          "required": false
+        },
+        "save_manifests_in_database": {
+          "envvar": "QA_RUN_SAVE_MANIFESTS_IN_DATABASE",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--save-manifests-in-database"
+          ],
+          "required": false
+        }
+      }
+    },
+    "save-artifacts": {
+      "context_settings": {},
+      "params": {
+        "artifacts_path": {
+          "envvar": "QA_SAVE_ARTIFACTS_ARTIFACTS_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--out",
+            "-o"
+          ],
+          "required": false
+        },
+        "excluded_groups": {
+          "envvar": "QA_SAVE_ARTIFACTS_EXCLUDED_GROUPS",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--exclude"
+          ],
+          "required": false
+        },
+        "files": {
+          "envvar": "QA_SAVE_ARTIFACTS_FILES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--file",
+            "-f"
+          ],
+          "required": false
+        },
+        "groups": {
+          "envvar": null,
+          "is_flag": false,
+          "kind": "argument",
+          "multiple": false,
+          "nargs": -1,
+          "opts": [
+            "groups"
+          ],
+          "required": false
+        }
+      }
+    },
+    "sync": {
+      "context_settings": {
+        "ignore_unknown_options": true
+      },
+      "params": {
+        "input_path": {
+          "envvar": "QA_SYNC_INPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--input",
+            "-i"
+          ],
+          "required": true
+        },
+        "output_path": {
+          "envvar": "QA_SYNC_OUTPUT_PATH",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--output",
+            "-o"
+          ],
+          "required": false
+        }
+      }
+    },
+    "wait": {
+      "context_settings": {
+        "ignore_unknown_options": true
+      },
+      "params": {
+        "output_id": {
+          "envvar": "QA_WAIT_OUTPUT_ID",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--output-id"
+          ],
+          "required": false
+        }
+      }
+    }
+  },
+  "context_settings": {},
+  "params": {
+    "configurations": {
+      "envvar": "QA_CONFIGURATIONS",
+      "is_flag": false,
+      "kind": "option",
+      "multiple": true,
+      "nargs": 1,
+      "opts": [
+        "--config",
+        "--configuration",
+        "-c"
+      ],
+      "required": false
+    },
+    "database": {
+      "envvar": "QA_DATABASE",
+      "is_flag": false,
+      "kind": "option",
+      "multiple": false,
+      "nargs": 1,
+      "opts": [
+        "--database"
+      ],
+      "required": false
+    },
+    "dryrun": {
+      "envvar": "QA_DRYRUN",
+      "is_flag": true,
+      "kind": "option",
+      "multiple": false,
+      "nargs": 1,
+      "opts": [
+        "--dryrun"
+      ],
+      "required": false
+    },
+    "input_type": {
+      "envvar": "QA_INPUT_TYPE",
+      "is_flag": false,
+      "kind": "option",
+      "multiple": false,
+      "nargs": 1,
+      "opts": [
+        "--type"
+      ],
+      "required": false
+    },
+    "label": {
+      "envvar": "QA_LABEL",
+      "is_flag": false,
+      "kind": "option",
+      "multiple": false,
+      "nargs": 1,
+      "opts": [
+        "--label",
+        "-l"
+      ],
+      "required": false
+    },
+    "offline": {
+      "envvar": "QA_OFFLINE",
+      "is_flag": true,
+      "kind": "option",
+      "multiple": false,
+      "nargs": 1,
+      "opts": [
+        "--offline"
+      ],
+      "required": false
+    },
+    "platform": {
+      "envvar": "QA_PLATFORM",
+      "is_flag": false,
+      "kind": "option",
+      "multiple": false,
+      "nargs": 1,
+      "opts": [
+        "--platform"
+      ],
+      "required": false
+    },
+    "share": {
+      "envvar": "QA_SHARE",
+      "is_flag": true,
+      "kind": "option",
+      "multiple": false,
+      "nargs": 1,
+      "opts": [
+        "--share"
+      ],
+      "required": false
+    },
+    "tuning": {
+      "envvar": "QA_TUNING",
+      "is_flag": false,
+      "kind": "option",
+      "multiple": true,
+      "nargs": 1,
+      "opts": [
+        "--tuning"
+      ],
+      "required": false
+    },
+    "tuning_filepath": {
+      "envvar": "QA_TUNING_FILEPATH",
+      "is_flag": false,
+      "kind": "option",
+      "multiple": true,
+      "nargs": 1,
+      "opts": [
+        "--tuning-filepath"
+      ],
+      "required": false
+    }
+  }
+}

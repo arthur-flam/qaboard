@@ -9,28 +9,19 @@ import subprocess
 from pathlib import Path
 from collections.abc import Iterable
 
-import click
+import typer
 
 from .api import makeNumpyEncoder, batch_info, notify_qa_database, print_url, matching_output
-from .config import project, subproject, commit_id, outputs_commit, available_metrics, default_batches_files, default_platform
+from .config import project, subproject, commit_id, outputs_commit, available_metrics, default_platform
 from .conventions import batch_dir
-from .utils import PathType, getenvs
+from .utils import getenvs
 from .run import RunContext
 
 seed = int(os.environ.get('QA_SEED', 101))
 
 
-@click.command(context_settings=dict(
-    ignore_unknown_options=True,
-))
-@click.option('--batch', '-b', 'batches', required=True, multiple=True, help="Use the inputs+configs+database in those batches")
-@click.option('--batches-file', 'batches_files', default=default_batches_files, multiple=True, help="YAML file listing batches of inputs+config+database selected from the database.")
-@click.option('--config-file', required=True, type=PathType(), help="YAML search space configuration file.")
-@click.option('--checkpoint', type=PathType(), help="Will save/load from this checkpoint to restart interrupted optimizations.")
-@click.option('--parallel-param-sampling', type=int, help="Parallel paramater sampling.")
-@click.argument('forwarded_args', nargs=-1, type=click.UNPROCESSED)
-@click.pass_context
 def optimize(ctx, batches, batches_files, config_file, checkpoint, parallel_param_sampling, forwarded_args):
+  """Bayesian optimization of parameters, each iteration is a `qa batch`. CLI: qaboard/cli/results.py"""
   import random
   random.seed(seed)
   import numpy as np
@@ -80,25 +71,25 @@ def optimize(ctx, batches, batches_files, config_file, checkpoint, parallel_para
     }},
   )
   for iteration in range(previous_iterations, optim_config['evaluations'], parallel_param_sampling):
-      click.secho(f"Starting iteration {iteration}", fg='blue')
+      typer.secho(f"Starting iteration {iteration}", fg='blue')
       if parallel_param_sampling == 1:
         suggested = optimizer.ask()
       else:
-        click.secho(f"  {parallel_param_sampling} parallel samples", fg='blue')
+        typer.secho(f"  {parallel_param_sampling} parallel samples", fg='blue')
         suggested = optimizer.ask(n_points=parallel_param_sampling)
       # print("suggested", suggested)
-      click.secho(f"Computing objective", fg='blue')
+      typer.secho(f"Computing objective", fg='blue')
       if parallel_param_sampling == 1:
         y = objective([*suggested, iteration])
       else:
         y = Parallel(n_jobs=parallel_param_sampling, prefer='threads')(delayed(objective)([*s, iteration+idx]) for idx, s in enumerate(suggested))
 
       # print(f"y={y}", suggested)
-      click.secho(f"Updating optimizer", fg='blue')
+      typer.secho(f"Updating optimizer", fg='blue')
       results = optimizer.tell(suggested, y)
       dump(results, checkpoint, compress=9)
 
-      click.secho(f"Updating QA-Board", fg='blue')
+      typer.secho(f"Updating QA-Board", fg='blue')
       if parallel_param_sampling == 1:
         suggested = [suggested]
         y = [y]
@@ -138,7 +129,7 @@ def optimize(ctx, batches, batches_files, config_file, checkpoint, parallel_para
         #    .specs [dict]: parameters passed to the function.
         is_best = results.func_vals[iteration+idx] <= results.fun or iteration+idx==0
         if is_best:
-          click.secho(f'New best @iteration{iteration+idx+1}: {y} at iteration {iteration+idx+1}', fg='green')
+          typer.secho(f'New best @iteration{iteration+idx+1}: {y} at iteration {iteration+idx+1}', fg='green')
 
         is_best_data = {
           "is_best_iter": True,
@@ -164,7 +155,7 @@ def optimize(ctx, batches, batches_files, config_file, checkpoint, parallel_para
 
         if is_best:
           try:
-            click.secho(f'Creating plots', fg='blue')
+            typer.secho(f'Creating plots', fg='blue')
             make_plots(results, optim_dir)
           except Exception:
             pass
@@ -212,10 +203,10 @@ def init_optimization(optim_config_file, checkpoint, ctx):
   from skopt.utils import Space
   space = Space.from_yaml(optim_config_file, namespace='search_space')
   preset_params = optim_config.get('preset_params', {})
-  click.secho("Search space:", fg="blue", err=True)
-  click.secho(str(space), fg="blue", dim=True, err=True)
-  click.secho("Preset parameters:", fg="blue", err=True)
-  click.secho(str(preset_params), fg="blue", dim=True, err=True)
+  typer.secho("Search space:", fg="blue", err=True)
+  typer.secho(str(space), fg="blue", dim=True, err=True)
+  typer.secho("Preset parameters:", fg="blue", err=True)
+  typer.secho(str(preset_params), fg="blue", dim=True, err=True)
 
   # we use the iteration step in the objective function, to store results at the right place
   from skopt.utils import Integer
@@ -238,7 +229,7 @@ def init_optimization(optim_config_file, checkpoint, ctx):
       f'--share' if ctx.obj["share"] else '',
       f'--offline' if ctx.obj['offline'] else '',
       f'--platform "{ctx.obj["platform"]}"' if ctx.obj['platform'] != default_platform else '',
-      f"--configuration '{ctx.obj['configuration']}'" if ctx.params.get('configurations') else '',
+      f"--configuration '{ctx.obj['configuration']}'" if ctx.find_root().params.get('configurations') else '',
       f"--tuning '{json.dumps(params, sort_keys=True, cls=makeNumpyEncoder())}'",
       'batch',
       ' '.join([f'--batches-file "{b}"' for b in ctx.obj["batches_files"]]),
@@ -246,7 +237,7 @@ def init_optimization(optim_config_file, checkpoint, ctx):
       # we notably forward --batch
       ' '.join(ctx.obj["forwarded_args"]),
     ])
-    click.secho(command, fg="blue")
+    typer.secho(command, fg="blue")
     import re
     command = re.sub('^qa', 'python -m qaboard', command) # helps make sure we run the right thing when testing 
     if str(subproject) != '.':
@@ -259,7 +250,7 @@ def init_optimization(optim_config_file, checkpoint, ctx):
           encoding="utf-8",
       )
       if p.returncode != 0:
-        click.secho(f'[ERROR ({p.returncode})] Check the logs in QA-Board to know what output failed', fg='red', bold=True)
+        typer.secho(f'[ERROR ({p.returncode})] Check the logs in QA-Board to know what output failed', fg='red', bold=True)
 
     # Now that we finished computing all the results, we will download the results and
     # compute the objective function:
@@ -409,14 +400,14 @@ def batch_objective(project, commit_id, batch_label, config_objective):
       else:
         metric_target = None
       if output['metrics'].get('is_failed'):
-        click.secho('Failed output', fg='red')        
-        click.secho(output['output_dir_url'][2:], fg='red')
+        typer.secho('Failed output', fg='red')        
+        typer.secho(output['output_dir_url'][2:], fg='red')
       else:
         try:
           losses.append(loss(output['metrics'][metric], metric_target) )
         except Exception:
-          click.secho(f'Could not find {metric}', fg='red')        
-          click.secho(output['output_dir_url'][2:], fg='red')
+          typer.secho(f'Could not find {metric}', fg='red')        
+          typer.secho(output['output_dir_url'][2:], fg='red')
     if not losses:
       raise ValueError(f"Could not compute the loss function!")
     partial_objective = make_reduce(options)(losses)
@@ -429,7 +420,7 @@ def batch_objective(project, commit_id, batch_label, config_objective):
 
 
 def make_plots(results, dir):
-  # click.secho(str(dir), dim=True)
+  # typer.secho(str(dir), dim=True)
   import matplotlib
   import matplotlib.pyplot as plt
   # https://matplotlib.org/faq/usage_faq.html#non-interactive-example
@@ -444,24 +435,24 @@ def make_plots(results, dir):
   #   git pull origin master 
   # https://github.com/scikit-optimize/scikit-optimize/pull/675
   from skopt.plots import plot_convergence
-  click.secho(f'. plot_convergence', fg='blue')
+  typer.secho(f'. plot_convergence', fg='blue')
   _ = plot_convergence(results)
   plt.savefig(dir/'plot_convergence.png')
 
   # Those plots can be VERY slow.
   # TODO: create them in the  background
   # from skopt.plots import plot_objective
-  # click.secho(f'. plot_objective', fg='blue')
+  # typer.secho(f'. plot_objective', fg='blue')
   # _ = plot_objective(results)
   # plt.savefig(dir/'plot_objective.png')
 
   # from skopt.plots import plot_regret
-  # click.secho(f'. plot_regret', fg='blue')
+  # typer.secho(f'. plot_regret', fg='blue')
   # _ = plot_regret(results)
   # plt.savefig(dir/'plot_regret.png')
 
   # from skopt.plots import plot_evaluations
-  # click.secho(f'. plot_evaluations', fg='blue')
+  # typer.secho(f'. plot_evaluations', fg='blue')
   # _ = plot_evaluations(results)
   # plt.savefig(dir/'plot_evaluations.png')
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Union, Optional
 
 import yaml
-import click
+import typer
 
 from .git import git_show
 
@@ -37,7 +37,7 @@ def get_settings(inputs_type, config):
   config_inputs_types = config_inputs.get('types', {})
   if inputs_type != 'default' and inputs_type not in config_inputs_types:
     error = f'Error: Unknown input type <{inputs_type}>. It is not defined in your qaboard.yaml'
-    click.secho(error, fg='red', err=True, bold=True)
+    typer.secho(error, fg='red', err=True, bold=True)
     raise ValueError(error)
   settings = {
     **config_inputs,
@@ -219,7 +219,7 @@ def get_commit_dirs(commit, repo_root: Optional[Path]=None) -> Path:
         if repo_root is None:
           raise ValueError("Not enough information about the commit to know where to store its data.")
         # if we run within an artifact directory, we're not in a git repo, so "git show" will fail.
-        click.secho(f"WARNING: Could not resolve the commit locally ({commit}). Not enough information to know where to store artifacts/runs.", fg='yellow', err=True)
+        typer.secho(f"WARNING: Could not resolve the commit locally ({commit}). Not enough information to know where to store artifacts/runs.", fg='yellow', err=True)
         return repo_root.resolve()
   else: # likely a gitpython Commit object...
     commit_id = commit.hexsha
