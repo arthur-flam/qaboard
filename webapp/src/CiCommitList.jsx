@@ -74,7 +74,9 @@ const SearchHeader = ({ search, nb_commits, has_more, isFetching }) => (
 const CiCommitList = () => {
   const { project, branch, committer } = useSelected();
   const project_data = useProjectData(project);
-  const { commits, error, isPending, isFetching, isSuccess, date_range, search, hasNextPage, fetchNextPage, isFetchingNextPage } = useCommitsList({ refetchInterval: 60 * 1000 });
+  const { commits, error, isPending, isPlaceholderData, isSuccess, date_range, search, hasNextPage, fetchNextPage, isFetchingNextPage } = useCommitsList({ refetchInterval: 60 * 1000 });
+  // new results are on their way (background refreshes don't count)
+  const loading = isPending || isPlaceholderData;
   const [now] = useState(() => new Date());
 
   useEffect(() => {
@@ -111,12 +113,12 @@ const CiCommitList = () => {
           />
         </Card>
       </Section>}
-      {!!search && <SearchHeader search={search} nb_commits={commits.length} has_more={hasNextPage} isFetching={isFetching && !isFetchingNextPage}/>}
+      {!!search && <SearchHeader search={search} nb_commits={commits.length} has_more={hasNextPage} isFetching={loading}/>}
       {error && <NonIdealState description={<pre>{error_msg(error)}</pre>} icon="error" />}
       {isPending && <NonIdealState title="Loading" icon={<Spinner />} />}
-      {isSuccess && !isFetching && !error && !some_commits_loaded && !!search &&
+      {isSuccess && !loading && !error && !some_commits_loaded && !!search &&
         <NonIdealState title="No commit matches your search" icon="search" />}
-      {isSuccess && !isFetching && !error && !some_commits_loaded && !search &&
+      {isSuccess && !loading && !error && !some_commits_loaded && !search &&
         <NonIdealState
           title="Could not find a commit with results"
           description={<span>Searched {" "}
@@ -143,7 +145,7 @@ const CiCommitList = () => {
       ))}
       {hasNextPage && some_commits_loaded && !error &&
         <LoadMore onLoadMore={loadMore} loading={isFetchingNextPage} loaded={commits.length} text="More commits"/>}
-      {isSuccess && !hasNextPage && some_commits_loaded && !search && !isFetching &&
+      {isSuccess && !hasNextPage && some_commits_loaded && !search && !loading &&
         <div style={{display: 'flex', justifyContent: 'center', margin: '15px'}}>
           <Button minimal icon="history" text="Older commits" title="Search 7 more days" onClick={show_older}/>
         </div>}

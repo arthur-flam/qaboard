@@ -33,11 +33,12 @@ export function useProjectData(project) {
   const is_favorite = usePrefsStore(state => !!state.favorites[project]);
   const milestones = usePrivateMilestones(project);
   return useMemo(() => {
-    const base = from_project ?? from_list ?? {};
+    // The list has dates and counts, the project its whole configuration
     return {
       ...default_project,
-      ...base,
-      data: { ...default_project.data, ...base.data },
+      ...from_list,
+      ...from_project,
+      data: { ...default_project.data, ...from_list?.data, ...from_project?.data },
       is_favorite,
       milestones,
     };
@@ -141,7 +142,9 @@ export function useCommitsList({ enabled = true, refetchInterval, ignore_search 
   const all_query = useQuery({ ...commitsQuery(params), enabled: enabled && !!project && !paginated, refetchInterval });
   // Branch pages show their metrics over time: we get the whole date range at once
   const page_size = branch && !search ? 1000 : commits_page_size;
-  const pages_query = useInfiniteQuery({ ...commitsPagesQuery({ ...params, q: search || undefined, page_size }), enabled: enabled && !!project && paginated, refetchInterval });
+  // Infinite queries refetch all their pages one after the other: we only refresh lists users didn't scroll through
+  const pages_refetch_interval = refetchInterval && (query => (query.state.data?.pages?.length ?? 0) > 1 ? false : refetchInterval);
+  const pages_query = useInfiniteQuery({ ...commitsPagesQuery({ ...params, q: search || undefined, page_size }), enabled: enabled && !!project && paginated, refetchInterval: pages_refetch_interval });
   const query = paginated ? pages_query : all_query;
 
   const default_branch = project_data.data?.git?.default_branch ?? project_data.data?.qatools_config?.project?.reference_branch;
@@ -160,7 +163,17 @@ export function useCommitsList({ enabled = true, refetchInterval, ignore_search 
     return { commits, ids: all.map(c => c.id), latest_commit };
   }, [data, dataUpdatedAt, branch, default_branch]);
 
-  return { ...query, data, ...derived, date_range, project, search, paginated };
+  // The project's latest commit on its default branch may not be in the pages we loaded:
+  // other branches can have many more recent commits. We then ask for it.
+  const wants_latest = enabled && !!project && paginated && !branch && !committer && !!default_branch && query.isSuccess && !derived.latest_commit;
+  const { data: latest_on_default } = useQuery({
+    ...commitsQuery({ project, branch: default_branch, from: params.from, to: params.to, metrics, limit: 1 }),
+    enabled: wants_latest,
+    refetchInterval,
+  });
+  const latest_commit = derived.latest_commit ?? (wants_latest ? latest_on_default?.[0] : undefined);
+
+  return { ...query, data, ...derived, latest_commit, date_range, project, search, paginated };
 }
 
 

@@ -55,7 +55,7 @@ export const make_api = ({ nb_outputs, nb_commits }) => {
     '/api/v1/user/me/': { is_authenticated: true, user_id: 1, user_name: 'alice', full_name: 'Alice', email: 'alice@example.com', login_type: 'local' },
     '/api/v1/projects': { [project]: { id: project, data: { qatools_config, qatools_metrics }, latest_commit_datetime: '2026-09-01T10:00:00Z', total_commits: nb_commits } },
     '/api/v1/project/branches': ['master', 'develop'],
-    '/api/v1/project': { id: project, data: { qatools_config, qatools_metrics } },
+    '/api/v1/project': { qatools_config, qatools_metrics },
     '/api/v1/commits': commits,
     ...Object.fromEntries(Object.entries(commit_details).map(([id, c]) => [`/api/v1/commit/${id}`, c])),
     '/api/v1/commit': commit_details[commits[0].id],

@@ -104,7 +104,8 @@ describe('links per host', () => {
 describe('images', () => {
   test('public images are loaded directly, others via the server', () => {
     expect(image_url('https://avatars.githubusercontent.com/u/1?v=4')).toBe('https://avatars.githubusercontent.com/u/1?v=4');
-    expect(image_url('https://www.gravatar.com/avatar/abc?d=identicon')).toBe('https://www.gravatar.com/avatar/abc?d=identicon');
+    // closed networks may only reach gravatar through the server
+    expect(image_url('https://www.gravatar.com/avatar/abc?d=identicon')).toMatch(/^\/api\/v1\/git\/proxy/);
     expect(image_url('http://gitlab-srv/uploads/a b.png?x=1&y=2')).toBe('/api/v1/git/proxy?url=http%3A%2F%2Fgitlab-srv%2Fuploads%2Fa%20b.png%3Fx%3D1%26y%3D2');
     site({ git_hosts: [{ type: 'gitea', url: 'https://git.example.com' }, { type: 'gitlab', url: 'https://gitlab.example.com' }] });
     expect(image_url('https://git.example.com/avatars/1')).toBe('https://git.example.com/avatars/1');
@@ -112,6 +113,26 @@ describe('images', () => {
     expect(image_url('/s/some/file.png')).toBe('/s/some/file.png');
     expect(image_url(null)).toBe(null);
     expect(image_url(undefined)).toBe(null);
+  });
+
+  test('urls that only look like public hosts go through the server', () => {
+    for (const url of [
+      '//evil.example/p.png',
+      'https://evil.example#@github.com/x.png',
+      'https://evil.example?@github.com/x.png',
+      'https://evil.example\\@github.com/x.png',
+      'http://avatars.githubusercontent.com/u/1',
+    ])
+      expect([url, image_url(url)]).toEqual([url, `/api/v1/git/proxy?url=${encodeURIComponent(url)}`]);
+  });
+});
+
+
+describe('refs in links', () => {
+  test('are encoded, but keep their slashes', () => {
+    const p = project({ hosting_type: 'github', web_url: 'https://github.com/a/b/' });
+    expect(tree_url(p, 'feature/#12 x', 'sub dir')).toBe('https://github.com/a/b/tree/feature/%2312%20x/sub%20dir');
+    expect(commit_url(p, 'abc123')).toBe('https://github.com/a/b/commit/abc123');
   });
 });
 
@@ -127,6 +148,9 @@ describe('default integrations', () => {
     expect(evaluated({ hosting_type: 'gitlab', web_url: 'https://gitlab.com/a/b' }, 'main')[0].src).toBe('https://gitlab.com/a/b/badges/main/pipeline.svg');
     expect(evaluated({ hosting_type: 'github', web_url: 'https://github.com/a/b' }, 'main')[0].href).toBe('https://github.com/a/b/actions?query=branch%3Amain');
     expect(evaluated({ hosting_type: 'gitea', web_url: 'https://codeberg.org/a/b' }, 'main')).toEqual([]);
+    expect(evaluated({ hosting_type: 'github', web_url: 'https://github.com/a/b' }, 'fix/#1')[0].href).toBe('https://github.com/a/b/actions?query=branch%3Afix%2F%231');
+    // we don't show badges for hosts we can only guess
+    expect(evaluated({ web_url: 'https://unknown.example/a/b' }, 'main')).toEqual([]);
   });
 
   test('only on branch pages', () => {

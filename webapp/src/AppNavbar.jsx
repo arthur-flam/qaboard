@@ -57,9 +57,10 @@ export const branch_query = search => {
   return words.length === 1 ? words[0].replace(/"/g, '') : '';
 }
 
-function filterBranch(query, branch) {
+export function filterBranch(query, branch) {
   const text = branch_query(query ?? '');
-  if (!text) return true;
+  // e.g. "fix crash" or "committer:alice" are not about branches
+  if (!text) return !(query ?? '').trim();
   return branch.toLowerCase().indexOf(text.toLowerCase()) >= 0;
 }
 
@@ -141,7 +142,8 @@ const CommitsListNavbar = () => {
   // The search goes in the URL when users pause typing: it searches commits (CiCommitList) and branches
   const [search, onSearchChange] = useUrlText(selected.search, query => updateSelected(project, { search: query || undefined }, { replace: true }), 300);
   const [filter, onFilterChange] = useUrlText(selected.filter_batch_new, value => updateSelected(project, { filter_batch_new: value }, { replace: true }));
-  const { data: branches = [] } = useBranches(project, branch_query(selected.search), { enabled: wants_branches });
+  const branch_search = branch_query(selected.search);
+  const { data: branches = [] } = useBranches(project, branch_search, { enabled: wants_branches && (!!branch_search || !selected.search.trim()) });
 
   const handleBranchChange = branch => {
     if (branch.commit !== undefined && branch.commit !== null)

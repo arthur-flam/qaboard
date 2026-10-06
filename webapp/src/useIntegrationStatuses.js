@@ -73,7 +73,7 @@ const github_workflow = (project, project_data, commit) => ({
   host: host_url(project_data),
   repo: project_data.data?.git?.path_with_namespace ?? project,
   commit_id: commit.id,
-  ref: commit.branch,
+  ref: commit.branch?.replace(/^origin\//, ''),
 });
 
 

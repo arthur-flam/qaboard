@@ -51,21 +51,27 @@ const git_hostname = qaboard_config => {
 // The repository's web page
 const repo_url = project_data => {
   const git = project_data?.data?.git ?? {};
-  return git.web_url ?? `${git_hostname(project_data?.data?.qatools_config) ?? default_host_url()}/${git.path_with_namespace}`;
+  return (git.web_url ?? `${git_hostname(project_data?.data?.qatools_config) ?? default_host_url()}/${git.path_with_namespace}`).replace(/\/+$/, '');
 }
 
 // The web root of the repository's host, e.g. https://github.com
 const host_url = project_data => project_data?.data?.git?.host ?? repo_url(project_data).split('/').slice(0, 3).join('/');
 
-// gitlab, github, gitea, bitbucket or generic
-const host_type = project_data => {
+// The type of host we know the project is on: from its push webhooks, or the site's git hosts
+const known_host_type = project_data => {
   const git = project_data?.data?.git ?? {};
   if (git.hosting_type)
     return git.hosting_type;
   const hostname = hostname_of(repo_url(project_data)) ?? '';
-  const configured = (site_config().git_hosts ?? []).find(h => hostname_of(h.url) === hostname);
-  if (configured)
-    return configured.type;
+  return (site_config().git_hosts ?? []).find(h => hostname_of(h.url) === hostname)?.type;
+}
+
+// gitlab, github, gitea, bitbucket or generic
+const host_type = project_data => {
+  const known = known_host_type(project_data);
+  if (known)
+    return known;
+  const hostname = hostname_of(repo_url(project_data)) ?? '';
   if (hostname.includes('github')) return 'github';
   if (hostname.includes('bitbucket')) return 'bitbucket';
   if (hostname.includes('gitea') || hostname.includes('forgejo') || hostname === 'codeberg.org') return 'gitea';
@@ -75,6 +81,8 @@ const host_type = project_data => {
 
 // URLs of pages, relative to the repository's web page
 const is_sha = ref => /^[0-9a-f]{7,64}$/i.test(ref ?? '');
+// Branches can contain e.g. "#" or spaces, but their "/" separate path segments in URLs
+const encode_path = path => String(path ?? '').split('/').map(encodeURIComponent).join('/');
 const url_patterns = {
   gitlab: {
     commit: sha => `-/commit/${sha}`,
@@ -105,7 +113,7 @@ url_patterns.generic = url_patterns.github;
 
 const link = (kind, project_data, ...args) => {
   const patterns = url_patterns[host_type(project_data)] ?? url_patterns.generic;
-  return `${repo_url(project_data)}/${patterns[kind](...args)}`.replace(/\/+$/, '');
+  return `${repo_url(project_data)}/${patterns[kind](...args.map(encode_path))}`.replace(/\/+$/, '');
 }
 const commit_url = (project_data, sha) => link('commit', project_data, sha);
 // A folder at a branch or commit, e.g. a subproject
@@ -114,16 +122,23 @@ const blob_url = (project_data, ref, path) => link('blob', project_data, ref, pa
 const commits_url = (project_data, ref) => link('commits', project_data, ref);
 
 
-// Images from git hosts (avatars, CI badges...). Public ones are loaded directly. The others go through the server:
-// it may have a session on GitLab hosts (GITLAB_AUTH), or can reach hosts users can't.
-const public_image_hosts = ['avatars.githubusercontent.com', 'github.com', 'gravatar.com', 'www.gravatar.com', 'secure.gravatar.com', 'bitbucket.org', 'codeberg.org'];
+// Images from git hosts (avatars, CI badges...). Those of public git hosts are loaded directly. The others go through the server:
+// it may have a session on GitLab hosts (GITLAB_AUTH), or can reach hosts users can't (e.g. gravatar from closed networks).
+const public_image_hosts = ['avatars.githubusercontent.com', 'github.com', 'bitbucket.org', 'codeberg.org'];
 const image_url = url => {
   if (!url) return null;
-  if (url.startsWith('/') || url.startsWith('data:')) return url;
-  const hostname = hostname_of(url);
-  const is_public = public_image_hosts.includes(hostname)
-    || (site_config().git_hosts ?? []).some(h => h.type !== 'gitlab' && hostname_of(h.url) === hostname);
-  return is_public ? url : `/api/v1/git/proxy?url=${encodeURIComponent(url)}`;
+  if (url.startsWith('data:image/')) return url;
+  let parsed;
+  try {
+    parsed = new URL(url, window.location.origin);
+  } catch {
+    return null;
+  }
+  // our own files, but not //other.host/...
+  if (parsed.origin === window.location.origin && url.startsWith('/') && !url.startsWith('//')) return url;
+  const is_public = parsed.protocol === 'https:' && (public_image_hosts.includes(parsed.hostname)
+    || (site_config().git_hosts ?? []).some(h => h.type !== 'gitlab' && hostname_of(h.url) === parsed.hostname));
+  return is_public ? parsed.href : `/api/v1/git/proxy?url=${encodeURIComponent(url)}`;
 }
 
 
@@ -141,12 +156,13 @@ const default_integrations_per_host = {
     {
       text: "GitHub Actions",
       icon: "build",
-      href: "${git.web_url}/actions?query=branch%3A${branch}",
+      href: "${git.web_url}/actions?query=branch%3A${encodeURIComponent(branch)}",
       ignore_failure: true,
     },
   ],
 };
-const default_integrations = project_data => default_integrations_per_host[host_type(project_data)] ?? [];
+// Only for hosts we know: guessing wrong would show broken badges
+const default_integrations = project_data => default_integrations_per_host[known_host_type(project_data)] ?? [];
 
 
 export {

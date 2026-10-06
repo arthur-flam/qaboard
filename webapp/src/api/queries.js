@@ -73,7 +73,8 @@ export const projectsQuery = queryOptions({
 
 export const projectQuery = project => queryOptions({
   queryKey: ['project', project],
-  queryFn: async ({ signal }) => normalize_project((await http.get('/api/v1/project', { params: { project }, signal })).data),
+  // The server answers with the project's data: {git, qatools_config, qatools_metrics, milestones...}
+  queryFn: async ({ signal }) => normalize_project({ id: project, data: (await http.get('/api/v1/project', { params: { project }, signal })).data }),
   enabled: !!project,
   staleTime: 60 * 1000,
 });

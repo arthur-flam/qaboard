@@ -191,6 +191,8 @@ const IntegrationsMenus = props => {
     const badge = integration.src && <img
       alt={integration.alt || integration_key}
       src={image_url(integration.src)}
+      // e.g. private projects, or projects without CI
+      onError={e => { e.currentTarget.style.display = 'none' }}
     />
     let right_label
     if (badge) {
