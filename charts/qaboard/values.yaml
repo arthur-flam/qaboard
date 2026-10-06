@@ -14,13 +14,15 @@ imagePullSecrets: []
 config:
   QABOARD_LOGIN_TYPE: LOCAL
   # GITLAB_HOST: https://gitlab.example.com
+  # Git hosts, their tokens are read from the secret (website/docs/backend-admin/git-hosts.mdx)
+  # QABOARD_GIT_HOSTS: '[{"type": "github", "url": "https://github.com", "token_env": "GITHUB_ACCESS_TOKEN"}]'
   # QABOARD_LDAP_HOST: ldap.example.com
   # QABOARD_IMAGE_SERVERS: '{"default": "/iiif"}'
   # The folders mounted below (extraVolumeMounts): the backend only writes, deletes or runs code there
   # QABOARD_STORAGE_ROOTS: /algo
 
 # Secret backend settings: SECRET_KEY (signs sessions, must be the same for all replicas),
-# QABOARD_DB_PASSWORD (unless database.cnpg.enabled), GITLAB_ACCESS_TOKEN, QABOARD_LDAP_PASSWORD...
+# QABOARD_DB_PASSWORD (unless database.cnpg.enabled), GITLAB_ACCESS_TOKEN, GITHUB_ACCESS_TOKEN, QABOARD_LDAP_PASSWORD...
 secret:
   # Recommended: create the secret yourself (e.g. with sealed-secrets/external-secrets) and reference it
   existingSecret: ""

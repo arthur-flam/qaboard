@@ -100,14 +100,14 @@ QA-Board can connect to external authentifications systems (LDAP, SAML). If need
 
 | ENV Variable           | Default | Usage                                                |
 -------------------------|-------- |------------------------------------------------------|
-| `GITLAB_ACCESS_TOKEN`  | _none_  | Optional for some extra features. Get it with a `read_repository` scope at https://$gitlab-server/profile/personal_access_tokens |
 | `SECRET_KEY`           | _generated_ | Signs the sessions. If unset, a key is generated once and saved in the backend's data volume. With several hosts/kubernetes, set the same value everywhere. |
-| `GITLAB_HOST`          | *https://gitlab.com* | e.g. *https://gitlab.com* or *http://my-gitlab-srv/*. Also used for git links in the UI |
-| `QABOARD_GITLAB_HOSTS` | _none_  | Comma-separated extra gitlab hostnames the backend may send `GITLAB_ACCESS_TOKEN` to |
-| `GITHUB_ACCESS_TOKEN`  | _none_  | Token used to clone private GitHub repositories and look up committers' avatars (see [GitHub integration](project-init#optional-integration-with-github)) |
-| `QABOARD_GITHUB_HOSTS` | _none_  | Comma-separated GitHub Enterprise hostnames the backend may clone from and send `GITHUB_ACCESS_TOKEN` to, besides github.com |
+| `QABOARD_GIT_HOSTS`    | _none_  | Your git hosts (GitHub, GitLab, Gitea/Forgejo, Bitbucket...) with their tokens and webhook secrets: a JSON list, or the path to a JSON/YAML file. See [Git hosts](backend-admin/git-hosts) |
+| `GITLAB_HOST`          | *https://gitlab.com* | The default git host, a GitLab, e.g. *http://my-gitlab-srv/*. Used for git links of projects that don't say where they are hosted |
+| `GITLAB_ACCESS_TOKEN`  | _none_  | Token for `GITLAB_HOST`: `read_repository` scope to clone private repositories, `api` to play GitLab CI jobs and see committers' avatars |
+| `GITHUB_ACCESS_TOKEN`  | _none_  | Token for github.com: to clone private repositories and use GitHub Actions |
+| `QABOARD_GITLAB_HOSTS`, `QABOARD_GITHUB_HOSTS` | _none_  | Comma-separated hostnames of other GitLab / GitHub Enterprise servers, that get `GITLAB_ACCESS_TOKEN` / `GITHUB_ACCESS_TOKEN`. `QABOARD_GIT_HOSTS` lets you give each its own token |
 | `QABOARD_STORAGE_ROOTS` | */mnt/qaboard* | Folders where your projects store outputs and artifacts, separated by `:` (e.g. `/mnt/qaboard:/mnt/datasets`). The backend refuses results stored elsewhere, and never writes, deletes or runs code outside these folders |
-| `QABOARD_WEBHOOK_SECRET` | _none_ | Secret that the GitLab and GitHub webhooks must send (GitLab's *Secret token*, GitHub's *Secret*). Recommended: without it anyone who can reach the server can send fake push events |
+| `QABOARD_WEBHOOK_SECRET` | _none_ | Secret that push webhooks must send (GitLab's *Secret token*, GitHub's *Secret*...), unless their host has its own `webhook_secret` in `QABOARD_GIT_HOSTS`. Recommended: without it anyone who can reach the server can send fake push events |
 | `QABOARD_PORT_HTTP`    | 5151    | Port mapped to the app on the host                   |
 | `QABOARD_DB_HOST`      | db      | Connect the backend to a non-default database host (e.g. instead of dev'ing with prod dumps, connect directly to it) |
 | `QABOARD_DB_PORT`      | 5432    | Connect to a non-default database port               |
