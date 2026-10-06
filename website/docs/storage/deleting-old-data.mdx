@@ -49,9 +49,9 @@ Logged-in users can also delete results from a commit's page, in the batch's men
 Batches that are [milestones](../references-and-milestones) are protected: their runs can't all be deleted this way.
 
 ## Recovering lost data?
-Well, you won't be able to do that. What you should try to do is make everything **reproducable**.
+Well, you won't be able to do that. What you should try to do is make everything **reproducible**.
 - Define your whole *environment as code*. Make sure your commits contain 100% of what is needed for your code to run. Tools you can use include `docker+Dockerfile`, etc.
-- Make it easy to re-trigger your CI, so that it's straightfoward to re-builds, re-run your tests, and uploads artifacts to QA-Board.
+- Make it easy to re-trigger your CI, so that it's straightforward to re-builds, re-run your tests, and uploads artifacts to QA-Board.
 - If necessary, make it also very easy to run manually something like
 
 ```bash

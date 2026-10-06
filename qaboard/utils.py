@@ -363,7 +363,7 @@ def outputs_manifest(output_directory: Path, config=None, compute_hashes=True) -
     # backward-compat with manifests created by run_tv.py,
     # which doesn't copy the TV folder in the output directory
     if config is not None and config.get("project", {}).get("name", "").startswith("CDE-Users/HW_ALG"):
-      if path.name in ("run.json", "metrics.json", "manifest.ouputs.json", "runme_csg.bat") or "Config" in path.parts:
+      if path.name in ("run.json", "metrics.json", "manifest.outputs.json", "runme_csg.bat") or "Config" in path.parts:
         return False
     # avoid logs with timestamps and temporary NFS files
     illegal_file = path.name == 'log.txt' or path.name.startswith('.nfs00000')

@@ -66,7 +66,7 @@ def run_delete(min_id):
 
 
 def main():
-  # Optionnally, you can give an id to start from...
+  # Optionally, you can give an id to start from...
   last_id = 3457400 # None
 
   should_continue = True

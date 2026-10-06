@@ -92,7 +92,7 @@ class JobGroup():
         click.secho(f'          We will fall back to looking at output folders directly.', fg='yellow', err=True)
         click.secho(f'          Due to filesystem sync it might not always work well, so we sleeping for {sync_time}s.', fg='yellow', err=True)
         time.sleep(sync_time)
-      # If we don't have jobs, either we were offline or something aweful happenned
+      # If we don't have jobs, either we were offline or something awful happened
       return any(job.run_context.is_failed(verbose=True) for job in self.jobs)
 
     # Here we add the matching outputs as job.qaboard_output

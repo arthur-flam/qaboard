@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-This scrip fixed a race condition that caused duplicated batches
+This script fixed a race condition that caused duplicated batches
  /opt/anaconda3/bin/python /home/arthurf/qaboard/backend/backend/remove_duplicates.py --dryrun
 """
 import click
