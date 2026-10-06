@@ -4,6 +4,7 @@ Tests for `qa init`'s wizard: the change harness, project detection, settings, t
 import importlib.util
 import io
 import os
+import sys
 import stat
 import subprocess
 import tempfile
@@ -328,6 +329,11 @@ class TestWizard(TempDir):
     self.assertIn('output/', (self.root / '.gitignore').read_text())
     config = yaml.safe_load((self.root / 'qaboard.yaml').read_text())
     self.assertNotIn('url', config['project'], "no placeholder URL")
+    # and qa works with it
+    env = {**os.environ, **self.env, 'QA_NO_CHECK_FOR_UPDATES': '1', 'PYTHONPATH': str(Path(__file__).resolve().parent.parent)}
+    out = subprocess.run([sys.executable, '-c', "import sys; sys.argv[0] = 'qa'; from qaboard.cli import main; main()", 'get', 'project'],
+                         cwd=self.root, env=env, capture_output=True, text=True)
+    self.assertEqual(out.returncode, 0, out.stderr)
 
   def test_no_ai_without_a_terminal(self):
     make_project(self.root)

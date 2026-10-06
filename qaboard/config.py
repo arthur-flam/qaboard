@@ -125,9 +125,11 @@ else:
   # that have tons of small repos configured the name
   interpolation_vars = {"root_path": root_qatools, "project_path": project_dir}
   root_qatools_config['project']['name'] = expand_paths(root_qatools_config['project']['name'], interpolation_vars)
-  root_qatools_config['project']['url'] = expand_paths(root_qatools_config['project']['url'], interpolation_vars)
   config['project']['name'] = expand_paths(config['project']['name'], interpolation_vars)
-  config['project']['url'] = expand_paths(config['project']['url'], interpolation_vars)
+  # The URL is optional, e.g. for projects without a git remote yet
+  for c in (root_qatools_config, config):
+    if c['project'].get('url'):
+      c['project']['url'] = expand_paths(c['project']['url'], interpolation_vars)
 
 
   # We identify sub-qatools projects using the location of qaboard.yaml related to the project root
