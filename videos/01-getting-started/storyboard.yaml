@@ -164,7 +164,7 @@ scenes:
       - mark: review
       - expect: "All good"
       - pause: 2
-      - answer: {when: "All good\\?", text: "w"}
+      - answer: {when: "\\(w\\) ", text: "w"}
       - mark: done
       - expect: "Try qa run"
       - pause: 3
