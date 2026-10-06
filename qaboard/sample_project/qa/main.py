@@ -34,6 +34,9 @@ def run(context):
 
   # To get started with minimal effort and as example,
   # we run the extra CLI flags passed by the user.
+  # WARNING: replace this with your own code! Running forwarded_args through a shell lets anyone who can create
+  #          a run in QA-Board choose a command, that runs as whoever clicks "Redo" on it.
+  #          See https://github.com/Samsung/qaboard/blob/master/SECURITY.md
   arg_format = lambda a: a.format(**cli_formatter)
   command = " ".join([arg_format(a) for a in context.forwarded_args])
 
