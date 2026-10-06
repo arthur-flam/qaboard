@@ -23,7 +23,7 @@ Project names are git paths, like `group/repo`. In monorepos, each sub-project h
 
 ## Commit list
 The project's home page lists the **latest commits with results**, grouped by day ("Today — 3 commits"). It refreshes every minute.
-The 50 latest commits show up first, more come as you scroll down (or click **More commits**). At the end of the [date range](#date-range), **Older commits** looks 7 more days back.
+The 50 latest commits show up first, more come as you scroll down (or click **More commits**). On a branch page, all the branch's commits in the date range come at once (up to 1000), for the metrics chart. At the end of the [date range](#date-range), **Older commits** looks 7 more days back.
 
 <img alt="Commit list, grouped by day" src={useBaseUrl('img/commits-index.jpg')} />
 
@@ -54,11 +54,12 @@ Each commit row shows:
 - Click an avatar or a committer name to see their commits, on all branches: `/<project>/committer/<name>`.
 
 ### Searching commits
-The **Filter...** box at the top right searches **all the project's commits**, not only those in the date range (on a branch page, all the branch's commits). Results come as you pause typing, newest first, with a "Searching all commits" banner that counts the matches. As you type, it also suggests the most recently active branches whose name matches: pick one to open it.
+The **Filter...** box at the top right searches **all the project's commits**, not only those in the date range (on a branch page, all the branch's commits). Results come as you pause typing, newest first, with a "Searching all commits" banner that counts the matches. When your search could be a branch name (a single word, or a `branch:` term), it also suggests the most recently active branches whose name contains it: pick one to open it.
 
 | You type | You find commits... |
 |---|---|
-| `denoise` | whose message, committer, branch or batch labels contain "denoise", or whose hash starts with it (from 4 characters) |
+| `denoise` | whose message, committer, branch or batch labels contain "denoise" |
+| `3fa2c1` | the same, or whose hash starts with it, for words of 4 or more hexadecimal characters |
 | `denoise crash` | matching **both** words |
 | `-wip` | **not** matching "wip" |
 | `"fix the crash"` | containing these words together |
@@ -66,7 +67,7 @@ The **Filter...** box at the top right searches **all the project's commits**, n
 | `committer:alice` or `author:alice` | by a committer whose name contains "alice" |
 | `batch:tuning` or `label:tuning` | with a batch whose label contains "tuning" |
 | `message:speed` or `msg:speed` | whose message contains "speed" |
-| `id:3fa2` or `commit:3fa2` | whose hash starts with "3fa2" |
+| `id:3fa2`, `commit:3fa2` or `sha:3fa2` | whose hash starts with "3fa2" |
 
 Searches are case-insensitive, and qualifiers can be excluded too (`-branch:release`). Unlike the [filters of the commit page](#filter-syntax), they don't use regular expressions. The search is saved in the URL (`search=`), so a shared link shows the same results.
 

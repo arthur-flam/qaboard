@@ -30,11 +30,12 @@ You CI is responsible for setting up an environment (`$PATH`...) in which `qaboa
 
 <img alt="Index of the latest commits" src={useBaseUrl('img/commits-index.jpg')} />
 
-3. If `qa` has a token for your git host, `qa batch` also sets a **commit status** named `QA` (or `QA <subproject>`), with a link to the results.
+3. If `qa` has a token for your git host, `qa batch` also sets a **commit status** named `QA` (`QA <subproject>` in a [subproject](monorepo-subprojects), with the name of its folder), with a link to the results. Batches run with a `--label` other than `default` get their own status, e.g. `QA | my-label`.
 
 ## Example with GitHub Actions
 ```yaml title=".github/workflows/qa.yml"
-on: [push, pull_request]
+# Every commit pushed to the repository, on any branch or tag
+on: push
 permissions:
   contents: read
   statuses: write  # for qa batch's commit status
@@ -44,13 +45,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        # For pull_request events: the pull request's last commit, not the temporary merge commit
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
     - run: pip install qaboard
     - run: qa batch ci
       env:
         QABOARD_URL: https://qaboard.example.com
+        # GitHub Actions doesn't put its token in the environment: map it
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
-`qa` reads the commit from `GITHUB_SHA`, and the branch from `GITHUB_HEAD_REF` or `GITHUB_REF_NAME`. For pull requests, it uses the pull request's last commit, not the temporary merge commit that GitHub checks out. It calls the API of `GITHUB_SERVER_URL` (or `GITHUB_API_URL`) for the repository `GITHUB_REPOSITORY`, so it works with GitHub Enterprise too.
+Results in QA-Board belong to commits, so running on `push` is enough: pull requests from the repository's own branches already get a run for each of their commits. With `on: [push, pull_request]`, those would run twice. If you add `pull_request` (e.g. for forks), keep the `ref:` above: `qa` records the pull request's last commit, but by default `actions/checkout` only fetches the temporary merge commit, so `qa` couldn't read the commit's details (message, author, parents) from git.
+
+`qa` reads the commit from `GITHUB_SHA`, and the branch from `GITHUB_HEAD_REF` or `GITHUB_REF_NAME`. For pull requests, it uses the pull request's last commit, not the merge commit. For tags, it records the tag. It calls the API at `GITHUB_API_URL` (else derived from `GITHUB_SERVER_URL`) for the repository `GITHUB_REPOSITORY`, so it works with GitHub Enterprise too. The token is `GITHUB_TOKEN`, else `GITHUB_ACCESS_TOKEN`, or the host's token in `QABOARD_GIT_HOSTS`.
 
 ## Example with GitLab CI
 ```yaml title=".gitlab-ci.yml"
@@ -69,12 +76,12 @@ qa-tests:
   script:
   - qa batch ci
 ```
-`qa` reads the commit and branch from `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME`. For commit statuses, give it a `GITLAB_ACCESS_TOKEN` with the `api` scope (e.g. a CI/CD variable, or the site's shared secrets), and `GITLAB_HOST` if it should not use `CI_SERVER_URL`.
+`qa` reads the commit and branch from `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME`. For commit statuses, give it a `GITLAB_ACCESS_TOKEN` with the `api` scope (`read_api` is enough to wait for the CI of reference commits), e.g. a CI/CD variable or the site's shared secrets. It calls the API of `GITLAB_HOST` if it's set, else of `CI_SERVER_URL`.
 
 ## Other CI tools
 > QA-Board knows how to work with the most common CI tools: GitHub Actions, GitLab CI, Jenkins, CircleCI, TravisCI...
 
-Elsewhere, `qa` finds your git host from `project.url` in *qaboard.yaml* and the hosts listed in `QABOARD_GIT_HOSTS` (see [Git hosts](backend-admin/git-hosts)), and uses `GITHUB_ACCESS_TOKEN` or `GITLAB_ACCESS_TOKEN`.
+Elsewhere, `qa` finds your git host from `project.url` in *qaboard.yaml* and the hosts listed in `QABOARD_GIT_HOSTS` (see [Git hosts](backend-admin/git-hosts#the-cli)), and uses the host's token there, or `GITLAB_ACCESS_TOKEN`, or `GITHUB_ACCESS_TOKEN`. It only sends `GITHUB_ACCESS_TOKEN` to github.com and the GitHub hosts listed in `QABOARD_GITHUB_HOSTS` or `QABOARD_GIT_HOSTS`. Projects whose `project.url` is on an unknown host are assumed to be on `GITLAB_HOST` (if the hostname contains "github", `qa` warns instead and sends no token).
 
 :::note
 `qa` detects that it runs in a CI when the `CI` environment variable is set (by GitlabCI, GitHub Actions, CircleCI, TravisCI...), or `GIT_COMMIT` (by Jenkins' git plugin).
