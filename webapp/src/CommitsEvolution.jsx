@@ -14,7 +14,7 @@ import {
 import { useSelected, useSiteConfig, useUrlText, updateSelected } from "./hooks";
 import { OutputCard } from "./viewers/OutputCard";
 import { useViewerControls } from "./viewers/controls";
-import { BitAccuracyForm } from "./viewers/bit_accuracy/utils";
+import { BitAccuracyForm, bit_accuracy_url_defaults } from "./viewers/bit_accuracy/utils";
 import { is_image } from "./viewers/images/utils"
 import { hash_color, match_query, average, median, matching_output } from "./utils";
 import CommitRow from "./components/CommitRow";
@@ -432,15 +432,21 @@ const CommitsEvolution = ({ project, project_data, commits = [], new_commit, ref
     [shown_batches, commits],
   );
 
-  // Changing the plot's options doesn't add browser history entries
-  const update = name => e => {
-    const value = (e?.target && e.target.value !== undefined) ? e.target.value : e;
-    updateSelected({ [name]: value }, { replace: true });
+  // Changing the plot's options doesn't add browser history entries, and default values are not in the URL
+  const url_defaults = {
+    ...bit_accuracy_url_defaults,
+    selected_metric: default_metric,
+    selected_aggregation: 'median',
+    breakdown_per_test: !!default_breakdown_per_test,
+    relative: default_breakdown_per_test !== true,
+    show_bit_accuracy: false,
   };
+  const save = (name, value) => updateSelected({ [name]: value }, { replace: true, defaults: url_defaults });
+  const update = name => e => save(name, (e?.target && e.target.value !== undefined) ? e.target.value : e);
   const [files_filter, onFilesFilterChange] = useUrlText(query.files_filter || '', update('files_filter'));
   const toggle = name => () => {
     const values = { breakdown_per_test, relative, show_bit_accuracy };
-    updateSelected({ [name]: !(values[name] ?? query[name] === 'true') }, { replace: true });
+    save(name, !(values[name] ?? query[name] === 'true'));
   };
 
   if (!default_metric)
@@ -522,7 +528,7 @@ const CommitsEvolution = ({ project, project_data, commits = [], new_commit, ref
         hide_runs_without_files={query.hide_runs_without_files === 'true'}
         expand_all={query.expand_all === 'true'}
         files_filter={files_filter}
-        toggle={name => () => updateSelected({ [name]: query[name] !== 'true' }, { replace: true })}
+        toggle={name => () => save(name, query[name] !== 'true')}
         update={name => name === 'files_filter' ? onFilesFilterChange : update(name)}
       />}
     </div>

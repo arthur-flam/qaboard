@@ -1,12 +1,12 @@
 // Visualizations can have "dynamic options" (e.g. which frame to show), discovered from each output's files.
-// Output cards register their options as they load; we merge the compatible ones to show common controls.
+// Output cards register their options as they load; we merge them to show common controls.
 //
 // Cards register one by one, possibly thousands of them: we collect registrations without re-rendering,
 // and merge them at most a few times per second.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { matchPath } from "./router";
-import { mergeCompatibleOptions } from "./utils/dynamicOptions";
+import { mergeOptions } from "./utils/dynamicOptions";
 
 const FLUSH_DELAY = 150;
 
@@ -48,8 +48,7 @@ export function useDynamicOptions({ config, reset_key, files_key }) {
     r.timer = null;
     if (!r.dirty) return;
     r.dirty = false;
-    const all = [...r.options.entries()].map(([output_id, options]) => ({ output_id, ...options }));
-    const options = mergeCompatibleOptions(all);
+    const options = mergeOptions([...r.options.values()]);
     // Most registrations change nothing: we keep the same objects, so that output cards don't re-render
     setState(state => {
       const same_options = JSON.stringify(options) === JSON.stringify(state.options);

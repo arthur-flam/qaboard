@@ -203,15 +203,16 @@ function useComparisonState() {
     metrics: { default_metric },
   }), [new_commit, ref_commit, selected_batch_new, selected_batch_ref, filter_batch_new, filter_batch_ref, sort_by, sort_order, default_metric]);
 
-  const default_views = config.config.outputs?.default_tab_details ?? project_data.data?.qatools_config?.outputs?.default_tab_details ?? 'summary';
+  const default_tab = config.config.outputs?.default_tab_details ?? project_data.data?.qatools_config?.outputs?.default_tab_details ?? 'summary';
+  const default_views = useMemo(() => [].concat(default_tab).map(v => v.replace('_', '-')), [default_tab]);
   const selected_views = useMemo(
-    () => (selected.selected_views ?? [].concat(default_views)).map(v => v.replace('_', '-')),
+    () => selected.selected_views ?? default_views,
     [selected.selected_views, default_views],
   );
 
   return useMemo(
-    () => ({ selected, project, project_data, list, new_commit, ref_commit, ...batches, ...config, selected_views }),
-    [selected, project, project_data, list, new_commit, ref_commit, batches, config, selected_views],
+    () => ({ selected, project, project_data, list, new_commit, ref_commit, ...batches, ...config, selected_views, default_views }),
+    [selected, project, project_data, list, new_commit, ref_commit, batches, config, selected_views, default_views],
   );
 }
 

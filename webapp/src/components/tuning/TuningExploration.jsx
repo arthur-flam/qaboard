@@ -417,7 +417,7 @@ const TuningExploration = ({ batch, selected_metrics: selected_metrics_, availab
 
   // The plots' settings are in the URL
   const aggregation = query.aggregation || 'median';
-  const select = attribute => e => updateSelected({ [attribute]: event_value(e) });
+  const select = attribute => e => updateSelected({ [attribute]: event_value(e) }, { defaults: { aggregation: 'median' } });
 
   const is_optimization_batch = batch?.data?.best_metrics !== undefined;
   const { selected_metrics, available_metrics } = useMemo(() => {

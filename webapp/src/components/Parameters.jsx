@@ -28,6 +28,9 @@ const useManifest = url => useQuery(fileQuery(url));
 const manifest_url = (commit, artifact) => commit?.artifacts_url ? `${commit.artifacts_url}/manifests/${artifact}.json` : undefined;
 
 
+// Values that don't need to be in the URL
+const url_defaults = { params_artifact: 'configurations', params_show_all_files: false, params_expand_all: true, params_color_blind_friendly: false, params_files_filter: '' };
+
 // Compares the artifacts (e.g. configuration files) of the new and reference commits.
 // The options are in the URL.
 const CommitParameters = ({ new_commit, ref_commit, config }) => {
@@ -38,9 +41,9 @@ const CommitParameters = ({ new_commit, ref_commit, config }) => {
   const color_blind_friendly = query.params_color_blind_friendly === 'true';
   const files_filter = query.params_files_filter || '';
 
-  const update = attribute_url => e => updateSelected({ [attribute_url]: event_value(e) });
+  const update = attribute_url => e => updateSelected({ [attribute_url]: event_value(e) }, { defaults: url_defaults });
   const toggle = (attribute_url, value) => () => update(attribute_url)(!value);
-  const [files_filter_text, onFilesFilterChange] = useUrlText(files_filter, value => updateSelected({ params_files_filter: value }, { replace: true }));
+  const [files_filter_text, onFilesFilterChange] = useUrlText(files_filter, value => updateSelected({ params_files_filter: value }, { replace: true, defaults: url_defaults }));
 
   const new_manifest = useManifest(manifest_url(new_commit, artifact));
   const ref_manifest = useManifest(manifest_url(ref_commit, artifact));

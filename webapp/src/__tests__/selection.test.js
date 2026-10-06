@@ -107,6 +107,30 @@ describe('changing the selection', () => {
     expect(url).toBe('/p/commit/a?');
   });
 
+  test('defaults are not in the URL', () => {
+    const { url, selected } = roundtrip('/p/commit/a?batch=x&batch_ref=y&filter=f&sort_order=1&search=s', {
+      selected_batch_new: 'default', selected_batch_ref: 'default', filter_batch_new: '', search: '', sort_order: '-1',
+    });
+    expect(url).toBe('/p/commit/a?');
+    expect(selected).toMatchObject({ selected_batch_new: 'default', filter_batch_new: '', sort_order: -1 });
+    // '' still means "no commit selected"
+    expect(roundtrip('/p/commit/a', { ref_commit_id: '' }).url).toBe('/p/commit/a?reference=');
+  });
+
+  test('callers give the defaults of their options', () => {
+    const { pathname, search } = new URL('/p/commit/a?show_all_files=true&selected_metrics=psnr&selected_metrics=ssim', 'http://localhost');
+    const defaults = { show_all_files: false, selected_metrics: ['psnr', 'ssim'], relative: true };
+    const next = url_for_selection({ show_all_files: false, selected_metrics: ['psnr', 'ssim'], relative: false }, { pathname, search }, defaults);
+    expect(next.search).toBe('relative=false');
+    const other_metrics = url_for_selection({ selected_metrics: ['ssim'] }, { pathname, search }, defaults);
+    expect(other_metrics.search).toBe('show_all_files=true&selected_metrics=ssim');
+  });
+
+  test('the legacy batch_new is replaced', () => {
+    expect(roundtrip('/p/commit/a?batch_new=x', { selected_batch_new: 'default' }).url).toBe('/p/commit/a?');
+    expect(roundtrip('/p/commit/a?batch_new=x', { selected_batch_new: 'y' }).selected.selected_batch_new).toBe('y');
+  });
+
   test('long lists survive the round trip', () => {
     const metrics = [...Array(25).keys()].map(i => `m${i}`);
     expect(roundtrip('/p/commit/a', { selected_metrics: metrics }).selected.selected_metrics).toEqual(metrics);

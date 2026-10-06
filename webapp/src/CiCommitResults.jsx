@@ -24,7 +24,6 @@ import TuningExploration from "./components/tuning/TuningExploration";
 import { useViewerControls } from "./viewers/controls";
 import { ExportPlugin } from "./plugins/ExportPlugin";
 import { humanFileSize } from "./viewers/bit_accuracy/utils";
-import { setSyncPreferences } from "./utils/dynamicOptions";
 import { project_web_url } from "./utils";
 
 import PrivateContent from "./components/authentication/PrivateContent"
@@ -60,17 +59,6 @@ const CiCommitResults = () => {
     reset_key: `${new_commit?.id}|${selected_batch_new}|${visualizations_key}`,
     files_key: filter_batch_new,
   });
-  // New dynamic options start with their default value, synced across outputs
-  const effective_controls = useMemo(() => {
-    const dynamic_options = { ...controls.dynamic_options };
-    const dynamic_options_sync = { ...controls.dynamic_options_sync };
-    Object.entries(dynamic.dynamic_options).forEach(([name, option]) => {
-      if (dynamic_options[name] === undefined) dynamic_options[name] = [option.defaultValue];
-      if (dynamic_options_sync[name] === undefined) dynamic_options_sync[name] = true;
-    });
-    return { ...controls, dynamic_options, dynamic_options_sync };
-  }, [controls, dynamic.dynamic_options]);
-
   const [expand_floating_panel, setExpandFloatingPanel] = useState(false);
   useEffect(() => {
     if (!expand_floating_panel) return;
@@ -79,22 +67,19 @@ const CiCommitResults = () => {
     return () => clearTimeout(timer);
   }, [expand_floating_panel]);
 
-  const toggle = name => () => setControls({ ...effective_controls, [name]: !effective_controls[name] });
-  // Three-state toggle: undefined -> true -> false -> true -> ...
-  const toggle_show = name => () => setControls({
-    ...effective_controls,
-    show: { ...effective_controls.show, [name]: effective_controls.show?.[name] !== true },
-  });
+  const toggle = name => () => setControls({ ...controls, [name]: !controls[name] });
+  // Visualizations are shown unless hidden by default
+  const is_shown = name => controls.show?.[name] ?? !visualizations.find(v => v.name === name)?.default_hidden;
+  const toggle_show = name => () => setControls({ ...controls, show: { ...controls.show, [name]: !is_shown(name) } });
   const updateDynamicOption = (name, value) => setControls({
-    ...effective_controls,
-    dynamic_options: { ...effective_controls.dynamic_options, [name]: [value] },
+    ...controls,
+    dynamic_options: { ...controls.dynamic_options, [name]: [value] },
   });
+  // Dynamic options are synced across output cards unless users unlink them
   const toggleDynamicOptionSync = name => {
-    const sync = !effective_controls.dynamic_options_sync[name];
-    const dynamic_options_sync = { ...effective_controls.dynamic_options_sync, [name]: sync };
-    setSyncPreferences(dynamic_options_sync);
-    setControls({ ...effective_controls, dynamic_options_sync });
-    // If we're syncing (not unsyncing), expand the floating panel
+    const sync = controls.dynamic_options_sync?.[name] === false;
+    setControls({ ...controls, dynamic_options_sync: { ...controls.dynamic_options_sync, [name]: sync ? undefined : false } });
+    // the option is now changed from the panel
     if (sync) setExpandFloatingPanel(true);
   };
 
@@ -112,7 +97,7 @@ const CiCommitResults = () => {
     available_metrics={available_metrics}
     used_metrics={new_batch.used_metrics}
     selected={selected_metrics_keys}
-    onChange={keys => updateSelected({ selected_metrics: keys })}
+    onChange={keys => updateSelected({ selected_metrics: keys }, { defaults: { selected_metrics: metrics.main_metrics } })}
   />;
 
   const warning_messages = <CommitWarningMessages project={new_project} commit={new_commit} />;
@@ -144,7 +129,7 @@ const CiCommitResults = () => {
     new_commit,
     new_batch,
     ref_batch,
-    controls: effective_controls,
+    controls,
     onRegisterOutputOptions: dynamic.register,
     onToggleDynamicOptionSync: toggleDynamicOptionSync,
   };
@@ -306,7 +291,7 @@ const CiCommitResults = () => {
 
       {(!!new_commit) && (
         <FloatingControlsPanel
-          controls={effective_controls}
+          controls={controls}
           visualizations={visualizations}
           controls_extra={controls_extra}
           selected_views={selected_views}

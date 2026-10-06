@@ -119,12 +119,27 @@ export function useSelected() {
 }
 
 
+// Values we don't need in the URL: URLs stay short and readable, and links follow the defaults
+const selection_defaults = {
+  selected_batch_new: 'default',
+  selected_batch_ref: 'default',
+  filter_batch_new: '',
+  filter_batch_ref: '',
+  search: '',
+  sort_order: -1,
+};
+const same_value = (value, default_value) => Array.isArray(value) || Array.isArray(default_value)
+  ? JSON.stringify([].concat(value)) === JSON.stringify([].concat(default_value))
+  : String(value) === String(default_value);
+
 // The project's own page lists its latest commits, selecting one opens it
 const route_names_project = matched => route_names[matched?.route.path] === 'project';
 
 // Where to go to apply changes to the selection.
-// Pure as well, takes the current URL: (changes, {pathname, search}) => {pathname, search}
-export const url_for_selection = (selected, { pathname, search }) => {
+// Pure as well, takes the current URL: (changes, {pathname, search}, defaults) => {pathname, search}
+// Values equal to their default are removed from the URL. Callers give the defaults of their own options.
+export const url_for_selection = (selected, { pathname, search }, defaults = {}) => {
+  defaults = { ...selection_defaults, ...defaults };
   const query = parse_query(search);
   const matched = matchRoutes(page_routes, pathname);
   const route = route_info(matched?.route.path ?? '');
@@ -169,7 +184,8 @@ export const url_for_selection = (selected, { pathname, search }) => {
   for (const [key, value] of Object.entries(selected)) {
     if (key === 'new_commit_id') continue;
     const url_key = url_keys[key] ?? key;
-    if (value === undefined || value === null)
+    if (key === 'selected_batch_new') delete query.batch_new; // legacy name
+    if (value === undefined || value === null || (key in defaults && same_value(value, defaults[key])))
       delete query[url_key];
     else if (Array.isArray(value))
       query[url_key] = value.length === 0 ? '' : value;
@@ -187,8 +203,9 @@ export const url_for_selection = (selected, { pathname, search }) => {
 
 // Changes the selection, by navigating to a new URL.
 // By default it adds a browser history entry, use {replace: true} for changes users don't want to "go back" to.
-export const updateSelected = (selected = {}, { replace = false } = {}) => {
-  const url = url_for_selection(selected, window.location);
+// {defaults}: values that don't need to be in the URL, e.g. {show_all_files: false}
+export const updateSelected = (selected = {}, { replace = false, defaults } = {}) => {
+  const url = url_for_selection(selected, window.location, defaults);
   if (url.pathname === window.location.pathname && `?${url.search}` === (window.location.search || '?'))
     return;
   (replace ? history.replace : history.push)(url);

@@ -488,7 +488,7 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
 const results_integrations = ({ new_batch, commit, project_data }) =>
   new_batch?.data?.qatools_config?.integrations ?? commit?.data?.qatools_config?.integrations ?? project_data.data?.qatools_config?.integrations ?? [];
 
-const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, new_batch, ref_batch, selected_views, filter, ref_filter, ref_project, user, docs_root, ...integrationProps }) => {
+const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, new_batch, ref_batch, selected_views, default_views, filter, ref_filter, ref_project, user, docs_root, ...integrationProps }) => {
   const git = project_data.data?.git || {};
   let project_repo = git.path_with_namespace || '';
   let subproject = project.slice(project_repo.length + 1);
@@ -497,7 +497,7 @@ const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, ne
 
   const has_optim = new_batch?.data?.optimization === true;
   const active = view => selected_views.includes(view);
-  const set = view => () => updateSelected({ selected_views: view })
+  const set = view => () => updateSelected({ selected_views: view }, { defaults: { selected_views: default_views } })
   return <>
     <IntegrationsMenus
       integrations={results_integrations({ new_batch, commit, project_data })}
@@ -552,7 +552,7 @@ const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, ne
 const AppSider = () => {
   const { docs_root } = useSiteConfig();
   const user = useUser();
-  const { project, project_data, selected, selected_views, new_commit, ref_commit, new_batch, ref_batch } = useComparison();
+  const { project, project_data, selected, selected_views, default_views, new_commit, ref_commit, new_batch, ref_batch } = useComparison();
   const route = selected.route;
   const { latest_commit } = useCommitsList();
   // the commit whose integrations we show
@@ -637,6 +637,7 @@ const AppSider = () => {
               commit={new_commit}
               ref_commit={ref_commit}
               selected_views={selected_views}
+              default_views={default_views}
               project={project}
               project_data={project_data}
               user={user}

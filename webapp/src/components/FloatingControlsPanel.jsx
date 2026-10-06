@@ -13,6 +13,7 @@ import {
 } from "@blueprintjs/core";
 import { is_image } from "../viewers/images/utils";
 import DynamicOptionControl from "./DynamicOptionControl";
+import { resolveOptionValue } from "../utils/dynamicOptions";
 
 const PanelContainer = styled.div`
   position: fixed;
@@ -503,12 +504,12 @@ const FloatingControlsPanel = ({
                       return isForDisplayedVisualization(option) || !option.views || option.views.length === 0;
                     })
                     .map(([name, option]) => {
-                      const isSync = controls.dynamic_options_sync?.[name] || false;
-                      const selectedValue = controls.dynamic_options?.[name]?.[0];
-                      
-                      if (!selectedValue || !option.values || option.values.length === 0) {
+                      // options are linked across outputs unless users unlink them
+                      const isSync = controls.dynamic_options_sync?.[name] !== false;
+                      if (!option.values || option.values.length === 0)
                         return null;
-                      }
+                      const wanted = [].concat(controls.dynamic_options?.[name] ?? [])[0];
+                      const { value: selectedValue, exact } = resolveOptionValue(option, wanted);
 
                       return (
                         <ControlGroup key={name}>
@@ -517,7 +518,7 @@ const FloatingControlsPanel = ({
                               {name}
                             </ControlLabel>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <Tooltip content={isSync ? "Click to unsync (make local to each output)" : "Click to sync across all outputs"}>
+                              <Tooltip content={isSync ? "Unlink: choose the value in each output" : "Link: all outputs use the value chosen here"}>
                                 <Button
                                   icon="link"
                                   minimal
@@ -532,7 +533,7 @@ const FloatingControlsPanel = ({
                                 color: isSync ? '#0d8050' : '#5c7080',
                                 fontWeight: '500'
                               }}>
-                                {isSync ? 'synced' : 'per-output'}
+                                {isSync ? 'linked' : 'per-output'}
                               </span>
                             </div>
                           </div>
@@ -553,6 +554,12 @@ const FloatingControlsPanel = ({
                             small={true}
                             showLabel={false}
                           />
+                          {!isSync && <div style={{ fontSize: 10, color: '#5c7080', marginTop: 4 }}>
+                            Each output has its own control
+                          </div>}
+                          {isSync && !exact && <div style={{ fontSize: 10, color: '#5c7080', marginTop: 4 }}>
+                            <strong>{wanted}</strong> isn't in these outputs, they show <strong>{selectedValue}</strong>
+                          </div>}
                         </ControlGroup>
                       );
                     })}

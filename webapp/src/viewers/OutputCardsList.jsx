@@ -3,7 +3,7 @@ import { useInView } from "react-intersection-observer";
 import { Button, Callout, Intent } from "@blueprintjs/core";
 
 import { useSelected, useUrlText, updateSelected } from "../hooks";
-import { BitAccuracyForm } from "./bit_accuracy/utils";
+import { BitAccuracyForm, bit_accuracy_url_defaults } from "./bit_accuracy/utils";
 import { OutputCard } from "./OutputCard";
 
 
@@ -18,7 +18,7 @@ function OutputCardsList({ type, project, config, metrics, new_commit, new_batch
   const { query } = useSelected();
   const flag = name => query[name] === 'true';
   const [show_all_files, hide_runs_without_files, expand_all, color_blind_friendly] = ['show_all_files', 'hide_runs_without_files', 'expand_all', 'color_blind_friendly'].map(flag);
-  const save = (name, value) => updateSelected({ [name]: value }, { replace: true });
+  const save = (name, value) => updateSelected({ [name]: value }, { replace: true, defaults: bit_accuracy_url_defaults });
   const [files_filter, onFilesFilterChange] = useUrlText(query.files_filter || '', value => save('files_filter', value));
   const update = name => name === 'files_filter' ? onFilesFilterChange : e => save(name, e?.target?.value ?? e);
   const toggle = name => () => save(name, !flag(name));

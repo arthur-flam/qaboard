@@ -41,3 +41,40 @@ describe('save_controls', () => {
     expect(replace).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe('the URL only has what differs from the defaults', () => {
+  const config = {
+    outputs: {
+      controls: [{ name: 'show_reference', default: true }],
+      visualizations: [{ name: 'debug', default_hidden: true }, { name: 'output' }],
+    },
+  };
+  const url_controls = () => {
+    const { controls } = parse_query(window.location.search);
+    return controls === undefined ? undefined : JSON.parse(controls);
+  };
+
+  it('keeps only the changes', () => {
+    const controls = controls_defaults(config, '');
+    save_controls({ ...controls, show: { debug: true, output: true }, dynamic_options: { frame: ['2'] }, dynamic_options_sync: { camera: false, frame: undefined } }, config);
+    expect(url_controls()).toEqual({ show: { debug: true }, dynamic_options: { frame: ['2'] }, dynamic_options_sync: { camera: false } });
+  });
+
+  it('removes the parameter with only defaults', () => {
+    save_controls({ show_reference: false }, config);
+    expect(url_controls()).toEqual({ show_reference: false });
+    save_controls(controls_defaults(config, ''), config);
+    expect(url_controls()).toBeUndefined();
+  });
+
+  it('reads back the same controls', () => {
+    const controls = { ...controls_defaults(config, ''), show_reference: false, show: { debug: true, output: false } };
+    save_controls(controls, config);
+    expect(controls_defaults(config, window.location.search)).toEqual(controls);
+  });
+
+  it('ignores URLs with something else than an object', () => {
+    expect(controls_defaults(config, '?controls=[1]').show).toEqual({ debug: false });
+  });
+});

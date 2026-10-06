@@ -39,6 +39,7 @@ import {
   calculateOptionValues,
   configureOption,
   generateViewPaths,
+  resolveOptionValue,
 } from "../utils/dynamicOptions"
 
 
@@ -244,6 +245,11 @@ const option_style = {
   border: '1px solid #e1e8ed'
 };
 
+const fallback_style = {
+  marginBottom: '4px',
+  whiteSpace: 'normal',
+};
+
 const sync_button_style = {
   minHeight: '16px',
   minWidth: '16px',
@@ -276,12 +282,13 @@ const OutputCard = memo(function OutputCard(props) {
   } = props;
   const controls = props.controls ?? {};
   const sync_prefs = controls.dynamic_options_sync ?? no_options;
+  const synced_values = controls.dynamic_options ?? no_options;
 
   // We wait until the card comes into view to fetch the output manifest and render the viewers
   const { ref: in_view_ref, inView } = useInView({ triggerOnce: true, rootMargin: '100%', skip: !!props.viewable, fallbackInView: true });
   const viewable = !!props.viewable || inView;
   const [fullscreen, setFullscreen] = useState(false);
-  // values selected for the options that are not synced across outputs
+  // values selected in this card for the options that are not synced across outputs
   const [local_selected, setLocalSelected] = useState({});
   const [registration_error, setRegistrationError] = useState();
 
@@ -327,32 +334,27 @@ const OutputCard = memo(function OutputCard(props) {
     if (should_register) register(output_id, options, manifest_new);
   }, [should_register, output_id, options, manifest_new]);
 
-  // Options that are not synced are managed by each card
-  const local_options = useMemo(() => Object.fromEntries(
-    Object.entries(registration_error ? {} : options)
-      .filter(([name]) => !sync_prefs[name])
-      .map(([name, option]) => [name, { ...option, selected: local_selected[name] ?? [option.defaultValue] }])
-  ), [options, registration_error, sync_prefs, local_selected]);
-
-  // Synced options come from the controls, the others from the card
-  const effective_options = useMemo(() => {
-    const effective = {};
-    for (const [name, value] of Object.entries(controls.dynamic_options ?? {})) {
-      if (sync_prefs[name] && Array.isArray(value) && value.length > 0)
-        effective[name] = value;
+  // For each option, the value we show. Options are synced across outputs unless users unlink them,
+  // then each card starts from the synced value. Runs may not have the value: we show the closest.
+  const shown_options = useMemo(() => {
+    const shown = {};
+    for (const [name, option] of Object.entries(registration_error ? {} : options)) {
+      const synced = sync_prefs[name] !== false;
+      const synced_value = [].concat(synced_values[name] ?? [])[0];
+      const wanted = synced ? synced_value : (local_selected[name] ?? synced_value);
+      shown[name] = { ...option, synced, wanted, ...resolveOptionValue(option, wanted) };
     }
-    for (const [name, option] of Object.entries(local_options)) {
-      if (option.selected?.length > 0)
-        effective[name] = option.selected;
-    }
-    return effective;
-  }, [controls.dynamic_options, sync_prefs, local_options]);
+    return shown;
+  }, [options, registration_error, sync_prefs, synced_values, local_selected]);
+  const selected_options = useMemo(() => Object.fromEntries(
+    Object.entries(shown_options).filter(([, option]) => option.value !== undefined).map(([name, option]) => [name, [option.value]])
+  ), [shown_options]);
 
   const setSelectedOption = name => e => {
     let selected = e?.target ? e.target.value : e;
-    if (local_options[name]?.type === 'slider')
-      selected = local_options[name].toRaw[selected];
-    setLocalSelected(local_selected => ({ ...local_selected, [name]: [selected] }));
+    if (shown_options[name]?.type === 'slider')
+      selected = shown_options[name].toRaw[selected];
+    setLocalSelected(local_selected => ({ ...local_selected, [name]: selected }));
   }
 
 
@@ -374,63 +376,58 @@ const OutputCard = memo(function OutputCard(props) {
     if (!is_shown(view))
       return <span key={idx} />
 
-    const new_options = Object.entries(local_options).filter(([name, option]) => option.views?.includes(view.name) && !already_shown_options.has(name));
+    const view_options = Object.entries(shown_options).filter(([, option]) => option.views?.includes(view.name));
+    // inputs for unsynced options, and why we don't show the selected value, come before the first visualization that uses the option
+    const new_options = view_options.filter(([name]) => !already_shown_options.has(name));
     new_options.forEach(([name]) => already_shown_options.add(name));
 
     const options_inputs = new_options.map(([name, option]) => {
       const option_key = `option-${name}`;
       const option_label = isNaN(name) ? name : option.pattern;
-      if (option.views.every(view_name => views.find(v => v.name === view_name)?.default_hidden === true && controls.show?.[view_name] !== true))
-        return <span key={option_key} />
-
-      const selected_value = option.selected?.[0];
-      if (!selected_value) return <span key={option_key} />;
+      const not_found = !option.exact && option.value !== undefined && <Tag minimal intent={Intent.WARNING} icon="info-sign" style={fallback_style}>
+        {option_label} <strong>{option.wanted}</strong> isn't in this run, showing <strong>{option.value}</strong>
+      </Tag>;
+      if (option.synced || option.values.length === 0)
+        return not_found ? <div key={option_key}>{not_found}</div> : <Fragment key={option_key} />;
 
       return (
         <div key={option_key} style={option_style}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
             <span style={{ fontSize: '12px', fontWeight: '500', flex: 1 }}>{option_label}</span>
             {onToggleDynamicOptionSync && (
-              <Tooltip content="Make this option synced across all outputs">
+              <Tooltip content="Link this option: all outputs will use the value from the controls panel">
                 <Button icon="link" minimal small onClick={() => onToggleDynamicOptionSync(name)} style={sync_button_style}>
-                  unsynced
+                  unlinked
                 </Button>
               </Tooltip>
             )}
           </div>
+          {not_found}
           {option.type === 'slider' ? (
             <Slider
-              initialValue={parseFloat(selected_value)}
-              value={parseFloat(selected_value)}
+              value={parseFloat(option.value)}
               min={option.min}
               max={option.max}
               onChange={setSelectedOption(name)}
-              labelStepSize={Math.pow(10, Math.floor(Math.log10(option.max - option.min)))}
+              labelStepSize={Math.max(1, Math.pow(10, Math.floor(Math.log10(option.max - option.min))))}
               showTrackFill
             />
           ) : (
-            option.values.length > 0 && (
-              <HTMLSelect
-                disabled={option.values.length===1}
-                options={option.values}
-                value={selected_value}
-                onChange={setSelectedOption(name)}
-                fill
-                small
-              />
-            )
+            <HTMLSelect
+              disabled={option.values.length === 1}
+              options={option.values}
+              value={option.value}
+              onChange={setSelectedOption(name)}
+              fill
+              small
+            />
           )}
         </div>
       );
     });
 
-    // Generate paths using both synced and local options
-    const paths = generateViewPaths(view, effective_options, manifests);
-
-    // The synced options relevant to this view
-    const { options: view_options } = parseVisualizationOptions([view]);
-    const relevant_names = Object.values(view_options).filter(option => option.views.includes(view.name)).map(option => option.name);
-    const relevant_synced = Object.keys(effective_options).filter(name => sync_prefs[name] && relevant_names.includes(name));
+    const paths = generateViewPaths(view, selected_options, manifests);
+    const relevant_synced = view_options.filter(([, option]) => option.synced).map(([name]) => name);
 
     const show_ref_if_available = controls.show_reference === undefined || controls.show_reference || is_image(view);
     const viewers = paths.map((path, path_idx) => {
@@ -481,7 +478,7 @@ const OutputCard = memo(function OutputCard(props) {
                 {relevant_synced.map(option_name => (
                   <Tooltip
                     key={option_name}
-                    content={`Unsync "${option_name}" to control locally per output`}
+                    content={`Unlink "${option_name}" to choose its value in each output`}
                     position="top"
                   >
                     <Button
@@ -496,7 +493,7 @@ const OutputCard = memo(function OutputCard(props) {
                   </Tooltip>
                 ))}
                 <span style={{ fontSize: '10px', color: '#106ba3', fontWeight: '500', marginLeft: '4px' }}>
-                  synced
+                  linked
                 </span>
               </div>
             )}
