@@ -17,8 +17,10 @@ from requests.auth import HTTPBasicAuth
 from backend import app
 from ..config import qaboard_data_dir
 from ..git_hosts import git_hosts
+from ..git_hosts.base import request_keeping_credentials_on_host
 from ..git_utils import check_project_path
-from .auth import login_required
+from ..models import Project
+from .auth import login_required, is_authorized_user
 
 # We love our proxies
 import urllib3
@@ -111,6 +113,10 @@ def api_host(url, type):
   We only send tokens to the hosts they belong to, never to a URL we're given.
   """
   host = git_hosts.find(url, type) if url else git_hosts.of_type(type)
+  if not host and type == 'gitlab':
+    # e.g. the project's data.git.host is not configured anymore. Like before hosts were configurable,
+    # GitLab projects are on GITLAB_HOST: the token still only goes to a configured host.
+    host = git_hosts.of_type('gitlab')
   if not host:
     raise IntegrationError(f"Unknown {type} host: {url}. Add it to QABOARD_GIT_HOSTS.", 403)
   if not host.token:
@@ -152,9 +158,8 @@ def proxy_gitlab():
     cookies = {'_gitlab_session': gitlab_cookies[hostname]}
   else:
     cookies = {}
-  # print(url)
-  r = requests.get(url, cookies=cookies, verify=False)
-  session = Session()
+  # e.g. avatars redirect to object storage: the session cookie stays on GitLab
+  r = request_keeping_credentials_on_host('GET', url, cookies=cookies, verify=False, timeout=60)
   resp = make_response(r.content, r.status_code)
   for k, v in r.headers.items():
     resp.headers.set(k, v)

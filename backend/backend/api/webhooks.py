@@ -10,9 +10,9 @@ from flask import request, jsonify
 from sqlalchemy.orm.attributes import flag_modified
 
 from backend import app, db_session
-from ..models import CiCommit, Output
+from ..models import CiCommit, Output, Project
 from ..models.Project import update_project
-from ..git_hosts import git_hosts, committers, HOST_TYPES
+from ..git_hosts import git_hosts, committers, HOST_TYPES, UntrustedHost
 from .auth import login_required
 
 
@@ -51,25 +51,43 @@ def delete_commit(commit_id, project_id=None):
 #
 # Webhooks must prove they know their host's `webhook_secret` (default: QABOARD_WEBHOOK_SECRET),
 # e.g. GitLab's "Secret token" or GitHub's "Secret". See git_hosts/__init__.py
+# Anyone can call us: until we checked the secret, we only do cheap work (no parsing besides JSON).
+
+# GitHub caps push payloads at 25MB, and the other hosts send less: we never refuse a real push.
+# Parsing is linear in the payload's size (keep it so: no regular expressions that backtrack).
+MAX_WEBHOOK_SIZE = 25 * 1024 * 1024
+
 
 def receive_push(host_type):
   host_class = HOST_TYPES[host_type]
-  body = request.get_data()
+  if git_hosts.errors:
+    return jsonify({"error": "The server's git hosts settings are invalid: webhooks are refused until they are fixed. See the server's logs."}), 503
+  if (request.content_length or 0) > MAX_WEBHOOK_SIZE:
+    return jsonify({"error": "Payload too large"}), 413
+  body = request.stream.read(MAX_WEBHOOK_SIZE + 1)
+  if len(body) > MAX_WEBHOOK_SIZE:
+    return jsonify({"error": "Payload too large"}), 413
   try:
     payload = json.loads(body)
     if not isinstance(payload, dict):
       raise ValueError("expected a JSON object")
-  except ValueError as e:
+    repo_url = host_class.repository_url(payload)
+    is_push = host_class.is_push(payload, request.headers)
+  except (ValueError, TypeError, AttributeError) as e:
     return jsonify({"error": f"Invalid webhook payload: {e}"}), 400
 
   # We check the secret of the host the repository is on
-  repo_url = host_class.repository_url(payload)
-  host = git_hosts.find(repo_url, host_class.type) if repo_url else None
+  host = git_hosts.find(repo_url, host_class.type) if isinstance(repo_url, str) and repo_url else None
   if not host and host_class.type == 'gitlab':
     # Like before git hosts were configurable: GitLab pushes are from GITLAB_HOST, maybe under another hostname
     host = git_hosts.of_type('gitlab')
-  secret = host.webhook_secret if host else git_hosts.webhook_secret
-  if not host_class.is_webhook_authentic(request.headers, body, secret):
+  if not host:
+    if not is_push: # e.g. GitHub's "ping" for organization webhooks
+      return jsonify({"status": "ignored", "reason": "not a push event"})
+    return jsonify({"error": f"Unknown git host for {repo_url}. Add it to QABOARD_GIT_HOSTS."}), 403
+  if not host.webhook_secret and git_hosts.has_webhook_secrets():
+    return jsonify({"error": f"Other git hosts have a webhook secret, but not {host.url}: set its webhook_secret in QABOARD_GIT_HOSTS."}), 401
+  if not host_class.is_webhook_authentic(request.headers, body, host.webhook_secret):
     return jsonify({"error": "Invalid webhook secret"}), 401
 
   try:
@@ -78,13 +96,30 @@ def receive_push(host_type):
     return jsonify({"error": f"Invalid {host_type} push webhook: {e!r}"}), 400
   if push is None:
     return jsonify({"status": "ignored", "reason": "not a push event"})
-  if not host:
-    return jsonify({"error": f"Unknown git host for {repo_url}. Add it to QABOARD_GIT_HOSTS."}), 403
-  print(f"Push to {push['project'].get('path_with_namespace')} on {host}: {push['ref']} {push['checkout_sha']}", file=sys.stderr)
+  repository = push['project'].get('path_with_namespace')
+  print(f"Push to {repository} on {host}: {push['ref']} {push['checkout_sha']}", file=sys.stderr)
+  existing_host = project_host(repository)
+  if existing_host and (existing_host.type, existing_host.hostname) != (host.type, host.hostname):
+    # Project ids are repository paths, they don't say on which host: a repository on another host would replace it
+    return jsonify({"error": f"The project {repository} is a repository on {existing_host.url}, not on {host.url}."}), 409
   committers.remember(push['committers'], host_url=host.url)
   push['project'] = host.describe(push['project'])
   update_project(push, db_session)
   return jsonify({"status": "OK"})
+
+
+def project_host(project_id):
+  """The host of an existing project, if push events told us (the CLI doesn't)."""
+  if not isinstance(project_id, str):
+    return None
+  project = Project.query.filter(Project.id == project_id).one_or_none()
+  git = (project.data or {}).get('git') if project else None
+  if not isinstance(git, dict) or not (git.get('host') or git.get('web_url')):
+    return None
+  try:
+    return git_hosts.for_repo(git)
+  except UntrustedHost:
+    return None # its host is not configured anymore
 
 
 @app.route('/webhook/gitlab', methods=['GET', 'POST'])

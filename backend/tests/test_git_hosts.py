@@ -10,9 +10,9 @@ import pytest
 from .git_payloads import gitlab_push, github_push, gitea_push, bitbucket_push
 
 
-def hosts_from(env):
+def hosts_from(env, strict=False):
   from backend.git_hosts import load_git_hosts
-  return load_git_hosts(lambda key, default=None: env.get(key, default))
+  return load_git_hosts(lambda key, default=None: env.get(key, default), strict=strict)
 
 
 # ==========================================
@@ -24,15 +24,98 @@ def test_defaults_are_backward_compatible():
   assert [(h.type, h.url) for h in hosts] == [("gitlab", "https://gitlab.com"), ("github", "https://github.com")]
   assert hosts.default.url == "https://gitlab.com"
 
-  hosts = hosts_from({"GITLAB_HOST": "http://gitlab-srv/", "QABOARD_GITLAB_HOSTS": "gitlab2.example.com,http://gitlab3", "QABOARD_GITHUB_HOSTS": "github.corp.example.com"})
+  hosts = hosts_from({"GITLAB_HOST": "http://gitlab-srv/", "QABOARD_GITLAB_HOSTS": "gitlab-alias.example.com,http://gitlab3", "QABOARD_GITHUB_HOSTS": "github.corp.example.com"})
   assert [(h.type, h.url) for h in hosts] == [
-    ("gitlab", "http://gitlab-srv"), ("gitlab", "https://gitlab2.example.com"), ("gitlab", "http://gitlab3"),
+    ("gitlab", "http://gitlab-srv"), ("gitlab", "http://gitlab3"),
     ("github", "https://github.com"), ("github", "https://github.corp.example.com"),
   ]
+  assert not hosts.errors
   assert hosts.default.url == "http://gitlab-srv"
   assert hosts.default.api_url == "http://gitlab-srv/api/v4"
+  # Hostnames in QABOARD_GITLAB_HOSTS are other names of GITLAB_HOST, like before: same token, scheme, users
+  assert hosts.find("https://gitlab-alias.example.com/group/repo") is hosts.default
+  assert hosts.for_repo({"web_url": "https://gitlab-alias.example.com/group/repo"}).clone_url("group/repo") == "http://gitlab-srv/group/repo"
   assert hosts.find("https://github.corp.example.com/x").api_url == "https://github.corp.example.com/api/v3"
   assert hosts.find("github.com").api_url == "https://api.github.com"
+  # Without a scheme in QABOARD_GITHUB_HOSTS, we use the repositories' scheme, like before
+  ghe = lambda web_url: hosts.for_repo({"hosting_type": "github", "web_url": web_url})
+  assert ghe("https://github.corp.example.com/org/repo").clone_url("org/repo") == "https://github.corp.example.com/org/repo"
+  assert ghe("http://github.corp.example.com/org/repo").clone_url("org/repo") == "http://github.corp.example.com/org/repo"
+  assert ghe("http://github.corp.example.com/org/repo").api_url == "http://github.corp.example.com/api/v3"
+  assert hosts.for_repo({"hosting_type": "github", "host": "https://github.corp.example.com", "web_url": "http://github.corp.example.com/org/repo"}).url == "http://github.corp.example.com"
+  # ...but not for github.com
+  assert ghe("http://github.com/org/repo").url == "https://github.com"
+
+
+def test_legacy_settings_are_normalized():
+  # GITLAB_HOST without a scheme
+  hosts = hosts_from({"GITLAB_HOST": "gitlab-srv", "GITLAB_ACCESS_TOKEN": "t"})
+  assert (hosts.default.url, hosts.default.token, hosts.errors) == ("https://gitlab-srv", "t", [])
+  # Credentials in GITLAB_HOST: used if there's no token, never shown
+  hosts = hosts_from({"GITLAB_HOST": "https://user:p%40ss@gitlab.example.com:8080/"})
+  assert (hosts.default.url, hosts.default.token) == ("https://gitlab.example.com:8080", "user:p@ss")
+  assert "p@ss" not in json.dumps(hosts.public())
+  hosts = hosts_from({"GITLAB_HOST": "https://user:pass@gitlab.example.com", "GITLAB_ACCESS_TOKEN": "t"})
+  assert (hosts.default.url, hosts.default.token) == ("https://gitlab.example.com", "t")
+
+
+@pytest.mark.parametrize("env", [
+  {"GITLAB_HOST": "ftp://gitlab.example.com"},
+  {"GITLAB_HOST": "https://gitlab.example.com:port"},
+  {"QABOARD_GITLAB_HOSTS": "ftp://gitlab2"},
+  {"QABOARD_GIT_HOSTS": "/does/not/exist.yaml"},
+  {"QABOARD_GIT_HOSTS": '[{"type": "gitlab", "url": "https://gitlab.example.com", "token_env": "GITLAB_ACCESS_TOKEN", "typo": 1}]'},
+])
+def test_invalid_settings_dont_stop_the_server(env):
+  hosts = hosts_from({"GITLAB_ACCESS_TOKEN": "gitlab-token", **env})
+  assert hosts.errors
+  assert hosts.default
+  # We never guess where GITLAB_ACCESS_TOKEN should go
+  tokens = {h.url: h.token for h in hosts}
+  if "QABOARD_GITLAB_HOSTS" in env: # like before, without GITLAB_HOST: gitlab.com
+    assert tokens == {"https://gitlab.com": "gitlab-token", "https://github.com": ""}
+  else:
+    assert "gitlab-token" not in tokens.values()
+  with pytest.raises(ValueError):
+    hosts_from({"GITLAB_ACCESS_TOKEN": "gitlab-token", **env}, strict=True)
+
+
+def test_gitlab_and_github_hosts_with_the_same_hostname():
+  # e.g. GITLAB_HOST was a GitHub Enterprise server
+  hosts = hosts_from({"GITLAB_HOST": "https://ghe.example.com", "QABOARD_GITHUB_HOSTS": "ghe.example.com", "GITHUB_ACCESS_TOKEN": "gh"})
+  assert [(h.type, h.url) for h in hosts] == [("gitlab", "https://ghe.example.com"), ("github", "https://github.com"), ("github", "https://ghe.example.com")]
+  github = hosts.for_repo({"hosting_type": "github", "web_url": "https://ghe.example.com/org/repo"})
+  assert (github.type, github.token) == ("github", "gh")
+  assert hosts.find("https://ghe.example.com/org/repo", "github") is github
+  assert hosts.for_repo({"web_url": "https://ghe.example.com/org/repo"}) is hosts.default
+
+
+def test_stored_hosts_that_are_not_configured_anymore():
+  # e.g. the migration that describes hosts ran without GITLAB_HOST: it wrote gitlab.com
+  hosts = hosts_from({"GITLAB_HOST": "http://gitlab-srv"})
+  git = {"hosting_type": "gitlab", "host": "https://gitlab.com", "web_url": "http://gitlab-srv/group/repo"}
+  assert hosts.for_repo(git) is hosts.default
+  assert hosts.for_repo({**git, "web_url": "http://unknown-alias/group/repo"}) is hosts.default
+
+
+def test_server_tokens_only_come_from_the_environment(monkeypatch):
+  import qaboard.site_config as site_config
+  from backend.git_hosts import load_git_hosts
+  for name in ("GITLAB_HOST", "GITLAB_ACCESS_TOKEN", "GITHUB_ACCESS_TOKEN", "QABOARD_GIT_HOSTS", "QABOARD_WEBHOOK_SECRET", "QABOARD_AVATAR_URL", "QABOARD_GITLAB_HOSTS", "QABOARD_GITHUB_HOSTS"):
+    monkeypatch.delenv(name, raising=False)
+  # e.g. QA_SECRETS has the CI's token, for the CLI
+  monkeypatch.setattr(site_config, "secrets", {"GITLAB_ACCESS_TOKEN": "ci-token", "GITLAB_HOST": "https://gitlab-for-the-cli"})
+  monkeypatch.setattr(site_config, "_site_defaults", {"GITLAB_HOST": "https://gitlab.example.com", "GITHUB_ACCESS_TOKEN": "site-token", "QABOARD_AVATAR_URL": "https://avatars/{user_name}.jpg"})
+  hosts = load_git_hosts()
+  assert (hosts.default.url, hosts.default.token, hosts.default.user_avatar_url) == ("https://gitlab.example.com", "", "https://avatars/{username}.jpg")
+  assert hosts.find("github.com").token == ""
+  monkeypatch.setenv("GITLAB_ACCESS_TOKEN", "server-token")
+  monkeypatch.setenv("QABOARD_GIT_HOSTS", '[{"type": "gitea", "url": "https://codeberg.org", "token_env": "GITEA_TOKEN"}]')
+  monkeypatch.setitem(site_config._site_defaults, "GITEA_TOKEN", "site-token")
+  monkeypatch.setenv("GITEA_TOKEN", "gitea-token")
+  hosts = load_git_hosts()
+  assert hosts.default.token == "server-token"
+  assert hosts.find("codeberg.org").token == "gitea-token"
 
 
 def test_configured_hosts(tmp_path):
@@ -75,7 +158,9 @@ def test_configured_hosts(tmp_path):
 ])
 def test_invalid_configurations(config):
   with pytest.raises(ValueError):
-    hosts_from({"QABOARD_GIT_HOSTS": config})
+    hosts_from({"QABOARD_GIT_HOSTS": config}, strict=True)
+  # The server still starts (and migrations run), but refuses webhooks
+  assert hosts_from({"QABOARD_GIT_HOSTS": config}).errors
 
 
 def test_hostname_of():
@@ -270,6 +355,35 @@ def test_committer_avatar_url(committers, monkeypatch):
 # CI integrations
 # ==========================================
 
+
+class FakeProjects:
+  """Stands for the Project model: Project.query.filter(Project.id == id).one_or_none()"""
+  def __init__(self, projects=None):
+    from types import SimpleNamespace
+    self.projects = {id: SimpleNamespace(id=id, id_git="/".join(id.split("/")[:2]), data=data) for id, data in (projects or {}).items()}
+    fake = self
+    class Column:
+      def __eq__(self, value):
+        return value
+    self.id = Column()
+    class Query:
+      def filter(self, project_id):
+        return SimpleNamespace(one_or_none=lambda: fake.projects.get(project_id))
+    self.query = Query()
+
+
+GITHUB_PROJECT = {
+  "git": {"hosting_type": "github", "host": "https://github.com", "path_with_namespace": "org/repo", "web_url": "https://github.com/org/repo"},
+  "qatools_config": {"integrations": [
+    {"text": "Docs", "href": "https://example.com"},
+    {"text": "CI", "sub": [
+      {"text": "Benchmark", "githubActions": {"workflow": "bench.yml", "inputs": {"commit": "${commit.id}"}}},
+      {"text": "Nightly", "githubActions": {"workflow": "nightly-${branch}.yml", "ref": "main"}},
+    ]},
+  ]},
+}
+
+
 @pytest.fixture
 def integrations(monkeypatch, tmp_path):
   """Loads the real backend/api/integrations.py"""
@@ -345,13 +459,20 @@ def test_gitlab_jobs(integrations, dummy_app, monkeypatch):
   gitlab = integrations.git_hosts.default
   gitlab.token = "gl"
   jobs = [{"id": 1, "name": "deploy", "status": "success"}, {"id": 3, "name": "deploy", "status": "manual"}, {"id": 2, "name": "test"}]
-  api = MagicMock(side_effect=[response(json_data={"last_pipeline": {"id": 7}}), response(json_data=jobs), response(json_data={"id": 3, "status": "pending"})])
+  api = MagicMock(side_effect=lambda *args, **kwargs: next(responses))
   monkeypatch.setattr(gitlab, "api", api)
   params = {"gitlab_host": "https://gitlab.example.com", "project_id": "group/repo", "commit_id": "abc", "job_name": "deploy"}
-  with dummy_app.test_request_context("/api/v1/gitlab/job/play", method="POST", json=params):
-    content, status = integrations.gitlab_play_manual_job()
-  assert status == 200
-  assert api.call_args_list[-1].args == ("POST", "/projects/group%2Frepo/jobs/3/play")
-  with dummy_app.test_request_context("/api/v1/gitlab/job/play", method="POST", json={**params, "gitlab_host": "https://attacker.example.com"}):
-    _, status = integrations.gitlab_play_manual_job()
-  assert status == 403
+  for gitlab_host in ["https://gitlab.example.com", "https://gitlab.com", None]:
+    # e.g. data.git.host is not configured anymore: like before hosts were configurable, we use GITLAB_HOST
+    responses = iter([response(json_data={"last_pipeline": {"id": 7}}), response(json_data=jobs), response(json_data={"id": 3, "status": "pending"})])
+    with dummy_app.test_request_context("/api/v1/gitlab/job/play", method="POST", json={**params, "gitlab_host": gitlab_host}):
+      content, status = integrations.gitlab_play_manual_job()
+    assert status == 200
+    assert api.call_args_list[-1].args == ("POST", "/projects/group%2Frepo/jobs/3/play")
+  # The token only goes to the configured host
+  assert gitlab.url == "https://gitlab.example.com"
+  github = integrations.git_hosts.find("github.com")
+  monkeypatch.setattr(github, "api", MagicMock())
+  with dummy_app.test_request_context("/api/v1/gitlab/job/play", method="POST", json={**params, "gitlab_host": "https://github.com"}):
+    integrations.gitlab_play_manual_job()
+  github.api.assert_not_called()
