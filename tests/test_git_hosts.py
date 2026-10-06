@@ -73,6 +73,30 @@ class TestGitHosts(unittest.TestCase):
     self.assertEqual((host.type, host.api_url, host.token), ("github", "https://code.example.com/api/v3", "my-token"))
     self.assertIsNone(self.detect({}, project={"name": "x", "url": "https://codeberg.org/org/repo"}))
 
+  def test_github_token_only_goes_to_known_github_hosts(self):
+    self.settings = {"GITHUB_ACCESS_TOKEN": "gh-token", "QABOARD_GITHUB_HOSTS": "github.corp.example.com"}
+    detect = lambda url: self.detect({}, project={"name": "x", "url": url})
+    self.assertEqual(detect("git@github.com:org/repo.git").token, "gh-token")
+    self.assertEqual(detect("https://github.corp.example.com/org/repo").token, "gh-token")
+    for url in ["https://github.attacker.example.com/org/repo", "git@evil-github.example.com:org/repo.git", "https://notgithub.com/org/repo"]:
+      host = detect(url)
+      self.assertEqual((host.type, host.token), ("github", None), url)
+    # Hosts configured in QABOARD_GIT_HOSTS
+    self.settings["QABOARD_GIT_HOSTS"] = json.dumps([{"type": "github", "url": "https://github-ent.example.com"}])
+    self.assertEqual(detect("https://github-ent.example.com/org/repo").token, "gh-token")
+
+  def test_tokens_are_not_sent_to_other_hosts_when_redirected(self):
+    import requests
+    client = self.git_hosts.GitLab("https://gitlab.example.com", "https://gitlab.example.com/api/v4", "group/repo", "token")
+    session = self.git_hosts.credentials_stay_on_host("https://gitlab.example.com/api/v4/x", client.headers())
+    def redirected(url):
+      prepared = requests.Request('GET', url, headers={**client.headers(), "Authorization": "Bearer t", "Cookie": "a=b", "Accept": "x"}).prepare()
+      response = MagicMock(request=requests.Request('GET', "https://gitlab.example.com/api/v4/x").prepare())
+      session.rebuild_auth(prepared, response)
+      return set(prepared.headers)
+    self.assertEqual(redirected("https://other.example.com/x"), {"Accept"})
+    self.assertTrue({"Private-Token", "Authorization", "Cookie"} <= redirected("https://gitlab.example.com/api/v4/y"))
+
   def test_github_statuses(self):
     client = self.git_hosts.GitHub("https://github.com", "https://api.github.com", "org/repo", "token")
     responses = {
@@ -92,7 +116,7 @@ class TestGitHosts(unittest.TestCase):
     import requests
     github = self.git_hosts.GitHub("https://github.com", "https://api.github.com", "org/repo", "token")
     gitlab = self.git_hosts.GitLab("https://gitlab.com", "https://gitlab.com/api/v4", "group/sub/repo", "token")
-    with patch.object(requests, 'request') as request:
+    with patch.object(requests.Session, 'request') as request:
       github.update_status("abc", "failed", "QA", "https://qa/x", "3 results")
       gitlab.update_status("abc", "success", "QA", "https://qa/x", "3 results")
     (method, url), kwargs = request.call_args_list[0]
