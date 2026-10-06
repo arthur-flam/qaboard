@@ -13,11 +13,11 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 
 1. **`qaboard_clean` applies the first project's settings to all projects** (clean.py:252-253). [S, behaviour]
 2. **LDAP login: an empty password may log in as anyone, the login is injected in the LDAP filter** (api/auth.py:379-391). [S, behaviour]
-3. **Logged-in users can make the server send any HTTP request** (`/api/v1/webhook/proxy`, `/api/v1/gitlab/proxy`),
-   and anyone can trigger Jenkins builds with the server's credentials (api/integrations.py:130,152,412). See the git-hosts section. [S, API]
+3. **Logged-in users can make the server send any HTTP request** (`/api/v1/webhook/proxy`, `/api/v1/git/proxy`),
+   and anyone can trigger Jenkins builds with the server's credentials (api/integrations.py). See "Left after the git-hosts and performance changes". [S, API]
 4. **Anonymous requests can block uwsgi workers forever** (api/tasks.py:20-24). [S, API]
 5. **Anonymous requests write PDF reports anywhere and read any image** (api/image.py:123-126,167-182). [S, API]
-6. **Every `POST /api/v1/batch` overwrites the commit's qaboard.yaml with the client's** (api/batch.py:50-58, and models/CiCommit.py:265 for projects). [S, behaviour]
+6. **Every `POST /api/v1/batch` overwrites the commit's qaboard.yaml with the client's** (api/batch.py:50-58, and models/CiCommit.py:272 for projects). [S, behaviour]
 7. **`qaboard_clean` never deletes artifacts, nor commits that never had outputs** (clean.py:264, 307). [S, behaviour]
 8. **`qa get` is broken on Python ≥ 3.13, and CI only tests 3.11 while the backend image runs 3.13** (qaboard/qa.py:170-179, .github/workflows/ci.yaml). [S, behaviour]
 9. **The server process runs with `umask 0` after the first manifest refresh** (models/Output.py:365), and other `os.umask(000)` windows race between threads. [S, behaviour]
@@ -55,8 +55,8 @@ Found while surveying the code base (October 2026), after the cleanups that chan
   Escape the tuning message (or send text), and render user HTML in a sandboxed `<iframe srcdoc>`. [M, behaviour]
 - **API tokens** (models/User.py:64-99, api/auth.py:219,227): stored in clear in the database, accepted in `?token=` (ends up in access logs),
   and `login_user(user)` in the request loader also sets a session cookie for token requests. Store a hash, prefer the header. [M, behaviour]
-- **Webhooks are accepted unauthenticated by default** (`QABOARD_WEBHOOK_SECRET` empty, api/webhooks.py:50-64): make the docs
-  recommend it, or warn at startup. [S, no change]
+- **Webhooks are accepted unauthenticated by default** (no `webhook_secret` in `QABOARD_GIT_HOSTS` and `QABOARD_WEBHOOK_SECRET` empty,
+  `receive_push` in api/webhooks.py): warn at startup, or require a secret for new hosts. [S, no change]
 
 ## Backend: bugs
 
@@ -149,8 +149,6 @@ Found while surveying the code base (October 2026), after the cleanups that chan
   a11y (empty `<td>`/`<th>` in tables.jsx, captions in videos.jsx, a clickable `div` in images/tooltip.jsx, `role="img"` in App.jsx),
   `setState` in effects (releaseNotes/ReleaseNotes.jsx, images/roi_viewer.jsx) and missing hook deps (roi_viewer.jsx:69, tooltip.jsx:127).
   Then make `no-unused-vars` an error. [M, no change]
-- `aggregated_metrics` is always `{}` (backend models/Batch.py:102), so the median/average tags in CommitRow.jsx:184-200 never render
-  and `qa optimize` sends no aggregated metrics (qaboard/optimize.py:109). Compute them in SQL, or remove the plumbing. [M, behaviour]
 - Dead docs in src/: `src/todo.md`, `src/viewers/todo-image-viewers.md` (mentions internal hosts). Merge into webapp/TODO.md or delete. [S, no change]
 
 ## Deployments, services, charts
@@ -182,46 +180,47 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 - website/docs/backend-admin/managing-users.mdx:59 overstates `QABOARD_LOGIN_REQUIRED` (see Security). [S, no change]
 - backend/README.md:7, MIGRATION.md:9, drafts/ use internal git hosts; the public README should point to GitHub. [S, no change]
 
-## For the git-hosts / performance changes
+## Left after the git-hosts and performance changes
 
-Found in files other agents are rewriting. Not changed here.
+The git-hosts and performance changes (same PR) fixed: the broken `rmtree` import and unrepaired clones, tokens in clone URLs and logs,
+non-JSON webhook answers and printed payloads, tag pushes, the hardcoded SIRC avatar host, gravatars from names, GitHub avatars from
+a search by name, `with_outputs` being ignored, the per-batch N+1 queries, `latest_successful_commit` loading outputs, per-project
+`is_authorized_user` lookups, the unreachable code in `Batch.stop`, the integrations.jsx lint warnings and the nested `<a>` in the
+projects list. What's left:
 
-### Git hosting (git_utils.py, api/integrations.py, api/webhooks.py, models/Project.py, models/CiCommit.py, qaboard/gitlab.py, qaboard/config.py, webapp integrations)
-- **Wrong import** (backend/backend/git_utils.py:70): `from fs_utils import rmtree` can only raise `ModuleNotFoundError` (should be
-  `from .fs_utils import rmtree`); `rmtree` also expects a `Path`, and `repo` is then unbound (84). A corrupt clone is never repaired.
-- **Tokens in logs and on disk** (git_utils.py:47,53,82): the token is part of the clone URL, so `GitCommandError` messages printed at 82
-  contain it, and it is saved in each clone's `.git/config`. Use a credential helper or `http.extraHeader`.
-- `from .fs_utils import as_user` unused (git_utils.py:9); `self._repos` is written (84) but never read: every access re-opens the repo.
-- **SSRF** (api/integrations.py): `POST /api/v1/webhook/proxy` (152) sends any method/URL/headers/body for a logged-in user, with
-  `verify=False`, and copies back all response headers (incl. `Set-Cookie`); `GET /api/v1/gitlab/proxy` (130) fetches any URL.
-  Allow-list hosts (the project's integrations), drop hop-by-hop and cookie headers.
-- `jenkins_build_trigger` (api/integrations.py:412) has no `@login_required`, and defaults the build token to `"qaboard"` (432).
-- Import-time network calls: GitLab logins at module import (api/integrations.py:76-97), no timeouts anywhere in this file
-  (138,166,203,212,240,271,280,308,433,463); `requests.Session()` created twice (39-40); global `urllib3.disable_warnings` (22).
-- Webhooks (api/webhooks.py): `delete_commit` returns after the first matching commit (41), so without `project_id` other projects'
-  batches are kept; `except Exception` → 404 hides errors (42); `"{status:'OK'}"` is not JSON (76,98); full payloads printed (74,86);
-  `GET` accepted (67,79).
-- **Project config flip-flops** (models/CiCommit.py:265): `is_initialization = not project.data or 'qatools_config' not in data` tests the
-  request (which has `qaboard_config`), so it's always true: any `qa --share` run replaces the project's qaboard.yaml. Test `project.data`.
-  275: `data['project_root']` is a `KeyError` for old clients.
-- Tag pushes (models/Project.py:179): `data['ref'][11:]` assumes `refs/heads/`; for `refs/tags/v1` it gives `1`.
-- models/Project.py:113-139 `milestone_commits` runs git commands on every access (`self.repo.commit(r)` twice per ref, 122) and is
-  used in loops (clean.py, webhooks). Commented-out code at 228-239, 254-257, 272-273, 278-279.
-- backend/backend/utils.py:101 hardcodes an internal SIRC avatar host in shared code; 50 stores every user under the literal key
-  `'username'`; 74 hashes the *name* for gravatar (it expects the email) over `http://`; 33 has no timeout; 77 `@cache` never expires.
-- qaboard/gitlab.py:73 `print(r)` when `requests.post` raised (`r` unbound); no timeouts (33,41,64); 47,76 defaults evaluated at import.
-- qaboard/config.py:209 prints an internal Jenkins URL.
-- webapp/src/components/integrations.jsx:203-204: 10 unused destructured props (oxlint), 248 clickable `div` without keyboard support.
-- webapp/src/ProjectsList.jsx:134: an `<a>` nested in an `<a>` (invalid HTML), around the dead spectrum.chat link (known-issues).
+### Git hosting
+- **Project config flip-flops** (backend/backend/models/CiCommit.py:272): `is_initialization = not project.data or 'qatools_config' not in data`
+  tests the request (which has `qaboard_config`), so it's always true: any `qa --share` run replaces the project's qaboard.yaml.
+  Test `project.data`. [S, behaviour] Line 282: `data['project_root']` is a `KeyError` for old clients. [S]
+- **SSRF** (backend/backend/api/integrations.py): `POST /api/v1/webhook/proxy` sends any method/URL/headers/body for a logged-in user,
+  with `verify=False`, and copies back all response headers (incl. `Set-Cookie`); `GET /api/v1/git/proxy` (and its old name
+  `/api/v1/gitlab/proxy`) fetches any URL. Allow-list hosts (configured git hosts, the project's integrations), drop hop-by-hop and
+  cookie headers. [M, behaviour]
+- `jenkins_build_trigger` (api/integrations.py:470) has no `@login_required`, and defaults the build token to `"qaboard"`. [S, API]
+- `POST /api/v1/github/workflow` and `/api/v1/gitlab/job` (status) are unauthenticated and use the server's token: anyone who can reach
+  the server can read CI job details of any repository the token sees. Require a login, or check the repo is a known project. [S, API]
+- GitLab session cookies are fetched at import time (api/integrations.py, `GITLAB_AUTH`): a slow GitLab delays every worker start. [S]
+- `delete_commit` (api/webhooks.py) returns after the first matching commit, so without `project_id` other projects' batches are kept;
+  `except Exception` → 404 hides errors. [S, behaviour]
+- Clones made before this change still have the token in their remote URL (`.git/config`): strip it with
+  `git remote set-url origin <url without credentials>` once, e.g. in a one-off script over `QABOARD_DATA_GIT_DIR`. [S]
+- Header authentication needs git ≥ 2.31 on the backend image (fine for the current images, check custom ones). [S]
+- `milestone_commits` (models/Project.py:105) runs git commands on every access, and is used in loops (clean.py, webhooks). [M]
+- Gitea's avatar URL, the Bitbucket signature header and the Gitea/Bitbucket payload fields were written from their docs and tested on
+  sample payloads only: check them against real servers. [S]
+- Project ids and clones are not qualified by host: two hosts with the same `group/repo` share a project. Tokens are shared by all
+  users (no per-user OAuth). See docs/github-support-roadmap.md. [L, behaviour]
+- If `QABOARD_GIT_HOSTS` points to a file the kubernetes migration Job doesn't mount, the backend fails to import, and `migrate.sh`'s
+  fallback to `alembic stamp` silently skips the migrations (see docs/known-issues.md about that fallback). [S]
+- qaboard/config.py:209 prints an internal Jenkins URL. [S]
 
-### Performance (api/api.py, models/Batch.py, models/CiCommit.py, CiCommitList/ProjectsList)
-- **`with_outputs` is ignored** (api/api.py:122): `if True:` always eager-loads every output of every commit in `/api/v1/commits`.
-- **N+1 per batch** (models/Batch.py:83-91): one aggregate query per batch in `to_dict`, i.e. per commit × batch in commit lists.
-  Do one grouped query per page. `latest_successful_commit` (models/CiCommit.py:385-410) lazily loads outputs per batch, and
-  `get_or_create_batch` there creates batches in a read path.
-- `CiCommit.to_dict` computes avatars per commit (`_get_avatar_url`, GitLab/GitHub lookups); 378 re-sets `data`.
-- `/api/v1/projects` calls `is_authorized_user` → `get_current_user` per project (api/api.py:202).
-- `GET /api/v1/project` with an unknown id is a 500 (`.one()`, api/api.py:227); `json.loads(metrics)` 500s (141);
-  `datetime.now()` localized as UTC (94) is wrong on hosts not in UTC.
-- models/Batch.py:174-178: `raise e` makes `errors.append` unreachable, so `stop()` raises (500) instead of returning the errors;
-  `np.NaN` (231-232) is gone in NumPy 2 (the function is unused: see `aggregated_metrics` above); "commmit" typo (112).
+### Performance
+- **History page with outputs** is still ~2 s and ~19 MB for 25k outputs (backend/benchmarks/bench_api.py): building ORM objects and
+  `Output.to_dict`. Serialize from SQL rows (no ORM), or paginate/stream outputs. [M]
+- Commit search uses `ILIKE` over the project's commits (~40 ms for 5k commits). For projects with 100k+ commits, add `pg_trgm` GIN
+  indexes on `message`/`branch` (needs `CREATE EXTENSION pg_trgm`). [S]
+- `Output.metrics` is a JSON (text) column: aggregations parse it for every key. Converting it to JSONB (big table rewrite) would make
+  aggregations and filters on metrics much cheaper. [L]
+- `ix_ci_commits_project_id` is redundant with the new `(project_id, authored_datetime)` index: drop it in a later migration. [S]
+- `GET /api/v1/project` with an unknown id is a 500 (`.one()`, api/api.py:338); invalid `metrics` JSON is a 500 in `/api/v1/commits`;
+  `datetime.now()` localized as UTC is wrong on hosts not in UTC. [S, behaviour]

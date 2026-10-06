@@ -98,7 +98,7 @@ class Batch(Base):
     }
 
   def __repr__(self):
-    return (f"<Batch commmit='{self.ci_commit.hexsha}' "
+    return (f"<Batch commit='{self.ci_commit.hexsha}' "
             f"label='{self.label}' "
             f"outputs={len(self.outputs)} />")
 
