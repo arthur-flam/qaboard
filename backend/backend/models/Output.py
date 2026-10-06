@@ -5,6 +5,7 @@ import os
 import json
 import uuid
 import fnmatch
+import signal
 import datetime
 import subprocess
 from pathlib import Path
@@ -27,16 +28,22 @@ from backend.shell_utils import quote, safe_user_name, lsf_bridge_command
 
 
 
-def submit_redo_script(user, script_path: Path) -> bool:
+def submit_redo_script(user, script_path: Path, timeout=None) -> bool:
   """
   Runs a script from `Output.write_redo_script` as `user`, via the LSF bridge, with its logs in log.txt next to it.
   It returns when the job was submitted, which can take minutes if the LSF queue is busy.
+  Raises subprocess.TimeoutExpired after `timeout` seconds.
   """
   # raises if the user or path are not safe to use in the LSF bridge
   command = lsf_bridge_command(user, script_path)
   logs_path = Path(script_path).parent / 'log.txt'
-  p = subprocess.run(f'{command} > {quote(str(logs_path))} 2>&1', shell=True)
-  return p.returncode == 0
+  # In its own process group: on timeouts we stop ssh too, not only the shell
+  with subprocess.Popen(f'{command} > {quote(str(logs_path))} 2>&1', shell=True, start_new_session=True) as p:
+    try:
+      return p.wait(timeout=timeout) == 0
+    except subprocess.TimeoutExpired:
+      os.killpg(p.pid, signal.SIGKILL)
+      raise
 
 
 class Output(Base):

@@ -21,7 +21,9 @@ from celery.signals import worker_process_init
 redis_url = f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:{os.environ.get('REDIS_PORT', '6379')}"
 # Database 1: the cache uses database 0 (backend/hybrid_cache.py)
 broker_url = os.environ.get('QABOARD_TASKS_BROKER_URL', f'{redis_url}/1')
-result_backend_url = os.environ.get('QABOARD_TASKS_RESULT_BACKEND', broker_url)
+# Celery has no amqp result backend: with a RabbitMQ broker, results are still saved in redis
+default_result_backend = broker_url if broker_url.startswith(('redis://', 'rediss://')) else f'{redis_url}/1'
+result_backend_url = os.environ.get('QABOARD_TASKS_RESULT_BACKEND', default_result_backend)
 
 
 class PollingRedisBackend(RedisBackend):
@@ -54,8 +56,9 @@ celery_app.conf.update(
   # Tasks are long: don't reserve tasks that another worker process could start
   worker_prefetch_multiplier=1,
   broker_connection_retry_on_startup=True,
-  # Fail fast in HTTP requests if redis is down
+  # Fail fast in HTTP requests if redis is down or unreachable
   broker_connection_timeout=5,
+  broker_transport_options={'socket_connect_timeout': 5, 'socket_timeout': 10},
   redis_socket_connect_timeout=5,
   # For development without a worker: tasks run in the HTTP request, like before we had a worker
   task_always_eager=os.environ.get('QABOARD_TASKS_EAGER', '').lower() in ('1', 'true', 'yes'),
@@ -68,7 +71,7 @@ def reset_database_connections(**kwargs):
   # Worker processes are forked: they must not share the parent's database connections
   # https://docs.sqlalchemy.org/en/20/core/pooling.html#pooling-multiprocessing
   from backend.database import engine
-  engine.dispose()
+  engine.dispose(close=False)
 
 
 def job_status(job_id: str) -> dict:

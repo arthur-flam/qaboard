@@ -102,8 +102,9 @@ backend:
 worker:
   enabled: true
   replicas: 1
-  # Tasks per pod. Each one can wait minutes on the LSF bridge, and submits runs with QABOARD_REDO_CONCURRENCY threads
-  concurrency: 4
+  # Tasks per pod. Each one can wait minutes on the LSF bridge, and submits runs with QABOARD_REDO_CONCURRENCY threads.
+  # Mind sshd's MaxStartups (10 by default) on the LSF bridge host: concurrency x QABOARD_REDO_CONCURRENCY ssh at once
+  concurrency: 2
   resources:
     requests: {cpu: 100m, memory: 1Gi}
     limits: {memory: 4Gi}

@@ -2,6 +2,7 @@
 Unit tests for the background tasks (backend/tasks.py) and the endpoints that queue them (backend/api/jobs.py)
 """
 import threading
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -9,10 +10,24 @@ from unittest.mock import MagicMock
 import pytest
 
 
+class FakeCommit:
+  def __init__(self, id=1, has_artifacts=True, restore_error=None):
+    self.id, self.hexsha = id, f"commit{id}"
+    self.has_artifacts, self.restore_error, self.restored = has_artifacts, restore_error, 0
+    self.artifacts_dir = SimpleNamespace(exists=lambda: self.has_artifacts)
+
+  def save_artifacts(self):
+    self.restored += 1
+    if self.restore_error:
+      raise self.restore_error
+    self.has_artifacts = True
+
+
 class FakeOutput:
-  def __init__(self, id, error=None):
+  def __init__(self, id, error=None, commit=None):
     self.id = id
     self.error = error
+    self.batch = SimpleNamespace(ci_commit=commit or FakeCommit())
 
   def write_redo_script(self, user, command_id):
     if self.error:
@@ -25,6 +40,7 @@ def tasks(monkeypatch):
   import backend.tasks as tasks
   session = MagicMock()
   monkeypatch.setattr(tasks, "Session", lambda: session)
+  monkeypatch.setattr(tasks, "check_storage_path", lambda path: path)
   def with_outputs(*outputs):
     session.query.return_value.filter.return_value = list(outputs)
     return session
@@ -36,7 +52,7 @@ def tasks(monkeypatch):
 def test_redo_outputs_reports_each_failure(tasks, monkeypatch):
   session = tasks.with_outputs(FakeOutput(1), FakeOutput(2, error=ValueError("unsafe path")), FakeOutput(3))
   submitted = []
-  def submit(user, script_path):
+  def submit(user, script_path, timeout):
     submitted.append((user, script_path))
     return "/3/" not in str(script_path)
   monkeypatch.setattr(tasks, "submit_redo_script", submit)
@@ -56,7 +72,7 @@ def test_redo_outputs_submits_in_parallel(tasks, monkeypatch):
   tasks.with_outputs(FakeOutput(1), FakeOutput(2))
   # Each submission waits for the other: it only passes if they run at the same time
   barrier = threading.Barrier(2, timeout=10)
-  def submit(user, script_path):
+  def submit(user, script_path, timeout):
     barrier.wait()
     return True
   monkeypatch.setattr(tasks, "submit_redo_script", submit)
@@ -66,10 +82,30 @@ def test_redo_outputs_submits_in_parallel(tasks, monkeypatch):
 
 def test_redo_outputs_survives_submission_errors(tasks, monkeypatch):
   tasks.with_outputs(FakeOutput(1))
-  def submit(user, script_path):
+  def submit(user, script_path, timeout):
     raise ValueError("Unsafe user name")
   monkeypatch.setattr(tasks, "submit_redo_script", submit)
   assert tasks.redo_outputs([1], user="a'b") == {"started": 0, "failed": [{"id": 1, "error": "Unsafe user name"}]}
+
+
+def test_redo_outputs_restores_artifacts_once_per_commit(tasks, monkeypatch):
+  missing, broken = FakeCommit(1, has_artifacts=False), FakeCommit(2, has_artifacts=False, restore_error=OSError("git"))
+  tasks.with_outputs(FakeOutput(1, commit=missing), FakeOutput(2, commit=missing), FakeOutput(3, commit=broken), FakeOutput(4, commit=broken))
+  monkeypatch.setattr(tasks, "submit_redo_script", lambda user, script_path, timeout: True)
+  result = tasks.redo_outputs([1, 2, 3, 4], user="arthurf")
+  assert (missing.restored, broken.restored) == (1, 1)
+  assert result["started"] == 2
+  assert [f["id"] for f in result["failed"]] == [3, 4]
+  assert "Could not restore the commit's artifacts: git" == result["failed"][0]["error"]
+
+
+def test_redo_outputs_gives_up_on_slow_submissions(tasks, monkeypatch):
+  tasks.with_outputs(FakeOutput(1))
+  def submit(user, script_path, timeout):
+    raise subprocess.TimeoutExpired("ssh", timeout)
+  monkeypatch.setattr(tasks, "submit_redo_script", submit)
+  monkeypatch.setattr(tasks, "redo_submit_timeout", 7)
+  assert tasks.redo_outputs([1], user="arthurf")["failed"] == [{"id": 1, "error": "Submitting the run took more than 7s, we gave up"}]
 
 
 @pytest.fixture

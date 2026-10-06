@@ -8,7 +8,7 @@ args=(
   --app backend.celery_app worker
   --queues "${QABOARD_TASKS_QUEUE:-qaboard-server}"
   # Each task can wait minutes on ssh/LSF, and uses threads to submit runs in parallel (QABOARD_REDO_CONCURRENCY)
-  --concurrency "${QABOARD_WORKER_CONCURRENCY:-4}"
+  --concurrency "${QABOARD_WORKER_CONCURRENCY:-2}"
   --loglevel "${QABOARD_WORKER_LOGLEVEL:-INFO}"
   --without-gossip --without-mingle
 )
