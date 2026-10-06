@@ -12,7 +12,6 @@ import {
   Tag,
   Intent,
   InputGroup,
-  Tooltip,
   NonIdealState,
   Spinner,
   Navbar,
@@ -23,6 +22,7 @@ import {
 } from "@blueprintjs/core";
 import { Container } from "./components/layout";
 import { Avatar } from "./components/avatars";
+import { LoadMore } from "./components/LoadMore";
 import AuthButton from "./components/authentication/Auth"
 import PrivateContent from "./components/authentication/PrivateContent"
 import { WhatsNewLink } from './releaseNotes/ReleaseNotes'
@@ -39,12 +39,10 @@ const LastCommitAt = ({ project, className }) => {
   let date = date_output || date_commit
   return (
     <span className={className} style={{marginBottom: '5px'}}>
-      <Tooltip content={date}>
-        <span style={{ color: "#555"}}>last {!!date_output ? "run" : "commit"}
-        {" "}
-        <span title={date}>{DateTime.fromISO(date, { zone: 'utc' }).toRelative()}</span>
-        </span>
-      </Tooltip>
+      <span style={{ color: "#555"}}>last {!!date_output ? "run" : "commit"}
+      {" "}
+      <span title={date}>{DateTime.fromISO(date, { zone: 'utc' }).toRelative()}</span>
+      </span>
     </span>
   );
 }
@@ -97,14 +95,13 @@ const ProjectCard = ({ project_id, details }) => {
       </div>
       <div style={{'alignSelf': 'center', 'marginLeft': 'auto', textAlign: 'right', flex: '0 0 auto'}}>
         <p style={{marginBottom: '5px'}}>
-          <Tooltip content="Pin on top of the list.">
-            <Button
-              minimal
-              aria-label={is_favorite ? "Unpin" : "Pin"}
-              icon={<Icon icon={is_favorite ? "star" : "star-empty"} style={{color: Colors.GOLD5}}/>}
-              onClick={() => toggleFavorite(project_id)}
-            />
-          </Tooltip>
+          <Button
+            minimal
+            aria-label={is_favorite ? "Unpin" : "Pin"}
+            title="Pin on top of the list."
+            icon={<Icon icon={is_favorite ? "star" : "star-empty"} style={{color: Colors.GOLD5}}/>}
+            onClick={() => toggleFavorite(project_id)}
+          />
           <a href={web_url} style={{textDecoration: "none"}}><Button icon="git-repo" minimal round text="Source" style={{color: 'rgb(85, 85, 85)'}}/></a>
         </p>
         <p style={{marginBottom: '5px'}}><LastCommitAt project={details} /></p>
@@ -123,22 +120,26 @@ const github_cat = <>
   </svg>
 </>
 
-const empty_projects = <div style={{marginTop: '10vh'}}>
+const EmptyProjects = ({ docs_root, support_url }) => <div style={{marginTop: '10vh'}}>
   <NonIdealState
     icon="heatmap"
     title="No projects yet."
     intent={Intent.PRIMARY}
-    description={<p>Learn how to to <a href="https://samsung.github.io/qaboard/docs/installation">get started, and<br/><a href="https://spectrum.chat/qaboard">chat with the maintainers</a> if you run into issues</a>.</p>}
+    description={<p>Learn how to <a href={`${docs_root}docs/installation`}>get started</a>, and <a href={support_url}>ask for help</a> if you run into issues.</p>}
   />
 </div>;
+
+// We render projects progressively: sites can have hundreds
+const page_size = 50;
 
 
 const ProjectsList = () => {
   const { data: projects = {}, error, isPending } = useProjects();
   const user = useUser();
-  const { docs_root, quota_url_template } = useSiteConfig();
+  const { docs_root, quota_url_template, support_url } = useSiteConfig();
   const favorites = usePrefsStore(state => state.favorites);
   const [query, setQuery] = useState('');
+  const [nb_shown, setNbShown] = useState(page_size);
 
   const rendered_projects = useMemo(() => {
     const matcher = match_query(query)
@@ -185,7 +186,10 @@ const ProjectsList = () => {
                   large
                   leftIcon="search"
                   placeholder="filter projects..."
-                  onChange={e => setQuery(e.target.value)}
+                  onChange={e => {
+                    setQuery(e.target.value);
+                    setNbShown(page_size);
+                  }}
                 />
               </div>
             <div>
@@ -193,8 +197,13 @@ const ProjectsList = () => {
             </div>
           </div>
           {warnings}
-          {!isPending && (rendered_projects.length === 0 ? empty_projects : <div>
-            {rendered_projects.map(([project_id, details]) => <ProjectCard key={project_id} project_id={project_id} details={details}/>)}
+          {!isPending && (rendered_projects.length === 0 ? <EmptyProjects docs_root={docs_root} support_url={support_url}/> : <div>
+            {rendered_projects.slice(0, nb_shown).map(([project_id, details]) => <ProjectCard key={project_id} project_id={project_id} details={details}/>)}
+            {nb_shown < rendered_projects.length && <LoadMore
+              onLoadMore={() => setNbShown(nb => nb + page_size)}
+              loaded={nb_shown}
+              text={`Show more (${rendered_projects.length - nb_shown})`}
+            />}
           </div>)}
         </PrivateContent>
       </Container>

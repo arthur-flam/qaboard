@@ -1,11 +1,11 @@
 // Hooks that components use to read the app's state: server data from TanStack Query,
 // the selection from the URL, preferences from the zustand store.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   siteConfigQuery, default_site_config, userQuery, logged_out_user,
-  projectsQuery, projectQuery, branchesQuery, commitsQuery, commitQuery,
+  projectsQuery, projectQuery, branchesQuery, commitsQuery, commitsPagesQuery, commits_of, commits_page_size, commitQuery,
   findCachedCommit, invalidateCommit,
 } from "./api/queries";
 import { usePrefsStore, usePrivateMilestones } from "./stores/prefs";
@@ -22,7 +22,8 @@ export const useUser = () => useQuery(userQuery).data ?? logged_out_user;
 
 export const useProjects = () => useQuery(projectsQuery);
 
-export const useBranches = (project, { enabled = true } = {}) => useQuery({ ...branchesQuery(project), enabled: !!project && enabled });
+// The project's most recently active branches matching `search`
+export const useBranches = (project, search, { enabled = true } = {}) => useQuery({ ...branchesQuery(project, search), enabled: !!project && enabled });
 
 
 // A project's metadata and configuration, with the user's preferences
@@ -101,11 +102,22 @@ const aggregation_metrics = (qatools_metrics, { dashboard }) => {
 
 const has_batches = c => Object.keys(c.batches ?? {}).length > 0;
 
+// Pages can overlap when new commits arrive between their requests
+const unique_commits = commits => {
+  const seen = new Set();
+  return commits.filter(c => !seen.has(c.id) && seen.add(c.id));
+};
+
 // The commits shown on the current page: the project's latest, a branch's or a committer's,
 // in the date range from the URL. On the History page they come with all their outputs.
-export function useCommitsList({ enabled = true, refetchInterval } = {}) {
+// On lists of commits they come in pages (fetchNextPage, hasNextPage...), and the `search` from the URL
+// searches all the commits on the server. `ignore_search` gives the list without the search,
+// e.g. for the commits selected by default.
+export function useCommitsList({ enabled = true, refetchInterval, ignore_search = false } = {}) {
   const selected = useSelected();
   const { project, branch, committer, date_range, route, selected_batch_new } = selected;
+  const paginated = !route.is_history;
+  const search = paginated && !ignore_search ? selected.search.trim() : '';
   const project_data = useProjectData(project);
   const dashboard = route.is_history;
   // On branches, metrics can differ from the project's: once we know the latest commit, we ask for its metrics.
@@ -120,16 +132,22 @@ export function useCommitsList({ enabled = true, refetchInterval } = {}) {
     project,
     branch: branch ?? undefined,
     committer: committer ?? undefined,
-    from: date_range[0].toISOString(),
-    to: date_range[1].toISOString(),
+    // searches look at all the commits
+    from: search ? undefined : date_range[0].toISOString(),
+    to: search ? undefined : date_range[1].toISOString(),
     metrics,
     ...(dashboard ? { with_outputs: true, only_ci_batches: selected_batch_new === 'default' } : {}),
   };
-  const query = useQuery({ ...commitsQuery(params), enabled: enabled && !!project, refetchInterval });
+  const all_query = useQuery({ ...commitsQuery(params), enabled: enabled && !!project && !paginated, refetchInterval });
+  // Branch pages show their metrics over time: we get the whole date range at once
+  const page_size = branch && !search ? 1000 : commits_page_size;
+  const pages_query = useInfiniteQuery({ ...commitsPagesQuery({ ...params, q: search || undefined, page_size }), enabled: enabled && !!project && paginated, refetchInterval });
+  const query = paginated ? pages_query : all_query;
 
   const default_branch = project_data.data?.git?.default_branch ?? project_data.data?.qatools_config?.project?.reference_branch;
-  const { data, dataUpdatedAt, isPlaceholderData } = query;
-  const latest_metrics = branch && !isPlaceholderData ? data?.[0]?.data?.qatools_metrics : undefined;
+  const { data: query_data, dataUpdatedAt, isPlaceholderData } = query;
+  const data = useMemo(() => paginated ? unique_commits(commits_of(query_data)) : query_data, [paginated, query_data]);
+  const latest_metrics = branch && !search && !isPlaceholderData ? data?.[0]?.data?.qatools_metrics : undefined;
   if (latest_metrics && (branch_metrics.key !== list_key || branch_metrics.qatools_metrics !== latest_metrics))
     setBranchMetrics({ key: list_key, qatools_metrics: latest_metrics });
   const derived = useMemo(() => {
@@ -142,7 +160,7 @@ export function useCommitsList({ enabled = true, refetchInterval } = {}) {
     return { commits, ids: all.map(c => c.id), latest_commit };
   }, [data, dataUpdatedAt, branch, default_branch]);
 
-  return { ...query, ...derived, date_range, project };
+  return { ...query, data, ...derived, date_range, project, search, paginated };
 }
 
 
@@ -151,7 +169,7 @@ export function useCommitsList({ enabled = true, refetchInterval } = {}) {
 export function useSelectedCommits() {
   const selected = useSelected();
   const on_commit_page = selected.route.is_commit;
-  const list = useCommitsList({ enabled: !on_commit_page });
+  const list = useCommitsList({ enabled: !on_commit_page, ignore_search: true });
   const pick = (id, index) => {
     if (id === '') return '';
     if (on_commit_page) return id ?? undefined;

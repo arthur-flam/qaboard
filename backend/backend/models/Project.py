@@ -41,22 +41,12 @@ class Project(Base):
     """
     The locations where we save outputs and artifacts for this project.
     """
-    id_git = self.id_git
     qaboard_config = self.data.get('qatools_config', {})
     if not qaboard_config.get('storage'):
       qaboard_config = default_qaboard_config
-    try:
-      outputs_root, artifacts_root, subproject_for_artifacts = storage_roots(qaboard_config, Path(self.id), Path(self.id_relative))
-    except Exception as e:
-      print(e)
-      outputs_root = default_outputs_root
-      artifacts_root = default_artifacts_root
-      subproject_for_artifacts = Path()
-    return {
-      "outputs": outputs_root / id_git,
-      "artifacts": artifacts_root / id_git,
-      "subproject": subproject_for_artifacts,
-    }
+    # We need it for every commit and batch we serialize, and only those keys matter
+    storage_config = {k: qaboard_config[k] for k in ('storage', 'ci_root') if k in qaboard_config} if qaboard_config is not None else None
+    return dict(_storage_roots(self.id, self.id_git, self.id_relative, json.dumps(storage_config, sort_keys=True)))
 
   @property
   def id_git(self) -> str:
@@ -156,6 +146,23 @@ class Project(Base):
 
 
 
+
+
+@lru_cache(maxsize=1024)
+def _storage_roots(project_id, id_git, id_relative, storage_config_json):
+  try:
+    outputs_root, artifacts_root, subproject_for_artifacts = storage_roots(json.loads(storage_config_json), Path(project_id), Path(id_relative))
+  except Exception as e:
+    print(e)
+    outputs_root = default_outputs_root
+    artifacts_root = default_artifacts_root
+    subproject_for_artifacts = Path()
+  # immutable, since we cache it
+  return (
+    ("outputs", outputs_root / id_git),
+    ("artifacts", artifacts_root / id_git),
+    ("subproject", subproject_for_artifacts),
+  )
 
 
 def is_relative_to(path : Path, path_maybe_parent : Path) -> bool:

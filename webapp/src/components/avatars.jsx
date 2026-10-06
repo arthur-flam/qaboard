@@ -51,7 +51,7 @@ const AvatarPlaceholder = styled.div`
 const Avatar = ({ src, href, alt, size, style = {}, img_style = {} }) => {
   const no_image = src === null || src === undefined || src === false;
   const avatar = no_image ? <AvatarPlaceholder size={size} style={style}>{alt?.[0]?.toUpperCase() ?? ''}</AvatarPlaceholder>
-                          : <AvatarImg size={size} style={{...style, ...img_style}} alt={alt || ''} src={src || ''} />;
+                          : <AvatarImg size={size} style={{...style, ...img_style}} alt={alt || ''} src={src || ''} loading="lazy" decoding="async" />;
   if (href !== undefined && href !== null && href !== false)
     return <AvatarCell size={size} style={style}><Link to={href || '#'}>{avatar}</Link></AvatarCell>;
   return <AvatarCell size={size} style={style}>{avatar}</AvatarCell>;
