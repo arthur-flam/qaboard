@@ -14,7 +14,7 @@ from typing import Annotated, Any, Dict, List, Optional
 import typer
 
 from .app import app
-from .options import default_batches_files_list, int_or_str
+from .options import default_batches_files_list, int_or_str, Runner, ActionOnExisting, ActionOnPending
 from .options import lsf_config, dask_config, default_runner
 from .options import default_lsf_queue, default_lsf_max_threads, default_lsf_max_memory, default_lsf_resources
 from .options import default_lsf_priority, default_lsf_options, default_lsf_concurrency, default_dask_concurrency
@@ -84,17 +84,17 @@ def batch(
     '--list-inputs', rich_help_panel=PANEL_LIST,
     help="Print the path of each input, one per line.",
   )] = False,
-  action_on_existing: Annotated[str, typer.Option(
+  action_on_existing: Annotated[ActionOnExisting, typer.Option(
     '--action-on-existing', rich_help_panel=PANEL_EXISTING,
-    help="When successful runs already exist: run, postprocess (only), sync (re-read metrics from output dir), skip, or assert-exists.",
+    help="When successful runs already exist: run them again, only postprocess, sync (re-read metrics from the output dir), skip them, or fail unless they exist (assert-exists).",
   )] = default_action_on_existing,
-  action_on_pending: Annotated[str, typer.Option(
+  action_on_pending: Annotated[ActionOnPending, typer.Option(
     '--action-on-pending', rich_help_panel=PANEL_EXISTING,
-    help="When the same runs are pending: wait (then run if they failed), sync (use their results), skip (don't run), or run (as usual, can cause races).",
+    help="When the same runs are pending: wait for them (then run those that failed), sync (use their results), skip them, or run them anyway (can cause races).",
   )] = default_action_on_pending,
-  runner: Annotated[str, typer.Option(
+  runner: Annotated[Runner, typer.Option(
     '--runner', rich_help_panel=PANEL_RUNNER,
-    help="Where runs are executed: local, lsf, dask, celery, windows (Jenkins).",
+    help="Where runs are executed. windows: on Windows hosts, via Jenkins.",
   )] = default_runner,
   no_wait: Annotated[bool, typer.Option(
     '--no-wait', rich_help_panel=PANEL_RUNNER,

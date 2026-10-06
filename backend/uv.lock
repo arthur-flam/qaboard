@@ -1493,7 +1493,6 @@ name = "qaboard"
 version = "1.1.1"
 source = { directory = "../" }
 dependencies = [
-    { name = "click" },
     { name = "joblib" },
     { name = "psutil" },
     { name = "pyyaml" },
@@ -1508,7 +1507,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "click", specifier = ">=7.0" },
+    { name = "click", marker = "extra == 'dev'" },
     { name = "dask-jobqueue", marker = "extra == 'dask'" },
     { name = "distributed", marker = "extra == 'dask'" },
     { name = "flake8", marker = "extra == 'dev'" },

@@ -50,9 +50,9 @@ qa get configurations --json
 ### Using qa from scripts, CI and AI agents
 `qa` is meant to be scripted, and works well with coding agents like Claude Code:
 - **It never prompts.** Every option can be given on the command line, or as an [environment variable](using-the-qa-cli#environment-variables).
-- **Exit codes**: `0` on success, `1` when runs fail (`qa run`, `qa batch`, bit-accuracy checks...), `2` when the command line is invalid.
-- **Data on stdout, diagnostics on stderr**: `qa get`, `qa batch --list*` and the metrics of `qa run` go to stdout. The commands, output directories, links to QA-Board and most warnings go to stderr. Your own code's output goes to stdout.
-- **Machine-readable outputs**: `qa get` (JSON), `qa get VARIABLE --json`, `qa batch --list` (JSON). The metrics that `qa run` prints at the end are a Python dict, read them from the run's *metrics.json* instead.
+- **Exit codes**: `0` on success, `1` when runs fail (`qa run`, `qa postprocess`, `qa batch`, bit-accuracy checks...), `2` when the command line is invalid (e.g. an unknown option, or `--runner` value).
+- **Data on stdout, diagnostics on stderr**: `qa get`, `qa batch --list*` and the metrics of `qa run` (its last line) go to stdout. The commands, output directories, links to QA-Board and most warnings go to stderr. Your own code's output goes to stdout.
+- **Machine-readable outputs**: `qa get` (JSON), `qa get VARIABLE --json`, `qa batch --list` (JSON). `qa run`, `qa postprocess` and `qa sync` print the metrics as JSON on their last line, also saved in the run's *metrics.json*.
 - **No side effects when exploring**: `qa batch --list` and `qa --dryrun` don't run anything. `qa --offline` doesn't update QA-Board, and without `--share` local results are saved under *output/*, not shown to others.
 - **No colors**: set `NO_COLOR=1`, else `qa` keeps colors (QA-Board shows logs with colors).
 - **Help**: `qa --help` lists the commands, `qa COMMAND --help` their options, with examples and environment variables.
@@ -60,8 +60,8 @@ qa get configurations --json
 For example, to run an input and read its metrics:
 
 ```bash
-qa run --input images/a.jpg || echo "the run failed"
-cat "$(qa get output_dir --input images/a.jpg)/metrics.json"   # also: log.txt, the output files...
+qa run --input images/a.jpg | tail -n 1 | jq .   # the metrics, as JSON. Exit code 1 if the run failed
+ls "$(qa get output_dir --input images/a.jpg)"               # metrics.json, log.txt, the output files...
 ```
 
 :::tip Tell your coding agent about qa

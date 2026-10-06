@@ -163,7 +163,7 @@ class TestGet(QaProject):
 class TestRun(QaProject):
   def test_run(self):
     result = self.qa('run', '--input', 'inputs/a.jpg', 'echo "{input_path} => {output_dir}"', check=0)
-    self.assertIn("'is_failed': False", result.stdout)
+    self.assertIn('"is_failed": false', result.stdout)
     self.assertIn('a.jpg =>', result.stdout)
     # diagnostics are on stderr
     self.assertIn('Outputs:', result.stderr)
@@ -174,9 +174,17 @@ class TestRun(QaProject):
     for name in ('run.json', 'log.txt', 'manifest.inputs.json', 'manifest.outputs.json'):
       self.assertTrue((output_dir / name).exists(), name)
 
+  def test_metrics_are_printed_as_json(self):
+    # even with colors (the default), the metrics have none
+    result = self.qa('run', '--input', 'inputs/a.jpg', 'true', check=0)
+    metrics = json.loads(result.stdout.splitlines()[-1])
+    self.assertFalse(metrics['is_failed'])
+    self.assertIn('compute_time', metrics)
+
   def test_failed_run_exits_with_1(self):
-    result = self.qa('run', '-i', 'inputs/a.jpg', 'false', check=1)
+    result = self.qa('run', '-i', 'inputs/a.jpg', 'false', env={'NO_COLOR': '1'}, check=1)
     self.assertIn('The run has failed', result.stderr)
+    self.assertTrue(json.loads(result.stdout.splitlines()[-1])['is_failed'])
 
   def test_missing_input(self):
     result = self.qa('run', '-i', 'inputs/missing.jpg', 'true', check=1)
@@ -203,9 +211,9 @@ class TestRun(QaProject):
   def test_postprocess_and_sync(self):
     self.qa('run', '-i', 'inputs/b.jpg', 'true', check=0)
     result = self.qa('postprocess', '-i', 'inputs/b.jpg', check=0)
-    self.assertIn("'is_failed': False", result.stdout)
+    self.assertIn('"is_failed": false', result.stdout)
     result = self.qa('sync', '-i', 'inputs/b.jpg', check=0)
-    self.assertIn("'is_failed': False", result.stdout)
+    self.assertIn('"is_failed": false', result.stdout)
 
   def test_colors(self):
     # Colors are kept by default (logs are shown with colors in QA-Board)
@@ -235,6 +243,24 @@ class TestClickEntrypoint(QaProject):
     self.assertIn('label=my-label same_obj=True', result.stdout)
     # like before, colors are kept in logs, even if stdout is not a terminal
     self.assertIn('\x1b[32mfrom click', result.stdout)
+
+
+class TestFailedPostprocess(QaProject):
+  @classmethod
+  def setUpClass(cls):
+    super().setUpClass()
+    (cls.project / 'qa' / 'main.py').write_text(
+      "def run(context):\n"
+      "  return {'is_failed': False}\n"
+      "def postprocess(metrics, context):\n"
+      "  return {**metrics, 'is_failed': True, 'reason': 'postprocess'}\n"
+    )
+
+  def test_postprocess_exits_with_1(self):
+    self.qa('run', '-i', 'inputs/a.jpg', '--no-postprocess', check=0)
+    result = self.qa('postprocess', '-i', 'inputs/a.jpg', env={'NO_COLOR': '1'}, check=1)
+    self.assertEqual(json.loads(result.stdout.splitlines()[-1])['reason'], 'postprocess')
+    self.qa('run', '-i', 'inputs/a.jpg', check=1)
 
 
 class TestBatch(QaProject):
@@ -275,6 +301,12 @@ class TestBatch(QaProject):
     self.assertEqual(len(runs), 6)
     self.assertEqual(sorted({r['extra_parameters']['gain'] for r in runs}), [1, 2])
 
+  def test_invalid_choices(self):
+    result = self.qa('batch', 'images', '--runner', 'not-a-runner', '--list', check=2)
+    self.assertIn("'not-a-runner' is not one of", result.stderr)
+    self.qa('batch', 'images', '--list', env={'QA_BATCH_ACTION_ON_EXISTING': 'nope'}, check=2)
+    self.qa('batch', 'images', '--action-on-pending', 'sync', '--action-on-existing', 'assert-exists', '--list-inputs', check=0)
+
   def test_batch_is_required(self):
     result = self.qa('batch', check=1)
     self.assertIn('you must provide a batch', result.stderr)
@@ -304,6 +336,20 @@ class TestInit(unittest.TestCase):
       self.assertTrue((Path(tmp) / 'qaboard.yaml').exists())
       self.assertTrue((Path(tmp) / 'qa' / 'main.py').exists())
       self.assertEqual(run_qa(tmp, 'get', 'project', check=0).stdout.strip(), 'someone/my-project')
+
+
+class TestRunners(unittest.TestCase):
+  def test_runner_choices(self):
+    # --runner accepts exactly the available runners
+    check = (
+      "from typing import get_args\n"
+      "from qaboard.cli.options import Runner\n"
+      "from qaboard.runners import runners\n"
+      "assert set(get_args(Runner)) == set(runners), (get_args(Runner), list(runners))\n"
+    )
+    env = {**os.environ, 'PYTHONPATH': str(ROOT), 'QA_NO_CHECK_FOR_UPDATES': '1', 'QABOARD_HOST': 'localhost'}
+    out = subprocess.run([sys.executable, '-c', check], cwd=ROOT / 'qaboard' / 'sample_project', env=env, capture_output=True, text=True)
+    self.assertEqual(out.returncode, 0, out.stderr)
 
 
 # In a new process: importing qaboard here would load its configuration from the wrong directory for other tests

@@ -67,7 +67,7 @@ class TestQaCliSubproject(unittest.TestCase):
     result = self.qa('run', '-i', 'cli_tests/a.jpg', 'echo "{input_path} => {output_dir}"')
     assert result.exit_code == 0
     assert 'a.jpg =>' in result.output
-    assert "'is_failed': False" in result.output
+    assert '"is_failed": false' in result.output
 
   def test_sub_get(self):
     result = self.qa('get', 'subproject')

@@ -35,7 +35,7 @@ def forward_args(ctx: typer.Context):
 def click_compat_context(ctx: typer.Context):
   """
   User code written when `qa` used click may call click.secho or click.get_current_context().
-  If it imported click, we give it a context like before: same `obj`, and colors in logs.
+  If it imported click (qaboard doesn't install it anymore), we give it a context like before: same `obj`, and colors in logs.
   """
   if 'click' not in sys.modules:
     return nullcontext()
@@ -43,6 +43,15 @@ def click_compat_context(ctx: typer.Context):
   click_ctx = click.Context(click.Command(ctx.info_name), obj=ctx.obj, color=ctx.color)
   click_ctx.params = ctx.params
   return click_ctx
+
+
+def print_metrics(metrics: dict):
+  """
+  The last line of stdout: the metrics, as JSON. Green if the run succeeded, red otherwise,
+  but only in a terminal: scripts can parse it even if colors are forced for the logs.
+  """
+  from ..utils import isatty
+  typer.secho(json.dumps(metrics, default=str), fg='red' if metrics.get('is_failed') else 'green', color=None if isatty(sys.__stdout__) else False)
 
 
 def print_outputs(run_context: RunContext):
@@ -71,7 +80,7 @@ def run(
   Calls `run(context)` from your entrypoint, then `postprocess` if defined.
   Outputs are saved in the output directory (printed on stderr) with
   `metrics.json`, `log.txt` and manifests of the input and output files.
-  The metrics are printed at the end. Exits with 1 if the run failed.
+  The metrics are printed at the end, as JSON. Exits with 1 if the run failed.
 
   Examples:
 
@@ -150,10 +159,10 @@ def run(
 
     if metrics['is_failed']:
       typer.secho('[ERROR] The run has failed.', fg='red', err=True)
-      typer.secho(str(metrics), fg='red', bold=True)
+      print_metrics(metrics)
       raise typer.Exit(1)
     else:
-      typer.secho(str(metrics), fg='green')
+      print_metrics(metrics)
 
 
 def postprocess_(runtime_metrics, run_context, skip=False, save_manifests_in_database=False):
@@ -307,6 +316,8 @@ def postprocess(
   """
   Run only the post-processing of a run, assuming its results already exist.
 
+  Prints the metrics as JSON. Exits with 1 if the run failed.
+
   Example:
 
       qa postprocess --input images/a.jpg
@@ -318,11 +329,10 @@ def postprocess(
     print_url(ctx)
     with click_compat_context(ctx):
       metrics = postprocess_({}, run_context)
+    print_metrics(metrics)
     if metrics['is_failed']:
       typer.secho('[ERROR] The run has failed.', fg='red', err=True, bold=True)
-      typer.secho(str(metrics), fg='red')
-    else:
-      typer.secho(str(metrics), fg='green')
+      raise typer.Exit(1)
 
 
 
@@ -347,7 +357,7 @@ def sync(
     with (run_context.output_dir / 'metrics.json').open('r') as f:
       metrics = json.load(f)
     notify_qa_database(**ctx.obj, metrics=metrics, is_pending=False, is_running=False)
-    typer.secho(str(metrics), fg='green')
+    print_metrics(metrics)
 
 
 

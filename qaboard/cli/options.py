@@ -7,7 +7,7 @@ tests/test_cli_surface.py makes sure they don't change by accident.
 """
 import os
 from pathlib import Path
-from typing import Annotated, Any, List, Optional
+from typing import Annotated, Any, List, Literal, Optional
 
 import typer
 
@@ -60,6 +60,11 @@ Strict = Annotated[bool, typer.Option(
 
 # The defaults are lists, typer needs them as such
 default_batches_files_list: List[Path] = list(default_batches_files)
+
+# Allowed values. Literal keeps them as plain strings
+Runner = Literal['local', 'lsf', 'dask', 'celery', 'windows'] # keys of qaboard.runners.runners
+ActionOnExisting = Literal['run', 'postprocess', 'sync', 'skip', 'assert-exists']
+ActionOnPending = Literal['wait', 'sync', 'skip', 'run']
 
 
 ## Runners ######################################################################################

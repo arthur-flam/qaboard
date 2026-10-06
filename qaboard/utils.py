@@ -47,21 +47,6 @@ def getenvs(variables: Iterable[str], default=None) -> Optional[str]:
       return os.environ[name]
   return default
 
-def __getattr__(name):
-  # Backward compatibility, for CLIs built with click. Created lazily to avoid importing click.
-  if name == 'PathType':
-    import click
-    class PathType(click.ParamType):
-      """Wrapper for pathlib's Path type, for use with the Click CLI package."""
-      name = 'path'
-      def convert(self, value, param, ctx):
-        if value is None:
-          return None
-        return Path(value)
-    return PathType
-  raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 def isatty(stream) -> bool:
   try:
     return stream.isatty()
