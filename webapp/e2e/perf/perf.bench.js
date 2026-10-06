@@ -22,6 +22,8 @@ const setup = async page => {
     const key = api_keys.find(k => pathname.startsWith(k));
     return route.fulfill({ json: key ? api[key] : {} });
   });
+  // the output files cards fetch (manifests...)
+  await page.route('**/s/**', route => route.fulfill({ json: {} }));
   await page.addInitScript(() => {
     // the "What's new" dialog would steal the focus
     localStorage.setItem('qaboard.release-notes.last-seen', '2999-01-01');
@@ -100,6 +102,15 @@ const scenarios = {
       value = await page.getByPlaceholder('filter new outputs').inputValue();
     });
     return { ...result, lost_keys: typed.length - value.length };
+  },
+  'commit page: open the visualizations': async page => {
+    const cdp = await setup(page);
+    await page.goto(`/${project}/commit/c0000?reference=c0001`);
+    await page.getByText(/^PSNR/).first().waitFor({ timeout: 60_000 });
+    return measure(page, cdp, async () => {
+      await page.getByText('Visualizations').first().click();
+      await page.locator('.output-card').nth(10).waitFor({ timeout: 60_000 });
+    });
   },
   'commit page: open the metrics table': async page => {
     const cdp = await setup(page);

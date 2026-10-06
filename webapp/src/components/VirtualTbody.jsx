@@ -4,7 +4,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 
-const VIRTUALIZE_ABOVE = 150;
+// Batches usually have up to a few hundred runs
+const VIRTUALIZE_ABOVE = 500;
 
 // renderRow(item, row_props): row_props must be spread on the row's <tr>, they let us measure its height
 export const VirtualTbody = ({ items, renderRow, estimateSize = 31 }) => {

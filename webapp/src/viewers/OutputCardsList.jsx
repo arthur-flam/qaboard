@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import qs from "qs";
 import { useInView } from "react-intersection-observer";
+import { Button, Callout, Intent } from "@blueprintjs/core";
 
 import { history as router_history } from "../router";
 import { BitAccuracyForm } from "./bit_accuracy/utils";
 import { OutputCard } from "./OutputCard";
 
 
-// Batches can have thousands of outputs: we render the cards incrementally, as users scroll down
-const page_size = 30;
+// Cards are light until they scroll into view: they only then fetch their files and render viewers.
+// We render all the cards of usual batches, so that the browser's search (Ctrl+F) finds them.
+// Batches with thousands of outputs are rendered incrementally, as users scroll down.
+const all_at_once = 300;
+const page_size = 100;
 
 // bit-accuracy controls, saved in the URL
 const form_from_url = search => {
@@ -44,15 +48,23 @@ function OutputCardsList({ type, project, config, metrics, new_commit, new_batch
     .filter(([, output]) => output && output.output_type !== "optim_iteration"),
   [new_batch]);
 
-  const [nb_shown, setNbShown] = useState(page_size);
+  const [nb_shown, setNbShown] = useState(all_at_once);
   const { ref: more_ref, inView: want_more } = useInView({ rootMargin: '2000px 0px', fallbackInView: true });
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect
     if (want_more && nb_shown < outputs.length) setNbShown(nb_shown => nb_shown + page_size);
   }, [want_more, nb_shown, outputs.length]);
 
+  const incomplete = nb_shown < outputs.length;
   return (
     <>
+      {incomplete && <Callout intent={Intent.PRIMARY} icon="info-sign" style={{ marginBottom: '10px' }}>
+        <p>
+          {outputs.length} runs: more cards are shown as you scroll, so the browser's search (Ctrl+F) doesn't find them all yet.
+          Filter runs from the navbar, or{" "}
+          <Button small onClick={() => setNbShown(outputs.length)}>show all {outputs.length} runs</Button>
+        </p>
+      </Callout>}
       {type === 'bit_accuracy' && <BitAccuracyForm
                                    show_all_files={show_all_files}
                                    hide_runs_without_files={hide_runs_without_files}
@@ -90,7 +102,7 @@ function OutputCardsList({ type, project, config, metrics, new_commit, new_batch
           onToggleDynamicOptionSync={onToggleDynamicOptionSync}
         />)}
       </div>
-      {nb_shown < outputs.length && <div ref={more_ref} style={{ height: '1px' }} />}
+      {incomplete && <div ref={more_ref} style={{ height: '1px' }} />}
     </>
   );
 }

@@ -61,12 +61,25 @@ afterEach(() => {
 
 
 describe('OutputCardsList', () => {
-  it('renders the cards incrementally, as users scroll', async () => {
-    const { container } = render_list({ ...props, ...batches(100) });
-    expect(cards(container)).toHaveLength(30);
+  it('renders all the cards of usual batches, so that Ctrl+F finds them', () => {
+    const { container } = render_list({ ...props, ...batches(300) });
+    expect(cards(container)).toHaveLength(300);
+    expect(screen.queryByText(/show all/)).toBeNull();
+  });
+
+  it('renders the cards of big batches incrementally, as users scroll', async () => {
+    const { container } = render_list({ ...props, ...batches(450) });
+    expect(cards(container)).toHaveLength(300);
     act(() => mockAllIsIntersecting(true));
-    await waitFor(() => expect(cards(container)).toHaveLength(100));
-    expect(screen.getByText('input_99')).toBeInTheDocument();
+    await waitFor(() => expect(cards(container)).toHaveLength(450));
+    expect(screen.queryByText(/show all/)).toBeNull();
+  });
+
+  it('can show all the cards of big batches at once', () => {
+    const { container } = render_list({ ...props, ...batches(450) });
+    fireEvent.click(screen.getByText('show all 450 runs'));
+    expect(cards(container)).toHaveLength(450);
+    expect(screen.getByText('input_449')).toBeInTheDocument();
   });
 
   it('fetches each manifest once, even when cards share a reference', async () => {

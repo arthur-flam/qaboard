@@ -11,7 +11,6 @@ Check items off or delete them when done, add new ones with enough context for s
 
 ## UX
 - [ ] **History page sidebar** (`src/AppSider.jsx`): it only links back to the branch's commits. Integrations and milestones could be shown there too.
-- [ ] Visualizations render 30 cards at a time as users scroll (`src/viewers/OutputCardsList.jsx`): the browser's Ctrl+F doesn't find cards further down. A "show all" button would help.
 - [ ] Blueprint warns that `<Popover>` positions content incorrectly with React 19: migrate to `<PopoverNext>` (milestones, CommitRow, CommitNavbar...) and check the layouts.
 
 ## Testing / CI
