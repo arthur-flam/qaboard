@@ -399,6 +399,13 @@ def integrations(monkeypatch, tmp_path):
   spec.loader.exec_module(module)
   module.git_hosts = hosts_from({"GITHUB_ACCESS_TOKEN": "gh", "GITLAB_HOST": "https://gitlab.example.com"})
   module.time = MagicMock() # no sleeping
+  module.Project = FakeProjects({
+    "org/repo": GITHUB_PROJECT,
+    "org/repo/sub": GITHUB_PROJECT, # subprojects share the repository's git data
+    "secret": GITHUB_PROJECT,
+    "group/gitlab-repo": {"git": {"path_with_namespace": "group/gitlab-repo", "web_url": "https://gitlab.example.com/group/gitlab-repo"}, "qatools_config": GITHUB_PROJECT["qatools_config"]},
+  })
+  module.is_authorized_user = lambda user, project: project != "secret"
   return module
 
 
@@ -407,6 +414,12 @@ def response(status_code=200, json_data=None):
   r.json.return_value = json_data
   r.content = json.dumps(json_data).encode()
   return r
+
+
+def call(integrations, dummy_app, handler, params):
+  with dummy_app.test_request_context("/api/v1/github/workflow", method="POST", json=params):
+    result = getattr(integrations, handler)()
+  return result if isinstance(result, tuple) else (result, result.status_code)
 
 
 RUN = {"id": 42, "status": "completed", "conclusion": "success", "html_url": "https://github.com/org/repo/actions/runs/42", "name": "Benchmark"}
@@ -424,35 +437,85 @@ def test_workflow_run_status(integrations):
   assert status(status="queued", conclusion=None) == "pending"
 
 
+def test_matches_template(integrations):
+  matches = integrations.matches_template
+  assert matches("bench.yml", "bench.yml")
+  assert not matches("bench.yml", "deploy.yml")
+  assert matches("${commit.id}", "abc")
+  assert matches("nightly-${project}.yml", "nightly-org/repo.yml")
+  assert not matches("nightly-${project}.yml", "deploy.yml")
+  assert not matches("a${x}b${y}c", "ac")
+  assert matches("a${x}b${y}c", "abc")
+  assert matches(12345, "12345") and matches("12345", 12345)
+  assert not matches("x", None) and not matches("${x", "x")
+  # linear, whatever qaboard.yaml says
+  import time
+  start = time.monotonic()
+  assert not matches("${a}x" * 5000 + "y", "x" * 100_000)
+  assert time.monotonic() - start < 2
+
+
 def test_github_workflow_status(integrations, dummy_app, monkeypatch):
   github = integrations.git_hosts.find("github.com")
   api = MagicMock(return_value=response(json_data={"workflow_runs": [RUN]}))
   monkeypatch.setattr(github, "api", api)
-  params = {"host": "https://github.com", "repo": "org/repo", "workflow": "bench.yml", "commit_id": "abc"}
-  with dummy_app.test_request_context("/api/v1/github/workflow", method="POST", json=params):
-    data = integrations.github_workflow_run().get_json()
+  params = {"project": "org/repo/sub", "host": "https://github.com", "repo": "org/repo", "workflow": "bench.yml", "commit_id": "abc"}
+  data = call(integrations, dummy_app, "github_workflow_run", params)[0].get_json()
   assert data["status"] == "success" and data["id"] == 42
   api.assert_called_once_with("GET", "/repos/org/repo/actions/workflows/bench.yml/runs", params={"head_sha": "abc", "per_page": 1})
 
-  # Tokens are not sent to unknown hosts, and repositories are checked
-  for bad in [{"host": "https://attacker.example.com"}, {"repo": "../../user"}]:
-    with dummy_app.test_request_context("/api/v1/github/workflow", method="POST", json={**params, **bad}):
-      _, status = integrations.github_workflow_run()
-    assert status in (403, 500)
-  assert api.call_count == 1
+  # The run we started, that we didn't find yet: on its branch, not by commit
+  api.reset_mock()
+  data = call(integrations, dummy_app, "github_workflow_run", {**params, "ref": "main", "dispatched_at": "2026-10-06T12:00:00Z"})[0].get_json()
+  assert data["id"] == 42
+  api.assert_called_once_with("GET", "/repos/org/repo/actions/workflows/bench.yml/runs", params={"event": "workflow_dispatch", "branch": "main", "created": ">=2026-10-06T12:00:00Z", "per_page": 1})
+  api.reset_mock(return_value=True)
+  api.return_value = response(json_data={"workflow_runs": []})
+  data = call(integrations, dummy_app, "github_workflow_run", {**params, "ref": "main", "dispatched_at": "2026-10-06T12:00:00Z"})[0].get_json()
+  assert data == {"status": "pending", "dispatched_at": "2026-10-06T12:00:00Z"}
+  assert call(integrations, dummy_app, "github_workflow_run", {**params, "ref": "main", "dispatched_at": "2026-10-06&x=1"})[1] == 400
+  api.reset_mock()
+
+  # Tokens are not sent to unknown hosts, and users only see the workflows of the projects they can access
+  for bad in [
+    {"host": "https://attacker.example.com"}, {"repo": "../../user"}, {"repo": "other/repo"}, {"project": None},
+    {"project": "unknown"}, {"project": "secret"}, {"project": "group/gitlab-repo", "repo": "group/gitlab-repo"},
+    {"workflow": "deploy.yml"}, {"workflow": "../../../user/repos"},
+  ]:
+    assert call(integrations, dummy_app, "github_workflow_run", {**params, **bad})[1] in (400, 403, 404), bad
+  api.assert_not_called()
 
 
 def test_github_workflow_dispatch(integrations, dummy_app, monkeypatch):
   github = integrations.git_hosts.find("github.com")
   api = MagicMock(side_effect=[response(204), response(json_data={"workflow_runs": []}), response(json_data={"workflow_runs": [{**RUN, "status": "queued", "conclusion": None}]})])
   monkeypatch.setattr(github, "api", api)
-  params = {"host": "https://github.com", "repo": "org/repo", "workflow": "bench.yml", "ref": "main", "inputs": {"a": "1"}}
-  with dummy_app.test_request_context("/api/v1/github/workflow/dispatch", method="POST", json=params):
-    data = integrations.github_workflow_dispatch().get_json()
+  params = {"project": "org/repo", "host": "https://github.com", "repo": "org/repo", "workflow": "bench.yml", "ref": "feature", "inputs": {"commit": "abc"}}
+  data = call(integrations, dummy_app, "github_workflow_dispatch", params)[0].get_json()
   assert data["status"] == "pending" and data["id"] == 42
   method, path = api.call_args_list[0].args
   assert (method, path) == ("POST", "/repos/org/repo/actions/workflows/bench.yml/dispatches")
-  assert api.call_args_list[0].kwargs["json"] == {"ref": "main", "inputs": {"a": "1"}}
+  assert api.call_args_list[0].kwargs["json"] == {"ref": "feature", "inputs": {"commit": "abc"}}
+
+  # We didn't find the run: the web app sends us back when it was dispatched
+  api.side_effect = None
+  api.return_value = response(json_data={"workflow_runs": []})
+  data = call(integrations, dummy_app, "github_workflow_dispatch", params)[0].get_json()
+  assert data["status"] == "pending" and data["dispatched_at"].endswith("Z")
+
+  # Only the workflows (inputs, refs) of the project's qaboard.yaml, on its repository, for users who can access it
+  api.reset_mock()
+  nightly = {**params, "workflow": "nightly-main.yml", "inputs": {}, "ref": "main"}
+  for bad in [
+    {"project": None}, {"project": "secret"}, {"repo": "other/repo"}, {"host": "https://attacker.example.com"},
+    {"workflow": "deploy.yml"}, {"workflow": "nightly-x/../../y.yml"}, {"inputs": {"commit": "abc", "other": "x"}}, {"inputs": {}}, {"inputs": "x"},
+    {"ref": None},
+    {**nightly, "ref": "feature"}, {**nightly, "inputs": {"commit": "abc"}},
+  ]:
+    assert call(integrations, dummy_app, "github_workflow_dispatch", {**params, **bad})[1] in (400, 403), bad
+  api.assert_not_called()
+  assert call(integrations, dummy_app, "github_workflow_dispatch", nightly)[1] == 200
+  assert api.call_args_list[0].args == ("POST", "/repos/org/repo/actions/workflows/nightly-main.yml/dispatches")
 
 
 def test_gitlab_jobs(integrations, dummy_app, monkeypatch):
