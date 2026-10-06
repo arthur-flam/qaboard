@@ -20,7 +20,7 @@ import {
 import { fetchCommit } from "../actions/commit";
 import { linux_to_windows } from '../utils'
 import { toaster } from "../toaster"
-import { errorMessage, redo, redoToast } from "../utils/http";
+import { errorMessage, redo, redoToast, STILL_PENDING_MESSAGE } from "../utils/http";
 
 
 const on_copy = (text, format = 'config') => {
@@ -331,7 +331,9 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Requested Redo."});
-          redo(`/api/v1/output/redo/${id}/`, {})
+          redo(`/api/v1/output/redo/${id}/`, {}, {
+            onStillPending: () => toaster.show({message: STILL_PENDING_MESSAGE, intent: Intent.WARNING, timeout: 15000}),
+          })
             .then(result => toaster.show(redoToast(result)))
             .catch(error => toaster.show({message: errorMessage(error), intent: Intent.DANGER}))
             .finally(() => {

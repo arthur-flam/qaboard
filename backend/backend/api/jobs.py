@@ -17,7 +17,8 @@ def get_job(job_id):
   try:
     return jsonify(job_status(job_id))
   except Exception as e:
-    return jsonify({"error": f"Could not get the status of the job: {e}"}), 503
+    print(f"ERROR: could not get the status of job {job_id}: {type(e).__name__}: {e}")
+    return jsonify({"error": "Could not get the status of the job, try again later."}), 503
 
 
 def queue_redo(output_ids, user):
@@ -27,6 +28,7 @@ def queue_redo(output_ids, user):
   try:
     job = redo_outputs.delay(output_ids, user=user)
   except Exception as e:
-    # e.g. redis is down
-    return jsonify({"error": f"Could not queue the runs, try again later. {type(e).__name__}: {e}"}), 503
+    # e.g. redis is down. Users don't need the internal hostnames in the error
+    print(f"ERROR: could not queue the runs of outputs {output_ids}: {type(e).__name__}: {e}")
+    return jsonify({"error": "Could not queue the runs, try again later. If it lasts, tell your QA-Board admins."}), 503
   return jsonify({"status": "queued", "outputs": len(output_ids), "job_id": job.id}), 202

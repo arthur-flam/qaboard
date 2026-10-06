@@ -32,7 +32,7 @@ import { shortId, linux_to_windows } from "../utils";
 import { fetchCommit } from "../actions/commit";
 import { updateSelected } from "../actions/selected";
 import { toaster } from "../toaster"
-import { errorMessage, redo, redoToast } from "../utils/http";
+import { errorMessage, redo, redoToast, STILL_PENDING_MESSAGE } from "../utils/http";
 
 
 class CommitMessage extends React.PureComponent {
@@ -103,6 +103,7 @@ class CommitNavbar extends React.Component {
     super(props);
     this.state = {
       waiting: false,
+      redoing: false,
       soft_delete: false,
       show_rename_dialog: false,
       show_move_dialog: false,
@@ -132,17 +133,19 @@ class CommitNavbar extends React.Component {
       });
   }
 
+  // Only the redo actions are disabled while the runs are submitted, which can take minutes
   redoBatch = (params, message) => {
     const { batch } = this.props;
-    this.setState({waiting: true})
+    this.setState({redoing: true})
     toaster.show({message});
     redo(`/api/v1/batch/redo/`, {id: batch.id, ...params}, {
       onQueued: ({outputs}) => toaster.show({message: `Submitting ${outputs} run${outputs > 1 ? 's' : ''}...`}),
+      onStillPending: () => toaster.show({message: STILL_PENDING_MESSAGE, intent: Intent.WARNING, timeout: 15000}),
     })
       .then(result => toaster.show(redoToast(result)))
       .catch(error => toaster.show({message: errorMessage(error), intent: Intent.DANGER}))
       .finally(() => {
-        this.setState({waiting: false})
+        this.setState({redoing: false})
         this.refresh()
         // the runs update their status when they start
         setTimeout(this.refresh,  5*1000)
@@ -400,7 +403,7 @@ class CommitNavbar extends React.Component {
               text="Redo Deleted Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting || this.state.redoing || commit?.deleted}
               onClick={() => this.redoBatch({only_deleted: true}, "Redo of deleted outputs requested.")}
             />}
             {batch.failed_outputs > 0 && <MenuItem
@@ -408,7 +411,7 @@ class CommitNavbar extends React.Component {
               text="Redo Failed Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting || this.state.redoing || commit?.deleted}
               onClick={() => this.redoBatch({only_failed: true}, "Redo of failed outputs requested.")}
             />}
             <MenuItem
@@ -416,7 +419,7 @@ class CommitNavbar extends React.Component {
               text="Redo All Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting || this.state.redoing || commit?.deleted}
               onClick={() => this.redoBatch({}, "Redo requested.")}
             />
             <MenuDivider/>

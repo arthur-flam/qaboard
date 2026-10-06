@@ -50,6 +50,18 @@ describe('waitForJob', () => {
     await expect(waitForJob('abc', { interval: 0 })).rejects.toMatchObject({ response: { status: 401 } });
   });
 
+  test('warns once when the job does not start, and stops on unknown states', async () => {
+    vi.mocked(axios.get)
+      .mockResolvedValueOnce({ data: { state: 'PENDING' } })
+      .mockResolvedValueOnce({ data: { state: 'PENDING' } })
+      .mockResolvedValueOnce({ data: { state: 'REVOKED' } });
+    const onStillPending = vi.fn();
+    await expect(waitForJob('abc', { interval: 0, pendingNotice: -1, onStillPending })).rejects.toThrow('The job ended as REVOKED.');
+    expect(onStillPending).toHaveBeenCalledTimes(1);
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: '<html>login</html>' });
+    await expect(waitForJob('abc', { interval: 0 })).rejects.toThrow(/Unexpected answer/);
+  });
+
   test('gives up eventually', async () => {
     vi.mocked(axios.get).mockResolvedValue({ data: { state: 'STARTED' } });
     await expect(waitForJob('abc', { interval: 0, timeout: -1 })).rejects.toThrow(/still not done/);
@@ -77,6 +89,13 @@ describe('redo', () => {
     await expect(redo('/api/v1/batch/redo/', { id: 1 })).resolves.toEqual({ started: 0, failed: [] });
     expect(axios.get).not.toHaveBeenCalled();
   });
+
+  test('older servers submit the runs in the request', async () => {
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: { status: 'OK' } });
+    const result = await redo('/api/v1/batch/redo/', { id: 1 });
+    expect(result).toEqual({ started: null, failed: [] });
+    expect(redoToast(result).intent).toBe('success');
+  });
 });
 
 describe('redoToast', () => {
@@ -86,6 +105,7 @@ describe('redoToast', () => {
     expect(redoToast({ started: 3, failed: [] }).message).toBe('Started 3 runs again.');
     const partial = redoToast({ started: 1, failed: [{ id: 2, error: 'see log.txt' }] });
     expect(partial.message).toBe('1 of 2 runs failed to start: see log.txt');
+    expect(redoToast({ started: 0, failed: [{ id: 2, error: 'x' }] }).message).toBe('1 of 1 run failed to start: x');
     expect(partial.intent).toBe('warning');
     expect(redoToast({ started: 0, failed: [{ id: 2, error: 'x' }] }).intent).toBe('danger');
   });

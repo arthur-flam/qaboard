@@ -13,7 +13,7 @@ import {
 import { ConfigurationsTags, ExtraParametersTags } from './tags'
 import { fetchCommit } from "../actions/commit";
 import { toaster } from "../toaster"
-import { errorMessage, redo, redoToast } from "../utils/http";
+import { errorMessage, redo, redoToast, STILL_PENDING_MESSAGE } from "../utils/http";
 import { SubmissionCallout } from "./logs/BatchSubmissions"
 
 
@@ -144,6 +144,7 @@ class BatchStatusMessages extends React.Component {
     toaster.show({message: "Redo requested."});
     redo(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true}, {
       onQueued: ({outputs}) => toaster.show({message: `Submitting ${outputs} run${outputs > 1 ? 's' : ''}...`}),
+      onStillPending: () => toaster.show({message: STILL_PENDING_MESSAGE, intent: Intent.WARNING, timeout: 15000}),
     })
       .then(result => toaster.show(redoToast(result)))
       .catch(error => toaster.show({message: errorMessage(error), intent: Intent.DANGER}))

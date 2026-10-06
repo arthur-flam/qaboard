@@ -104,7 +104,8 @@ def test_queue_redo_when_the_queue_is_down(dummy_app, redo_task):
   with dummy_app.test_request_context('/api/v1/batch/redo/', method='POST'):
     response, status = queue_redo([1], user="arthurf")
   assert status == 503
-  assert "redis is down" in response.get_json()["error"]
+  assert "try again later" in response.get_json()["error"]
+  assert "redis is down" not in response.get_json()["error"]
 
 
 def test_job_status(monkeypatch):
