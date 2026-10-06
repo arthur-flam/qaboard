@@ -154,10 +154,27 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
 
 
 def local_input_path(path: str, windows: bool = os.name == 'nt') -> str:
-  """Batches files are often shared between Linux and Windows: on Windows, Linux paths are mapped (QABOARD_PATH_MAPPINGS)."""
-  if windows and path.startswith('/'):
-    return linux_to_windows(path)
+  """
+  Batches files are often shared between Linux and Windows: on Windows, Linux paths are mapped (QABOARD_PATH_MAPPINGS).
+  They may already use backslashes, e.g. when given on the CLI: /algo/x becomes \\algo\\x.
+  """
+  if not windows:
+    return path
+  posix = path.replace('\\', '/')
+  if posix.startswith('/') and not posix.startswith('//'): # not \\host\\share
+    return linux_to_windows(posix)
   return path
+
+
+def local_database(database, windows: bool = os.name == 'nt') -> Path:
+  """
+  The database's path, usable here: on Windows Linux paths are mapped, and paths without a drive get the current one.
+  Relative paths are kept relative.
+  """
+  database = Path(local_input_path(str(database), windows=windows))
+  if database.anchor and not database.is_absolute():
+    database = Path(os.path.abspath(database))
+  return database
 
 
 AnyPath = TypeVar('AnyPath', bound=PurePath)
@@ -175,6 +192,7 @@ def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exc
     path = local_input_path(str(path))
     if Path(path).anchor:
       database, path = split_absolute(Path(path).resolve())
+  database = local_database(database)
   if database.is_absolute(): # normalization to avoid common issues where users ask for "//some/path" instead of "/some/path"
     database = database.resolve()
   entrypoint_module_ = entrypoint_module(qatools_config)

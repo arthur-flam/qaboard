@@ -28,6 +28,24 @@ assert local_input_path('/algo/inputs/a.jpg', windows=True) == '\\\\netapp\\algo
 assert local_input_path('/other/a.jpg', windows=True) == '\\other\\a.jpg'
 assert local_input_path('/algo/inputs/a.jpg', windows=False) == '/algo/inputs/a.jpg'
 assert local_input_path('relative/a.jpg', windows=True) == 'relative/a.jpg'
+# on the CLI, Windows already turned /algo/x into \algo\x
+assert local_input_path('\\algo\\inputs\\a.jpg', windows=True) == '\\\\netapp\\algo\\inputs\\a.jpg'
+assert local_input_path('\\\\netapp\\algo\\a.jpg', windows=True) == '\\\\netapp\\algo\\a.jpg'
+assert local_input_path('C:\\algo\\a.jpg', windows=True) == 'C:\\algo\\a.jpg'
+
+# Linux: databases are left alone
+from pathlib import Path
+from qaboard.iterators import local_database
+assert local_database('/algo/db', windows=False) == Path('/algo/db')
+assert local_database('db', windows=False) == Path('db')
+
+# Windows: fixing the case of paths
+from qaboard.compat import cased_path_pattern
+assert cased_path_pattern('\\algo\\inputs\\foo') == '\\alg[o]\\input[s]\\fo[o]', cased_path_pattern('\\algo\\inputs\\foo')
+assert cased_path_pattern('C:\\Data\\a1.jpg') == 'C:\\Dat[a]\\a1.jp[g]'
+assert cased_path_pattern('\\\\netapp\\share\\[1].raw') == '\\\\netapp\\share\\[[]1].ra[w]'
+assert cased_path_pattern('rel\\dir\\f\\') == 're[l]\\di[r]\\[f]'
+assert cased_path_pattern('1\\2') == '1\\2'
 print('OK')
 """
 

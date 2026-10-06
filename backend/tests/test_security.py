@@ -12,6 +12,7 @@ import pytest
 from flask import g
 
 from backend.shell_utils import quote, is_shell_safe, shell_safe, safe_user_name, lsf_bridge_command
+from backend.shell_utils import qa_batch_option, qa_redo_command
 
 
 # Values with characters that are special to the shell
@@ -273,3 +274,31 @@ def test_github_webhook_signature(webhooks, dummy_app):
       _, status = webhooks.github_webhook()
       assert status == 401
   webhooks.update_project.assert_not_called()
+
+
+@pytest.mark.parametrize("value", AWKWARD_VALUES)
+def test_qa_batch_option_is_one_word(value):
+  # can't be split by the shell, or taken for an option by qa
+  words = subprocess.run(['bash', '-c', f'printf "%s\\0" {qa_batch_option(value)}'], capture_output=True, text=True).stdout.split('\0')[:-1]
+  assert words == [f'--batch={value}']
+
+
+def test_qa_redo_command():
+  import shlex
+  command = qa_redo_command(
+    label="my label", configuration='base:{"a": 1}', database="/mnt/db", output_type="default",
+    extra_parameters='{"gain": 2}', input_path="-images/a b.jpg",
+    job_options={"type": "lsf", "queue": "q", "max_memory": 1000, "max_threads": 4, "resources": ""},
+  )
+  words = shlex.split(command)
+  # what comes after "--" is given to the user's code, not used as batches
+  assert '--' not in words
+  assert words[words.index('batch'):] == [
+    'batch', '--no-wait',
+    '--lsf-queue', 'q', '--lsf-max-memory', '1000', '--lsf-max-threads', '4',
+    '--action-on-existing=run', '--action-on-pending=run', '--batch=-images/a b.jpg',
+  ]
+  assert words[:words.index('batch')] == [
+    'qa', '--label', 'my label', '--configuration', 'base:{"a": 1}', '--database', '/mnt/db',
+    '--type', 'default', '--tuning', '{"gain": 2}',
+  ]

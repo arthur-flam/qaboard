@@ -45,30 +45,35 @@ def ensure_cli_backward_compatibility():
 
 
 def cased_path(path):
-    # Adapted from
-    # https://stackoverflow.com/questions/3692261/in-python-how-can-i-get-the-correctly-cased-path-for-a-file/14742779#14742779
+    """
+    On Windows, the path with the case it has on disk (or None if it doesn't exist).
+    Each part gets a wildcard on its last letter, e.g. C:\\Dat[a]: glob then lists folders, and matches case-insensitively.
+    Adapted from https://stackoverflow.com/questions/3692261/in-python-how-can-i-get-the-correctly-cased-path-for-a-file/14742779#14742779
+    """
     if os.name != 'nt':
       return path
     import glob
-    dirs = str(path).split('\\')
-    # For absolute paths with drive names ("\\host\volume\..."), we must have the correct case at least at the beginning...
-    # Still, then, we could always call .upper() if the length of the first part is 1 (drive letter..)
-    if not dirs[0] and not dirs[1]:
-      dirs = [f'\\\\{dirs[2]}\\{dirs[3]}', *dirs[4:]]
-      test_name = [dirs[0]]
-    elif not dirs[0]: # absolute paths like "\c\Users\..."
-      dirs = [f'\\{dirs[1]}', *dirs[3:]]
-      test_name = [dirs[0]]      
-    elif dirs[0].endswith(':'): # e.g. C:\\
-      test_name = [dirs[0]]
-    else: # relative paths
-      test_name = ["%s[%s]" % (dirs[0][:-1], dirs[0][-1])]
-    for d in dirs[1:]:
-        test_name += ["%s[%s]" % (d[:-1], d[-1])]
-    res = glob.glob('\\'.join(test_name))
+    pattern = cased_path_pattern(path)
+    res = glob.glob(pattern)
     if not res: #File not found
         return None
     return Path(res[0])
+
+
+def cased_path_pattern(path) -> str:
+    """The glob pattern used by cased_path(). The anchor (drive, \\\\host\\share\\, \\) is kept as-is."""
+    import glob
+    from pathlib import PureWindowsPath
+    windows_path = PureWindowsPath(path)
+    anchor = windows_path.anchor
+    parts = windows_path.parts[1:] if anchor else windows_path.parts
+    def any_case(part: str) -> str:
+      # glob only compares case-insensitively the parts with a wildcard
+      for i in reversed(range(len(part))):
+        if part[i].isalpha():
+          return glob.escape(part[:i]) + f'[{part[i]}]' + glob.escape(part[i+1:])
+      return glob.escape(part)
+    return anchor + '\\'.join(any_case(p) for p in parts)
 
 
 

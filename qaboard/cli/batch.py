@@ -86,7 +86,7 @@ def batch(
   )] = False,
   action_on_existing: Annotated[ActionOnExisting, typer.Option(
     '--action-on-existing', rich_help_panel=PANEL_EXISTING,
-    help="When successful runs already exist: run them again, only postprocess, sync (re-read metrics from the output dir), skip them, or fail unless they exist (assert-exists).",
+    help="When successful runs already exist: run them again, only postprocess, sync (re-read metrics from the output dir), or skip them. assert-exists runs nothing: it fails if some runs don't exist.",
   )] = default_action_on_existing,
   action_on_pending: Annotated[ActionOnPending, typer.Option(
     '--action-on-pending', rich_help_panel=PANEL_EXISTING,
@@ -280,6 +280,7 @@ def batch(
   jobs = JobGroup(job_options=default_runner_options)
 
   total_runs = 0
+  existing_runs, missing_runs = 0, []
   inputs_iter = iter_inputs(batches, batches_files, ctx.obj['database'], ctx.obj['configurations'], ctx.obj['platform'], base_runner_options, config, ctx.obj['inputs_settings'], cli_runner_overrides=cli_runner_overrides)
   for run_context in inputs_iter:
     input_configuration_str = serialize_config(run_context.configurations)
@@ -327,15 +328,20 @@ def batch(
         from ..api import matching_output
         matching_existing_output = matching_output(run_context, list(existing_outputs.values()))
       if action_on_existing=='assert-exists':
-        if not matching_existing_output:
-          typer.secho("ERROR: At least 1 run cannot be found in QA-Board's past runs'", err=True, fg="red")
-          typer.secho(f"       {run_context}", err=True, fg="red")
-          raise typer.Exit(1)
-        run_context.output_dir = RunContext.from_api_output(matching_existing_output).output_dir
+        # The run exists if QA-Board knows it, or if it has results on disk (e.g. --offline)
+        if not matching_existing_output and not run_context.ran():
+          missing_runs.append(run_context)
+          continue
+        if matching_existing_output:
+          run_context.output_dir = RunContext.from_api_output(matching_existing_output).output_dir
 
       if list_output_dirs:
         print(run_context.output_dir)
         break
+
+      if action_on_existing=='assert-exists':
+        existing_runs += 1
+        continue # nothing to run
 
       is_pending = matching_existing_output['is_pending'] if matching_existing_output else False
       is_failed = matching_existing_output['is_failed'] if matching_existing_output else run_context.is_failed()
@@ -429,6 +435,16 @@ def batch(
         else:
           assert action_on_pending=="run"
       jobs.append(job)
+
+  if action_on_existing=='assert-exists':
+    if missing_runs:
+      typer.secho(f"ERROR: {len(missing_runs)} runs can't be found, neither in QA-Board nor in their output directory:", err=True, fg="red")
+      for run_context in missing_runs:
+        typer.secho(f"       {run_context.rel_input_path} {serialize_config(run_context.configurations)} {run_context.extra_parameters or ''}", err=True, fg="red")
+      raise typer.Exit(1)
+    if not dryrun:
+      typer.secho(f"All the runs exist ({existing_runs}).", err=True, fg="green")
+      return
 
   if list_contexts:
     print(json.dumps([serialize_paths(j.run_context.asdict()) for j in jobs], indent=2))

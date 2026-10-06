@@ -291,6 +291,21 @@ class TestFailedPostprocess(QaProject):
     self.qa('run', '-i', 'inputs/a.jpg', check=1)
 
 
+class TestAssertExists(QaProject):
+  def test_assert_exists(self):
+    # nothing ran yet: all the missing runs are listed
+    result = self.qa('batch', 'images', '--action-on-existing', 'assert-exists', check=1)
+    self.assertIn("3 runs can't be found", result.stderr)
+    for name in ('a.jpg', 'b.jpg', 'c.jpg'):
+      self.assertIn(name, result.stderr)
+    # once they exist it passes, and runs nothing
+    self.qa('batch', 'images', '--runner', 'local', '--', 'true', check=0)
+    result = self.qa('batch', 'images', '--action-on-existing', 'assert-exists', '--', 'false', check=0)
+    self.assertIn('All the runs exist (3)', result.stderr)
+    self.assertNotIn(' run --input', result.stderr)
+    self.assertEqual(len(self.qa('batch', 'images', '--action-on-existing', 'assert-exists', '--list-output-dirs', check=0).stdout.splitlines()), 3)
+
+
 class TestBatch(QaProject):
   def test_list(self):
     runs = json.loads(self.qa('batch', 'images', '--list', check=0).stdout)
@@ -342,6 +357,29 @@ class TestBatch(QaProject):
     self.qa('batch', 'images', '--list', env={'QA_BATCH_ACTION_ON_EXISTING': 'nope'}, check=2)
     self.qa('batch', 'images', '--action-on-pending', 'sync', '--action-on-existing', 'assert-exists', '--list-inputs', check=0)
     self.qa('batch', 'images', '--runner', 'lsf', '--lsf-max-memory', '16G', '--list', check=2)
+
+  @unittest.skipUnless((ROOT / 'backend' / 'backend' / 'shell_utils.py').exists(), 'needs the backend sources')
+  def test_redo_command_from_the_server(self):
+    """The command QA-Board's server runs to redo an output (backend/backend/models/Output.py) runs it, and only it."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('shell_utils', ROOT / 'backend' / 'backend' / 'shell_utils.py')
+    shell_utils = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(shell_utils)
+    command = shell_utils.qa_redo_command(
+      label='redo', configuration='base', database=self.project, output_type='default',
+      extra_parameters='{"gain": 2}', input_path='inputs/a.jpg',
+      job_options={'type': 'lsf', 'queue': 'q', 'max_memory': 1000, 'max_threads': 4},
+    )
+    assert command.startswith('qa ')
+    command = f"{sys.executable} -m qaboard {command[3:]} --list"
+    env = {k: v for k, v in os.environ.items() if k not in CI_VARIABLES and not k.startswith('QA_')}
+    env.update({'PYTHONPATH': str(ROOT), 'QA_NO_CHECK_FOR_UPDATES': '1', 'QA_OFFLINE': 'true', 'QABOARD_HOST': 'localhost'})
+    result = subprocess.run(['bash', '-c', command], cwd=self.project, env=env, capture_output=True, text=True)
+    self.assertEqual(result.returncode, 0, result.stderr)
+    runs = json.loads(result.stdout)
+    self.assertEqual([r['rel_input_path'] for r in runs], ['inputs/a.jpg'])
+    self.assertEqual(runs[0]['configurations'], ['base'])
+    self.assertEqual(runs[0]['extra_parameters'], {'gain': 2})
 
   def test_batch_is_required(self):
     result = self.qa('batch', check=1)

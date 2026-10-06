@@ -121,7 +121,7 @@ When you try to re-run already existing results, The behaviour of `qa batch` can
 - `postprocess`: only call the `postprocess()` function, not `run()+postprocess()` as usual. (Note: it's also provided by `qa postprocess`)
 - `sync`: update the output file manifest and read metrics from *$output_dir/metrics.json*. (Note: it's also provided by `qa sync`)
 - `skip`: do nothing
-- `assert-exists`: fail if there are no results
+- `assert-exists`: run nothing, and fail if some runs don't exist, in QA-Board or with results in their output directory. It lists the missing runs. Useful e.g. before comparing results.
 
 The default can be set in *qaboard.yaml* with `outputs.action_on_existing`.
 
