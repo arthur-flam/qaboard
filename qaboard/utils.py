@@ -42,9 +42,10 @@ def merge(src: Dict, dest: Dict) -> Dict:
 
 
 def getenvs(variables: Iterable[str], default=None) -> Optional[str]:
-  """Return the value of the environment variable that is defined - or None."""
+  """Return the value of the first environment variable that is defined and not empty - or the default."""
   for name in variables:
-    if name in os.environ:
+    # e.g. Github Actions sets GITHUB_HEAD_REF="" when not building pull requests
+    if os.environ.get(name):
       return os.environ[name]
   return default
 
