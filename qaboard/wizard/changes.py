@@ -111,13 +111,21 @@ class Change:
 @dataclass
 class ChangeSet:
   root: Path
+  # Files the wizard itself may also write, e.g. .gitignore. Never the AI agent: its tools check paths with safe_path.
+  extra_writable: tuple = ()
   changes: Dict[str, Change] = field(default_factory=dict)
 
   def __post_init__(self):
     self.root = self.root.resolve()
 
+  def check_writable(self, path: str) -> Path:
+    resolved = safe_path(self.root, path)
+    if resolved.relative_to(self.root).as_posix() not in self.extra_writable:
+      safe_path(self.root, path, for_write=True)
+    return resolved
+
   def stage(self, path: str, content: str) -> Change:
-    resolved = safe_path(self.root, path, for_write=True)
+    resolved = self.check_writable(path)
     rel = resolved.relative_to(self.root).as_posix()
     if resolved.is_dir():
       raise UnsafePath(f"{rel} is a directory.")
@@ -162,7 +170,7 @@ class ChangeSet:
     pending = self.pending()
     for change in pending:
       # The path could have become a symlink pointing elsewhere since it was staged
-      safe_path(self.root, change.rel, for_write=True)
+      self.check_writable(change.rel)
       if read_text(change.path) != change.original:
         raise RuntimeError(f"{change.rel} changed while the wizard was running, nothing was written. Run `qa init` again.")
     done: List[Change] = []

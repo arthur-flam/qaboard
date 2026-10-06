@@ -3,16 +3,15 @@ Sample implementation of a CLI wrapper with QA-Board.
 """
 import sys
 import subprocess
-from pathlib import Path
 import typer
 
-# Whis will identify runs through GitlabCI or Jenkins.
-from qaboard.config import is_ci
+# True in GitLab CI or Jenkins, if you need to behave differently there.
+from qaboard.config import is_ci  # noqa: F401
 
 
 def run(context):
   """
-  Runs you code, creates files under context.output_dir, and returns metrics.
+  Runs your code, creates files under context.output_dir, and returns metrics.
   """
   typer.secho("Edit qa/main.py to run *your* code using the context", fg='blue', bold=True)
   useful_context_keys = (
@@ -70,16 +69,14 @@ def run(context):
   returncode = process.poll()
   if returncode != 0:
     return {"is_failed": True, "returncode": returncode}
-  return {"is_failed": False}
-
-  typer.secho("Edit qa/main.py: create plots/graphs, return metrics...", fg='cyan', bold=True)
+  # Next: create plots/images in context.output_dir, and return metrics
   return {"is_failed": False}
 
 
 
 # def postprocess(runtime_metrics, context):
 #   """
-#   Optionnaly, you can define a `postprocess` function that, just like `run()`, can:
+#   Optionally, you can define a `postprocess` function that, just like `run()`, can:
 #     1. return a dict with metrics to save in metrics.json
 #     2. Create any qualitative outputs you would like to view later (images, movies...)
 #   """
@@ -87,7 +84,7 @@ def run(context):
 #   return runtime_metrics
 
 #   ## Sample ##
-#   # You should know what files you algo writes to, and what they mean
+#   # You should know what files your code writes, and what they mean
 #   output_path = context.output_dir / 'my-output.txt'
 #   metrics = {"is_failed": not output_path.exists()}
 #   if metrics["is_failed"]:

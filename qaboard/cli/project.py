@@ -113,7 +113,7 @@ def init(
   ai: Annotated[Optional[bool], typer.Option(
     '--ai/--no-ai', show_default=False,
     help="Let an AI assistant adapt qa/main.py to your code, through an OpenAI-compatible API "
-         "(QABOARD_LLM_BASE_URL, QABOARD_LLM_API_KEY, QABOARD_LLM_MODEL). Needs `pip install qaboard[wizard]`. "
+         "(QABOARD_LLM_BASE_URL, QABOARD_LLM_API_KEY, QABOARD_LLM_MODEL). Needs `pip install qaboard\\[wizard]`. "
          "Default: ask, or no without a terminal.",
   )] = None,
   model: Annotated[Optional[str], typer.Option(
@@ -125,7 +125,7 @@ def init(
   Set up QA-Board for your project, with a wizard: creates qaboard.yaml and an entrypoint in qa/.
 
   Run it at the root of your git repository. Nothing is written before you review the changes.
-  With --dryrun, nothing is written at all.
+  With `qa --dryrun init`, nothing is written at all.
   """
   from ..wizard import run_wizard
   code = run_wizard(dryrun=ctx.obj['dryrun'], assume_yes=yes, ai=ai, model=model)

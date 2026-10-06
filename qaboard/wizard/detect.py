@@ -69,7 +69,7 @@ def git(root: Path, *args: str) -> Optional[str]:
     out = subprocess.run(['git', *args], cwd=root, env=env, capture_output=True, encoding='utf-8', errors='replace', timeout=10, check=True)
   except (OSError, subprocess.SubprocessError):
     return None
-  return out.stdout.strip()
+  return out.stdout.strip('\0\n ')
 
 
 def project_name_from_url(url: str) -> Optional[str]:
@@ -116,9 +116,10 @@ def reference_branch(root: Path, remote: Optional[str]) -> str:
 def list_files(root: Path, is_git: bool) -> List[str]:
   """Project files, respecting .gitignore when we can."""
   if is_git:
-    out = git(root, 'ls-files', '--cached', '--others', '--exclude-standard')
+    # -z and core.quotePath=false: non-ASCII file names as they are, not C-quoted
+    out = git(root, '-c', 'core.quotePath=false', 'ls-files', '-z', '--cached', '--others', '--exclude-standard')
     if out is not None:
-      files = [f for f in out.splitlines() if f and not set(Path(f).parts) & SKIPPED_DIRS]
+      files = [f for f in out.split('\0') if f and not set(Path(f).parts) & SKIPPED_DIRS]
       return files[:MAX_FILES]
   files = []
   for dirpath, dirnames, filenames in os.walk(root):
@@ -159,12 +160,21 @@ def detect(root: Path) -> ProjectFacts:
   return facts
 
 
-def guess_inputs(database: Path, limit: int = 3000, seconds: float = 3) -> Tuple[Optional[str], List[str]]:
+@dataclass
+class Inputs:
+  glob: Optional[str] = None
+  examples: List[str] = field(default_factory=list)   # relative to the folder
+  use_parent_folder: bool = False                     # each input is a folder, e.g. of frames
+  count: int = 0
+
+
+def guess_inputs(database: Path, limit: int = 3000, seconds: float = 3) -> Inputs:
   """
-  Looks at the files in a folder of test inputs: returns a glob matching the most common kind of file,
-  and a few example inputs relative to the folder. Stops early on huge (network) folders.
+  Looks at the files in a folder of test inputs: which files are inputs, and a few examples.
+  Folders of frames (clip1/Frame_000.jpg, clip1/Frame_001.jpg...) are inputs themselves.
+  Stops early on huge (network) folders.
   """
-  counts: Dict[str, List[str]] = {}
+  by_suffix: Dict[str, List[str]] = {}
   seen = 0
   deadline = time.monotonic() + seconds
   for dirpath, dirnames, filenames in os.walk(database):
@@ -175,11 +185,21 @@ def guess_inputs(database: Path, limit: int = 3000, seconds: float = 3) -> Tuple
       suffix = Path(name).suffix.lower()
       if not suffix or name.startswith('.') or suffix in ('.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.log'):
         continue
-      counts.setdefault(suffix, []).append((Path(dirpath) / name).relative_to(database).as_posix())
+      by_suffix.setdefault(suffix, []).append((Path(dirpath) / name).relative_to(database).as_posix())
       seen += 1
     if seen >= limit:
       break
-  if not counts:
-    return None, []
-  suffix, examples = max(counts.items(), key=lambda kv: len(kv[1]))
-  return f'*{suffix}', examples[:3]
+  if not by_suffix:
+    return Inputs()
+  suffix, files = max(by_suffix.items(), key=lambda kv: len(kv[1]))
+  folders: Dict[str, List[str]] = {}
+  for f in files:
+    folders.setdefault(str(Path(f).parent), []).append(Path(f).name)
+  # Sequences: most folders hold many files, and start with the same file name
+  if len(folders) > 1 and sum(len(names) >= 5 for names in folders.values()) >= 0.8 * len(folders):
+    first_names = Counter(sorted(names)[0] for names in folders.values())
+    first, count = first_names.most_common(1)[0]
+    if count >= 0.8 * len(folders):
+      examples = [d for d, names in sorted(folders.items()) if first in names][:3]
+      return Inputs(glob=first, examples=examples, use_parent_folder=True, count=len(folders))
+  return Inputs(glob=f'*{suffix}', examples=files[:3], count=len(files))

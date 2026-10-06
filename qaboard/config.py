@@ -63,7 +63,7 @@ if not qatools_configsxpaths:
   if not ignore_config_errors:
     typer.secho('ERROR: Could not find a `qaboard.yaml` configuration file.', fg='red', err=True)
     if 'QABOARD_TUNING' not in os.environ:
-      typer.secho('       If you are starting a new project, run `qatools init`.', fg='red', err=True)
+      typer.secho('       If you are starting a new project, run `qa init`.', fg='red', err=True)
     else:
       typer.secho(f'       It seems "artifacts" are missing. To save them:', fg='red', err=True)
       typer.secho(f'       1. cd your/project', fg='red', err=True)

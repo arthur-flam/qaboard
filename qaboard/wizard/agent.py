@@ -139,6 +139,9 @@ def build_model(llm: LLM):
   from pydantic_ai.models.openai import OpenAIChatModel
   from pydantic_ai.providers.openai import OpenAIProvider
   verify: Any = llm.verify
+  if verify is True:
+    # Like requests (used to check the API): internal CAs are often given with REQUESTS_CA_BUNDLE, httpx ignores it
+    verify = os.environ.get('REQUESTS_CA_BUNDLE') or os.environ.get('CURL_CA_BUNDLE') or True
   if isinstance(verify, str):
     verify = ssl.create_default_context(capath=verify) if os.path.isdir(verify) else ssl.create_default_context(cafile=verify)
   client = AsyncOpenAI(
@@ -181,7 +184,7 @@ def make_agent(model) -> 'Agent[Deps, Outcome]':
     activity(deps, '📖', f"read {path}")
     try:
       content = deps.changes.read(path)
-    except UnsafePath as e:
+    except (UnsafePath, OSError) as e:
       return f"Error: {e}"
     if content is None:
       return f"Error: {path} doesn't exist."
@@ -246,7 +249,7 @@ def make_agent(model) -> 'Agent[Deps, Outcome]':
     deps = ctx.deps
     try:
       content = deps.changes.read(path)
-    except UnsafePath as e:
+    except (UnsafePath, OSError) as e:
       raise ModelRetry(str(e))
     if content is None:
       raise ModelRetry(f"{path} doesn't exist, use write_file to create it.")
@@ -281,8 +284,11 @@ def stage(deps: Deps, path: str, content: str) -> str:
   if exists and rel not in deps.read_paths:
     raise ModelRetry(f"Read {rel} with read_file before changing it.")
   validate(rel, content)
-  before = deps.changes.read(rel)
-  deps.changes.stage(rel, content)
+  try:
+    before = deps.changes.read(rel)
+    deps.changes.stage(rel, content)
+  except (UnsafePath, OSError) as e:
+    raise ModelRetry(str(e))
   added, removed = line_stats(before, deps.changes.read(rel) or '')
   activity(deps, '✏️ ', f"{rel} [green]+{added}[/green] [red]-{removed}[/red]", markup=True)
   return f"Staged {rel} (+{added} -{removed} lines)."
@@ -329,7 +335,7 @@ def run_agent(agent: 'Agent[Deps, Outcome]', deps: Deps, prompt: str, message_hi
     return agent.run_sync(prompt, deps=deps, message_history=message_history, usage_limits=limits)
 
 
-def project_brief(facts: ProjectFacts, answers: dict) -> str:
+def project_brief(facts: ProjectFacts, answers: dict, entrypoint: str = 'qa/main.py') -> str:
   """What we tell the agent about the project to start with."""
   top_level = sorted({f.split('/')[0] + ('/' if '/' in f else '') for f in facts.files})
   lines = [
@@ -341,10 +347,12 @@ def project_brief(facts: ProjectFacts, answers: dict) -> str:
     f"- Number of files: {len(facts.files)}",
     f"- Top-level entries: {', '.join(top_level[:80])}",
   ]
+  if entrypoint != 'qa/main.py':
+    lines.append(f"- The entrypoint is {entrypoint}, not qa/main.py: qa/main.py belongs to the project, don't change it.")
   if answers.get('database'):
     lines.append(f"- Test inputs are stored under: {answers['database']}")
   if answers.get('glob'):
-    lines.append(f"- Inputs look like: {answers['glob']}")
+    lines.append(f"- Inputs are identified by: {answers['glob']}" + (" (each input is the folder containing it)" if answers.get('use_parent_folder') else ''))
   if answers.get('examples'):
     lines.append(f"- Example inputs (relative to the database): {', '.join(answers['examples'])}")
   if answers.get('hint'):

@@ -12,27 +12,28 @@ qa init
 
 A wizard sets up your project in a couple of minutes:
 
-1. **Your project**: it finds the project's name from the git remote, the default branch, the languages, build system and CI. It asks where your test inputs are stored, and guesses which files are inputs (e.g. `*.png`) to fill `inputs.globs` and an example batch.
-2. **QA-Board server**: it checks that your server answers, and can log you in to create a personal [API token](installation#api-token). The server URL and token are saved in `~/.qaboard/secrets.yaml`, readable only by you. Your password is used once and never saved.
+1. **Your project**: it finds the project's name from the git remote, the default branch, the languages, build system and CI. It asks where your test inputs are stored, and guesses which files are inputs (e.g. `*.png`, or folders of frames like `clip/Frame_000.jpg`) to fill `inputs` and an example batch. When your site package defines where inputs are stored, it asks for the project's folder there.
+2. **QA-Board server**: it checks that your server answers, and can log you in to create a personal [API token](installation#api-token). The server URL (once it answered) and token are saved in `~/.qaboard/secrets.yaml`, readable only by you. Your password is used once and never saved. No server yet? Leave the URL empty: `qa run` works without one. Unless your site package says, it also asks where shared results (`qa --share`, CI) should be stored.
 3. **AI assistant** *(optional)*: it adapts `qa/main.py` to call your code. [Read more below](#ai-assistant).
-4. **Review**: you see every file before anything is written. Writes are atomic: if one fails, nothing is left half-written.
+4. **Review**: you see every file before anything is written. Writes are atomic: if one fails, nothing is left half-written. Finally, it offers to run your code on one of your inputs.
 
 Your root directory then contains:
 
 ```
 root-git-repository
 ├── qaboard.yaml       # configuration
+├── .gitignore         # output/ added: local results of `qa run`
 └── qa
    ├── main.py         # entrypoint that runs your code
    ├── batches.yaml    # examples of how to run multiple tests
    └── metrics.yaml    # examples of how to define KPIs
 ```
 
-The wizard only creates or changes `qaboard.yaml` and files under `qa/`, and keeps the files of `qa/` that already exist.
+The wizard only creates or changes `qaboard.yaml`, files under `qa/`, and `.gitignore`. It keeps the files of `qa/` that already exist: if you already have a `qa/main.py` without a `run()` function, the entrypoint is created as `qa/qaboard_main.py` instead.
 
 | Option | |
 |--------|-|
-| `qa init --yes` | No questions, use what the wizard detects. Implied when there is no terminal, e.g. in scripts and CI. Settings are never saved to `~/.qaboard/secrets.yaml` in this mode. |
+| `qa init --yes` | No questions, use what the wizard detects. Implied when there is no terminal, e.g. in scripts and CI. Settings are never saved to `~/.qaboard/secrets.yaml` in this mode, and `qa init` runs where you are, even in a subfolder of the repository. |
 | `qa --dryrun init` | Go through the wizard, but write nothing. |
 | `qa init --ai` / `--no-ai` | Use the AI assistant, or don't ask about it. Without a terminal, the assistant is only used with `--ai`, and its changes are written without review: check them with `git diff` before running them. |
 | `qa init --model NAME` | The LLM the AI assistant uses. |
@@ -47,12 +48,12 @@ pip install 'qaboard[wizard]'
 # or, without installing anything: uvx --from 'qaboard[wizard]' qa init
 ```
 
-It works with any LLM behind an **OpenAI-compatible API**: OpenAI, your company's LLM gateway, LiteLLM, ollama, vLLM... The wizard asks for the API's base URL, a key and a model (it lists the models the API offers), and offers to save them. A key is saved together with its base URL, so that the API set by a site package doesn't receive it (the environment still wins: `QABOARD_LLM_BASE_URL` set in your shell would). They can also come from the environment, `~/.qaboard/secrets.yaml` or your site package:
+It works with any LLM behind an **OpenAI-compatible API**: OpenAI, your company's LLM gateway, LiteLLM, ollama, vLLM... The wizard asks for the API's base URL, a key and a model (it lists the models the API offers), and offers to save them once the assistant worked. A key is saved together with its base URL, so that the API set by a site package doesn't receive it (the environment still wins: `QABOARD_LLM_BASE_URL` set in your shell would). They can also come from the environment, `~/.qaboard/secrets.yaml` or your site package:
 
 | Setting | |
 |---------|-|
 | `QABOARD_LLM_BASE_URL` | Default: `$OPENAI_BASE_URL`, or `https://api.openai.com/v1`. For ollama: `http://localhost:11434/v1` |
-| `QABOARD_LLM_API_KEY` | `$OPENAI_API_KEY` is used too, but only for OpenAI's API, never sent to other hosts. Local servers don't need a key. |
+| `QABOARD_LLM_API_KEY` | `$OPENAI_API_KEY` is used too, but only for OpenAI's API, never sent to other hosts. For local servers, the key is optional. |
 | `QABOARD_LLM_MODEL` | A model good at coding and tool calls gives the best results. |
 | `QABOARD_LLM_VERIFY` | TLS checks: `true` (default), `false`, or the path to a CA bundle, like `QABOARD_API_VERIFY`. |
 | `QABOARD_LLM_KEY_URL` | Where users get a key, shown when the wizard asks for one. |

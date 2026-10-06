@@ -70,6 +70,7 @@ class Server:
   is_default: bool
   token: Optional[str]
   verify: Union[bool, str]
+  api_prefix: Optional[str] = None   # QABOARD_API_PREFIX, for the configured URL only
 
   @property
   def is_insecure(self) -> bool:
@@ -77,13 +78,18 @@ class Server:
 
   @property
   def api(self) -> str:
-    prefix = site_config('QABOARD_API_PREFIX')
-    return prefix.rstrip('/') if prefix else f"{self.url.rstrip('/')}/api/v1"
+    return self.api_prefix.rstrip('/') if self.api_prefix else f"{self.url.rstrip('/')}/api/v1"
+
+  def use_url(self, url: str):
+    self.url, self.is_default, self.api_prefix = url, False, None
 
   @staticmethod
   def from_settings() -> 'Server':
     url, is_default = get_qaboard_url()
-    return Server(url=url, is_default=is_default, token=user_secret('QA_TOKEN'), verify=as_requests_verify(site_config('QABOARD_API_VERIFY')))
+    return Server(
+      url=url, is_default=is_default, token=user_secret('QA_TOKEN'),
+      verify=as_requests_verify(site_config('QABOARD_API_VERIFY')), api_prefix=site_config('QABOARD_API_PREFIX'),
+    )
 
   def probe(self) -> Tuple[bool, str, Dict[str, Any]]:
     """Whether the server answers, a message for the user, and its public configuration."""
@@ -99,6 +105,17 @@ class Server:
     except Exception:
       config = {}
     return True, "online", config if isinstance(config, dict) else {}
+
+  def probe_typed(self, typed: str) -> Tuple[bool, str, Dict[str, Any]]:
+    """Probes what the user typed, adding https:// or http:// if needed. Uses the first URL that works."""
+    result: Tuple[bool, str, Dict[str, Any]] = (False, 'invalid URL', {})
+    for url in with_scheme(typed):
+      self.use_url(url)
+      result = self.probe()
+      if result[0]:
+        return result
+    self.use_url(with_scheme(typed)[0])
+    return result
 
   def whoami(self, token: str) -> Optional[str]:
     """The user name a token belongs to, None if it's not valid."""
@@ -166,22 +183,36 @@ class LLM:
       llm.api_key = os.getenv('OPENAI_API_KEY')
     return llm
 
-  def list_models(self) -> Tuple[Optional[List[str]], str]:
-    """The models the API offers, or None and an error message. Also checks the API key."""
+  def list_models(self, base_url: Optional[str] = None) -> Tuple[Optional[List[str]], str, Optional[int]]:
+    """The models the API offers (or None), a message, and the HTTP status. Also checks the API key."""
+    base_url = base_url or self.base_url
     session = requests_session(self.verify)
     headers = {'Authorization': f'Bearer {self.api_key}'} if self.api_key else {}
     try:
-      r = session.get(f"{self.base_url}/models", headers=headers, timeout=TIMEOUT)
+      r = session.get(f"{base_url}/models", headers=headers, timeout=TIMEOUT)
     except Exception as e:
-      return None, short_error(e)
+      return None, short_error(e), None
     if r.status_code in (401, 403):
-      return None, "the API key was rejected"
+      return None, "the API key was rejected", r.status_code
     if r.status_code != 200:
-      return None, f"HTTP {r.status_code} from {self.base_url}/models"
+      return None, f"HTTP {r.status_code} from {base_url}/models", r.status_code
     try:
-      return sorted(m['id'] for m in r.json()['data']), "ok"
+      return sorted(m['id'] for m in r.json()['data']), "ok", 200
     except Exception:
-      return None, f"unexpected answer from {self.base_url}/models"
+      return None, f"unexpected answer from {base_url}/models", r.status_code
+
+
+def with_scheme(url: str) -> List[str]:
+  """URLs to try for what the user typed: qaboard-srv:5151 may be https or http."""
+  url = url.strip().rstrip('/')
+  if '://' in url:
+    return [url]
+  return [f'https://{url}', f'http://{url}']
+
+
+def shadowing_settings() -> List[str]:
+  """Settings that win over a saved QABOARD_URL."""
+  return [name for name in ('QABOARD_HOST', 'QABOARD_HOSTNAME', 'QABOARD_API_PREFIX') if site_config(name)]
 
 
 def is_local(url: str) -> bool:
@@ -204,13 +235,19 @@ def short_error(e: Exception) -> str:
   return str(e).splitlines()[0][:200]
 
 
+def chat_models(models: List[str]) -> List[str]:
+  """Models that can chat, without embeddings, speech, images..."""
+  excluded = ('embed', 'whisper', 'tts', 'dall-e', 'image', 'audio', 'moderation', 'realtime', 'transcribe', 'search', 'babbage', 'davinci', 'rerank')
+  return [m for m in models if not any(x in m.lower() for x in excluded)]
+
+
 def suggest_model(models: List[str]) -> Optional[str]:
   """A reasonable default among available models: a capable, general-purpose coding model."""
   preferences = ('coder', 'claude', 'gpt-5', 'gpt-4.1', 'gpt-4o', 'qwen', 'deepseek', 'llama', 'mistral', 'gemini')
-  chat_models = [m for m in models if not any(x in m.lower() for x in ('embed', 'whisper', 'tts', 'dall-e', 'image', 'audio', 'moderation', 'realtime', 'transcribe', 'search'))]
+  chat_models_ = chat_models(models)
   for preference in preferences:
-    matches = [m for m in chat_models if preference in m.lower()]
+    matches = [m for m in chat_models_ if preference in m.lower()]
     if matches:
       # the shortest name is usually the main model of its family, not a dated snapshot or a variant
       return sorted(matches, key=lambda m: (len(m), m))[0]
-  return chat_models[0] if chat_models else None
+  return chat_models_[0] if chat_models_ else None

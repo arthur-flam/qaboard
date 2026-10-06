@@ -1,6 +1,7 @@
 """
 Tests for `qa init`'s wizard: the change harness, project detection, settings, the AI agent (with a scripted model) and the whole flow.
 """
+import importlib.util
 import io
 import os
 import stat
@@ -13,17 +14,19 @@ from unittest import mock
 import yaml
 from rich.console import Console
 
-from qaboard.wizard import run_wizard, Wizard, safe_split, try_run_input
-from qaboard.wizard.changes import ChangeSet, UnsafePath, safe_path, is_secret, visible
-from qaboard.wizard.detect import detect, guess_inputs, project_name_from_url, without_credentials
-from qaboard.wizard.settings import LLM, save_user_settings, suggest_model
-from qaboard.wizard.ui import UI
+# Imported when the tests run, not when green collects them: importing qaboard loads the configuration
+# of the current directory, which would be the wrong one for other tests (see tests/test_cli.py)
+def setUpModule():
+  global run_wizard, Wizard, safe_split, try_run_input, ChangeSet, UnsafePath, safe_path, is_secret, visible
+  global detect, guess_inputs, project_name_from_url, without_credentials, LLM, save_user_settings, suggest_model, UI
+  from qaboard.wizard import run_wizard, Wizard, safe_split, try_run_input
+  from qaboard.wizard.changes import ChangeSet, UnsafePath, safe_path, is_secret, visible
+  from qaboard.wizard.detect import detect, guess_inputs, project_name_from_url, without_credentials
+  from qaboard.wizard.settings import LLM, save_user_settings, suggest_model
+  from qaboard.wizard.ui import UI
 
-try:
-  import pydantic_ai  # noqa: F401
-  has_ai = True
-except ImportError:
-  has_ai = False
+
+has_ai = importlib.util.find_spec('pydantic_ai') is not None
 
 
 def git(cwd, *args):
@@ -31,7 +34,7 @@ def git(cwd, *args):
   subprocess.run(['git', *args], cwd=cwd, check=True, capture_output=True, env=env)
 
 
-def quiet_ui(interactive=False) -> UI:
+def quiet_ui(interactive=False) -> "UI":
   return UI(interactive=interactive, console=Console(file=io.StringIO(), width=120))
 
 
@@ -173,9 +176,25 @@ class TestDetect(TempDir):
     for name in ('a/1.png', 'a/2.png', 'b/3.png', 'notes.txt', 'x.jpg'):
       (self.root / name).parent.mkdir(parents=True, exist_ok=True)
       (self.root / name).write_text('')
-    glob, examples = guess_inputs(self.root)
-    self.assertEqual(glob, '*.png')
-    self.assertEqual(examples, ['a/1.png', 'a/2.png', 'b/3.png'])
+    inputs = guess_inputs(self.root)
+    self.assertEqual(inputs.glob, '*.png')
+    self.assertEqual(inputs.examples, ['a/1.png', 'a/2.png', 'b/3.png'])
+    self.assertFalse(inputs.use_parent_folder)
+
+  def test_guess_inputs_sequences(self):
+    for clip in ('clip1', 'clip2', 'night/clip3'):
+      for i in range(6):
+        (self.root / clip).mkdir(parents=True, exist_ok=True)
+        (self.root / clip / f'Frame_{i:03d}.jpg').write_text('')
+    inputs = guess_inputs(self.root)
+    self.assertEqual(inputs.glob, 'Frame_000.jpg')
+    self.assertTrue(inputs.use_parent_folder)
+    self.assertEqual(inputs.examples, ['clip1', 'clip2', 'night/clip3'])
+
+  def test_non_ascii_file_names(self):
+    git(self.root, 'init', '-q')
+    (self.root / 'débruitage.py').write_text('')
+    self.assertEqual(detect(self.root).files, ['débruitage.py'])
 
 
 class TestSettings(TempDir):
@@ -213,6 +232,17 @@ class TestSettings(TempDir):
 
   def test_visible(self):
     self.assertEqual(visible("ok\x1b[2K\u202e\n"), "ok\\x1b[2K\\u202e\n")
+
+  def test_with_scheme(self):
+    from qaboard.wizard.settings import with_scheme
+    self.assertEqual(with_scheme('qaboard-srv:5151/'), ['https://qaboard-srv:5151', 'http://qaboard-srv:5151'])
+    self.assertEqual(with_scheme('http://qa'), ['http://qa'])
+
+  def test_describe_llm_error(self):
+    from qaboard.wizard import describe_llm_error
+    error = Exception("status_code: 500, model_name: m, body: {...}")
+    error.status_code, error.body = 500, {'error': {'message': 'upstream timeout'}}
+    self.assertEqual(describe_llm_error(error), 'HTTP 500: upstream timeout')
 
   def test_safe_split(self):
     self.assertEqual(safe_split("qa run --input 'my file.png'"), ['qa', 'run', '--input', 'my file.png'])
@@ -262,14 +292,47 @@ class TestWizard(TempDir):
     self.assertEqual(self.run_wizard(ai=False), 0)
     self.assertEqual((self.root / 'qaboard.yaml').read_text(), 'project: {name: x}\n')
 
+  def test_existing_entrypoint_without_run(self):
+    make_project(self.root)
+    (self.root / 'qa').mkdir()
+    (self.root / 'qa' / 'main.py').write_text('print("my own qa scripts")\n')
+    self.run_wizard(ai=False)
+    self.assertEqual((self.root / 'qa' / 'main.py').read_text(), 'print("my own qa scripts")\n')
+    self.assertIn('def run(', (self.root / 'qa' / 'qaboard_main.py').read_text())
+    self.assertEqual(yaml.safe_load((self.root / 'qaboard.yaml').read_text())['project']['entrypoint'], 'qa/qaboard_main.py')
+
+  def test_gitignore_and_no_remote(self):
+    git(self.root, 'init', '-q')
+    self.run_wizard(ai=False)
+    self.assertIn('output/', (self.root / '.gitignore').read_text())
+    config = yaml.safe_load((self.root / 'qaboard.yaml').read_text())
+    self.assertNotIn('url', config['project'], "no placeholder URL")
+
+  def test_no_ai_without_a_terminal(self):
+    make_project(self.root)
+    with mock.patch('qaboard.wizard.Wizard.step_ai') as step_ai:
+      self.run_wizard()
+    step_ai.assert_not_called()
+
+  @unittest.skipUnless(has_ai, "needs pip install qaboard[wizard]")
+  def test_ai_preflight(self):
+    make_project(self.root)
+    env = {'QABOARD_LLM_BASE_URL': 'https://llm.example.com/v1', 'QABOARD_LLM_API_KEY': '', 'OPENAI_API_KEY': ''}
+    with mock.patch.dict(os.environ, env):
+      self.assertEqual(self.run_wizard(ai=True), 1)
+    self.assertFalse((self.root / 'qaboard.yaml').exists(), "fails before writing anything")
+
   def test_inputs_answers(self):
     make_project(self.root)
     wizard = Wizard(quiet_ui(), dryrun=True, ai=False, model=None, root=self.root)
-    wizard.answers = {'name': 'acme/x', 'reference_branch': 'main', 'url': None, 'database': '/data/my inputs', 'glob': '*.png', 'examples': ['a/1.png']}
+    wizard.answers = {'name': 'acme/x', 'reference_branch': 'main', 'url': None, 'database': '/data/my inputs', 'glob': 'Frame_000.png',
+                      'use_parent_folder': True, 'examples': ['a/1.png'], 'storage': '/shared/qaboard'}
     with mock.patch.dict(os.environ, self.env):
       changes = wizard.template_changes(detect(self.root))
     config = yaml.safe_load(changes.read('qaboard.yaml'))
-    self.assertEqual(config['inputs']['globs'], '*.png')
+    self.assertEqual(config['inputs']['globs'], 'Frame_000.png')
+    self.assertTrue(config['inputs']['use_parent_folder'])
+    self.assertEqual(config['storage']['linux' if os.name != 'nt' else 'windows'], '/shared/qaboard')
     self.assertEqual(config['inputs']['database']['linux' if os.name != 'nt' else 'windows'], '/data/my inputs')
     self.assertEqual(yaml.safe_load(changes.read('qa/batches.yaml'))['my-batch']['inputs'], ['a/1.png'])
 
@@ -363,10 +426,50 @@ class TestAgent(TempDir):
     with mock.patch.dict(os.environ, env), \
          mock.patch('qaboard.wizard.UI', lambda interactive: quiet_ui(interactive)), \
          mock.patch.object(agent_module, 'build_model', lambda llm: model), \
-         mock.patch.object(LLM, 'list_models', lambda self: (['m'], 'ok')):
+         mock.patch.object(LLM, 'list_models', lambda self, base_url=None: (['m'], 'ok', 200)):
       self.assertEqual(run_wizard(root=self.root, assume_yes=True, ai=True), 0)
     self.assertIn('# runs denoise.py', (self.root / 'qa' / 'main.py').read_text())
     self.assertTrue((self.root / 'qaboard.yaml').exists())
+
+
+@unittest.skipUnless(has_ai, "needs pip install qaboard[wizard]")
+class TestAIFlow(TempDir):
+  def test_explicit_model_is_kept(self):
+    wizard = Wizard(quiet_ui(), dryrun=True, ai=True, model='my-model', root=self.root)
+    llm = LLM(base_url='https://llm.example.com/v1', api_key='k', model=None, verify=True)
+    with mock.patch.dict(os.environ, {'QABOARD_LLM_BASE_URL': 'https://llm.example.com/v1'}), \
+         mock.patch.object(LLM, 'list_models', lambda self, base_url=None: (['other-coder'], 'ok', 200)):
+      self.assertEqual(wizard.configure_llm(llm).model, 'my-model')
+
+  def test_failed_refine_keeps_the_accepted_round(self):
+    """Refine, then the LLM fails: we keep the first round's changes, not the template."""
+    from qaboard.wizard import agent as agent_module
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import FunctionModel
+    calls = {'n': 0}
+    def model(messages, info):
+      calls['n'] += 1
+      if calls['n'] == 1:
+        return ModelResponse(parts=[ToolCallPart('read_file', {'path': 'qa/main.py'})])
+      if calls['n'] == 2:
+        return ModelResponse(parts=[ToolCallPart('edit_file', {'path': 'qa/main.py', 'old_text': 'def run(context):', 'new_text': 'def run(context):\n  # round 1'})])
+      if calls['n'] == 3:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {'summary': ['round 1'], 'todo': []})])
+      raise RuntimeError("gateway 502")
+    make_project(self.root)
+    ui = quiet_ui(interactive=True)
+    answers = iter(['r', 'better please'])
+    ui.ask = lambda question, default='', password=False: next(answers) if 'change' in question else default
+    ui.choose = lambda question, options, default: next(answers)
+    ui.confirm = lambda question, default=True: False if 'Try again' in question else default
+    wizard = Wizard(ui, dryrun=True, ai=True, model='m', root=self.root)
+    env = {**TestWizard.env, 'QABOARD_LLM_BASE_URL': 'https://llm.example.com/v1', 'QABOARD_LLM_API_KEY': 'k'}
+    with mock.patch.dict(os.environ, env), mock.patch.object(agent_module, 'build_model', lambda llm: FunctionModel(model)), \
+         mock.patch.object(LLM, 'list_models', lambda self, base_url=None: (['m'], 'ok', 200)):
+      facts = wizard.step_project()
+      changes = wizard.step_ai(facts, wizard.template_changes(facts))
+    self.assertIn('# round 1', changes.read('qa/main.py'))
+    self.assertEqual(wizard.outcome.summary, ['round 1'])
 
 
 class FakeOpenAI:
