@@ -23,7 +23,7 @@ from pydantic_ai import Agent, ModelRetry, RunContext  # noqa: E402
 from pydantic_ai.usage import UsageLimits  # noqa: E402
 from rich.markup import escape  # noqa: E402
 
-from .changes import ChangeSet, UnsafePath, is_secret, read_text, safe_path  # noqa: E402
+from .changes import CONTROL_CHARS, ChangeSet, UnsafePath, read_text, safe_path  # noqa: E402
 from .detect import ProjectFacts  # noqa: E402
 from .settings import LLM  # noqa: E402
 from .ui import UI  # noqa: E402
@@ -32,23 +32,41 @@ from .ui import UI  # noqa: E402
 # Values that look like credentials are replaced before anything is sent to the LLM
 SECRET_VALUES = re.compile(
   r'-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)'
-  r'|\bAKIA[0-9A-Z]{16}\b'
+  r'|\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'
   r'|\bgh[pousr]_[A-Za-z0-9]{30,}'
   r'|\bgithub_pat_[A-Za-z0-9_]{30,}'
   r'|\bglpat-[A-Za-z0-9_-]{20,}'
   r'|\bsk-[A-Za-z0-9_-]{20,}'
+  r'|\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}'
   r'|\bxox[abprs]-[A-Za-z0-9-]{10,}'
+  r'|https://hooks\.slack\.com/services/[A-Za-z0-9/]+'
   r'|\bAIza[0-9A-Za-z_-]{35}'
+  r'|\bya29\.[0-9A-Za-z_-]{20,}'
+  r'|\bhf_[A-Za-z0-9]{30,}'
+  r'|\bnpm_[A-Za-z0-9]{30,}'
+  r'|\bpypi-[A-Za-z0-9_-]{50,}'
   r'|\bphx_[A-Za-z0-9]{20,}'
+  r'|\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+  # credentials in URLs: https://user:password@host
+  r'|://(?P<url>[^/\s:@]+:[^/\s@]+)@'
+  # password = "...", api_key: '...'
+  r'|(?i:(?:password|passwd|secret|token|api_?key|access_?key|private_?key)\w*["\']?[ \t]{0,3}[:=][ \t]{0,3}["\'])(?P<quoted>(?!https?://)[^"\'\s/]{8,})(?=["\'])'
+  # unquoted in config files, if it looks random enough (has a digit, no variable)
+  r'|(?im:(?:password|passwd|secret|token|api_?key|access_?key|private_?key)\w*[ \t]{0,3}[:=][ \t]{0,3})(?P<unquoted>(?=[^\s"\'$({]*\d)[^\s"\'$({#,;]{12,})$'
 )
-
 READ_BUDGET = 400_000      # characters of the project the agent may read in total
 MAX_LINES = 400            # per read
 MAX_QUESTIONS = 3
 
 
 def redact(text: str) -> str:
-  return SECRET_VALUES.sub('[REDACTED]', text)
+  def replace(match: re.Match) -> str:
+    for group in ('url', 'quoted', 'unquoted'):
+      if match.group(group):
+        start, end = match.span(group)
+        return match.group(0)[:start - match.start()] + '[REDACTED]' + match.group(0)[end - match.start():]
+    return '[REDACTED]'
+  return SECRET_VALUES.sub(replace, text)
 
 
 class Outcome(BaseModel):
@@ -122,7 +140,7 @@ def build_model(llm: LLM):
   from pydantic_ai.providers.openai import OpenAIProvider
   verify: Any = llm.verify
   if isinstance(verify, str):
-    verify = ssl.create_default_context(cafile=verify)
+    verify = ssl.create_default_context(**{'capath' if os.path.isdir(verify) else 'cafile': verify})
   client = AsyncOpenAI(
     base_url=llm.base_url,
     # Local servers (ollama, vLLM...) often don't need a key, but the client wants one
@@ -169,14 +187,15 @@ def make_agent(model) -> 'Agent[Deps, Outcome]':
       return f"Error: {path} doesn't exist."
     if deps.read_budget <= 0:
       return "Error: you've read enough of the project. Finish with what you know."
-    lines = content.splitlines()
+    # Redacted before slicing: a private key's body has no recognizable marker on its own
+    lines = redact(content).splitlines()
     start = max(1, start_line)
     end = min(len(lines), start - 1 + max(1, min(max_lines, MAX_LINES)))
     excerpt = '\n'.join(f"{i:>5}  {lines[i - 1]}" for i in range(start, end + 1))
     deps.read_budget -= len(excerpt)
     deps.read_paths.add(safe_path(deps.root, path).relative_to(deps.root).as_posix())
     header = f"{path}: lines {start}-{end} of {len(lines)}" if (start > 1 or end < len(lines)) else f"{path}: {len(lines)} lines"
-    return f"{header}\n{redact(excerpt)}"
+    return f"{header}\n{excerpt}"
 
   @agent.tool
   async def search(ctx: RunContext[Deps], regex: str, path_pattern: str = '*') -> str:
@@ -193,14 +212,12 @@ def make_agent(model) -> 'Agent[Deps, Outcome]':
     for rel in deps.facts.files:
       if not (fnmatch.fnmatch(rel, path_pattern) or fnmatch.fnmatch(Path(rel).name, path_pattern)):
         continue
-      path = deps.root / rel
-      if is_secret(path):
-        continue
       try:
-        content = read_text(path)
+        # Like read_file: no secrets, no symlinks out of the project
+        content = read_text(safe_path(deps.root, rel))
       except (UnsafePath, OSError):
         continue
-      for number, line in enumerate((content or '').splitlines(), start=1):
+      for number, line in enumerate(redact(content or '').splitlines(), start=1):
         if compiled.search(line):
           hits.append(f"{rel}:{number}: {line.strip()[:200]}")
           if len(hits) >= 60:
@@ -208,7 +225,7 @@ def make_agent(model) -> 'Agent[Deps, Outcome]':
       if len(hits) >= 60:
         hits.append("... more matches, refine the search.")
         break
-    result = redact('\n'.join(hits)) if hits else "No matches."
+    result = '\n'.join(hits) if hits else "No matches."
     deps.read_budget -= len(result)
     return result
 
@@ -282,6 +299,8 @@ def line_stats(before: Optional[str], after: str):
 
 def validate(rel: str, content: str):
   """Syntax errors are sent back to the model, which fixes them."""
+  if CONTROL_CHARS.search(content.replace('\r\n', '\n')):
+    raise ModelRetry(f"{rel} contains control characters. Write plain text, use escapes like \\x1b in strings if needed.")
   if rel.endswith('.py'):
     try:
       compile(content, rel, 'exec')

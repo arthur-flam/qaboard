@@ -13,9 +13,9 @@ from unittest import mock
 import yaml
 from rich.console import Console
 
-from qaboard.wizard import run_wizard, Wizard, safe_split
-from qaboard.wizard.changes import ChangeSet, UnsafePath, safe_path, is_secret
-from qaboard.wizard.detect import detect, guess_inputs, project_name_from_url
+from qaboard.wizard import run_wizard, Wizard, safe_split, try_run_input
+from qaboard.wizard.changes import ChangeSet, UnsafePath, safe_path, is_secret, visible
+from qaboard.wizard.detect import detect, guess_inputs, project_name_from_url, without_credentials
 from qaboard.wizard.settings import LLM, save_user_settings, suggest_model
 from qaboard.wizard.ui import UI
 
@@ -48,7 +48,7 @@ class TestPaths(TempDir):
   def test_safe_paths(self):
     self.assertEqual(safe_path(self.root, 'qa/main.py', for_write=True), self.root / 'qa' / 'main.py')
     self.assertEqual(safe_path(self.root, 'src/../qaboard.yaml', for_write=True), self.root / 'qaboard.yaml')
-    for path in ('/etc/passwd', '../outside', 'qa/../../outside', '.git/config', 'C:/Windows', ''):
+    for path in ('/etc/passwd', '../outside', 'qa/../../outside', '.git/config', '.GIT/config', 'C:/Windows', ''):
       with self.assertRaises(UnsafePath, msg=path):
         safe_path(self.root, path)
 
@@ -68,7 +68,9 @@ class TestPaths(TempDir):
     for name in ('.env', '.env.local', 'prod.env', 'id_rsa', 'id_ed25519.pub', 'server.pem', 'secrets.yaml', 'client_secret.json',
                  'credentials.json', '.netrc', 'token.txt', 'gitlab_token.json'):
       self.assertTrue(is_secret(Path(name)), name)
-    for name in ('.env.example', 'main.py', 'tokenizer.py', 'password_strength.cpp', 'keyboard.py', 'README.md', 'secret_sauce.example'):
+    for name in ('secrets/prod.yaml', '.ssh/config', '.aws/config', '.kube/config', 'deploy/.docker/config.json', '.pgpass'):
+      self.assertTrue(is_secret(Path(name)), name)
+    for name in ('.env.example', 'main.py', 'tokenizer.py', 'password_strength.cpp', 'keyboard.py', 'README.md', 'secret_sauce.example', 'src/keys/map.py'):
       self.assertFalse(is_secret(Path(name)), name)
     (self.root / '.env').write_text('KEY=1')
     with self.assertRaises(UnsafePath):
@@ -130,6 +132,12 @@ class TestDetect(TempDir):
                 'ssh://git@gitlab.example.com:2222/acme/denoiser.git', 'https://user@gitlab.example.com/acme/denoiser'):
       self.assertEqual(project_name_from_url(url), 'acme/denoiser', url)
     self.assertEqual(project_name_from_url('git@gitlab-srv:group/sub/project.git'), 'group/sub/project')
+
+  def test_without_credentials(self):
+    self.assertEqual(without_credentials('https://oauth2:TOKEN@gitlab.example.com/g/p.git'), 'https://gitlab.example.com/g/p.git')
+    self.assertEqual(without_credentials('https://TOKEN@github.com/g/p'), 'https://github.com/g/p')
+    for url in ('git@github.com:g/p.git', 'ssh://git@gitlab.example.com:2222/g/p.git', 'https://github.com/g/p'):
+      self.assertEqual(without_credentials(url), url)
 
   def test_detect(self):
     git(self.root, 'init', '-q', '-b', 'main')
@@ -197,6 +205,15 @@ class TestSettings(TempDir):
     self.assertEqual(suggest_model(['llama3.1:8b', 'qwen2.5-coder:32b']), 'qwen2.5-coder:32b')
     self.assertIsNone(suggest_model([]))
 
+  def test_try_run_input(self):
+    self.assertEqual(try_run_input("qa run --input 'my file.png'"), 'my file.png')
+    self.assertEqual(try_run_input("qa run -i a.png"), 'a.png')
+    for command in ("qa --label '$(touch x)' batch b", "qa run --input a.png --runner local", "rm -rf /", "qa run --input --help", None):
+      self.assertIsNone(try_run_input(command), command)
+
+  def test_visible(self):
+    self.assertEqual(visible("ok\x1b[2K\u202e\n"), "ok\\x1b[2K\\u202e\n")
+
   def test_safe_split(self):
     self.assertEqual(safe_split("qa run --input 'my file.png'"), ['qa', 'run', '--input', 'my file.png'])
     self.assertEqual(safe_split('qa run "unclosed'), [])
@@ -206,7 +223,7 @@ def make_project(root: Path):
   git(root, 'init', '-q', '-b', 'main')
   git(root, 'remote', 'add', 'origin', 'https://example.invalid/acme/denoiser.git')
   (root / 'denoise.py').write_text("import argparse\nparser = argparse.ArgumentParser()\nparser.add_argument('--input')\n")
-  (root / '.env').write_text("API_KEY=do-not-leak\n")
+  (root / '.env').write_text("API_KEY=do-not-leak hunter2\n")
 
 
 class TestWizard(TempDir):
@@ -281,6 +298,13 @@ class TestAgent(TempDir):
     from qaboard.wizard.agent import Deps, make_agent, run_agent
     make_project(self.root)
     (self.root / 'creds.py').write_text("KEY = 'ghp_" + "a" * 36 + "'\n")
+    (self.root / 'key.txt').write_text("-----BEGIN RSA PRIVATE KEY-----\nMIIFAKEKEYBODY1\nMIIFAKEKEYBODY2\n-----END RSA PRIVATE KEY-----\n")
+    (self.root / 'docs').mkdir()
+    (self.root / 'docs' / 'notes.md').symlink_to(self.root / '.env')
+    outside = Path(tempfile.mkdtemp())
+    self.addCleanup(lambda: __import__('shutil').rmtree(outside))
+    (outside / 'creds').write_text("outside-secret\n")
+    (self.root / 'docs' / 'ref.txt').symlink_to(outside / 'creds')
     facts = detect(self.root)
     changes = ChangeSet(self.root)
     changes.stage('qa/main.py', "def run(context):\n  return {'is_failed': False}\n")
@@ -309,6 +333,9 @@ class TestAgent(TempDir):
       [('write_file', {'path': 'qa/main.py', 'content': 'overwritten without reading'})],
       [('write_file', {'path': 'qa/new.py', 'content': 'def broken(:'})],
       [('write_file', {'path': 'qa/new.py', 'content': "TOKEN = 'sk-" + "b" * 30 + "'"})],
+      [('search', {'regex': 'hunter2|outside-secret'})],
+      [('read_file', {'path': 'key.txt', 'start_line': 3})],
+      [('write_file', {'path': 'qa/new.py', 'content': "# hidden\x1b[2K\x1b[1A\nx = 1\n"})],
     ])
     results = '\n'.join(self.tool_results)
     self.assertIn('secrets', self.tool_results[0])
@@ -319,6 +346,9 @@ class TestAgent(TempDir):
     self.assertIn('Read qa/main.py', self.tool_results[3])
     self.assertIn('syntax error', self.tool_results[4])
     self.assertIn('secret', self.tool_results[5])
+    self.assertEqual(self.tool_results[6], 'No matches.', "search doesn't follow symlinks to secrets or out of the project")
+    self.assertNotIn('MIIFAKEKEYBODY', self.tool_results[7])
+    self.assertIn('control characters', self.tool_results[8])
     self.assertEqual(changes.read('denoise.py').strip()[:6], 'import')
     self.assertNotIn('qa/new.py', changes.changes)
 

@@ -34,7 +34,7 @@ The wizard only creates or changes `qaboard.yaml` and files under `qa/`, and kee
 |--------|-|
 | `qa init --yes` | No questions, use what the wizard detects. Implied when there is no terminal, e.g. in scripts and CI. Settings are never saved to `~/.qaboard/secrets.yaml` in this mode. |
 | `qa --dryrun init` | Go through the wizard, but write nothing. |
-| `qa init --ai` / `--no-ai` | Use the AI assistant, or don't ask about it. Without a terminal, the assistant is only used with `--ai`. |
+| `qa init --ai` / `--no-ai` | Use the AI assistant, or don't ask about it. Without a terminal, the assistant is only used with `--ai`, and its changes are written without review: check them with `git diff` before running them. |
 | `qa init --model NAME` | The LLM the AI assistant uses. |
 
 ## AI assistant
@@ -47,7 +47,7 @@ pip install 'qaboard[wizard]'
 # or, without installing anything: uvx --from 'qaboard[wizard]' qa init
 ```
 
-It works with any LLM behind an **OpenAI-compatible API**: OpenAI, your company's LLM gateway, LiteLLM, ollama, vLLM... The wizard asks for the API's base URL, a key and a model (it lists the models the API offers), and offers to save them. They can also come from the environment, `~/.qaboard/secrets.yaml` or your site package:
+It works with any LLM behind an **OpenAI-compatible API**: OpenAI, your company's LLM gateway, LiteLLM, ollama, vLLM... The wizard asks for the API's base URL, a key and a model (it lists the models the API offers), and offers to save them. A key is saved together with its base URL, so that the API set by a site package doesn't receive it (the environment still wins: `QABOARD_LLM_BASE_URL` set in your shell would). They can also come from the environment, `~/.qaboard/secrets.yaml` or your site package:
 
 | Setting | |
 |---------|-|
@@ -59,7 +59,7 @@ It works with any LLM behind an **OpenAI-compatible API**: OpenAI, your company'
 
 What the assistant can and can't do:
 - It can list, read and search your project's files, and stage changes to `qaboard.yaml` and files under `qa/`. Nothing else: it can't run commands, and nothing is written before you accept.
-- It never reads files that look like secrets (`.env`, keys, `*secret*`, credentials...), nor `.git/`. Values that look like tokens or private keys are redacted from what it reads, and it can't write them.
+- It never reads files that look like secrets (`.env`, keys, `*secret*`, credentials, `.ssh/`, `.aws/`...), nor `.git/`, nor files outside the project through symlinks. Values that look like tokens, passwords or private keys are redacted from what it reads, and it can't write them. Credentials in your git remote's URL are never copied.
 - What it reads is sent to the API you configured. Use your company's gateway if your code can't leave it.
 - Read its changes before running them: they're code that runs on your machine, and an LLM can be misled by what it reads.
 

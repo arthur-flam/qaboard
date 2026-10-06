@@ -16,6 +16,8 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+from .changes import visible
+
 
 LOGO = r"""
    ___    _          ___                   _
@@ -89,7 +91,7 @@ class UI:
 
   def diff(self, title: str, diff: str):
     self.console.print(Panel(
-      Syntax(diff, 'diff', theme='ansi_dark', background_color='default', word_wrap=True),
+      Syntax(visible(diff), 'diff', theme='ansi_dark', background_color='default', word_wrap=True),
       title=f"[bold]{escape(title)}[/bold]", title_align='left', border_style='dim',
     ))
 

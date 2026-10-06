@@ -87,6 +87,18 @@ def project_name_from_url(url: str) -> Optional[str]:
   return path or None
 
 
+def without_credentials(url: str) -> str:
+  """https://user:token@server/group/project -> https://server/group/project. Keeps ssh's git@server:group/project."""
+  match = re.match(r'^([a-z][a-z0-9+.-]*://)([^@/]*)@(.*)$', url, re.IGNORECASE)
+  if not match:
+    return url
+  scheme, userinfo, rest = match.groups()
+  # ssh://git@server/... names a user, not a secret
+  if scheme.lower().startswith('ssh') and ':' not in userinfo:
+    return url
+  return scheme + rest
+
+
 def reference_branch(root: Path, remote: Optional[str]) -> str:
   """The default branch, without network access: from the remote's HEAD if we know it, else main or master."""
   if remote:
@@ -126,7 +138,7 @@ def detect(root: Path) -> ProjectFacts:
     remotes = (git(root, 'remote') or '').split()
     facts.remote = 'origin' if 'origin' in remotes else (remotes[0] if remotes else None)
     if facts.remote:
-      facts.remote_url = git(root, 'remote', 'get-url', facts.remote)
+      facts.remote_url = without_credentials(git(root, 'remote', 'get-url', facts.remote) or '') or None
       if facts.remote_url:
         facts.project_name = project_name_from_url(facts.remote_url)
     facts.reference_branch = reference_branch(root, facts.remote)

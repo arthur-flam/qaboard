@@ -207,6 +207,10 @@ class Wizard:
       return
     if not ui.confirm("Log in now to get an API token?", default=False):
       return
+    if server.is_insecure:
+      ui.warn(f"{escape(server.url)} doesn't use https: your password would be sent unencrypted.")
+      if not ui.confirm("Send it anyway?", default=False):
+        return
     for _ in range(3):
       username = ui.ask("Username", default=os.environ.get('USER', os.environ.get('USERNAME', '')))
       password = ui.ask("Password [dim](used once to create the token, never saved)[/dim]", password=True)
@@ -355,6 +359,10 @@ class Wizard:
     if base_url != llm.base_url:
       llm = LLM(base_url=base_url, api_key=None, model=llm.model, verify=llm.verify, key_url=llm.key_url)
       self.to_save['QABOARD_LLM_BASE_URL'] = base_url
+    if llm.is_insecure:
+      ui.warn(f"{escape(llm.base_url)} doesn't use https: your code and API key would be sent unencrypted.")
+      if not ui.confirm("Use it anyway?", default=False):
+        return None
 
     for attempt in range(3):
       if not llm.api_key and not llm.is_local:
@@ -369,6 +377,8 @@ class Wizard:
         if not llm.api_key:
           return None
         self.to_save['QABOARD_LLM_API_KEY'] = llm.api_key
+        # A saved key only makes sense with its API: so that it's never sent to another one configured later
+        self.to_save['QABOARD_LLM_BASE_URL'] = llm.base_url
       with ui.spinner(f"Checking {llm.host}…"):
         models, message = llm.list_models()
       if models is not None:
@@ -447,12 +457,14 @@ class Wizard:
   def outro(self, facts: ProjectFacts):
     ui = self.ui
     example = (self.answers.get('examples') or [None])[0]
-    try_command = (self.outcome.try_command if self.outcome else None) or (f"qa run --input {shlex.quote(example)}" if example else None)
+    # What the AI suggests is only used if it's a plain `qa run --input PATH`, which we rebuild ourselves
+    try_input = (try_run_input(self.outcome.try_command) if self.outcome else None) or example
+    try_command = f"qa run --input {shlex.quote(try_input)}" if try_input else None
     name = self.answers['name']
     steps = Table.grid(padding=(0, 2))
     steps.add_column(style='bold cyan', no_wrap=True)
     steps.add_column(style='dim')
-    steps.add_row(try_command or "qa run --input path/to/input", "run your code on one input")
+    steps.add_row(Text(try_command or "qa run --input path/to/input"), "run your code on one input")
     if not self.outcome:
       steps.add_row("$EDITOR qa/main.py", "call your code from run(context)")
     steps.add_row("qa batch my-batch", "run on the inputs listed in qa/batches.yaml")
@@ -469,15 +481,20 @@ class Wizard:
     footer.append(f"Next, show your outputs and metrics: {DOCS}/visualizations", style='dim')
     ui.panel(Group(Text("🎉 You're all set!\n", style='bold green'), steps, Text(), footer), title="Next steps", style='green')
 
-    args = safe_split(try_command)
-    # Never a shell: only `qa` and its arguments
-    if args and args[0] == 'qa' and ui.interactive and ui.confirm(f"Try `{try_command}` now?", default=True):
-      args = args[1:]
-      if not self.server_online:
-        args = ['--offline', *args]
+    if try_input and ui.interactive and ui.confirm(f"Try [bold]{escape(try_command or '')}[/bold] now?", default=True):
+      args = ['--offline'] if not self.server_online else []
       ui.console.rule(style='dim')
-      subprocess.run([sys.executable, '-m', 'qaboard', *args], cwd=self.root)
+      # Never a shell, and only `qa run --input PATH`
+      subprocess.run([sys.executable, '-m', 'qaboard', *args, 'run', '--input', try_input], cwd=self.root)
       ui.console.rule(style='dim')
+
+
+def try_run_input(command: Optional[str]) -> Optional[str]:
+  """The input of a `qa run --input PATH` command, None for any other command."""
+  args = safe_split(command)
+  if len(args) == 4 and args[:2] == ['qa', 'run'] and args[2] in ('--input', '-i') and not args[3].startswith('-'):
+    return args[3]
+  return None
 
 
 def safe_split(command: Optional[str]) -> List[str]:

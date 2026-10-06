@@ -8,10 +8,11 @@ The same rules protect the user's repository whether the change comes from a tem
 - files that look like they hold secrets are never read.
 """
 import os
+import re
 import difflib
 import fnmatch
 import tempfile
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -28,20 +29,33 @@ SECRET_PATTERNS = (
   'secret', 'secrets', 'secret.*', 'secrets.*', '.secrets*', '*.secret', '*.secrets', '*_secret*', '*-secret*', '*_secrets*', '*-secrets*',
   'credentials', 'credentials.*', '*credentials.json', '*.credentials', 'service-account*.json',
   'token', 'token.*', '*.token', '*_token.txt', '*_token.json', 'passwords*',
-  'kubeconfig', '*.tfstate', '*.tfvars',
+  'kubeconfig', '*.tfstate', '*.tfvars', '.pgpass', '*.ppk', '.s3cfg', '.boto', 'pip.conf', '.yarnrc.yml', '.dockercfg',
 )
+# Folders whose files are never read
+SECRET_DIRS = ('.ssh', '.aws', '.kube', '.docker', '.gnupg', '.azure', '.gcloud', 'secret', 'secrets', '.secrets', 'credentials', '.git')
 # Templates that document which variables are needed are fine to read
 SECRET_EXCEPTIONS = ('.env.example', '.env.sample', '.env.template', '*.example', '*.sample', '*.template')
 
 MAX_FILE_BYTES = 256 * 1024
+
+# Terminal escapes could hide lines when the user reviews diffs, bidi controls could make code read differently
+CONTROL_CHARS = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u202a-\u202e\u2066-\u2069]')
+
+
+def visible(text: str) -> str:
+  """Text safe to print in a terminal: control characters are shown as escapes."""
+  return CONTROL_CHARS.sub(lambda m: repr(m.group(0))[1:-1], text.replace('\r\n', '\n'))
 
 
 class UnsafePath(ValueError):
   """A path the wizard refuses to read or write. The message is meant for the user, or the agent."""
 
 
-def is_secret(path: Path) -> bool:
-  name = path.name.lower()
+def is_secret(rel: PurePath) -> bool:
+  """Whether a path, relative to the project's root, looks like it holds secrets."""
+  if any(part.lower() in SECRET_DIRS for part in rel.parts[:-1]):
+    return True
+  name = rel.name.lower()
   if any(fnmatch.fnmatch(name, p) for p in SECRET_EXCEPTIONS):
     return False
   return any(fnmatch.fnmatch(name, p) for p in SECRET_PATTERNS)
@@ -63,9 +77,10 @@ def safe_path(root: Path, path: str, for_write: bool = False) -> Path:
     rel = PurePosixPath(resolved.relative_to(root).as_posix())
   except ValueError:
     raise UnsafePath(f"{path}: outside of the project.") from None
-  if '.git' in rel.parts:
+  # .GIT is .git on case-insensitive filesystems
+  if '.git' in (part.lower() for part in rel.parts):
     raise UnsafePath(f"{path}: the wizard doesn't touch .git/.")
-  if is_secret(resolved):
+  if is_secret(rel):
     raise UnsafePath(f"{path}: looks like it holds secrets, the wizard doesn't read or write it.")
   if for_write and not is_writable(rel):
     allowed = ', '.join([*WRITABLE_FILES, *(f'{d}/' for d in WRITABLE_DIRS)])

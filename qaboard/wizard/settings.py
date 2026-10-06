@@ -9,7 +9,7 @@ Sites put their own defaults in their site package, so users only have to say ye
     "QABOARD_LLM_VERIFY": "false",   # or the path to a CA bundle, like QABOARD_API_VERIFY
 """
 import os
-import stat
+import tempfile
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -41,14 +41,15 @@ def save_user_settings(values: Dict[str, str]) -> Path:
       raise ValueError(f"{path} should contain a mapping of settings, please fix it first.")
   current.update(values)
   path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-  tmp = path.with_name(f'.{path.name}.tmp')
-  # Created with restricted permissions, so that secrets are never readable by others, even briefly
-  fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
-  with os.fdopen(fd, 'w', encoding='utf-8') as f:
-    f.write("# Personal QA-Board settings and secrets, see https://samsung.github.io/qaboard/docs/installation\n")
-    yaml.safe_dump(current, f, default_flow_style=False, sort_keys=True)
-  if os.name != 'nt':
-    os.chmod(tmp, 0o600)
+  # A new file, readable only by the user from the start (mkstemp: 0600, O_EXCL, doesn't follow symlinks)
+  fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')
+  try:
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+      f.write("# Personal QA-Board settings and secrets, see https://samsung.github.io/qaboard/docs/installation\n")
+      yaml.safe_dump(current, f, default_flow_style=False, sort_keys=True)
+  except BaseException:
+    Path(tmp).unlink(missing_ok=True)
+    raise
   os.replace(tmp, path)
   return path
 
@@ -69,6 +70,10 @@ class Server:
   is_default: bool
   token: Optional[str]
   verify: Union[bool, str]
+
+  @property
+  def is_insecure(self) -> bool:
+    return is_insecure(self.url)
 
   @property
   def api(self) -> str:
@@ -107,7 +112,8 @@ class Server:
   def login_for_token(self, username: str, password: str) -> str:
     """Logs in, and creates a personal API token. The password is used once, never saved."""
     session = requests_session(self.verify)
-    r = session.post(f"{self.api}/user/auth/", data={'username': username, 'password': password}, timeout=TIMEOUT)
+    # Never resend the password to wherever a redirect points
+    r = session.post(f"{self.api}/user/auth/", data={'username': username, 'password': password}, timeout=TIMEOUT, allow_redirects=False)
     if r.status_code != 200:
       try:
         error = r.json().get('error')
@@ -134,11 +140,16 @@ class LLM:
 
   @property
   def is_openai(self) -> bool:
-    return self.host == 'api.openai.com'
+    return self.base_url.startswith('https://api.openai.com/')
 
   @property
   def is_local(self) -> bool:
-    return urlparse(self.base_url).hostname in ('localhost', '127.0.0.1', '::1')
+    return is_local(self.base_url)
+
+  @property
+  def is_insecure(self) -> bool:
+    """Keys and code would be sent unencrypted over the network."""
+    return is_insecure(self.base_url)
 
   @staticmethod
   def from_settings(model: Optional[str] = None) -> 'LLM':
@@ -171,6 +182,14 @@ class LLM:
       return sorted(m['id'] for m in r.json()['data']), "ok"
     except Exception:
       return None, f"unexpected answer from {self.base_url}/models"
+
+
+def is_local(url: str) -> bool:
+  return urlparse(url).hostname in ('localhost', '127.0.0.1', '::1')
+
+
+def is_insecure(url: str) -> bool:
+  return urlparse(url).scheme == 'http' and not is_local(url)
 
 
 def short_error(e: Exception) -> str:
