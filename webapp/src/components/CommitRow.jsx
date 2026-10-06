@@ -2,7 +2,6 @@ import { Fragment, useState } from "react";
 import { Link } from "../router";
 
 import styled from "styled-components";
-import copy from 'copy-to-clipboard';
 
 import {
   Classes,
@@ -22,10 +21,12 @@ import { http, errorMessage } from "../api/http";
 import { useRefreshCommit } from "../hooks";
 import { Avatar } from "./avatars";
 import { DoneAtTag } from "./DoneAtTag";
-import { CopyToClipboard } from "./CopyToClipboard";
-import { format, shortId, pretty_label, linux_to_windows } from "../utils";
-import { git_hostname, default_git_hostname } from "../utils"
+import { CopyToClipboard } from "../clipboard";
+import { format, shortId, pretty_label } from "../utils";
+import { project_web_url } from "../utils"
 import { has_milestones } from './milestones'
+import { copyPath } from "../clipboard";
+import { toaster } from "../toaster";
 
 const CommitDetails = styled.div`
   display: flex;
@@ -62,11 +63,6 @@ const has_outputs_in_batch = label => commit => {
 }
 
 
-const git_web_url = (project_data) => {
-  const git = project_data?.data?.git ?? {};
-  const project_git_hostname = git_hostname(project_data?.data?.qatools_config) ?? default_git_hostname
-  return git.web_url ?? `${project_git_hostname}/${git.path_with_namespace}`
-}
 
 
 // We compare the batch with the same batch in the reference commit
@@ -81,7 +77,7 @@ const CommitResults = ({ project, project_data = {}, commit, className, default_
     if (incomplete_data)
       return <span></span>
 
-    const gitlab_commit_url = `${git_web_url(project_data)}/commit/${commit.id}`;
+    const gitlab_commit_url = `${project_web_url(project_data)}/commit/${commit.id}`;
     let batches_with_results = Object.entries(commit.batches)
                                .filter( ([label]) => has_outputs_in_batch(label)(commit) )
                                .map( ([label]) => label )
@@ -246,13 +242,13 @@ const CommitShortId = styled.a`
   color: #1b69b6;
 `;
 
-const CommitRow = ({ commit, project, project_data = {}, className, tag, toaster, default_batch }) => {
+const CommitRow = ({ commit, project, project_data = {}, className, tag, default_batch }) => {
   const [waiting, setWaiting] = useState(false);
   const refreshCommit = useRefreshCommit();
   const refresh = () => refreshCommit(project, commit.id);
 
   const git = project_data.data?.git ?? {};
-  const web_url = git_web_url(project_data)
+  const web_url = project_web_url(project_data)
   const is_subproject = git.path_with_namespace !== project;
   const commit_url = `${web_url}/commit/${commit.id}`
   const has_data = !!commit?.authored_datetime
@@ -319,8 +315,8 @@ const CommitRow = ({ commit, project, project_data = {}, className, tag, toaster
             hoverCloseDelay={500}
             interactionKind={"hover"}
             content={<Menu>
-              <MenuItem text="Copy Directory" label={<Tag minimal>windows</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Windows path copied to clipboard!", intent: Intent.SUCCESS}); copy(linux_to_windows(commit.artifacts_url))}} />
-              <MenuItem text="Copy Directory" label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Linux path copied to clipboard!", intent: Intent.SUCCESS}); copy(decodeURI(commit.artifacts_url).slice(2))}} />
+              <MenuItem text="Copy Directory" label={<Tag minimal>windows</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => copyPath(commit.artifacts_url, 'windows')} />
+              <MenuItem text="Copy Directory" label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => copyPath(commit.artifacts_url, 'linux')} />
               <MenuItem text="View files in browser" rel="noopener noreferrer" target="_blank" href={commit.artifacts_url} className={Classes.TEXT_MUTED} minimal icon="folder-shared-open"/>
               <MenuDivider title="Manage"/>
               <MenuItem

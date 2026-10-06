@@ -57,7 +57,7 @@ const manifest_url = (output, { refresh = false } = {}) => (output?.is_running |
 
 // The manifest lists all the files created by a run, with their size and hash.
 // Many components need it: the cache lets them share it, and new outputs often share the same reference.
-export const manifestQuery = output => {
+const manifestQuery = output => {
   const url = manifest_url(output);
   return queryOptions({
     queryKey: ['manifest', url],
@@ -459,7 +459,8 @@ const OutputCard = memo(function OutputCard(props) {
           ref_available = true;
         }
       }
-      const has_same_data = is_same_data(path, manifest_new?.[path], manifest_ref?.[path_ref])
+      // Image viewers say it themselves. When a run is compared with itself it's obvious.
+      const has_same_data = !is_image(view) && output_ref?.id !== output_new.id && is_same_data(path, manifest_new?.[path], manifest_ref?.[path_ref])
       return <div key={key} id={key}>
         {(paths.length > 1 || relevant_synced.length > 0) && (
           <div
@@ -609,4 +610,4 @@ const OutputCard = memo(function OutputCard(props) {
 })
 
 
-export { OutputCard, OutputHeader };
+export { OutputCard };

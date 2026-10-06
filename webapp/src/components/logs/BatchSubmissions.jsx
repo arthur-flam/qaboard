@@ -3,13 +3,13 @@ import styled from "styled-components";
 import { DateTime } from "luxon";
 import { Button, Callout, Classes, Collapse, Colors, Intent, Spinner, Tag, Tooltip } from "@blueprintjs/core";
 
-import { toaster } from "../../toaster";
 import { updateSelected } from "../../selection";
 import { LogViewer } from "./LogViewer";
 import { LsfReport, withCode } from "./LsfReport";
 import { lsfHint, lsfKilled, lsfReason } from "./lsf";
 import { RunList, Header, Content, INTERACTIVE } from "./RunLogs";
 import { batchSubmissions, is_final, useSubmissionStatus } from "./submissions";
+import { copyText } from "../../clipboard";
 
 
 const Meta = styled.span`
@@ -99,9 +99,6 @@ const waitingHint = submission => submission.runner === 'lsf'
 const lsfJob = submission => submission.lsf_job_id ? `LSF job ${submission.lsf_job_id}${submission.queue ? ` (${submission.queue})` : ''}` : null
 
 
-const copy = text => navigator.clipboard?.writeText(text).then(
-  () => toaster.show({ message: 'Copied', icon: 'tick', intent: Intent.SUCCESS, timeout: 1500 }),
-)
 
 
 /**
@@ -157,7 +154,7 @@ const SubmissionRow = ({ submission, expanded, onToggle }) => {
         {!!submission.command && <Command className={Classes.MONOSPACE_TEXT}>
           <code>{submission.command}</code>
           <Tooltip content="Copy the command">
-            <Button size="small" variant="minimal" icon="duplicate" aria-label="Copy the command" onClick={() => copy(submission.command)} />
+            <Button size="small" variant="minimal" icon="duplicate" aria-label="Copy the command" onClick={() => copyText(submission.command)} />
           </Tooltip>
         </Command>}
         {base
@@ -209,7 +206,7 @@ export const BatchSubmissions = ({ batch, has_runs }) => {
  * Tells users how the batch they started from QA-Board is doing, when they can't see it from its runs:
  * `qa batch` is waiting for LSF, running, failed, or didn't start any run.
  */
-const LatestSubmissionCallout = ({ submission, has_runs, project, onFinished }) => {
+const LatestSubmissionCallout = ({ submission, has_runs, onFinished }) => {
   const status = useSubmissionStatus(submission)
   const previous = useRef(status.state)
   useEffect(() => {
@@ -253,8 +250,8 @@ const LatestSubmissionCallout = ({ submission, has_runs, project, onFinished }) 
   </Callout>
 }
 
-export const SubmissionCallout = ({ batch, has_runs, project, onFinished }) => {
+export const SubmissionCallout = ({ batch, has_runs, onFinished }) => {
   const [latest] = batchSubmissions(batch)
   if (!latest) return null
-  return <LatestSubmissionCallout key={latest.id} submission={latest} has_runs={has_runs} project={project} onFinished={onFinished} />
+  return <LatestSubmissionCallout key={latest.id} submission={latest} has_runs={has_runs} onFinished={onFinished} />
 }

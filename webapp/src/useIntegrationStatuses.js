@@ -4,15 +4,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Intent } from "@blueprintjs/core";
 
-import { http } from "./api/http";
+import { http, errorMessage } from "./api/http";
 import { toaster } from "./toaster";
-import { git_hostname, default_git_hostname, make_eval_templates_recursively } from "./utils";
+import { project_web_url, make_eval_templates_recursively } from "./utils";
 
 const LS_PREFIX = 'qaboard:integrationStatuses:';
 const LS_INDEX_KEY = 'qaboard:integrationStatuses:index';
 const LS_MAX_COMMITS = 50;
 
-export const loadIntegrationStatuses = commit_id => {
+const loadIntegrationStatuses = commit_id => {
   if (!commit_id) return {};
   try {
     const raw = localStorage.getItem(LS_PREFIX + commit_id);
@@ -27,7 +27,7 @@ export const loadIntegrationStatuses = commit_id => {
   }
 };
 
-export const saveIntegrationStatuses = (commit_id, statuses) => {
+const saveIntegrationStatuses = (commit_id, statuses) => {
   if (!commit_id) return;
   try {
     // Only persist entries the user actively triggered (Jenkins/gitlabCI builds).
@@ -62,11 +62,7 @@ export const saveIntegrationStatuses = (commit_id, statuses) => {
 // sibling elsewhere in the tree don't share a status entry.
 export const integration_key = (integration, prefix = '') => prefix + (integration.id || integration.text || integration.name || integration.alt);
 
-const gitlab_host = project_data => {
-  const git = project_data.data?.git || {};
-  const web_url = git.web_url ?? `${git_hostname(project_data.data?.qatools_config) ?? default_git_hostname}/${git.path_with_namespace}`;
-  return web_url.split('/').slice(0, 3).join('/');
-};
+const gitlab_host = project_data => project_web_url(project_data).split('/').slice(0, 3).join('/');
 
 
 // context: {project, project_data, commit, new_batch, integrations, ...template variables}
@@ -117,7 +113,7 @@ export function useIntegrationStatuses(context) {
           window.open(response.data.url, '_blank')?.focus();
       })
       .catch(error => {
-        toaster.show({ message: `Something went wrong: ${JSON.stringify(error.response ?? error.message)}`, intent: Intent.DANGER });
+        toaster.show({ message: `Something went wrong: ${errorMessage(error)}`, intent: Intent.DANGER });
         setStatus(entry_key, { is_loaded: true, loading: false, error, statusText: error.response?.statusText, data: error.response?.data });
       });
   };

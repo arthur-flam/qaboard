@@ -63,7 +63,7 @@ export const date_range_from_query = query => {
   return [from.startOf('day').toJSDate(), to.endOf('day').toJSDate()];
 };
 
-export const to_day = date => DateTime.fromJSDate(date).toISODate();
+const to_day = date => DateTime.fromJSDate(date).toISODate();
 
 
 // Pure, so it's easy to test: (route match, location.search) => selection

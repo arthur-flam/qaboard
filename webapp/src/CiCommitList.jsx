@@ -15,9 +15,9 @@ import CommitRow from "./components/CommitRow";
 import { Container, Section } from "./components/layout";
 import CommitsEvolution from "./CommitsEvolution";
 import { groupBy, match_query } from "./utils";
-import { toaster } from "./toaster"
 
 import { useCommitsList, useProjectData, useSelected } from './hooks'
+import { errorMessage } from './api/http'
 
 
 
@@ -37,7 +37,6 @@ const CommitRows = ({ commits, project, project_data, className }) => (
             project={project}
             project_data={project_data}
             key={commit.id}
-            toaster={toaster}
           />
         ))}
       </WrapperCommitRows>
@@ -48,12 +47,6 @@ const CommitRows = ({ commits, project, project_data, className }) => (
 const commit_search = c => {
   const batches = Object.keys(c.batches).join('|')
   return `${c.committer_name} ${c.message} ${c.branch} ${batches}`
-}
-
-const error_msg = error => {
-  if (error.response) // The server responded with a status other than 2xx
-    return error.message + "\n" + (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data));
-  return "Error: " + error.message;
 }
 
 
@@ -96,7 +89,7 @@ const CiCommitList = () => {
           />
         </Card>
       </Section>}
-      {error && <NonIdealState description={<pre>{error_msg(error)}</pre>} icon="error" />}
+      {error && <NonIdealState description={<pre>{errorMessage(error)}</pre>} icon="error" />}
       {isPending && <NonIdealState title="Loading" icon={<Spinner />} />}
       {isSuccess && !isFetching && !error && !some_commits_loaded &&
         <NonIdealState

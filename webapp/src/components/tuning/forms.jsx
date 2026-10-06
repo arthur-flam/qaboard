@@ -414,7 +414,7 @@ const TuningForm = ({ project, config, metrics, commit, available_tests_files })
         toaster.show({
           message: submission
             ? "The batch failed to start. Select it to see why, and its logs."
-            : `Something went wrong: ${error.response?.data?.error ?? error.message}`,
+            : `Something went wrong: ${errorMessage(error)}`,
           intent: Intent.DANGER,
           timeout: 10000,
         });

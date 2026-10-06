@@ -17,7 +17,6 @@ import { useViewerControls } from "./viewers/controls";
 import { BitAccuracyForm } from "./viewers/bit_accuracy/utils";
 import { is_image } from "./viewers/images/utils"
 import { hash_color, match_query, average, median, matching_output } from "./utils";
-import { toaster } from "./toaster"
 import CommitRow from "./components/CommitRow";
 
 
@@ -360,7 +359,6 @@ const CommitsEvolutionPerTest = props => {
         commit={legend_commit}
         project={project}
         project_data={project_data}
-        toaster={toaster}
         tag={<Tag style={{marginRight: '8px'}} intent={Intent.WARNING}>New</Tag>}
       />
       {!!legend_commit_ref && <div><CommitRow
@@ -368,7 +366,6 @@ const CommitsEvolutionPerTest = props => {
         commit={legend_commit_ref}
         project={project}
         project_data={project_data}
-        toaster={toaster}
         tag={<Tag style={{marginRight: '8px'}} intent={Intent.PRIMARY}>Reference</Tag>}
       /></div>}
       {!aggregation && <div style={{display: 'flex', flex: '0 0 auto'}}>{controls_switches}</div>}

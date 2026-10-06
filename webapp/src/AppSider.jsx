@@ -1,4 +1,5 @@
 import { Link, useRouter } from "./router";
+import { path_segment, stringify_query } from "./selection";
 import styled from "styled-components";
 
 import { colors, spacing, typography, borders, shadows, transitions, breakpoints, sidebar } from './design/tokens';
@@ -21,7 +22,7 @@ import { LogsMenuItem, logs_hint_class } from "./AppSiderLogsItem"
 
 import { useCommitsList, useComparison, useSiteConfig, useUser, updateSelected } from "./hooks"
 import { useIntegrationStatuses } from "./useIntegrationStatuses"
-import { git_hostname, default_git_hostname, project_avatar_style, quota_url } from "./utils"
+import { project_web_url, project_avatar_style, quota_url } from "./utils"
 
 export const sider_width = sidebar.width.default;
 
@@ -367,10 +368,6 @@ const LinkMenuItem = ({ to, ...props }) => {
   return <MenuItem href={to} onClick={onClick} {...props}/>;
 }
 
-const git_web_url = project_data => {
-  const git = project_data.data?.git || {};
-  return git.web_url ?? `${git_hostname(project_data.data?.qatools_config) ?? default_git_hostname}/${git.path_with_namespace}`;
-}
 
 const ProjectSideAvatar = ({ project, project_data = {} }) => {
   const git = project_data.data?.git || {};
@@ -410,14 +407,20 @@ const QuotaMenuItem = ({ user, project }) => {
 }
 
 const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_commit = {}, user, docs_root, ...integrationProps }) => {
-  const { match } = useRouter();
+  const { history } = useRouter();
+  const { selected } = useComparison();
+  // Milestones from qaboard.yaml are branches (or tags), the others are commits
   const selectMilestone = milestone => {
-    updateSelected({
-      new_project: milestone.project ?? project,
-      new_commit_id: milestone.commit,
-      selected_batch_new: milestone.batch,
-      filter_batch_new: milestone.filter,
-    })
+    if (!milestone.commit)
+      return updateSelected({ branch: milestone.branch });
+    history.push({
+      pathname: `/${path_segment(project)}/commit/${path_segment(milestone.commit)}`,
+      search: stringify_query({
+        new_project: milestone.project !== project ? milestone.project : undefined,
+        batch: milestone.batch,
+        filter: milestone.filter,
+      }),
+    });
   };
 
   let qatools_config = project_data.data?.qatools_config || {};
@@ -431,23 +434,23 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
   const shared_milestones = project_data?.data?.milestones || {}
   const private_milestones = project_data.milestones || {}
 
-  let is_project_home = match.path === "/:project_id+/commits" || match.path === "/:project_id+";
-  let is_committer = !!match.params.committer;
-  let is_branch = !!match.params.name;
-  const tag = (is_branch || is_committer) ? (match.params.name || match.params.committer) : reference_branch;
-  const branch = is_branch ? match.params.name : reference_branch;
+  const is_committer = selected.route.is_committer;
+  const is_branch = !!selected.branch;
+  const is_project_home = selected.route.is_commits && !is_branch;
+  const tag = selected.branch ?? selected.committer ?? reference_branch;
+  const branch = selected.branch ?? reference_branch;
   let project_repo = git.path_with_namespace || '';
   let subproject = project.slice(project_repo.length + 1);
-  const web_url = git_web_url(project_data);
+  const web_url = project_web_url(project_data);
   let code_url = subproject.length > 0 ? `${web_url}/tree/${branch}/${subproject}` : web_url;
   return <>
     {is_project_home
-      ? <div><LinkMenuItem to={`/${project}/commits/${reference_branch}`} text={reference_branch} icon='git-branch' style={{marginRight: '5px'}}/></div>
+      ? <div><LinkMenuItem to={`/${path_segment(project)}/commits/${path_segment(reference_branch)}`} text={reference_branch} icon='git-branch' style={{marginRight: '5px'}}/></div>
       : <MenuItem icon={is_branch ? "git-branch" : 'user'} intent='primary' text={tag} title={tag}/>
     }
     {!is_committer && <>
       <MenuItem href={code_url} icon="git-repo" target="_blank" labelElement={<Icon icon="share" />} text="Code"/>
-      <LinkMenuItem to={`/${project}/history/${branch}`} icon="history" text="History"/>
+      <LinkMenuItem to={`/${path_segment(project)}/history/${path_segment(branch)}`} icon="history" text="History"/>
       <SectionDivider />
       <IntegrationsMenus
         single_menu
@@ -490,7 +493,7 @@ const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, ne
   let project_repo = git.path_with_namespace || '';
   let subproject = project.slice(project_repo.length + 1);
   let commit_code_sufffix = !!commit?.id ? (subproject.length > 0 ? `blob/${commit.id}/${subproject}` : `commit/${commit.id}`) : ''
-  let code_url = `${git_web_url(project_data)}/${commit_code_sufffix}`
+  let code_url = `${project_web_url(project_data)}/${commit_code_sufffix}`
 
   const has_optim = new_batch?.data?.optimization === true;
   const active = view => selected_views.includes(view);
@@ -547,7 +550,6 @@ const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, ne
 
 
 const AppSider = () => {
-  const { match } = useRouter();
   const { docs_root } = useSiteConfig();
   const user = useUser();
   const { project, project_data, selected, selected_views, new_commit, ref_commit, new_batch, ref_batch } = useComparison();
@@ -562,7 +564,7 @@ const AppSider = () => {
   ];
   const template_context = {
     project, project_data, commit, ref_commit, integrations, user, docs_root,
-    branch: match.params.name ?? project_data.data?.qatools_config?.project?.reference_branch,
+    branch: selected.branch ?? project_data.data?.qatools_config?.project?.reference_branch,
     new_batch, ref_batch: ref_batch?.label,
     filter: selected.filter_batch_new, ref_filter: selected.filter_batch_ref, ref_project: selected.ref_project,
   };
@@ -625,7 +627,7 @@ const AppSider = () => {
         {route.is_history && (
           <EnhancedMenuItem>
             <MenuItem icon="git-branch" intent="primary" text={selected.branch} title={selected.branch}/>
-            <LinkMenuItem to={`/${project}/commits/${selected.branch ?? ''}`} icon="git-commit" text="Commits"/>
+            <LinkMenuItem to={`/${path_segment(project)}/commits/${path_segment(selected.branch ?? '')}`} icon="git-commit" text="Commits"/>
           </EnhancedMenuItem>
         )}
         {route.is_commit && (

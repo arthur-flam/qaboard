@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 
-import { CopyToClipboard } from "../CopyToClipboard";
+import { CopyToClipboard } from "../../clipboard";
 
 import { http, errorMessage } from "../../api/http";
 import MonacoEditor from "../MonacoEditor";
@@ -35,7 +35,7 @@ const groupsQuery = (project, name) => ({
 
 
 // Edit the definitions of batches of tests: shared with everyone, or private
-const AddRecordingsForm = ({ project, commit, config, git, available_tests_files, docs_root }) => {
+const AddRecordingsForm = ({ project, commit, config, git, web_url, available_tests_files, docs_root }) => {
   const queryClient = useQueryClient();
   const files = available_tests_files ?? {};
   const names = Object.values(files);
@@ -155,7 +155,7 @@ const AddRecordingsForm = ({ project, commit, config, git, available_tests_files
           <ol className={Classes.LIST}>
             <li>The <b>current commit,</b> in:
               <ul className={Classes.LIST}>
-                {commit_groups_files.map(file => <li key={file}><a href={`${git?.web_url}/tree/${commit?.id}/${file}`}>{file}</a></li>)}
+                {commit_groups_files.map(file => <li key={file}><a href={`${web_url}/tree/${commit?.id}/${file}`}>{file}</a></li>)}
               </ul>
             </li>
             <li><b>Shared</b> with all QA-Board users.</li>

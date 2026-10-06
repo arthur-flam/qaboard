@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Colors } from "@blueprintjs/core";
 
 import Plot from "../components/Plot";
-import { http, errorMessage } from "../api/http";
-import { output_files_stale_time } from "../api/queries";
+import { errorMessage } from "../api/http";
+import { fileQuery } from "../api/queries";
 
 
 // TODO: keep the zoom in the state, like explained here
@@ -21,12 +21,6 @@ const colors = {
 
 
 // Files are cached: switching between views doesn't fetch them again
-const fileQuery = (url, output) => ({
-  queryKey: ['file', url],
-  queryFn: ({ signal }) => http.get(url, { signal }).then(r => r.data),
-  enabled: !!url,
-  staleTime: output?.is_running ? 0 : output_files_stale_time,
-});
 
 
 const adapt = (trace, label) => {
@@ -74,10 +68,10 @@ const PlotlyViewer = ({ output_new, output_ref, path, path_groundtruth, style, s
   const can_fetch = !!output_new?.output_dir_url && !!path && !is_html;
   const has_ref = !!output_ref;
   const url = (output, file) => can_fetch && output?.output_dir_url && file ? `${output.output_dir_url}/${file}` : undefined;
-  const query_new = useQuery(fileQuery(url(output_new, path), output_new));
+  const query_new = useQuery(fileQuery(url(output_new, path), { is_running: output_new?.is_running }));
   // we don't really care about errors for reference / groundtruth outputs
-  const query_ref = useQuery(fileQuery(url(output_ref, path), output_ref));
-  const query_groundtruth = useQuery(fileQuery(url(output_new, path_groundtruth), output_new));
+  const query_ref = useQuery(fileQuery(url(output_ref, path), { is_running: output_ref?.is_running }));
+  const query_groundtruth = useQuery(fileQuery(url(output_new, path_groundtruth), { is_running: output_new?.is_running }));
 
   if (is_html)
     return <div style={{display: "flex"}}>
@@ -102,10 +96,11 @@ const PlotlyViewer = ({ output_new, output_ref, path, path_groundtruth, style, s
   const width_full = px(width, '840px');
 
   if (!side_by_side) {
+    // the plot's and the configuration's widths win, like before
     const layout_ = {
+      width: width_full,
       ...layout_new,
       ...layout,
-      width: width_full,
     };
     const merged_layout = {
       ...layout_,

@@ -67,7 +67,7 @@ export function matchPath(pathname, options = {}) {
   }, null);
 }
 
-export const rootMatch = pathname => ({ path: "/", url: "/", params: {}, isExact: pathname === "/" });
+const rootMatch = pathname => ({ path: "/", url: "/", params: {}, isExact: pathname === "/" });
 
 // Like react-router@5's <Switch>: the first route whose path matches
 export function matchRoutes(routes, pathname) {

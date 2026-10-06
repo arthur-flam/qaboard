@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import copy from 'copy-to-clipboard';
 
 import {
   Classes,
@@ -14,20 +13,17 @@ import {
   InputGroup,
 } from "@blueprintjs/core";
 
-import { http, errorMessage } from "../api/http";
+import { errorMessage } from "../api/http";
+import { fileQuery } from "../api/queries";
 import { bit_accuracy_help, humanFileSize } from "../viewers/bit_accuracy/utils";
-import { linux_to_windows, event_value } from "../utils";
+import { event_value } from "../utils";
 import { OutputViewer } from "../viewers/OutputViewer";
-import { toaster } from "../toaster"
 import { useSelected, useUrlText, updateSelected } from "../hooks";
+import { copyPath } from "../clipboard";
 
 
 // The list of files in a commit's artifacts
-const useManifest = url => useQuery({
-  queryKey: ['file', url],
-  queryFn: ({ signal }) => http.get(url, { signal }).then(r => r.data),
-  enabled: !!url,
-});
+const useManifest = url => useQuery(fileQuery(url));
 
 const manifest_url = (commit, artifact) => commit?.artifacts_url ? `${commit.artifacts_url}/manifests/${artifact}.json` : undefined;
 
@@ -162,10 +158,10 @@ const CommitParameters = ({ new_commit, ref_commit, config }) => {
                  : viewer
     }
     <div style={{margin: '10px'}}>
-      <Button style={{margin: '10px'}} className={Classes.TEXT_MUTED} icon="duplicate" onClick={() => {toaster.show({message: "Windows path copied to clipboard!", intent: Intent.SUCCESS}); copy(linux_to_windows(new_commit.artifacts_url))}}>
+      <Button style={{margin: '10px'}} className={Classes.TEXT_MUTED} icon="duplicate" onClick={() => copyPath(new_commit.artifacts_url, 'windows')}>
         Copy Path <Tag minimal>windows</Tag>
       </Button>
-      <Button style={{margin: '10px'}} label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} icon="duplicate" onClick={() => {toaster.show({message: "Linux path copied to clipboard!", intent: Intent.SUCCESS}); copy(decodeURI(new_commit.artifacts_url).slice(2))}}>
+      <Button style={{margin: '10px'}} label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} icon="duplicate" onClick={() => copyPath(new_commit.artifacts_url, 'linux')}>
         Copy Path <Tag minimal>linux</Tag>
       </Button>
       <a rel="noopener noreferrer" target="_blank" href={new_commit.artifacts_url}><Button style={{margin: '10px'}} className={Classes.TEXT_MUTED} icon="folder-shared-open">

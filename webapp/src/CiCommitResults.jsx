@@ -25,6 +25,7 @@ import { useViewerControls } from "./viewers/controls";
 import { ExportPlugin } from "./plugins/ExportPlugin";
 import { humanFileSize } from "./viewers/bit_accuracy/utils";
 import { setSyncPreferences } from "./utils/dynamicOptions";
+import { project_web_url } from "./utils";
 
 import PrivateContent from "./components/authentication/PrivateContent"
 import FloatingControlsPanel from "./components/FloatingControlsPanel";
@@ -99,7 +100,7 @@ const CiCommitResults = () => {
 
   const update = attribute => e => {
     const value = (e?.target && e.target.value !== undefined) ? e.target.value : e;
-    updateSelected({ [attribute]: value }, { replace: attribute.startsWith('filter') })
+    updateSelected({ [attribute]: value }, { replace: attribute.startsWith('filter') || attribute.startsWith('sort') })
   }
 
   // The metrics shown in tables
@@ -195,6 +196,7 @@ const CiCommitResults = () => {
                   <AddRecordingsForm
                   project={project}
                   git={git}
+                  web_url={project_web_url(project_data)}
                   commit={new_commit}
                   config={config}
                   available_tests_files={available_tests_files}

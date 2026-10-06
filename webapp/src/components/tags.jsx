@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CopyToClipboard } from "./CopyToClipboard";
+import { CopyToClipboard } from "../clipboard";
 import copy from 'copy-to-clipboard';
 import {
   Classes,

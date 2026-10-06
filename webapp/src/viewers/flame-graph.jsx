@@ -13,8 +13,8 @@ import {
 import { select } from 'd3-selection'
 import * as flameGraph from 'd3-flame-graph';
 
-import { http, errorMessage } from "../api/http";
-import { output_files_stale_time } from "../api/queries";
+import { errorMessage } from "../api/http";
+import { fileQuery } from "../api/queries";
 
 // Integrates 
 // We love Brendan Gregg's flame charts
@@ -54,12 +54,6 @@ import { output_files_stale_time } from "../api/queries";
 
 
 // Files are cached: switching between views doesn't fetch them again
-const fileQuery = (url, output) => ({
-  queryKey: ['file', url],
-  queryFn: ({ signal }) => http.get(url, { signal }).then(r => r.data),
-  enabled: !!url,
-  staleTime: output?.is_running ? 0 : output_files_stale_time,
-});
 
 
 // Wraps d3-flame-graph, which renders imperatively in a DOM element.
@@ -149,9 +143,9 @@ const FlameGraphViewer = ({ output_new, output_ref, path }) => {
   const [comparaison, setComparaison] = useState('diff-what-did-happen'); // 'diff-what-will-happen' | 'new' | 'ref' | 'both'
   const url_new = output_new?.output_dir_url && path ? `${output_new.output_dir_url}/${path}` : undefined;
   const url_ref = url_new && output_ref?.output_dir_url ? `${output_ref.output_dir_url}/${path}` : undefined;
-  const query_new = useQuery(fileQuery(url_new, output_new));
+  const query_new = useQuery(fileQuery(url_new, { is_running: output_new?.is_running }));
   // we don't really care about errors for the reference
-  const query_ref = useQuery(fileQuery(url_ref, output_ref));
+  const query_ref = useQuery(fileQuery(url_ref, { is_running: output_ref?.is_running }));
 
   const data_new = query_new.data || undefined;
   const data_ref = query_ref.data || undefined;

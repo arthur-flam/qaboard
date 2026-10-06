@@ -315,6 +315,12 @@ const git_hostname = qaboard_config => {
 // Each entry is [windows_prefix, linux_prefix].
 let _path_mappings = [];
 
+// The project's page on its git server
+const project_web_url = project_data => {
+  const git = project_data?.data?.git ?? {};
+  return git.web_url ?? `${git_hostname(project_data?.data?.qatools_config) ?? default_git_hostname}/${git.path_with_namespace}`;
+}
+
 const setPathMappings = (mappings) => {
   _path_mappings = mappings || [];
 };
@@ -407,7 +413,8 @@ const make_eval_templates_recursively = ({project, project_data, branch, commit,
   let project_name = project_parts[project_parts.length-1];
   let project_name_tolower = project_name.toLowerCase();
   let context = {
-      git: project_data && project_data.data && project_data.data.git,
+      // integrations' templates use e.g. ${git.web_url}
+      git: { ...project_data?.data?.git, web_url: project_web_url(project_data) },
       project,                  // "group/project/my/Subproject"
       subproject,               // "my/Subproject"
       project_name,             // "Subproject"
@@ -572,6 +579,7 @@ export {
   make_eval_templates_recursively,
   metrics_fill_defaults,
   event_value,
+  project_web_url,
   is_same_data,
   copyElementToClipboard,
 };

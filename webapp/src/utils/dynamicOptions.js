@@ -221,13 +221,12 @@ export const generateViewPaths = (view, selectedOptions, manifests) => {
 export const mergeCompatibleOptions = (optionsList) => {
   const merged = {};
   
-  optionsList.forEach(outputOptions => {
+  optionsList.forEach(({ output_id, ...outputOptions }) => {
     Object.entries(outputOptions).forEach(([name, option]) => {
       if (!merged[name]) {
         const optionValues = option.values || [];
         merged[name] = {
           ...option,
-          compatible_outputs: [option.output_id],
           all_values: new Set(optionValues)
         };
       } else {
@@ -237,17 +236,15 @@ export const mergeCompatibleOptions = (optionsList) => {
         const hasOverlap = optionValues.some(v => existingOption.all_values.has(v));
         
         if (hasOverlap) {
-          existingOption.compatible_outputs.push(option.output_id);
           optionValues.forEach(v => existingOption.all_values.add(v));
           existingOption.values = Array.from(existingOption.all_values).sort((a, b) => a.localeCompare(b));
         } else {
           // Create separate option for incompatible values
-          const incompatibleName = `${name}_${option.output_id}`;
+          const incompatibleName = `${name}_${output_id}`;
           merged[incompatibleName] = {
             ...option,
             name: incompatibleName,
-            compatible_outputs: [option.output_id],
-            all_values: new Set(optionValues)
+              all_values: new Set(optionValues)
           };
         }
       }
@@ -264,11 +261,6 @@ export const mergeCompatibleOptions = (optionsList) => {
   });
   
   return merged;
-};
-
-// Check if an option is compatible with a specific output
-export const isOptionCompatible = (option, outputId) => {
-  return !option.compatible_outputs || option.compatible_outputs.includes(outputId);
 };
 
 // Get sync preferences from localStorage

@@ -18,6 +18,7 @@ import { TableCompare, TableKpi } from "./components/tables";
 
 import { useCommitsList, useComparison, updateSelected } from "./hooks";
 import { empty_batch } from "./defaults";
+import { errorMessage } from "./api/http";
 
 
 
@@ -54,7 +55,7 @@ const Dashboard = () => {
       </Container>
     );
   if (!!error) return <Container style={{paddingTop: '50px'}}>
-    <NonIdealState title="Error" icon='error' description={error.message}/>
+    <NonIdealState title="Error" icon='error' description={errorMessage(error)}/>
   </Container>
   if (commits.length === 0) return <Container style={{paddingTop: '50px'}}>
     <NonIdealState title="No commits found" description="Try expanding the date range." icon='search' />

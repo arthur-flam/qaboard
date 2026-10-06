@@ -146,8 +146,17 @@ export const setUser = (queryClient, user) => {
 // Files of finished outputs rarely change: only when runs are redone
 export const output_files_stale_time = 5 * 60 * 1000;
 
+// A file from outputs or artifacts, cached and shared by all the viewers that show it.
+// The raw text with responseType 'text', else JSON when it parses.
+export const fileQuery = (url, { is_running = false, responseType } = {}) => queryOptions({
+  queryKey: ['file', url, ...(responseType === 'text' ? ['text'] : [])],
+  queryFn: ({ signal }) => http.get(url, { signal, responseType }).then(r => r.data),
+  enabled: !!url,
+  staleTime: is_running ? 0 : output_files_stale_time,
+});
+
 export const invalidateOutputFiles = (queryClient, output_dir_url) => queryClient.invalidateQueries({
-  predicate: ({ queryKey: [kind, url] }) => ['manifest', 'file'].includes(kind) && typeof url === 'string' && url.startsWith(output_dir_url),
+  predicate: ({ queryKey: [kind, url] }) => ['manifest', 'file'].includes(kind) && typeof url === 'string' && url.startsWith(`${output_dir_url}/`),
 });
 
 // After acting on a commit (deleting a batch, a redo...), refresh everything that shows it

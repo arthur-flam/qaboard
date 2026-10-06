@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { IconNames } from '@blueprintjs/icons';
 

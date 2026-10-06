@@ -31,7 +31,8 @@ import "./App.css";
 import { routes } from './routes'
 import { ReleaseNotesProvider, WhatsNewLink } from "./releaseNotes/ReleaseNotes"
 import PrivateContent from "./components/authentication/PrivateContent"
-import { sider_width } from './AppSider'
+import AppSider, { sider_width } from './AppSider'
+import AppNavbar from './AppNavbar'
 
 // In development, inspect queries and their cache: https://tanstack.com/query/latest/docs/framework/react/devtools
 const ReactQueryDevtools = import.meta.env.DEV
@@ -101,13 +102,13 @@ const Routes = () => {
 const ProjectApp = ({ pathname }) => {
   const matched = matchRoutes(routes, pathname);
   if (!matched) return null;
-  const { route: { sider: Sider, navbar: Navbar, main: Main }, match } = matched;
+  const { route: { main: Main }, match } = matched;
   return <RouteMatch match={match}>
     <ComparisonProvider>
     <Layout className={Classes.UI_TEXT}>
-      <Sider/>
+      <AppSider/>
       <div style={{width: '100%'}}>
-        <Navbar/>
+        <AppNavbar/>
         <div style={{paddingLeft: sider_width}}>
           <Suspense fallback={<EmptyLoading/>}>
             <Main/>
