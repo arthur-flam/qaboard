@@ -80,6 +80,7 @@
 <li class="">In the file browser, going back after opening a file shows the folder again, instead of its raw listing.</li>
 <li class="">Links to a run's output directory open the file browser even when the folder doesn't exist, e.g. for runs that failed before they started, instead of an error page.</li>
 <li class="">Security: when a restricted project saves its results in a folder per user (e.g. <code>/algo/outputs/{user}</code>), the project's files are now restricted in every user's folder, not only in the server's.</li>
+<li class="">Text files in a run's output files show again when the reference run doesn't have them, and their diff with the reference no longer breaks when you press <code>t</code> to swap the sides.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
