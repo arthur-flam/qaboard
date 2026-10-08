@@ -476,6 +476,8 @@ def check_tuning_request(ci_commit, data):
             warnings.append(f"The artifacts are missing: {problems} When you start, QA-Board will first ask {artifacts['recreate']} to recreate them.")
         else:
             warnings.append(f"The artifacts are missing: {problems} When you start, QA-Board will try to restore them from the source code, but not build outputs (e.g. binaries).")
+    # e.g. files listed in the manifests are missing: the runs may not need them
+    warnings.extend(f"{w} Runs that need them will fail." for w in artifacts.get("warnings", []))
     for error in artifacts.get("recreate_errors", []):
         warnings.append(f"qaboard.yaml: {error}")
 

@@ -99,7 +99,7 @@ Artifacts can also be deleted outside of QA-Board: cleanup scripts, quotas, user
 - it has the root *qaboard.yaml*, and the subproject's *qaboard.yaml* too. Without it, `qa` would find the parent project's *qaboard.yaml*, and the runs would be saved **in the parent project**,
 - the files listed in the artifacts' manifests exist (QA-Board checks up to 500 of them).
 
-If they are not, QA-Board never runs from the broken folder: it first brings the artifacts back (see below), and the commit page explains what's missing.
+Without the folder or a *qaboard.yaml*, QA-Board never runs from the broken folder: it first brings the artifacts back (see below), and the commit page explains what's missing. Missing files from the manifests only give a warning: your runs may not need them.
 
 When `qa save-artifacts` saves a commit's artifacts again, QA-Board checks them, and the commit is usable again.
 

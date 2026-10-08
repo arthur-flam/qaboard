@@ -60,11 +60,14 @@ def test_status_legacy_config_name(repo):
   assert not any("wrong project" in p for p in status["problems"])
 
 
-def test_status_missing_files(repo):
+def test_status_missing_files_only_warn(repo):
+  # runs may not need them, and manifests keep entries for files that are gone
   (repo / "build/bin/tool").unlink()
   status = artifacts_status(repo / "sub/a", repo, is_subproject=True)
-  assert not status["ok"]
+  assert status["ok"]
+  assert status["problems"] == []
   assert status["missing_files"] == ["build/bin/tool"]
+  assert "1 artifacts listed in the manifests are missing" in status["warnings"][0]
 
 
 def test_status_corrupted_manifest(repo):

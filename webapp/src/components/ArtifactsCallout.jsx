@@ -19,12 +19,15 @@ export const ArtifactsCallout = ({ deleted, artifacts, waiting, onRestore }) => 
   const recreating = artifacts?.recreating ?? recreation?.status === 'triggered'
   // commits whose artifacts were never saved (e.g. projects that don't use `qa save-artifacts`) are not a problem
   const broken = artifacts?.ok === false && artifacts?.exists !== false
-  if (!deleted && !broken && !recreating) return null
+  // e.g. some files listed in the manifests are missing: runs may not need them, so we only warn
+  const warnings = artifacts?.warnings ?? []
+  if (!deleted && !broken && !recreating && warnings.length === 0) return null
 
   const problems = (artifacts?.problems ?? []).filter(p => p !== "The artifacts were deleted.")
   const title = recreating
     ? "This commit's artifacts are being recreated"
-    : deleted ? "This commit's artifacts were deleted" : "This commit's artifacts are incomplete"
+    : deleted ? "This commit's artifacts were deleted"
+    : broken ? "This commit's artifacts are incomplete" : "Some of this commit's artifacts are missing"
   return <Callout
     icon={recreating ? "time" : "trash"}
     intent={recreating ? Intent.PRIMARY : Intent.WARNING}
@@ -36,9 +39,10 @@ export const ArtifactsCallout = ({ deleted, artifacts, waiting, onRestore }) => 
       Deleted on {formatDate(deletion.at)}{deletion.by ? ` by ${deletion.by}` : ''}.
       {deletion.errors?.length > 0 && ` Some files could not be deleted.`}
     </p>}
-    {problems.length > 0 && <ul className={Classes.LIST}>
-      {problems.map(p => <li key={p}>{p}</li>)}
+    {(problems.length > 0 || warnings.length > 0) && <ul className={Classes.LIST}>
+      {[...problems, ...warnings].map(p => <li key={p}>{p}</li>)}
     </ul>}
+    {!deleted && !broken && !recreating && <p>You can still redo runs and start tuning, but runs that need these files will fail.</p>}
     {recreating && <p>
       Asked {recreation.via} on {formatDate(recreation.at)}{recreation.by ? ` (${recreation.by})` : ''}.{' '}
       {recreation.web_url && <a href={recreation.web_url} target="_blank" rel="noopener noreferrer">Follow the build</a>}

@@ -250,12 +250,14 @@ class CiCommit(Base):
     """
     status = self.artifacts_status()
     if status["ok"]:
-      return None
+      # e.g. some files in the manifests are missing: users may not need them, we tell them
+      return {"status": "incomplete", "message": " ".join(status["warnings"])} if status.get("warnings") else None
     # QA-Board may not have been told that the artifacts were deleted
     self.deleted = True
     restored = self.restore_artifacts(user=user)
     if restored["status"] == "restored":
-      return restored
+      warnings = self.artifacts_status().get("warnings", [])
+      return {**restored, "message": " ".join([restored["message"], *warnings])}
     raise ArtifactsUnavailable(
       f"This commit's artifacts are not usable: {' '.join(status['problems'])} {restored['message']}",
       {**status, **restored},

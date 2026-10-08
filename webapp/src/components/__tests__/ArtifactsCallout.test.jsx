@@ -18,6 +18,12 @@ describe('ArtifactsCallout', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('only warns when some files are missing', () => {
+    render(<ArtifactsCallout deleted={false} artifacts={{ok: true, exists: true, problems: [], warnings: ['1 artifacts listed in the manifests are missing, like build/bin/tool']}} />)
+    expect(screen.getByText("Some of this commit's artifacts are missing")).toBeInTheDocument()
+    expect(screen.getByText(/You can still redo runs/)).toBeInTheDocument()
+  })
+
   it('warns about artifacts deleted behind QA-Board\'s back', () => {
     const problems = ["The subproject's qaboard.yaml is missing from /x: runs would use the parent project's configuration, and be saved in the wrong project."]
     render(<ArtifactsCallout deleted={false} artifacts={{ok: false, problems}} onRestore={() => {}} />)

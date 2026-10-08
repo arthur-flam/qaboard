@@ -49,11 +49,13 @@ def artifacts_status(artifacts_dir: Path, repo_artifacts_dir: Path, is_subprojec
   """
   Checks that we can run from a commit's artifacts. Returns
     ok: False if runs started from there would fail or use the wrong configuration
-    problems: what's wrong, for users
+    problems: what makes runs fail or go to the wrong project: we don't run then
+    warnings: what may be fine, e.g. some files listed in the manifests are missing
     missing_files: some files listed in the manifests that don't exist anymore
   """
   artifacts_dir, repo_artifacts_dir = Path(artifacts_dir), Path(repo_artifacts_dir)
   problems: List[str] = []
+  warnings: List[str] = []
   missing_files: List[str] = []
   nb_missing_files = 0
   nb_checked_files = 0
@@ -81,10 +83,12 @@ def artifacts_status(artifacts_dir: Path, repo_artifacts_dir: Path, is_subprojec
           if len(missing_files) < 10:
             missing_files.append(file)
     if nb_missing_files:
-      problems.append(f"{nb_missing_files} artifacts listed in the manifests are missing, like {missing_files[0]}")
+      # Runs may not need them, and manifests keep files that are gone (`qa save-artifacts` only adds to them)
+      warnings.append(f"{nb_missing_files} artifacts listed in the manifests are missing, like {missing_files[0]}")
   return {
     "ok": not problems,
     "problems": problems,
+    "warnings": warnings,
     "missing_files": missing_files,
     "nb_missing_files": nb_missing_files,
     "nb_checked_files": nb_checked_files,
