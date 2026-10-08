@@ -82,13 +82,11 @@ class TestQaCliSubproject(unittest.TestCase):
     result = self.qa('save-artifacts')
     from qaboard.config import artifacts_commit
     manifest_path = artifacts_commit / 'manifests' / '__sub-qaboard.yaml.json'
-    try:
-      # without its qaboard.yaml, runs started from the artifacts would use the parent project's configuration
-      manifest = json.loads(manifest_path.read_text())
-      assert 'subproject/qaboard.yaml' in manifest, manifest
-      assert 'qaboard.yaml' in manifest, manifest
-    finally:
-      shutil.rmtree(artifacts_commit.parent, ignore_errors=True)
+    # without its qaboard.yaml, runs started from the artifacts would use the parent project's configuration
+    # (no cleanup: the folder also holds the outputs of the tests running in parallel)
+    manifest = json.loads(manifest_path.read_text())
+    assert 'subproject/qaboard.yaml' in manifest, manifest
+    assert 'qaboard.yaml' in manifest, manifest
 
   def test_sub_batch_list(self):
     result = self.qa('--dryrun', 'batch', '--batches-file', 'sub.batches.yaml', 'images', '--list')
