@@ -13,7 +13,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.3b48104c.css">
-<script src="/qaboard/assets/js/runtime~main.b5ad9d00.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.6318c59d.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.53c20b79.js" defer="defer"></script>
 </head>
 <body>
@@ -42,6 +42,7 @@
 <li class=""><code>QABOARD_API_VERIFY</code> controls the TLS verification of the CLI&#x27;s requests to the server: <code>true</code> (the default), <code>false</code>, or the path to a CA bundle.</li>
 <li class="">Site packages (company-specific plugins) are no longer ignored on Python 3.8 and 3.9.</li>
 <li class="">The package now includes the <code>qatools</code> compatibility package, and update checks no longer suggest a site-specific install command to everyone.</li>
+<li class="">Configure the Windows runner&#x27;s PowerShell <code>$ErrorActionPreference</code> per job (the batch&#x27;s <code>error_action:</code> option) or with the <code>QA_RUNNER_ERROR_ACTION</code> environment variable (default <code>Stop</code>).</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>

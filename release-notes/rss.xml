@@ -36,6 +36,7 @@
 <li class=""><code>QABOARD_API_VERIFY</code> controls the TLS verification of the CLI's requests to the server: <code>true</code> (the default), <code>false</code>, or the path to a CA bundle.</li>
 <li class="">Site packages (company-specific plugins) are no longer ignored on Python 3.8 and 3.9.</li>
 <li class="">The package now includes the <code>qatools</code> compatibility package, and update checks no longer suggest a site-specific install command to everyone.</li>
+<li class="">Configure the Windows runner's PowerShell <code>$ErrorActionPreference</code> per job (the batch's <code>error_action:</code> option) or with the <code>QA_RUNNER_ERROR_ACTION</code> environment variable (default <code>Stop</code>).</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>
