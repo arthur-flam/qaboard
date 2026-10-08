@@ -65,6 +65,7 @@
 <li class="">Security: marking a run as failed or deleting it now requires a login.</li>
 <li class="">Deleting results no longer deletes the contents of folders that they link to.</li>
 <li class="">Switching to a branch you had opened in a previous visit no longer crashes the commits list ("setHours is not a function").</li>
+<li class="">Runs started from a <code>git worktree</code> checkout are saved under their commit, instead of their branch name. Submodules with a relative <code>.git</code> pointer also work.</li>
 </ul>]]></content>
     </entry>
     <entry>
