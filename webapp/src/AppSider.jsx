@@ -19,6 +19,7 @@ import {
 import { Avatar } from "./components/avatars";
 import { IntegrationsMenus } from "./components/integrations";
 import { MilestonesMenu } from "./components/milestones"
+import { errorMessage } from "./utils/errors"
 import AuthButton from "./components/authentication/Auth"
 import { WhatsNewButton } from "./releaseNotes/ReleaseNotes"
 import { LogsMenuItem, logs_hint_class } from "./AppSiderLogsItem"
@@ -796,7 +797,7 @@ class AppSider extends React.Component {
     .catch(error => {
       console.log(error.response ?? error)
       toaster.show({
-        message: `Something went wrong: ${JSON.stringify(error.response ?? error)}`,
+        message: `Something went wrong: ${errorMessage(error)}`,
         intent: Intent.DANGER,
       });
       this.setState({
@@ -911,7 +912,7 @@ class AppSider extends React.Component {
           },
         }
       });
-     axios.post(req_url, params)
+     axios.post(req_url, params, {qaboardBackground: true})
        .then(response => {
            this.setState({
              integrationStatuses: {

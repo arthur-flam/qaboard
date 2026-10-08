@@ -14,6 +14,9 @@ import { ConfigurationsTags, ExtraParametersTags } from './tags'
 import { fetchCommit } from "../actions/commit";
 import { toaster } from "../toaster"
 import { SubmissionCallout } from "./logs/BatchSubmissions"
+import { ArtifactsCallout } from "./ArtifactsCallout"
+import { RequiresLogin, LoginHint } from "./authentication/login"
+import { errorMessage, isArtifactsError } from "../utils/errors"
 
 
 class CommitWarningMessages extends React.Component {
@@ -33,21 +36,24 @@ class CommitWarningMessages extends React.Component {
     const { commit, project } = this.props;
     if (commit === undefined || commit === null) return;
     this.setState({waiting: true})
-    toaster.show({message: "Restoring artifacts..."});
+    toaster.show({message: commit.artifacts?.recreate ? "Asking to recreate the artifacts..." : "Restoring the artifacts from the source code..."});
     post(`/api/v1/commit/save-artifacts/`, {hexsha: commit.id, project})
-      .then(() => {
+      .then(response => {
         this.setState({waiting: false})
-        toaster.show({message: `Restore artifacts.`, intent: Intent.PRIMARY});
+        toaster.show({
+          message: response.data?.message ?? "Restored the artifacts.",
+          intent: response.data?.status === 'restored' ? Intent.SUCCESS : Intent.PRIMARY,
+          timeout: 10000,
+        });
         this.refresh()
-})
+      })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: Intent.DANGER, timeout: 15000});
         this.refresh()
       });
-
   }
-  
+
   render() {
     const commit = this.props.commit;
     if (commit?.id===null) {
@@ -57,22 +63,13 @@ class CommitWarningMessages extends React.Component {
         icon="folder-open"
       />;
     }
-    if (commit?.deleted) {
-      return <Callout
-          icon="trash"
-          title={`This commit's artifacts have been deleted!`}
-        >
-          <p>We can restore the artifacts for you, but you'll likely need to rebuild too..!</p>
-          <Button
-            icon="redo"
-            text="Restore Artifacts"
-            minimal
-            disabled={!!this.state.waiting}
-            onClick={() => this.restore_artifacts(commit)}
-          />
-      </Callout>
-    } 
-    return <span></span>
+    if (!commit) return <span></span>
+    return <ArtifactsCallout
+      deleted={commit.deleted}
+      artifacts={commit.artifacts}
+      waiting={this.state.waiting}
+      onRestore={() => this.restore_artifacts()}
+    />
   }
 }
 
@@ -122,7 +119,7 @@ class BatchStatusMessages extends React.Component {
     })
     .catch(error => {
       console.log(error)
-      toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+      toaster.show({message: errorMessage(error), intent: Intent.DANGER});
       this.setState({waiting_stop: false, error });
     });
   }
@@ -142,14 +139,14 @@ class BatchStatusMessages extends React.Component {
     this.setState({waiting_redo: true})
     toaster.show({message: "Redo requested."});
     post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
-      .then(() => {
+      .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
         this.setState({waiting_redo: false})
         toaster.show({message: `Redo ${batch.label}.`, intent: Intent.PRIMARY});
         this.refresh()
       })
       .catch(error => {
         this.setState({waiting_redo: false });
-        toaster.show({message: JSON.stringify(error.response ?? error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
         this.refresh()
       });
   }
@@ -174,7 +171,10 @@ class BatchStatusMessages extends React.Component {
     const outputs = batch.filtered.outputs.map(id => batch.outputs[id])
     let some_pending = outputs.some(o => o.is_pending);
     let stop_runs = some_pending && <Callout>
-      <Button icon="stop" disabled={!!this.state.waiting_stop} onClick={() => this.stop_batch(batch)} minimal>Stop runs</Button>
+      <RequiresLogin>{is_logged => <>
+        <Button icon="stop" disabled={!!this.state.waiting_stop || !is_logged} onClick={() => this.stop_batch(batch)} minimal>Stop runs</Button>
+        {!is_logged && <LoginHint text="Log in to stop runs"/>}
+      </>}</RequiresLogin>
     </Callout>
 
 
@@ -229,13 +229,16 @@ class BatchStatusMessages extends React.Component {
         icon="trash"
         title={`${batch.filtered.deleted_outputs} of the outputs below were deleted`}
       >
-        <Button
-          icon="redo"
-          text={`Redo Deleted Outputs${this.props.commit?.deleted ? '. Requires artifacts.' : ''}`}
-          minimal
-          disabled={!!this.state.waiting_redo || this.props.commit?.deleted}
-          onClick={() => this.redo_batch(batch)}
-        />
+        <RequiresLogin>{is_logged => <>
+          <Button
+            icon="redo"
+            text={`Redo Deleted Outputs${this.props.commit?.deleted ? ' (restores the artifacts first)' : ''}`}
+            minimal
+            disabled={!!this.state.waiting_redo || !is_logged}
+            onClick={() => this.redo_batch(batch)}
+          />
+          {!is_logged && <LoginHint text="Log in to redo runs"/>}
+        </>}</RequiresLogin>
       </Callout>
     )
 

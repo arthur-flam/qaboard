@@ -32,6 +32,8 @@ import { shortId, linux_to_windows } from "../utils";
 import { fetchCommit } from "../actions/commit";
 import { updateSelected } from "../actions/selected";
 import { toaster } from "../toaster"
+import { errorMessage, isArtifactsError } from "../utils/errors"
+import { RequiresLogin, LoginMenuItem } from "./authentication/login"
 
 
 class CommitMessage extends React.PureComponent {
@@ -127,7 +129,7 @@ class CommitNavbar extends React.Component {
       })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
       });
   }
 
@@ -145,7 +147,7 @@ class CommitNavbar extends React.Component {
       })
       .catch(error => {
         this.setState({waiting: false });
-        toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+        toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
       });
   }
 
@@ -302,7 +304,7 @@ class CommitNavbar extends React.Component {
             disabled={this.props.loading}
             onClick={this.refresh}
           />
-          <Popover placement="bottom" hoverCloseDelay={500} interactionKind={"hover"} content={<Menu>
+          <Popover placement="bottom" hoverCloseDelay={500} interactionKind={"hover"} content={<RequiresLogin>{is_logged => <Menu>
             <MenuDivider title="Commit"/>
             <MenuItem text="Copy Artifact Dir" label={<Tag minimal>windows</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Windows path copied to clipboard!", intent: Intent.SUCCESS}); copy(linux_to_windows(commit.artifacts_url))}} />
             <MenuItem text="Copy Artifact Dir" label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Linux path copied to clipboard!", intent: Intent.SUCCESS}); copy(decodeURI(commit.artifacts_url).slice(2))}} />
@@ -313,6 +315,7 @@ class CommitNavbar extends React.Component {
             <MenuItem text="Copy Output Dir" label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Linux path copied to clipboard!", intent: Intent.SUCCESS}); copy(decodeURI(batch.batch_dir_url).slice(2))}} />
             <MenuItem text="View in browser" rel="noopener noreferrer" target="_blank" href={batch.batch_dir_url} className={Classes.TEXT_MUTED} minimal icon="folder-shared-open"/>
             <MenuDivider/>
+            {!is_logged && <LoginMenuItem/>}
             <Dialog
               isOpen={this.state.show_rename_dialog}
               onOpening={() => this.setState({dst_batch_label: batch.label})}
@@ -363,7 +366,7 @@ class CommitNavbar extends React.Component {
               icon="send-to-graph"
               text={filter.length > 0 ? "Move runs to another batch" : "Move selection to another batch"}
               minimal
-              disabled={this.state.waiting}
+              disabled={this.state.waiting || !is_logged}
               shouldDismissPopover={false}
               onClick={() => this.setState({show_move_dialog: true})}
             >
@@ -372,7 +375,7 @@ class CommitNavbar extends React.Component {
               icon="edit"
               text={filter.length > 0 ? "Rename whole batch" : "Rename batch"}
               minimal
-              disabled={this.state.waiting}
+              disabled={this.state.waiting || !is_logged}
               shouldDismissPopover={false}
               onClick={() => this.setState({show_rename_dialog: true})}
             />
@@ -381,19 +384,19 @@ class CommitNavbar extends React.Component {
               text="Redo Deleted Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting || !is_logged}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo of deleted outputs requested."});
                 axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
-                  .then(() => {
+                  .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
                     this.setState({waiting: false})
                     toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
                     this.refresh()
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
                   });
               }}
             />}
@@ -402,19 +405,19 @@ class CommitNavbar extends React.Component {
               text="Redo Failed Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting || !is_logged}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo of failed outputs requested."});
                 axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_failed: true})
-                  .then(() => {
+                  .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
                     this.setState({waiting: false})
                     toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
                     this.refresh()
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
                   });
               }}
             />}
@@ -423,12 +426,12 @@ class CommitNavbar extends React.Component {
               text="Redo All Outputs"
               intent={Intent.WARNING}
               minimal
-              disabled={this.state.waiting || commit?.deleted}
+              disabled={this.state.waiting || !is_logged}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Redo requested."});
                 axios.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: false})
-                  .then(() => {
+                  .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
                     this.setState({waiting: false})
                     toaster.show({message: `Redo ${batch.label}.`, intent: Intent.SUCCESS});
                     this.refresh()
@@ -438,7 +441,7 @@ class CommitNavbar extends React.Component {
                   })
                   .catch(error => {
                     this.setState({waiting: false });
-                    toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+                    toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
                   });
               }}
             />
@@ -448,7 +451,7 @@ class CommitNavbar extends React.Component {
               text={`Delete Failed Outputs${soft_delete ? "' Files" : ''}`}
               intent={Intent.DANGER}
               minimal
-              disabled={this.state.waiting}
+              disabled={this.state.waiting || !is_logged}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Delete requested for failed outputs."});
@@ -473,7 +476,7 @@ class CommitNavbar extends React.Component {
               text={`Delete All Outputs${soft_delete ? "' Files" : ''}`}
               intent={Intent.DANGER}
               minimal
-              disabled={this.state.waiting || (is_milestone && !soft_delete)}
+              disabled={this.state.waiting || !is_logged || (is_milestone && !soft_delete)}
               onClick={() => {
                 this.setState({waiting: true})
                 toaster.show({message: "Delete requested."});
@@ -503,7 +506,7 @@ class CommitNavbar extends React.Component {
               text={"Delete multiple batches"}
               intent={Intent.DANGER}
               minimal
-              disabled={this.state.waiting}
+              disabled={this.state.waiting || !is_logged}
               shouldDismissPopover={false}
               onClick={() => this.setState({show_delete_batches_dialog: true})}
             />
@@ -519,7 +522,7 @@ class CommitNavbar extends React.Component {
             />
             }
           </>}
-          </Menu>
+          </Menu>}</RequiresLogin>
           }>
             <Icon icon="menu" className={Classes.TEXT_MUTED}/>
           </Popover>

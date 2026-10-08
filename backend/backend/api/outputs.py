@@ -11,6 +11,7 @@ from qaboard.api import dir_to_url
 from backend import app, db_session
 from ..models import TestInput, CiCommit, Output
 from ..storage import check_storage_path, UnsafePathError
+from ..artifacts import ArtifactsUnavailable
 from .auth import login_required, is_authorized_user
 
 
@@ -87,11 +88,21 @@ def output_redo(output_id):
   if not is_authorized_user(g.user, output.batch.ci_commit.project_id):
     return jsonify({"error": "Forbidden: You don't have permission to access this project"}), 403
   try:
-    success = output.redo(user=g.user['user_name'])
+    restored = output.batch.ci_commit.ensure_artifacts(user=g.user['user_name'])
+    success = output.redo(user=g.user['user_name'], check_artifacts=False)
+  except ArtifactsUnavailable as e:
+    db_session.add(output.batch.ci_commit)
+    db_session.commit()
+    return jsonify(e.to_dict()), 409
   except Exception as e:
+    db_session.add(output.batch.ci_commit)
+    db_session.commit()
     return jsonify({"error": f"{e}"}), 500
+  db_session.add(output.batch.ci_commit)
+  db_session.commit()
+  warning = restored["message"] if restored else None
   if success:
-    return '{"status": "OK"}'
+    return jsonify({"status": "OK", "warning": warning})
   else:
     return jsonify({"error": "The run failed to start. Check the 'redo.log' files in the output directories to know more."}), 500
 

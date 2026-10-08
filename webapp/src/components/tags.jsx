@@ -21,6 +21,8 @@ import { fetchCommit } from "../actions/commit";
 import { linux_to_windows } from '../utils'
 import { folder_url } from '../utils/paths'
 import { toaster } from "../toaster"
+import { errorMessage, isArtifactsError } from "../utils/errors"
+import { RequiresLogin, LoginMenuItem } from "./authentication/login"
 
 
 const on_copy = (text, format = 'config') => {
@@ -297,15 +299,16 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
   const [waiting, setWaiting] = React.useState(false)
   const { id, deleted, is_pending } = output
   const refresh = () => dispatch(fetchCommit({project, id: commit.id}))
-  return (
+  return <RequiresLogin>{is_logged =>
     <Menu>
+      {!is_logged && <LoginMenuItem text="Log in to redo or delete"/>}
       {id && is_pending && <MenuItem
         icon="stop"
         text="Mark as Failed"
         htmlTitle="For runs stuck as pending or running: their job is gone and will never report"
         intent={Intent.WARNING}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Requested to mark as 'Failed'."});
@@ -317,7 +320,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
@@ -327,19 +330,19 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         text="Redo"
         intent={Intent.WARNING}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Requested Redo."});
           axios.post(`/api/v1/output/redo/${id}/`, {is_pending: false, is_running: false})
-            .then(() => {
+            .then(response => { if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000});
               setWaiting(false)
               toaster.show({message: "Redo started.", intent: Intent.SUCCESS});
               refresh()
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
@@ -349,7 +352,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         text="Delete"
         intent={Intent.DANGER}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Delete requested."});
@@ -361,7 +364,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
@@ -371,7 +374,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         text="Delete Output Files"
         intent={Intent.DANGER}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Delete requested."});
@@ -383,13 +386,13 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
             })
             .catch(error => {
               setWaiting(false)
-              toaster.show({message: error.response?.data?.error ?? JSON.stringify(error), intent: Intent.DANGER});
+              toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000});
               refresh()
             });
         }}
       />}
     </Menu>
-  )
+  }</RequiresLogin>
 }
 
 
@@ -504,7 +507,7 @@ class OutputTags extends React.Component {
                 })
                 .catch(error => {
                   this.setState({waiting: false})
-                  const error_str = error.response?.data?.error ?? JSON.stringify(error)
+                  const error_str = errorMessage(error)
                   if (error.message == "Network Error") {
                     const help_text = "Sorry we could not connect to CDEWebService. Please start WebCDE.exe (download from \\\\netapp\\Joint\\WebCDE\\WebCDE_Setup.exe)"
                     toaster.show({

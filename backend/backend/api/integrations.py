@@ -107,6 +107,44 @@ def gitlab_api_url(gitlab_host):
   return f"{gitlab_host.rstrip('/')}/api/v4"
 
 
+
+def gitlab_headers():
+  # FIXME: store the credentials in a "secret store", global per user/project
+  return {'Private-Token': os.environ['GITLAB_ACCESS_TOKEN']}
+
+
+def gitlab_commit_jobs(gitlab_api, project_id, commit_id):
+  """The jobs of the latest pipeline that ran on a commit. project_id must already be URL-quoted."""
+  headers = gitlab_headers()
+  # https://docs.gitlab.com/ee/api/commits.html#get-a-single-commit
+  url = f"{gitlab_api}/projects/{project_id}/repository/commits/{quote(str(commit_id), safe='')}"
+  r = requests.get(url, headers=headers, timeout=60)
+  r.raise_for_status()
+  last_pipeline = r.json().get('last_pipeline')
+  if not last_pipeline:
+    raise ValueError(f"No GitlabCI pipeline ran on commit {commit_id}")
+  pipeline_id = last_pipeline['id']
+  # https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
+  jobs = []
+  page = 1
+  total_pages = None
+  while total_pages is None or page <= total_pages:
+    r = requests.get(
+      f"{gitlab_api}/projects/{project_id}/pipelines/{pipeline_id}/jobs",
+      params={"page": page, "per_page": 50},
+      headers=headers,
+      timeout=60,
+    )
+    r.raise_for_status()
+    total_pages = int(r.headers['X-Total-Pages']) if r.headers.get('X-Total-Pages') else 0
+    page_jobs = r.json()
+    if not isinstance(page_jobs, list):
+      raise ValueError(f"Unexpected answer from GitLab when listing the jobs: {page_jobs}")
+    jobs.extend(page_jobs)
+    page += 1
+  return jobs
+
+
 jenkins_credentials = json.loads(os.environ.get('JENKINS_AUTH', '{}'))
 def jenkins_hostname_credentials(build_url):
   hostname = urlparse(build_url).hostname
@@ -191,53 +229,25 @@ def gitlab_job():
     gitlab_api = gitlab_api_url(data['gitlab_host'])
   except ValueError as e:
     return jsonify({"error": str(e)}), 403
-  gitlab_headers = {
-    'Private-Token': os.environ['GITLAB_ACCESS_TOKEN'],
-  }
   project_id = quote(data['project_id'], safe='')
   if data.get('job_id'):
     job_id = quote(str(data['job_id']), safe='')
   else:
-    # Get the latest pipeline for this commit
-    url = f"{gitlab_api}/projects/{project_id}/repository/commits/{quote(str(data['commit_id']), safe='')}"
-    r = requests.get(url, headers=gitlab_headers)
-    pipeline_id = r.json()['last_pipeline']['id']
-
-    # Get the list of manual jobs in that pipeline
-    # https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
-    jobs = []
-    page = 1
-    total_pages = None
-    def get_jobs(page, per_page):
-      r = requests.get(
-        f"{gitlab_api}/projects/{project_id}/pipelines/{pipeline_id}/jobs",
-        params={
-          "page": page,
-          "per_page": per_page,
-        },
-        headers=gitlab_headers,
-      )
-      total_pages = int(r.headers['X-Total-Pages']) if r.headers.get('X-Total-Pages') else 0
-      return r.json(), total_pages
-    while total_pages is None or page <= total_pages:
-      jobs_page, total_pages = get_jobs(page=page, per_page=50)
-      jobs.extend(jobs_page)
-      page += 1
-
     try:
-        matching_jobs = [j for j in jobs if data['job_name'] == j['name']]
-        for j in matching_jobs:
-          print(j['name'], j['id'], j["created_at"], j['status'])
+      jobs = gitlab_commit_jobs(gitlab_api, project_id, data['commit_id'])
     except Exception as e:
-        return jsonify({"error": f'Only these jobs are available: {jobs}'}), 404
+      return jsonify({"error": f"Could not list the GitlabCI jobs: {e}"}), 404
+    matching_jobs = [j for j in jobs if data.get('job_name') == j['name']]
+    for j in matching_jobs:
+      print(j['name'], j['id'], j["created_at"], j['status'])
     if not matching_jobs:
-        return jsonify({"error": f'Only these jobs are available: {jobs}'}), 404
+      return jsonify({"error": f"No job named {data.get('job_name')!r}. Available jobs: {', '.join(sorted({j['name'] for j in jobs}))}"}), 404
     # FIXME: sort by id
     job_id = matching_jobs[-1]['id']
 
   url = f"{gitlab_api}/projects/{project_id}/jobs/{job_id}"
   try:
-    r = requests.get(url, headers=gitlab_headers)
+    r = requests.get(url, headers=gitlab_headers(), timeout=60)
     print(r.json())
     return r.content, r.status_code
   except Exception as e:
@@ -260,52 +270,22 @@ def gitlab_play_manual_job():
     gitlab_api = gitlab_api_url(data['gitlab_host'])
   except ValueError as e:
     return jsonify({"error": str(e)}), 403
-  gitlab_headers = {
-    # FIXME: store the credentials in a "secret store", global per user/project 
-    'Private-Token': os.environ['GITLAB_ACCESS_TOKEN'],
-  }
   project_id = quote(data['project_id'], safe='')
-
-  # Get the latest pipeline for this commit
-  url = f"{gitlab_api}/projects/{project_id}/repository/commits/{quote(str(data['commit_id']), safe='')}"
-  r = requests.get(url, headers=gitlab_headers)
-  pipeline_id = r.json()['last_pipeline']['id']
-
-  # Get the list of manual jobs in that pipeline
-  # https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
-  jobs = []
-  page = 1
-  total_pages = None
-  def get_jobs(page, per_page):
-    r = requests.get(
-      f"{gitlab_api}/projects/{project_id}/pipelines/{pipeline_id}/jobs",
-      params={
-        "page": page,
-        "per_page": per_page,
-      },
-      headers=gitlab_headers,
-    )
-    total_pages = int(r.headers['X-Total-Pages']) if r.headers.get('X-Total-Pages') else 0
-    return r.json(), total_pages
-  while total_pages is None or page <= total_pages:
-    jobs_page, total_pages = get_jobs(page=page, per_page=50)
-    jobs.extend(jobs_page)
-    page += 1
-
-
   try:
-      matching_jobs = [j for j in jobs if data['job_name'] == j['name']]
-      assert matching_jobs
-      for j in matching_jobs:
-        print(j['name'], j['id'], j["created_at"], j['status'])
+    jobs = gitlab_commit_jobs(gitlab_api, project_id, data['commit_id'])
   except Exception as e:
-      return jsonify({"error": f'Only these jobs are available: {jobs}'}), 404
+    return jsonify({"error": f"Could not list the GitlabCI jobs: {e}"}), 404
+  matching_jobs = [j for j in jobs if data.get('job_name') == j['name']]
+  for j in matching_jobs:
+    print(j['name'], j['id'], j["created_at"], j['status'])
+  if not matching_jobs:
+    return jsonify({"error": f"No job named {data.get('job_name')!r}. Available jobs: {', '.join(sorted({j['name'] for j in jobs}))}"}), 404
 
   # Play the job
   # https://docs.gitlab.com/ee/api/jobs.html
   url = f"{gitlab_api}/projects/{project_id}/jobs/{matching_jobs[0]['id']}/play"
   try:
-    r = requests.post(url, headers=gitlab_headers)
+    r = requests.post(url, headers=gitlab_headers(), timeout=60)
     print(r.json())
     return r.content, r.status_code
   except Exception as e:
@@ -413,18 +393,26 @@ def jenkins_build_trigger():
   """
   Trigger a Jenkins build.
   """
-  data = request.get_json()
+  return trigger_jenkins_build(request.get_json())
+
+
+def trigger_jenkins_build(data):
+  """
+  Triggers a Jenkins build, waits a little for Jenkins to start it, and returns the response and its status code.
+  data: {build_url, params|parameters?, token?, cause?}
+  """
   if 'build_url' not in data:
       return jsonify({"error": f"ERROR: the integration is missing `build_url` (in your qaboard.yaml)"}), 400
   jenkins_credentials = jenkins_hostname_credentials(data['build_url'])
   if not jenkins_credentials:
-    return f"ERROR: No credentials for {data['build_url']}", "403"
+    return jsonify({"error": f"No Jenkins credentials for {urlparse(data['build_url']).hostname}. Add them to JENKINS_AUTH on the server."}), 403
   build_url = re.sub("/$", "", data['build_url'])
   build_trigger_url = f"{build_url}/buildWithParameters"
   try:
     params = {
       "cause": data.get('cause', "Triggered via QA-Board"),
-      **data.get('params'),
+      # the docs used to say `parameters`
+      **(data.get('params') or data.get('parameters') or {}),
     }
     if "token" in data:
       params["token"] = data["token"]
@@ -433,6 +421,7 @@ def jenkins_build_trigger():
     r_build = requests.post(
       build_trigger_url,
       params=params,
+      timeout=60,
       **jenkins_credentials,
     )
   except Exception as e:
@@ -462,6 +451,7 @@ def jenkins_build_trigger():
     try:
       r_get = requests.get(
         build_queue_location,
+        timeout=60,
         **jenkins_credentials,
       )
       r_get.raise_for_status()
