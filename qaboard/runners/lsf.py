@@ -329,20 +329,37 @@ class LsfRunner(BaseRunner):
       signal.signal(signal.SIGINT, sigterm_handler)
 
 
-      # We create a job that will just wait for the others
-      from copy import deepcopy
-      waiting_job = deepcopy(jobs[0])
-      waiting_job.runner = cast(LsfRunner, waiting_job.runner) # we'll never mix runners
-      waiting_job.runner.options = dict_to_LsfOptions(job_options)
-      waiting_job.runner.command = 'echo Done'
-      waiting_job.runner.output_dir = None # disable logging
-      batch_prefix = f"{job_options['command_id'][:8]}_"
-      waiting_job.start(blocking=True, name=f'{batch_prefix}WAIT', flags=f'-w "ended({batch_prefix}*)"')
+      LsfRunner.wait_jobs(batch_prefix, options)
 
       # Our shared storage takes a while to sync when using LSF. It should be solved, and this sleep removed...
       if not all([j.id for j in jobs]): # if we can read the status from the database, no sync issue
         import time
         time.sleep(1) # seconds
+
+
+  @staticmethod
+  def wait_jobs(batch_prefix: str, options: LsfOptions, retry_count=3, retry_delay=5):
+    """
+    Blocks until all the jobs named "{batch_prefix}_*" ended, using `bwait`.
+    We used to submit a WAIT job depending on them with `bsub -I`, but interactive jobs need the execution host
+    to connect back to the submission host, which fails e.g. from Docker containers. `bwait` only talks to mbatchd,
+    which tells it when the condition is met: no polling, and no job taking a slot.
+    Note: if `qa batch` itself runs inside an LSF job, bwait needs LSB_BWAIT_IN_JOBS=Y in lsf.conf.
+    """
+    bwait = f'bwait -w "ended({batch_prefix}_*)"'
+    if options.bridge:
+      bwait = options.bridge.format(**asdict(options), bsub_command=bwait)
+    if 'QA_BATCH_VERBOSE' in os.environ:
+      secho(bwait, dim=True, err=True)
+    for attempt in range(retry_count):
+      # bwait prints nothing unless something goes wrong, so we let its output go to the terminal
+      out = subprocess.run(bwait, shell=True)
+      if out.returncode == 0:
+        return
+      if attempt + 1 < retry_count:
+        secho(f"Failed to wait for the LSF jobs ({attempt+1}). Retry... ", err=True)
+        time.sleep(retry_delay)
+    raise Exception(f"Failed to wait for the LSF jobs: `{bwait}` exited with {out.returncode}. They may still be running, see `bjobs -J \"{batch_prefix}_*\"`.")
 
 
   @staticmethod
