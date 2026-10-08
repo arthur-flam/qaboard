@@ -84,6 +84,7 @@
 <li class="">Security: when a restricted project saves its results in a folder per user (e.g. <code>/algo/outputs/{user}</code>), the project's files are now restricted in every user's folder, not only in the server's.</li>
 <li class="">Text files in a run's output files show again when the reference run doesn't have them, and their diff with the reference no longer breaks when you press <code>t</code> to swap the sides.</li>
 <li class="">Notifications show at the bottom of the window again, instead of at the bottom of the page's first screen where they were out of sight once you scrolled down.</li>
+<li class="">On Windows, <code>qa batch</code> finds existing results for projects whose name contains a "/", instead of failing with "could not find any data on commit ID": <code>--action-on-existing</code> works there.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
