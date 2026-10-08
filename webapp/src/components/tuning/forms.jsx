@@ -28,6 +28,7 @@ import {
 } from "@blueprintjs/core";
 import { toaster } from "../../toaster"
 import { errorMessage, isArtifactsError } from "../../utils/errors"
+import { requestLogin } from "../authentication/login"
 
 
 import templates from './templates'
@@ -347,7 +348,9 @@ class TuningForm extends Component {
     const { selected_group } = this.state;
     const has_commit = this.props.commit !== undefined && this.props.commit !== null;
     let updated_commit = has_commit && (prevProps.commit === null || prevProps.commit === undefined || prevProps.commit.id !== this.props.commit.id);
-    if (updated_commit && selected_group) this.getGroupInfo(selected_group);
+    const logged_in = !prevProps.redux_user?.is_logged && this.props.redux_user?.is_logged
+    if ((updated_commit || logged_in) && selected_group) this.getGroupInfo(selected_group);
+    if (logged_in) this.scheduleCheck();
     const checked_fields = ['experiment_name', 'selected_group', 'platform', 'search_type', 'search_options', 'parameter_search', 'parameter_search_auto']
     // e.g. the artifacts were recreated
     const updated_artifacts = has_commit && (prevProps.commit?.deleted !== this.props.commit.deleted || prevProps.commit?.artifacts?.ok !== this.props.commit.artifacts?.ok)
@@ -397,9 +400,9 @@ class TuningForm extends Component {
 
   check = () => {
     const { project, commit } = this.props;
-    if (!commit?.id) return;
+    if (!commit?.id || !this.props.redux_user?.is_logged) return;
     const check_id = this.check_id
-    post(`/api/v1/commit/${commit.id}/batch/check?project=${project}`, this.request())
+    post(`/api/v1/commit/${commit.id}/batch/check?project=${project}`, this.request(), {qaboardBackground: true})
       .then(response => {
         if (this.check_id !== check_id) return; // a newer check was sent
         this.setState({check: {errors: response.data.errors ?? [], warnings: response.data.warnings ?? []}})
@@ -414,10 +417,11 @@ class TuningForm extends Component {
   getGroupInfo(group) {
   	const commit_part = !!this.props.commit ? `&commit=${this.props.commit.id}` : '';
     const { available_tests_files } = this.props;
+    if (!this.props.redux_user?.is_logged) return; // the server needs to know who asks
   	this.setState({selected_group_info_loading: true})
     post(`/api/v1/tests/group?project=${this.props.project}&name=${group}${commit_part}`, {
       groups: Object.values(available_tests_files),
-    })
+    }, {qaboardBackground: true})
       .then(response => {
         this.setState({
           selected_group_info_loading: false,
@@ -596,6 +600,7 @@ class TuningForm extends Component {
     // the inputs already say when the name or the batch are missing
     const check_errors = (experiment_name && selected_group) ? (this.state.check?.errors ?? []) : []
     const check_warnings = this.state.check?.warnings ?? []
+    const is_logged = this.props.redux_user?.is_logged
     const { combinations, language } = this.state
     let total_runs = combinations * tests.length;
     let time_intent =
@@ -816,6 +821,10 @@ class TuningForm extends Component {
                           : (this.state.experiment_name.length === 0 ? 'Please give a name to the tuning experiment (the input is above)' : (selected_group_info.tests.length === 0 ? "No inputs found in the batch you asked to use" : undefined))}
         intent={(!user || this.state.experiment_name.length === 0 || !total_runs) ? Intent.DANGER : undefined}
       >
+      {is_logged === false && <Callout intent={Intent.PRIMARY} icon="log-in" title="Log in to start runs" style={{marginBottom: '10px'}} data-testid="tuning-login">
+        <p>Runs started from QA-Board run as you. Once you are logged in, QA-Board also lists the batch's tests and checks your settings.</p>
+        <Button icon="log-in" intent={Intent.PRIMARY} text="Log in" onClick={requestLogin}/>
+      </Callout>}
       {check_errors.length > 0 && <Callout intent={Intent.DANGER} title="Fix this to start" icon="error" style={{marginBottom: '10px'}} data-testid="tuning-check-errors">
         <ul className={Classes.LIST}>{check_errors.map(e => <li key={e}>{e}</li>)}</ul>
       </Callout>}
@@ -823,6 +832,7 @@ class TuningForm extends Component {
         onClick={this.onSubmit}
         disabled={
           this.state.submitted ||
+          is_logged === false ||
           check_errors.length > 0 ||
           !user ||
           this.state.experiment_name.length === 0 ||
@@ -867,7 +877,7 @@ class TuningForm extends Component {
         />
       </FormGroup>} */}
 
-      {lsf_runner &&<Tooltip content="Make sure to setup your shell environment correctly">
+      {lsf_runner && is_logged !== false && <Tooltip content="Make sure to setup your shell environment correctly">
         <Tag icon="user" large minimal style={{marginRight: '5px', marginBottom: '5px'}}>Will run as <strong>{user}</strong></Tag>
       </Tooltip>}
 

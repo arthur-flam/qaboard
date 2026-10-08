@@ -9,7 +9,7 @@ import useBaseUrl from '@docusaurus/useBaseUrl';
 You don't need a terminal to start runs: the web app can redo runs, run a commit's code on new tests, start tuning experiments and trigger CI jobs.
 
 :::info Before you start
-- Most actions need you to be **logged in** (top of the sidebar).
+- Most actions need you to be **logged in** (top of the sidebar). When you are not, they are greyed out, next to a **Log in** button. If your session expires, QA-Board tells you to log in again.
 - Running code needs the commit's **artifacts** (its build and configuration files). When they are missing, the commit page says why, and redoing runs or starting tuning first brings them back: your project may have QA-Board [rebuild them with your CI](../storage/deleting-old-data.mdx#recreating-artifacts), otherwise only the files from the source code are restored. While the CI rebuilds them, QA-Board doesn't start anything: try again when the build is done.
 - Your project needs a **task runner** (a cluster, Celery workers...) for runs to start. If none is set up, the tuning form warns you: ask whoever integrated QA-Board in your project.
 :::

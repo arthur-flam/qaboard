@@ -1,6 +1,7 @@
 import React, { useContext } from "react";
 import { ReactReduxContext } from "react-redux";
 import { Button, Callout, Classes, Intent } from "@blueprintjs/core";
+import { RequiresLogin, LoginHint } from "./authentication/login";
 
 const formatDate = iso => {
   if (!iso) return null
@@ -55,13 +56,16 @@ export const ArtifactsCallout = ({ deleted, artifacts, waiting, onRestore }) => 
         : <>QA-Board can restore the files from the source code, but not build outputs like binaries.{' '}
             To rebuild them automatically, configure <a href={`${docs_root}docs/storage/deleting-old-data#recreating-artifacts`} target="_blank" rel="noopener noreferrer"><code>recreate_artifacts</code></a> in qaboard.yaml.</>}
     </p>}
-    {onRestore && <Button
-      icon="redo"
-      text={artifacts?.recreate ? (recreating ? "Ask again to recreate the artifacts" : "Recreate the artifacts") : "Restore the artifacts"}
-      minimal={recreating}
-      intent={recreating ? Intent.NONE : Intent.PRIMARY}
-      disabled={!!waiting}
-      onClick={onRestore}
-    />}
+    {onRestore && <RequiresLogin>{is_logged => <>
+      <Button
+        icon="redo"
+        text={artifacts?.recreate ? (recreating ? "Ask again to recreate the artifacts" : "Recreate the artifacts") : "Restore the artifacts"}
+        minimal={recreating}
+        intent={recreating ? Intent.NONE : Intent.PRIMARY}
+        disabled={!!waiting || !is_logged}
+        onClick={onRestore}
+      />
+      {!is_logged && <LoginHint text="Log in to bring the artifacts back"/>}
+    </>}</RequiresLogin>}
   </Callout>
 }

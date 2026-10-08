@@ -21,6 +21,7 @@ import { fetchCommit } from "../actions/commit";
 import { linux_to_windows } from '../utils'
 import { toaster } from "../toaster"
 import { errorMessage, isArtifactsError } from "../utils/errors"
+import { RequiresLogin, LoginMenuItem } from "./authentication/login"
 
 
 const on_copy = (text, format = 'config') => {
@@ -297,15 +298,16 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
   const [waiting, setWaiting] = React.useState(false)
   const { id, deleted, is_pending } = output
   const refresh = () => dispatch(fetchCommit({project, id: commit.id}))
-  return (
+  return <RequiresLogin>{is_logged =>
     <Menu>
+      {!is_logged && <LoginMenuItem text="Log in to redo or delete"/>}
       {id && is_pending && <MenuItem
         icon="stop"
         text="Mark as Failed"
         htmlTitle="For runs stuck as pending or running: their job is gone and will never report"
         intent={Intent.WARNING}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Requested to mark as 'Failed'."});
@@ -327,7 +329,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         text="Redo"
         intent={Intent.WARNING}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Requested Redo."});
@@ -349,7 +351,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         text="Delete"
         intent={Intent.DANGER}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Delete requested."});
@@ -371,7 +373,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         text="Delete Output Files"
         intent={Intent.DANGER}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => {
           setWaiting(true)
           toaster.show({message: "Delete requested."});
@@ -389,7 +391,7 @@ const RunActionsMenu = ({ output, project, commit, dispatch }) => {
         }}
       />}
     </Menu>
-  )
+  }</RequiresLogin>
 }
 
 

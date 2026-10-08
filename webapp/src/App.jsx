@@ -30,6 +30,9 @@ import "./App.css";
 import { routes } from './routes'
 import { ReleaseNotesProvider, WhatsNewLink } from "./releaseNotes/ReleaseNotes"
 import PrivateContent from "./components/authentication/PrivateContent"
+import { installLoginInterceptor } from "./components/authentication/login"
+import axios from "axios";
+import { toaster } from "./toaster";
 import { sider_width } from './AppSider'
 
 // Like styled-components@5: don't forward unknown props to DOM elements
@@ -46,6 +49,8 @@ class App extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false };
+    // before the children mount: they send requests in their componentDidMount
+    installLoginInterceptor(axios, props.store, toaster)
   }
 
   componentDidMount() {

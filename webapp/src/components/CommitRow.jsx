@@ -29,6 +29,8 @@ import { CopyToClipboard } from "react-copy-to-clipboard";
 import { format, shortId, pretty_label, linux_to_windows } from "../utils";
 import { git_hostname, default_git_hostname } from "../utils"
 import { has_milestones } from './milestones'
+import { errorMessage } from "../utils/errors"
+import { LoginMenuItem } from "./authentication/login"
 
 const CommitDetails = styled.div`
   display: flex;
@@ -321,11 +323,12 @@ class CommitRow extends React.Component {
                 <MenuItem text="Copy Directory" label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => {toaster.show({message: "Linux path copied to clipboard!", intent: Intent.SUCCESS}); copy(decodeURI(commit.artifacts_url).slice(2))}} />
                 <MenuItem text="View files in browser" rel="noopener noreferrer" target="_blank" href={commit.artifacts_url} className={Classes.TEXT_MUTED} minimal icon="folder-shared-open"/>
                 <MenuDivider title="Manage"/>
+                {!this.props.is_logged && <LoginMenuItem text="Log in to delete runs"/>}
                 <MenuItem
                   text="Delete All Runs"
                   icon="trash"
                   intent={Intent.DANGER}
-                  disabled={this.state.waiting || commit_has_milestones}
+                  disabled={this.state.waiting || commit_has_milestones || !this.props.is_logged}
                   className={Classes.TEXT_MUTED}
                   minimal
                   onClick={() => {
@@ -339,7 +342,7 @@ class CommitRow extends React.Component {
                       })
                       .catch(error => {
                         this.setState({waiting: false });
-                        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+                        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
                         this.refresh()    
                       });
                   }}
@@ -348,7 +351,7 @@ class CommitRow extends React.Component {
                   text="Delete All Runs (in all other projects for this commit!)"
                   icon="trash"
                   intent={Intent.DANGER}
-                  disabled={this.state.waiting || commit_has_milestones}
+                  disabled={this.state.waiting || commit_has_milestones || !this.props.is_logged}
                   className={Classes.TEXT_MUTED}
                   minimal
                   onClick={() => {
@@ -362,7 +365,7 @@ class CommitRow extends React.Component {
                       })
                       .catch(error => {
                         this.setState({waiting: false });
-                        toaster.show({message: JSON.stringify(error), intent: Intent.DANGER});
+                        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
                         this.refresh()    
                       });
                   }}
@@ -396,8 +399,10 @@ class CommitRow extends React.Component {
   }
 }
 
-const mapStateToProps = () => {
-  return {}
+const mapStateToProps = state => {
+  return {
+    is_logged: state.user?.is_logged ?? false,
+  }
 }
 
 export default connect(mapStateToProps)(CommitRow);

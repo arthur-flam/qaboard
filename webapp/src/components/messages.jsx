@@ -15,6 +15,7 @@ import { fetchCommit } from "../actions/commit";
 import { toaster } from "../toaster"
 import { SubmissionCallout } from "./logs/BatchSubmissions"
 import { ArtifactsCallout } from "./ArtifactsCallout"
+import { RequiresLogin, LoginHint } from "./authentication/login"
 import { errorMessage, isArtifactsError } from "../utils/errors"
 
 
@@ -170,7 +171,10 @@ class BatchStatusMessages extends React.Component {
     const outputs = batch.filtered.outputs.map(id => batch.outputs[id])
     let some_pending = outputs.some(o => o.is_pending);
     let stop_runs = some_pending && <Callout>
-      <Button icon="stop" disabled={!!this.state.waiting_stop} onClick={() => this.stop_batch(batch)} minimal>Stop runs</Button>
+      <RequiresLogin>{is_logged => <>
+        <Button icon="stop" disabled={!!this.state.waiting_stop || !is_logged} onClick={() => this.stop_batch(batch)} minimal>Stop runs</Button>
+        {!is_logged && <LoginHint text="Log in to stop runs"/>}
+      </>}</RequiresLogin>
     </Callout>
 
 
@@ -225,13 +229,16 @@ class BatchStatusMessages extends React.Component {
         icon="trash"
         title={`${batch.filtered.deleted_outputs} of the outputs below were deleted`}
       >
-        <Button
-          icon="redo"
-          text={`Redo Deleted Outputs${this.props.commit?.deleted ? ' (restores the artifacts first)' : ''}`}
-          minimal
-          disabled={!!this.state.waiting_redo}
-          onClick={() => this.redo_batch(batch)}
-        />
+        <RequiresLogin>{is_logged => <>
+          <Button
+            icon="redo"
+            text={`Redo Deleted Outputs${this.props.commit?.deleted ? ' (restores the artifacts first)' : ''}`}
+            minimal
+            disabled={!!this.state.waiting_redo || !is_logged}
+            onClick={() => this.redo_batch(batch)}
+          />
+          {!is_logged && <LoginHint text="Log in to redo runs"/>}
+        </>}</RequiresLogin>
       </Callout>
     )
 

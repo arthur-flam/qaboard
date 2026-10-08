@@ -15,6 +15,7 @@ import {
   Dialog,
 } from "@blueprintjs/core";
 import { login, logout } from '../../actions/users'
+import { registerLoginHandler } from './login'
 import { toaster } from "./../../toaster"
 import { Avatar } from '../avatars';
 import { colors, spacing, typography, borders, shadows, transitions } from '../../design/tokens';
@@ -398,6 +399,15 @@ class LoginButton extends React.Component {
     </>
   }
 
+
+  componentDidMount() {
+    // actions that need a login can open this dialog (see login.jsx)
+    this.unregister = registerLoginHandler(this.handleLogin)
+  }
+
+  componentWillUnmount() {
+    this.unregister?.()
+  }
 
   handleLogin = () => {
     if (this.props.login_type === "SAML") {
