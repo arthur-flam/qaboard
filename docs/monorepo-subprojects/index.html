@@ -13,7 +13,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.3b48104c.css">
-<script src="/qaboard/assets/js/runtime~main.1a67d22f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.5b7ce342.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.199b2546.js" defer="defer"></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
 <li class=""><strong>Working directory:</strong> When calling <code>qa [command]</code>, <code>qa</code> will first change the working directory to the top-most directory of your git repo, where you have your root <em>qaboard.yaml</em>.</li>
 <li class=""><strong>Relative paths</strong> in <em>qaboard.yaml</em> configuration files are always relative to the repository root.</li>
 <li class=""><strong>Submodules</strong>: If you work in a submodule that uses QA-Board, and the git repo above also uses QA-Board, it can be confusing for <code>qa</code> to know what to do... So add <code>root: true</code> to your submodule&#x27;s <em>qaboard.yaml</em></li>
-<li class=""><code>project.avatar_url</code> and <code>project.description</code> can be changed to display relevant information in the Web UI.</li>
+<li class=""><code>project.avatar_url</code> and <code>project.description</code> can be changed to display relevant information in the Web UI. Avatars from hosts other than your GitLab need to be listed in <a class="" href="/qaboard/docs/deploy#optional-environment-variables"><code>QABOARD_PROXY_HOSTS</code></a>.</li>
 <li class=""><strong>In your <code>project.entrypoint:run()</code></strong>: you can <code>from qaboard.config import project, project_root, subproject</code> if needed.</li>
 <li class=""><strong>Layering:</strong> <em>project/sub/qaboard.yaml</em> will inherit everything from <em>project/qaboard.yaml</em>, deep-merged. As a helper you can use the keyword <code>super</code> to add items to lists:</li>
 </ul>
