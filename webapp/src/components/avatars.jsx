@@ -1,7 +1,5 @@
-import React from "react";
 import { Link } from "../router";
 import styled from "styled-components";
-import { Classes } from "@blueprintjs/core";
 
 const AvatarCell = styled.div`
   width: ${props => props.size || '45px'};
@@ -48,36 +46,27 @@ const AvatarPlaceholder = styled.div`
   align-self: center;
 `;
 
-class Avatar extends React.PureComponent {
-  render() {
-    const { src, href, alt, size, style={}, img_style={} } = this.props;
-    const no_image = src === null || src === undefined || src === false;
-    const avatar = no_image ? <AvatarPlaceholder size={size} style={style}>{(!!alt && alt[0].toUpperCase()) || ''}</AvatarPlaceholder>
-                            : <AvatarImg size={size} style={{...style, ...img_style}} alt={alt||''} src={src||''} />;
-    if (href !== undefined && href !== null)
-      return <AvatarCell size={size} style={style}><Link to={href || '#'}>{avatar}</Link></AvatarCell>;
-    else 
-      return <AvatarCell size={size} style={style}>{avatar}</AvatarCell>;
-
-  }
+const Avatar = ({ src, href, alt, size, style = {}, img_style = {} }) => {
+  const no_image = src === null || src === undefined || src === false;
+  const avatar = no_image ? <AvatarPlaceholder size={size} style={style}>{alt?.[0]?.toUpperCase() ?? ''}</AvatarPlaceholder>
+                          : <AvatarImg size={size} style={{...style, ...img_style}} alt={alt || ''} src={src || ''} />;
+  if (href !== undefined && href !== null && href !== false)
+    return <AvatarCell size={size} style={style}><Link to={href || '#'}>{avatar}</Link></AvatarCell>;
+  return <AvatarCell size={size} style={style}>{avatar}</AvatarCell>;
 }
 
 
-class CommitAvatar extends React.PureComponent {
-  render() {
-    const { commit, size } = this.props;
-    let maybe_skeleton = (!commit || !commit.committer_name) ? Classes.SKELETON : null;
-    let avatar_url = !!commit?.committer_avatar_url ? encodeURI(`/api/v1/gitlab/proxy?url=${commit?.committer_avatar_url}`) : null
-    return <Avatar
-      href={!!commit && !!commit.committer_name && `/committer/${commit.committer_name}`}
-      alt={!!commit ? commit.committer_name : ''}
-      src={avatar_url}
-      className={maybe_skeleton}    
-      style={this.props.style}
-      size={size}
-    />
-
-  }
+// Links to the committer's page when we know the project
+const CommitAvatar = ({ commit, project, size, style }) => {
+  const avatar_url = commit?.committer_avatar_url ? encodeURI(`/api/v1/gitlab/proxy?url=${commit.committer_avatar_url}`) : null
+  const href = (project && commit?.committer_name) ? `/${project}/committer/${commit.committer_name}` : null
+  return <Avatar
+    href={href}
+    alt={commit?.committer_name ?? ''}
+    src={avatar_url}
+    style={style}
+    size={size}
+  />
 }
 
 

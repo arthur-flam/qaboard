@@ -158,7 +158,7 @@ const EMPTY_HINTS = {
  * Lists can have 100s of runs: keep props stable, so that toggling a run doesn't render the others,
  * and keep the header light: plain text, the same as soon as it renders.
  */
-export const RunLogs = memo(function RunLogs({ id, output, project, commit, dispatch, expanded, onToggle, title }) {
+export const RunLogs = memo(function RunLogs({ id, output, project, commit, expanded, onToggle, title }) {
   const { ref, inView } = useInView({ triggerOnce: true, rootMargin: '300px 0px' })
   const [lsf, setLsf] = useState({ status: 'unknown', report: null })
   const [has_dask_log, setHasDaskLog] = useState(false)
@@ -243,7 +243,7 @@ export const RunLogs = memo(function RunLogs({ id, output, project, commit, disp
         {!!base && <Tooltip content="Open the output directory" hoverOpenDelay={300}>
           <AnchorButton size="small" variant="minimal" icon="folder-shared-open" aria-label="Open the output directory" href={folder_url(base)} target="_blank" rel="noopener noreferrer" />
         </Tooltip>}
-        {!is_batch && !!output.id && <PopoverNext placement="bottom-end" content={<RunActionsMenu output={output} project={project} commit={commit} dispatch={dispatch} />}>
+        {!is_batch && !!output.id && <PopoverNext placement="bottom-end" content={<RunActionsMenu output={output} project={project} commit={commit} />}>
           <Button size="small" variant="minimal" icon="more" aria-label="Run actions" />
         </PopoverNext>}
       </span>

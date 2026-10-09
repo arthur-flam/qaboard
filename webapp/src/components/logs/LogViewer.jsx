@@ -15,9 +15,9 @@ import {
   Tooltip,
 } from "@blueprintjs/core";
 
-import { toaster } from "../../toaster";
 import { useLogTail } from "./useLogTail";
 import { createLineParser } from "./logLines";
+import { copyText } from "../../clipboard";
 
 
 // Rendering more lines gets slow
@@ -410,10 +410,7 @@ export const LogViewer = ({ files, file, onFileChange, live = false, emptyHint, 
 
   const copy = () => {
     const text = all_lines.map(line => line.plain).join('\n')
-    navigator.clipboard?.writeText(text).then(
-      () => toaster.show({ message: `Copied ${all_lines.length.toLocaleString()} lines`, icon: 'tick', intent: Intent.SUCCESS, timeout: 2000 }),
-      () => toaster.show({ message: 'Could not copy the logs', intent: Intent.DANGER }),
-    )
+    copyText(text, `Copied ${all_lines.length.toLocaleString()} lines`)
   }
 
   const is_missing = log.status === 'error' && log.error?.status === 404

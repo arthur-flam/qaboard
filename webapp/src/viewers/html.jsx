@@ -1,104 +1,33 @@
-import React, { PureComponent } from "react";
-import axios, { all, CancelToken } from "axios";
-const { get } = axios;
+import { useQuery } from "@tanstack/react-query";
+
+import { errorMessage } from "../api/http";
+import { fileQuery } from "../api/queries";
 
 
-class HtmlViewer extends PureComponent {
-  constructor(props) {
-    super(props);
-    this.state = {
-      is_loaded: false,
-      error: null,
-      cancel_source: CancelToken.source(),
-      data: {},
-    }
-  }
+// Files are cached: switching between views doesn't fetch them again
 
 
-  componentDidMount() {
-  	this.Init(this.props);
-  }
-  componentWillUnmount() {
-    if (!!this.state.cancel_source)
-      this.state.cancel_source.cancel();
-  }
+const HtmlViewer = ({ path, output_new, output_ref, style }) => {
+  const url_new = output_new?.output_dir_url && path ? `${output_new.output_dir_url}/${path}` : undefined;
+  const has_reference = !!output_ref?.output_dir_url;
+  const url_ref = url_new && has_reference ? `${output_ref.output_dir_url}/${path}` : undefined;
+  const query_new = useQuery(fileQuery(url_new, { is_running: output_new?.is_running }));
+  // we don't really care about errors for reference outputs
+  const query_ref = useQuery(fileQuery(url_ref, { is_running: output_ref?.is_running }));
 
-  componentDidUpdate(prevProps) {
-    const has_path = this.props.path !== undefined && this.props.path !== null;
-    let updated_path = has_path && (prevProps.path === null || prevProps.path === undefined || prevProps.path !== this.props.path);
+  if (!url_new || query_new.isPending || (url_ref && query_ref.isPending)) return <span>loading</span>;
+  if (query_new.isError) return <span>{errorMessage(query_new.error)}</span>
 
-	  let updated_new =
-	    prevProps.output_new !== undefined &&
-	    prevProps.output_new !== null &&
-	    (this.props.output_new == null ||
-	      prevProps.output_new.id !== this.props.output_new.id);
-	  let updated_ref =
-	    prevProps.output_ref !== undefined &&
-	    prevProps.output_ref !== null &&
-	    (this.props.output_ref == null ||
-	      prevProps.output_ref.id !== this.props.output_ref.id);
-	  if (updated_new || updated_ref || updated_path) {
-	    this.Init(this.props);
-	  }
-  }
-
-
-  Init() {
-    const { path, output_new, output_ref } = this.props;
-    const { cancel_source } = this.state;
-    if (!output_new.output_dir_url || !path) return;
-
-    let results = []
-    results.push(['new', `${output_new.output_dir_url}/${path}`])
-    const has_reference = !!output_ref && !!output_ref.output_dir_url;
-    if (has_reference)
-      results.push(['reference', `${output_ref.output_dir_url}/${path}`])
-
-    const load_data = label => response => {
-      this.setState(previous_state => ({
-        data: {
-          ...previous_state.data,
-          [label]: response.data,
-        },
-      }))
-    }
-
-    all(results.map( ([label, url]) => {
-      return () =>  get(url, {cancelToken: cancel_source.token})
-                    .then(load_data(label))
-                    .catch(response => {
-                      // we don't really care about errors for reference / groundtruth outputs
-                      if (label==='new' && !!response)
-                        this.setState({error: response.data})
-                    });
-    }).map(f=>f()))
-    // now we loaded and parsed all the data
-    .finally( () => this.setState({is_loaded: true}) )
-  }
-
-
-  render() {
-    const { output_ref, style } = this.props;
-    const { data, is_loaded, error } = this.state;
-
-    if (!is_loaded) return <span>loading</span>;
-    if (!!error) return <span>{JSON.stringify(error)}</span>
-
-    // https://developer.mozilla.org/fr/docs/Web/HTML/Element/iframe
-    const width = (!!style && style.width) || '400px';
-    let has_reference = !!output_ref && !!output_ref.output_dir_url;
-    // <iframe width={width} srcDoc={data.new || ""} style={{borderWidth: '0px'}} Ssandbox="" /> 
-    return <>
-      {has_reference && <h3>New</h3>}
-      <div style={{width}} dangerouslySetInnerHTML={{__html: data.new ?? ""}} /> 
-      {has_reference && <>
-        <h3>Reference</h3>
-        <div style={{width}} dangerouslySetInnerHTML={{__html: data.reference || ""}} />
-      </>} 
-    </>
-  }
-
-
+  // https://developer.mozilla.org/fr/docs/Web/HTML/Element/iframe
+  const width = style?.width || '400px';
+  return <>
+    {has_reference && <h3>New</h3>}
+    <div style={{width}} dangerouslySetInnerHTML={{__html: query_new.data ?? ""}} />
+    {has_reference && <>
+      <h3>Reference</h3>
+      <div style={{width}} dangerouslySetInnerHTML={{__html: query_ref.data || ""}} />
+    </>}
+  </>
 }
 
 

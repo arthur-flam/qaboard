@@ -7,17 +7,16 @@ import {
   Classes,
   Colors,
   Icon,
-  Intent,
   NonIdealState,
   SegmentedControl,
   Tooltip,
 } from "@blueprintjs/core";
 
 import { pretty_label } from '../utils'
-import { toaster } from "../toaster";
 import { RunList, RunLogs } from './logs/RunLogs'
 import { BatchSubmissions } from './logs/BatchSubmissions'
 import { batchSubmissions } from './logs/submissions'
+import { copyText } from "../clipboard";
 
 
 // Rendering many runs is slow
@@ -73,9 +72,6 @@ const Command = styled.div`
   }
 `
 
-const copy = text => navigator.clipboard?.writeText(text).then(
-  () => toaster.show({ message: 'Copied', icon: 'tick', intent: Intent.SUCCESS, timeout: 1500 }),
-)
 
 const BatchCommand = ({ command }) => {
   const created_at = DateTime.fromISO(command.command_created_at_datetime, { zone: 'utc' })
@@ -96,7 +92,7 @@ const BatchCommand = ({ command }) => {
     <pre className={`command ${Classes.MONOSPACE_TEXT}`}>
       <code>{text}</code>
       <Tooltip content="Copy the command">
-        <Button size="small" variant="minimal" icon="duplicate" aria-label="Copy the command" onClick={() => copy(text)} />
+        <Button size="small" variant="minimal" icon="duplicate" aria-label="Copy the command" onClick={() => copyText(text)} />
       </Tooltip>
     </pre>
   </Command>
@@ -106,7 +102,7 @@ const BatchCommand = ({ command }) => {
 /**
  * The logs of all the runs in a batch, and of the commands that started it.
  */
-export const BatchLogs = ({ batch, project, commit, dispatch }) => {
+export const BatchLogs = ({ batch, project, commit }) => {
   const [filter, setFilter] = useState('all')
   const [expanded, setExpanded] = useState(() => new Set())
   const [limit, setLimit] = useState(PAGE_SIZE)
@@ -183,7 +179,6 @@ export const BatchLogs = ({ batch, project, commit, dispatch }) => {
             output={output}
             project={project}
             commit={commit}
-            dispatch={dispatch}
             expanded={expanded.has(output.id)}
             onToggle={toggle}
           />)}
@@ -205,7 +200,6 @@ export const BatchLogs = ({ batch, project, commit, dispatch }) => {
         output={batch_output}
         project={project}
         commit={commit}
-        dispatch={dispatch}
         title="Batch logs"
         expanded={expanded.has('batch')}
         onToggle={toggle}
