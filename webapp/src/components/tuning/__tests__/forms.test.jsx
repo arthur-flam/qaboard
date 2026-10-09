@@ -5,7 +5,6 @@
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 
 import { TuningForm, combinations_info, eval_combinations } from '../forms';
-import { AddRecordingsForm } from '../form_groups';
 import { renderWithProviders } from '../../../test-utils';
 import { usePrefsStore } from '../../../stores/prefs';
 
@@ -73,26 +72,5 @@ describe('TuningForm', () => {
     renderWithProviders(<TuningForm project="proj" config={config} metrics={metrics} commit={commit} available_tests_files={{}}/>);
     await act(async () => fireEvent.click(screen.getByText('Available Tests')));
     expect(window.location.search).toBe('?selected_views=groups');
-  });
-});
-
-
-describe('AddRecordingsForm', () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it('edits and saves batches of tests', async () => {
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response('my-batch:\n  - a.jpg\n')));
-    renderWithProviders(
-      <AddRecordingsForm project="proj" commit={commit} config={config} git={{}} available_tests_files={{ usr: 'alice.yaml', gr: 'shared.yaml' }} docs_root="/"/>,
-    );
-    const editor = await screen.findByTestId('user_groups');
-    await waitFor(() => expect(editor).toHaveValue('my-batch:\n  - a.jpg\n'));
-    expect(screen.getByText('Update Batches').closest('button')).toBeDisabled();
-    fireEvent.change(editor, { target: { value: 'other:\n  - b.jpg\n' } });
-    fireEvent.keyDown(document, { key: 's', ctrlKey: true });
-    await waitFor(() => expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
-    const [url, init] = fetch.mock.calls.find(([, init]) => init?.method === 'POST');
-    expect(url).toBe('/api/v1/tests/groups?project=proj&name=alice.yaml');
-    expect(JSON.parse(init.body)).toEqual({ project: 'proj', groups: 'other:\n  - b.jpg\n' });
   });
 });

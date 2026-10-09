@@ -32,6 +32,10 @@ integrations:
   in_menu: false
 ```
 
+:::note
+QA-Board loads images through its server, which only fetches them from your GitLab and gravatar. To show images from other hosts, ask your admins to add them to [`QABOARD_PROXY_HOSTS`](/docs/deploy#optional-environment-variables).
+:::
+
 :::tip
 The menu item will be disabled if the link doesn't work (HTTP `HEAD` request).
 To show a link but run the check on an other URL, you can provide `url`, `method` (e.g. `POST`), etc. If you add `allow_failed: true` the link is always enabled.

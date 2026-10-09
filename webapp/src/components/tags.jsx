@@ -19,6 +19,7 @@ import {
 import { http, errorMessage, isAbort } from "../api/http";
 import { useRefreshCommit } from "../hooks";
 import { linux_to_windows } from '../utils'
+import { folder_url } from '../utils/paths'
 import { toaster } from "../toaster"
 
 
@@ -397,7 +398,7 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
           text="Open output directory in browser"
           target="_blank"
           rel="noopener noreferrer"
-          href={output_dir_url}
+          href={folder_url(output_dir_url)}
           className={Classes.TEXT_MUTED} minimal
           icon="folder-shared-open"
         />
@@ -406,7 +407,7 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
           text="Open the Reference's output directory in browser"
           target="_blank"
           rel="noopener noreferrer"
-          href={output_ref.output_dir_url}
+          href={folder_url(output_ref.output_dir_url)}
           className={Classes.TEXT_MUTED} minimal
           icon="folder-shared-open"
         />}
@@ -415,7 +416,7 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
       <a style={{marginLeft: "5px", color: Colors.GRAY1}}
             target="_blank"
             rel="noopener noreferrer"
-            href={output_dir_url}
+            href={folder_url(output_dir_url)}
       >
         <Icon icon="folder-shared-open" />
       </a>

@@ -19,7 +19,7 @@ import { useDynamicOptions } from "./useDynamicOptions";
 
 
 import { TuningForm } from "./components/tuning/forms";
-import { AddRecordingsForm } from "./components/tuning/form_groups";
+import { BatchesEditor } from "./components/tuning/BatchesEditor";
 import TuningExploration from "./components/tuning/TuningExploration";
 import { useViewerControls } from "./viewers/controls";
 import { ExportPlugin } from "./plugins/ExportPlugin";
@@ -145,7 +145,8 @@ const CiCommitResults = () => {
           <>
             <Section key="filters">
               {warning_messages}
-              <BatchStatusMessages project={new_project} commit={new_commit} batch={new_batch} />
+              {/* the selected batch's runs are unrelated to editing batch definitions, and would push the editor down */}
+              {!selected_views.includes('groups') && <BatchStatusMessages project={new_project} commit={new_commit} batch={new_batch} />}
             </Section>
 
             {selected_views.includes('summary') && <Section>
@@ -174,22 +175,20 @@ const CiCommitResults = () => {
               </Card>
              </Section>}
 
-            {selected_views.includes('groups') && <Section style={{width: "1000px"}}>
-              <Card>
-                <h2 className={Classes.HEADING}>Groups of tests</h2>
-                <PrivateContent enabled={true}>
-                  <AddRecordingsForm
+            {selected_views.includes('groups') && <Section style={{ width: 'auto', minWidth: 0, marginTop: '10px' }}>
+              <h2 className={Classes.HEADING}>Available Tests</h2>
+              <PrivateContent enabled={true}>
+                <BatchesEditor
                   project={project}
                   git={git}
-                  web_url={project_web_url(project_data)}
+                  web_url={(git?.web_url || git?.path_with_namespace) ? project_web_url(project_data) : undefined}
                   commit={new_commit}
                   config={config}
                   available_tests_files={available_tests_files}
                   docs_root={docs_root}
-                  />
-                </PrivateContent>
-              </Card>
-             </Section>}
+                />
+              </PrivateContent>
+            </Section>}
 
             {selected_views.includes('tuning') && (Object.keys(config.artifacts || {}).length === 0
               ? <NonIdealState
@@ -289,7 +288,8 @@ const CiCommitResults = () => {
           </>
         )}
 
-      {(!!new_commit) && (
+      {/* Editing batches has no use for the controls panel, it would cover the editor's side panel */}
+      {(!!new_commit) && selected_views.join(',') !== 'groups' && (
         <FloatingControlsPanel
           controls={controls}
           visualizations={visualizations}
