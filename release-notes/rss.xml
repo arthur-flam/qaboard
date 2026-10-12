@@ -119,6 +119,7 @@
 <li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
 <li class="">Commit pages and the branch list no longer break when results were sent without a branch.</li>
 <li class="">Finished runs whose metrics don't include <code>is_failed</code> count as successful, instead of neither successful nor failed.</li>
+<li class="">A run is compared with the reference run of the same platform: when the reference batch had the same input and configuration on two platforms, the other platform's run was picked.</li>
 <li class="">The History page's per-test tables show their metric columns again, in tabs named "Metrics Table" and "Metrics Diff" like on commit pages.</li>
 <li class="">The SLAM and tuning plots no longer have Plotly's "Send to Cloud" button, so their data can't be uploaded to Plotly's public cloud.</li>
 <li class="">Links to the LSF docs and to the getting-started page work again, and the retired chat link now points to your server's support page (by default, QA-Board's GitHub issues).</li>
@@ -126,6 +127,11 @@
 <li class="">Upgrading the Helm chart no longer restarts the backend for nothing after a first install (its settings checksum included a generated secret that rendered differently each time).</li>
 <li class="">Security: the API <code>qa</code> uses to update batches no longer lets anyone without a login delete runs. <code>qa optimize</code> still replaces its previous best iteration's runs, and only those.</li>
 <li class="">Security: when <code>qa</code> fails to update QA-Board, its warning no longer prints your API token (<code>QA_TOKEN</code>).</li>
+<li class="">JPEG images show in the image viewer again, instead of an "Image Download Error": the image server only sent them as JPEG tiles, and the viewer asks for PNG ones. They now come as PNG tiles, with the exact pixel values for the pixel tooltip and the diff. Update the <code>cantaloupe</code> image to get the fix.</li>
+<li class="">The image viewer's ROI thumbnails show the image the viewer shows: they no longer break for runs that save a TIFF instead of a PNG, or for images served by another image server (<code>QABOARD_IMAGE_SERVERS</code>).</li>
+<li class="">ROIs set on inputs of another size than the output images are placed right on non-square images, in the thumbnails and when you zoom on them.</li>
+<li class="">The projects list shows the description from <em>qaboard.yaml</em> (<code>project.description</code>) for projects that aren't on GitHub or GitLab too.</li>
+<li class="">The image viewer's <strong>Auto ROIs</strong> finds regions again, instead of failing with an error.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
