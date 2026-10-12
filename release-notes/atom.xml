@@ -121,6 +121,8 @@
 <li class="">Links to the LSF docs and to the getting-started page work again, and the retired chat link now points to your server's support page (by default, QA-Board's GitHub issues).</li>
 <li class="">Images show in the image viewer on servers that don't set <code>QABOARD_IMAGE_SERVERS</code>: the default is now Cantaloupe's <code>/iiif/2/</code> endpoint, instead of a <code>/iiif</code> URL that Cantaloupe couldn't answer.</li>
 <li class="">Upgrading the Helm chart no longer restarts the backend for nothing after a first install (its settings checksum included a generated secret that rendered differently each time).</li>
+<li class="">Security: the API <code>qa</code> uses to update batches no longer lets anyone without a login delete runs. <code>qa optimize</code> still replaces its previous best iteration's runs, and only those.</li>
+<li class="">Security: when <code>qa</code> fails to update QA-Board, its warning no longer prints your API token (<code>QA_TOKEN</code>).</li>
 </ul>]]></content>
     </entry>
     <entry>
