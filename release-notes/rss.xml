@@ -114,6 +114,7 @@
 <li class="">Switching between a run's log files shows the end of the new file, instead of keeping the scroll position and the highlighted error of the previous one.</li>
 <li class="">The floating panel's button no longer hides the buttons on the right of the Logs view.</li>
 <li class=""><code>qa optimize</code> works with recent versions of scikit-optimize, instead of failing with "cannot import name 'Integer'".</li>
+<li class=""><code>qa optimize</code> no longer fails at the end when matplotlib isn't installed: it only skips its convergence plot.</li>
 <li class="">On Windows, <code>qa batch</code> finds existing results for projects whose name contains a "/", instead of failing with "could not find any data on commit ID": <code>--action-on-existing</code> works there.</li>
 <li class="">Redoing runs from QA-Board respects the batch's concurrency, and uses the runner the runs were started with (e.g. Dask) and its settings. QA-Board used to start each run with its own <code>qa batch</code>, so they all ran at once, with the default runner.</li>
 <li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
@@ -125,6 +126,9 @@
 <li class="">Links to the LSF docs and to the getting-started page work again, and the retired chat link now points to your server's support page (by default, QA-Board's GitHub issues).</li>
 <li class="">Images show in the image viewer on servers that don't set <code>QABOARD_IMAGE_SERVERS</code>: the default is now Cantaloupe's <code>/iiif/2/</code> endpoint, instead of a <code>/iiif</code> URL that Cantaloupe couldn't answer.</li>
 <li class="">Upgrading the Helm chart no longer restarts the backend for nothing after a first install (its settings checksum included a generated secret that rendered differently each time).</li>
+<li class="">nginx starts on hosts without IPv6, instead of failing on its <code>listen [::]:80</code> line.</li>
+<li class=""><code>qa</code> no longer warns that it doesn't know where your server is when you set <code>QABOARD_URL=http://localhost:5151</code>.</li>
+<li class=""><code>qa</code> no longer prints a git error when the commit it runs on isn't in the local clone (e.g. shallow CI clones): it only did without the commit's details. <code>QA_VERBOSE=1</code> still shows it.</li>
 <li class="">Security: the API <code>qa</code> uses to update batches no longer lets anyone without a login delete runs. <code>qa optimize</code> still replaces its previous best iteration's runs, and only those.</li>
 <li class="">Security: when <code>qa</code> fails to update QA-Board, its warning no longer prints your API token (<code>QA_TOKEN</code>).</li>
 <li class="">JPEG images show in the image viewer again, instead of an "Image Download Error": the image server only sent them as JPEG tiles, and the viewer asks for PNG ones. They now come as PNG tiles, with the exact pixel values for the pixel tooltip and the diff. Update the <code>cantaloupe</code> image to get the fix.</li>
