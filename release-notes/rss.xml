@@ -30,6 +30,9 @@
 <li class="">In the file browser, a bar shows the run whose folder you are in, with its status and a link to its results: <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/files#runs">redo it, delete it or mark it as failed</a> from there.</li>
 <li class="">The Available Tests view is a real editor for your private and shared batches: it flags YAML mistakes as you type, shows if your changes are saved next to the Save button (or <code>Ctrl+S</code>), lets you review or discard them, and keeps them if you leave before saving. It also warns instead of overwriting someone else's changes to the shared batches. See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/commit-page#available-tests">user guide</a>.</li>
 <li class="">The Available Tests view lists the batches in each file: go to one, list the tests it resolves to on the commit, or run it in one click.</li>
+<li class="">Copy the path of a run's output directory from the Logs view, next to the button that opens it. When your server has Windows path mappings, the confirmation offers the Windows path too. The batch directory, and the folders of batches started from QA-Board, have the same buttons.</li>
+<li class="">See where the logs of each command that started a batch are: in the CI job (with a link), or in QA-Board (one click shows them). The batch's own <code>log.txt</code> only shows when it exists. See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/commit-page#logs">user guide</a>.</li>
+<li class="">Show more of very long logs: they show their last 50,000 lines to stay fast, and say if the hidden lines have errors or matches for your search.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -40,6 +43,7 @@
 <li class=""><code>QABOARD_API_VERIFY</code> controls the TLS verification of the CLI's requests to the server: <code>true</code> (the default), <code>false</code>, or the path to a CA bundle.</li>
 <li class="">Site packages (company-specific plugins) are no longer ignored on Python 3.8 and 3.9.</li>
 <li class="">The package now includes the <code>qatools</code> compatibility package, and update checks no longer suggest a site-specific install command to everyone.</li>
+<li class=""><code>qa --share batch</code> and <code>qa optimize</code>, started from a terminal, save what they print in the batch directory (under <code>qa-batch-logs/</code>), errors included: QA-Board shows these logs with the batch's commands. In the CI, the CI keeps the logs. See the <a class="" href="https://samsung.github.io/qaboard/docs/using-the-qa-cli">CLI tips</a>.</li>
 <li class="">Configure the Windows runner's PowerShell <code>$ErrorActionPreference</code> per job (the batch's <code>error_action:</code> option) or with the <code>QA_RUNNER_ERROR_ACTION</code> environment variable (default <code>Stop</code>).</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
@@ -87,6 +91,10 @@
 <li class="">Security: when a restricted project saves its results in a folder per user (e.g. <code>/algo/outputs/{user}</code>), the project's files are now restricted in every user's folder, not only in the server's.</li>
 <li class="">Text files in a run's output files show again when the reference run doesn't have them, and their diff with the reference no longer breaks when you press <code>t</code> to swap the sides.</li>
 <li class="">Notifications show at the bottom of the window again, instead of at the bottom of the page's first screen where they were out of sight once you scrolled down.</li>
+<li class="">The Logs view's copy buttons (logs, commands) work when QA-Board is served over plain http, not only https.</li>
+<li class="">Very long logs (tens of thousands of lines) open several times faster, and searching them no longer freezes the page for seconds.</li>
+<li class="">Switching between a run's log files shows the end of the new file, instead of keeping the scroll position and the highlighted error of the previous one.</li>
+<li class="">The floating panel's button no longer hides the buttons on the right of the Logs view.</li>
 <li class="">On Windows, <code>qa batch</code> finds existing results for projects whose name contains a "/", instead of failing with "could not find any data on commit ID": <code>--action-on-existing</code> works there.</li>
 </ul>]]></content:encoded>
         </item>
