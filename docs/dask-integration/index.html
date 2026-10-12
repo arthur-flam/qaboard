@@ -13,7 +13,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.3b48104c.css">
-<script src="/qaboard/assets/js/runtime~main.396e4289.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.82ad3408.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.199b2546.js" defer="defer"></script>
 </head>
 <body>
@@ -65,7 +65,7 @@
 <div class="language-yaml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockTitle_OeMC">qaboard.yaml</div><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-yaml codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token key atrule" style="color:#00a4db">runners</span><span class="token punctuation" style="color:#393A34">:</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token key atrule" style="color:#00a4db">dask</span><span class="token punctuation" style="color:#393A34">:</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token key atrule" style="color:#00a4db">scheduler_address</span><span class="token punctuation" style="color:#393A34">:</span><span class="token plain"> tcp</span><span class="token punctuation" style="color:#393A34">:</span><span class="token plain">//my</span><span class="token punctuation" style="color:#393A34">-</span><span class="token plain">host</span><span class="token punctuation" style="color:#393A34">:</span><span class="token number" style="color:#36acaa">8786</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token key atrule" style="color:#00a4db">concurrency</span><span class="token punctuation" style="color:#393A34">:</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">20</span><br></div></code></pre></div></div>
 <ul>
 <li class=""><code>qa batch</code> doesn&#x27;t start or stop workers: the cluster size is the global limit, <code>concurrency</code> the per-batch limit.</li>
-<li class="">With <code>--no-wait</code>, all runs are sent at once and <code>concurrency</code> is not enforced.</li>
+<li class="">With <code>--no-wait</code>, the driver LSF job connects to the cluster and keeps at most <code>concurrency</code> runs in flight. If LSF isn&#x27;t available (no <code>bsub</code>, no <code>QA_RUNNERS_LSF_BRIDGE</code>), all runs are sent at once and <code>concurrency</code> is not enforced.</li>
 <li class="">To stop batches from QA-Board, the QA-Board server needs <code>distributed</code> installed and access to the scheduler.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="troubleshooting">Troubleshooting<a href="#troubleshooting" class="hash-link" aria-label="Direct link to Troubleshooting" title="Direct link to Troubleshooting" translate="no">​</a></h2>

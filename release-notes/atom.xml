@@ -32,6 +32,7 @@
 <li class="">Copy the path of a run's output directory from the Logs view, next to the button that opens it. When your server has Windows path mappings, the confirmation offers the Windows path too. The batch directory, and the folders of batches started from QA-Board, have the same buttons.</li>
 <li class="">See where the logs of each command that started a batch are: in the CI job (with a link), or in QA-Board (one click shows them). The batch's own <code>log.txt</code> only shows when it exists. See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/commit-page#logs">user guide</a>.</li>
 <li class="">Show more of very long logs: they show their last 50,000 lines to stay fast, and say if the hidden lines have errors or matches for your search.</li>
+<li class="">When you filter a batch's runs, the commit bar menu redoes only the runs that match the filter. Follow redone runs in the Logs view, under "Started from QA-Board". See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/running-from-the-webapp">user guide</a>.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -44,6 +45,8 @@
 <li class="">The package now includes the <code>qatools</code> compatibility package, and update checks no longer suggest a site-specific install command to everyone.</li>
 <li class="">Read the logs of <code>qa --share batch</code> and <code>qa optimize</code> started from a terminal in QA-Board, with the batch's commands: they save what they print in the batch directory (under <code>qa-batch-logs/</code>), errors included. <code>qa optimize</code> includes the output of its iterations. In the CI, the CI keeps the logs. See the <a class="" href="https://samsung.github.io/qaboard/docs/using-the-qa-cli">CLI tips</a>.</li>
 <li class="">Configure the Windows runner's PowerShell <code>$ErrorActionPreference</code> per job (the batch's <code>error_action:</code> option) or with the <code>QA_RUNNER_ERROR_ACTION</code> environment variable (default <code>Stop</code>).</li>
+<li class=""><code>qa batch --runs-file runs.json</code> does a list of runs, each with its input, configurations, parameters and runner options. QA-Board uses it to redo runs together. See the <a class="" href="https://samsung.github.io/qaboard/docs/using-the-qa-cli">CLI tips</a>.</li>
+<li class="">With <code>--no-wait</code> and an existing Dask cluster (<code>scheduler_address</code>), the Dask runner now enforces <code>concurrency</code>: a driver LSF job sends the runs, as without <code>scheduler_address</code>. See the <a class="" href="https://samsung.github.io/qaboard/docs/dask-integration">Dask runner</a>.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>
@@ -97,6 +100,7 @@
 <li class="">The floating panel's button no longer hides the buttons on the right of the Logs view.</li>
 <li class=""><code>qa optimize</code> works with recent versions of scikit-optimize, instead of failing with "cannot import name 'Integer'".</li>
 <li class="">On Windows, <code>qa batch</code> finds existing results for projects whose name contains a "/", instead of failing with "could not find any data on commit ID": <code>--action-on-existing</code> works there.</li>
+<li class="">Redoing runs from QA-Board respects the batch's concurrency, and uses the runner the runs were started with (e.g. Dask) and its settings. QA-Board used to start each run with its own <code>qa batch</code>, so they all ran at once, with the default runner.</li>
 </ul>]]></content>
     </entry>
     <entry>
