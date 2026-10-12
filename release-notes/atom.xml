@@ -68,6 +68,7 @@
 <li class="">Without a complete <code>/etc/passwd</code>, e.g. with LDAP or SSSD, <code>QABOARD_ACCOUNTS_COMMAND</code> (and <code>QABOARD_GROUPS_COMMAND</code>) gives the backend the users' accounts, refreshed daily: the file browser shows owners' names instead of their ids (see <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/user-management#users-accounts">users' accounts</a>).</li>
 <li class="">Redoing, deleting or marking a run as failed now requires access to its project, for restricted projects.</li>
 <li class="">Scripts can send results that describe their commit with only <code>commit_sha</code> and <code>commit_authored_datetime</code>: the other <code>commit_*</code> fields (branch, message, committer, parents) are optional, and the server doesn't need access to the git repository.</li>
+<li class="">Add pages for your own users to the docs your server serves: put them in <code>website/site-docs/&lt;site&gt;/</code> and build with <code>QABOARD_SITE=&lt;site&gt;</code>. They get their own menu, and the installation page links to them. At SIRC, "At SIRC" has the install commands and SIRC specifics.</li>
 <li class="">At SIRC, QA-Board no longer serves the storage over WebDAV (<code>/davs/algo/</code>): it let anyone write and delete files. <code>services/nginx/webdav.conf</code> explains how to bring it back.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="documentation">Documentation<a href="https://samsung.github.io/qaboard/release-notes/2026-10#documentation" class="hash-link" aria-label="Direct link to Documentation" title="Direct link to Documentation" translate="no">​</a></h2>
@@ -76,6 +77,10 @@
 <li class="">New runbooks for deployments, rollbacks and Kubernetes.</li>
 <li class="">Release notes going back to 2017, on the website and in the app.</li>
 <li class="">Many pages updated to match the code, and features that were never documented: GitHub webhooks, API tokens, batch options, bit-accuracy manifests, auto-optimization...</li>
+<li class="">Find the server docs in one place, written for any site: starting a server, deployments and rollbacks with <code>deploy.py</code>, host maintenance, backups and <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/troubleshooting">troubleshooting</a>.</li>
+<li class="">Follow old links to pages that moved or were removed: they redirect to the closest page.</li>
+<li class="">Find <a class="" href="https://samsung.github.io/qaboard/docs/auto-optimization">auto-optimization</a> in the sidebar.</li>
+<li class="">Write your own file viewer: see the end of <a class="" href="https://samsung.github.io/qaboard/docs/visualizations">visualizations</a>.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="fixes">Fixes<a href="https://samsung.github.io/qaboard/release-notes/2026-10#fixes" class="hash-link" aria-label="Direct link to Fixes" title="Direct link to Fixes" translate="no">​</a></h2>
 <ul>
