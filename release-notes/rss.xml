@@ -34,6 +34,8 @@
 <li class="">See where the logs of each command that started a batch are: in the CI job (with a link), or in QA-Board (one click shows them). The batch's own <code>log.txt</code> only shows when it exists. See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/commit-page#logs">user guide</a>.</li>
 <li class="">Show more of very long logs: they show their last 50,000 lines to stay fast, and say if the hidden lines have errors or matches for your search.</li>
 <li class="">When you filter a batch's runs, the commit bar menu redoes only the runs that match the filter. Follow redone runs in the Logs view, under "Started from QA-Board". See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/running-from-the-webapp">user guide</a>.</li>
+<li class="">Find your way around from the History page: the sidebar shows the project's navigation (the branch's commits, Code, History, Integrations, Milestones), and moving between these pages no longer reloads the app.</li>
+<li class="">See who made a commit at a glance: when there's no avatar picture, committers, users and projects show their initials on a color that stays the same everywhere.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -106,6 +108,9 @@
 <li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
 <li class="">Commit pages and the branch list no longer break when results were sent without a branch.</li>
 <li class="">Finished runs whose metrics don't include <code>is_failed</code> count as successful, instead of neither successful nor failed.</li>
+<li class="">The History page's per-test tables show their metric columns again, in tabs named "Metrics Table" and "Metrics Diff" like on commit pages.</li>
+<li class="">The SLAM and tuning plots no longer have Plotly's "Send to Cloud" button, so their data can't be uploaded to Plotly's public cloud.</li>
+<li class="">Links to the LSF docs and to the getting-started page work again, and the retired chat link now points to your server's support page (by default, QA-Board's GitHub issues).</li>
 </ul>]]></content:encoded>
         </item>
         <item>
