@@ -137,6 +137,7 @@
 <li class="">The projects list shows the description from <em>qaboard.yaml</em> (<code>project.description</code>) for projects that aren't on GitHub or GitLab too.</li>
 <li class="">The image viewer's <strong>Auto ROIs</strong> finds regions again, instead of failing with an error.</li>
 <li class="">In the image viewer, selecting a region (the selection button, or <code>c</code>) draws it again and shows its histograms, instead of panning the image.</li>
+<li class="">With Python 3.12 and later, <code>qa</code> no longer prints a <code>SyntaxWarning: invalid escape sequence</code> when it starts.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
