@@ -69,6 +69,10 @@
 <li class="">Redoing, deleting or marking a run as failed now requires access to its project, for restricted projects.</li>
 <li class="">Scripts can send results that describe their commit with only <code>commit_sha</code> and <code>commit_authored_datetime</code>: the other <code>commit_*</code> fields (branch, message, committer, parents) are optional, and the server doesn't need access to the git repository.</li>
 <li class="">Add pages for your own users to the docs your server serves: put them in <code>website/site-docs/&lt;site&gt;/</code> and build with <code>QABOARD_SITE=&lt;site&gt;</code>. They get their own menu, and the installation page links to them. At SIRC, "At SIRC" has the install commands and SIRC specifics.</li>
+<li class="">Pull QA-Board's images from <code>ghcr.io/samsung/qaboard</code>: <code>docker-compose.yml</code> uses them by default, each release has its own tags (e.g. <code>backend-1.2.0</code>), and <code>QABOARD_IMAGE</code> picks another registry.</li>
+<li class="">Install QA-Board on Kubernetes from the Helm chart published with each release, <code>oci://ghcr.io/samsung/charts/qaboard</code> (see <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/kubernetes">Kubernetes</a>).</li>
+<li class="">Try QA-Board on your laptop with kind: <code>charts/qaboard/quickstart.yaml</code> and <code>charts/qaboard/kind.yaml</code> start a small cluster where the <code>qa</code> CLI can save results (see <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/kubernetes">the quickstart</a>).</li>
+<li class="">Mount the storage where runs save results with the chart's new <code>results</code> setting (an existing claim, a new volume, NFS or a node folder): the chart mounts it where the backend, nginx and Cantaloupe expect it, and sets <code>QABOARD_STORAGE_ROOTS</code>.</li>
 <li class="">At SIRC, QA-Board no longer serves the storage over WebDAV (<code>/davs/algo/</code>): it let anyone write and delete files. <code>services/nginx/webdav.conf</code> explains how to bring it back.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="documentation">Documentation<a href="https://samsung.github.io/qaboard/release-notes/2026-10#documentation" class="hash-link" aria-label="Direct link to Documentation" title="Direct link to Documentation" translate="no">​</a></h2>
@@ -115,6 +119,8 @@
 <li class="">The History page's per-test tables show their metric columns again, in tabs named "Metrics Table" and "Metrics Diff" like on commit pages.</li>
 <li class="">The SLAM and tuning plots no longer have Plotly's "Send to Cloud" button, so their data can't be uploaded to Plotly's public cloud.</li>
 <li class="">Links to the LSF docs and to the getting-started page work again, and the retired chat link now points to your server's support page (by default, QA-Board's GitHub issues).</li>
+<li class="">Images show in the image viewer on servers that don't set <code>QABOARD_IMAGE_SERVERS</code>: the default is now Cantaloupe's <code>/iiif/2/</code> endpoint, instead of a <code>/iiif</code> URL that Cantaloupe couldn't answer.</li>
+<li class="">Upgrading the Helm chart no longer restarts the backend for nothing after a first install (its settings checksum included a generated secret that rendered differently each time).</li>
 </ul>]]></content>
     </entry>
     <entry>
