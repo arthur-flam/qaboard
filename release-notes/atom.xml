@@ -65,6 +65,7 @@
 <li class="">In the folders listed in <code>QABOARD_FILES_UNIX_PERMISSIONS</code> (e.g. <code>/home</code>), users only read the files that their own Unix account can read (see <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/user-management#unix-permissions">user management</a>).</li>
 <li class="">Without a complete <code>/etc/passwd</code>, e.g. with LDAP or SSSD, <code>QABOARD_ACCOUNTS_COMMAND</code> (and <code>QABOARD_GROUPS_COMMAND</code>) gives the backend the users' accounts, refreshed daily: the file browser shows owners' names instead of their ids (see <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/user-management#users-accounts">users' accounts</a>).</li>
 <li class="">Redoing, deleting or marking a run as failed now requires access to its project, for restricted projects.</li>
+<li class="">Scripts can send results that describe their commit with only <code>commit_sha</code> and <code>commit_authored_datetime</code>: the other <code>commit_*</code> fields (branch, message, committer, parents) are optional, and the server doesn't need access to the git repository.</li>
 <li class="">At SIRC, QA-Board no longer serves the storage over WebDAV (<code>/davs/algo/</code>): it let anyone write and delete files. <code>services/nginx/webdav.conf</code> explains how to bring it back.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="documentation">Documentation<a href="https://samsung.github.io/qaboard/release-notes/2026-10#documentation" class="hash-link" aria-label="Direct link to Documentation" title="Direct link to Documentation" translate="no">​</a></h2>
@@ -101,6 +102,9 @@
 <li class=""><code>qa optimize</code> works with recent versions of scikit-optimize, instead of failing with "cannot import name 'Integer'".</li>
 <li class="">On Windows, <code>qa batch</code> finds existing results for projects whose name contains a "/", instead of failing with "could not find any data on commit ID": <code>--action-on-existing</code> works there.</li>
 <li class="">Redoing runs from QA-Board respects the batch's concurrency, and uses the runner the runs were started with (e.g. Dask) and its settings. QA-Board used to start each run with its own <code>qa batch</code>, so they all ran at once, with the default runner.</li>
+<li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
+<li class="">Commit pages and the branch list no longer break when results were sent without a branch.</li>
+<li class="">Finished runs whose metrics don't include <code>is_failed</code> count as successful, instead of neither successful nor failed.</li>
 </ul>]]></content>
     </entry>
     <entry>
