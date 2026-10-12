@@ -131,6 +131,7 @@
 <li class="">ROIs set on inputs of another size than the output images are placed right on non-square images, in the thumbnails and when you zoom on them.</li>
 <li class="">The projects list shows the description from <em>qaboard.yaml</em> (<code>project.description</code>) for projects that aren't on GitHub or GitLab too.</li>
 <li class="">The image viewer's <strong>Auto ROIs</strong> finds regions again, instead of failing with an error.</li>
+<li class="">In the image viewer, selecting a region (the selection button, or <code>c</code>) draws it again and shows its histograms, instead of panning the image.</li>
 </ul>]]></content>
     </entry>
     <entry>
