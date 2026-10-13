@@ -100,6 +100,7 @@
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="fixes">Fixes<a href="https://samsung.github.io/qaboard/release-notes/2026-10#fixes" class="hash-link" aria-label="Direct link to Fixes" title="Direct link to Fixes" translate="no">​</a></h2>
 <ul>
+<li class="">In History, the chart's axis no longer shows the metric's unit when the values are relative to the first commit (@100).</li>
 <li class="">With LSF job arrays and the Dask runner, <code>qa run</code> no longer deletes the log file its output goes to: errors are no longer lost.</li>
 <li class="">The tuning form shows a readable error instead of the server's raw response.</li>
 <li class="">A stuck run's "Mark as Finished" action is now labelled "Mark as Failed", which is what it does.</li>
