@@ -166,6 +166,8 @@
 <li class="">The Summary only warns that it mixes runs with different parameters when the runs it aggregates really have different parameters: filter the runs to compare one configuration.</li>
 <li class="">Artifacts &amp; Configurations shows the artifacts again when the commit loads after the view, instead of "Could not find" them.</li>
 <li class="">Run Tests / Tuning runs as you when you open it from a link: it no longer asks for a user it can't let you type, with Send disabled.</li>
+<li class="">Projects whose inputs are inside the project (a relative <code>inputs.database</code>, like <code>inputs</code>) see their tests in the Run Tests / Tuning form and in Available Tests: they are looked for in the commit's artifacts, where the runs started from QA-Board run, instead of in a folder of the server.</li>
+<li class="">Runs started from QA-Board are the logged-in user's, instead of the server's user.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
