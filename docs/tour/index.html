@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.31eb8e5d.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.915de29a.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.e872f277.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.19dfa8af.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -68,9 +68,9 @@ The <strong>Analysis</strong> view then shows how each parameter matters, and th
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="6-gate">6. Gate<a href="#6-gate" class="hash-link" aria-label="Direct link to 6. Gate" title="Direct link to 6. Gate" translate="no">​</a></h2>
 <div class="theme-admonition theme-admonition-caution admonition_xJq3 alert alert--warning"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13.499a.98.98 0 0 0 0 1.001c.193.31.53.501.886.501h13.964c.367 0 .704-.19.877-.5a1.03 1.03 0 0 0 .01-1.002L8.893 1.5zm.133 11.497H6.987v-2.003h2.039v2.003zm0-3.004H6.987V5.987h2.039v4.006z"></path></svg></span>Experimental</div><div class="admonitionContent_BuS1"><p>The quality gate may change without notice.</p></div></div>
 <p>Coding agents write a growing share of changes, and &quot;it&#x27;s faster&quot; needs checking. The inference server team&#x27;s coding
-agent added a cache that made the median latency better and p99 much worse. <code>qa gate</code> compares the commit with the
+agent added a cache that saved CPU and took p99 from milliseconds to seconds. <code>qa gate</code> compares the commit with the
 reference, rule by rule, and fails the CI job.</p>
-<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Terminal recording not recorded yet: `qa gate` on the shared-cache commit: the rules table, p99 45% worse against a 10% limit, exit code 1."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Terminal recording not recorded yet</span><p class="placeholderShows_Lq6i">`qa gate` on the shared-cache commit: the rules table, p99 45% worse against a 10% limit, exit code 1.</p><span class="placeholderIds_FT2E"><code>cli/gate</code></span></div></div></figure>
+<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Terminal recording not recorded yet: `qa gate` on the shared-cache commit: the rules table, p99 much worse than the 10% limit, exit code 1."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Terminal recording not recorded yet</span><p class="placeholderShows_Lq6i">`qa gate` on the shared-cache commit: the rules table, p99 much worse than the 10% limit, exit code 1.</p><span class="placeholderIds_FT2E"><code>cli/gate</code></span></div></div></figure>
 <p>See <a class="" href="/qaboard/docs/quality-gate">Quality gate</a>.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="and-more">And more<a href="#and-more" class="hash-link" aria-label="Direct link to And more" title="Direct link to And more" translate="no">​</a></h2>
 <ul>
@@ -81,7 +81,7 @@ reference, rule by rule, and fails the CI job.</p>
 <li class=""><strong>Bit accuracy:</strong> check that a change didn&#x27;t alter any output file, e.g. before handing a model to a hardware team.
 See <a class="" href="/qaboard/docs/bit-accuracy">Bit accuracy</a>.</li>
 </ul>
-<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Clip not recorded yet: A running run&#x27;s log follows the end, the error count grows, Next error jumps to a missed deadline."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Clip not recorded yet</span><p class="placeholderShows_Lq6i">A running run&#x27;s log follows the end, the error count grows, Next error jumps to a missed deadline.</p><span class="placeholderIds_FT2E"><code>logs/live-tail</code></span></div></div></figure>
+<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Clip not recorded yet: A running run&#x27;s log follows the end, the error count grows, Next error jumps to a missed deadline (a bursty-high run of tuned-batching started during the recording)."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Clip not recorded yet</span><p class="placeholderShows_Lq6i">A running run&#x27;s log follows the end, the error count grows, Next error jumps to a missed deadline (a bursty-high run of tuned-batching started during the recording).</p><span class="placeholderIds_FT2E"><code>logs/live-tail</code></span></div></div></figure>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="try-it">Try it<a href="#try-it" class="hash-link" aria-label="Direct link to Try it" title="Direct link to Try it" translate="no">​</a></h2>
 <ul>
 <li class=""><a class="" href="/qaboard/docs/get-started/quickstart">Run QA-Board on your computer</a>.</li>
