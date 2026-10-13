@@ -155,6 +155,7 @@
 <li class="">In the Metrics Table, the New and Ref headers stay over their columns when a filter leaves out every run that has some metric, and metrics without a target show just their unit, like <code>[s]</code>.</li>
 <li class="">Counters say "1 output", "1 run" and "1 project" instead of "1 outputs", "1 runs" and "1 projects".</li>
 <li class="">In the image viewer, changing a Dynamic Option (e.g. a slider over your pipeline's stages) keeps the zoom and the selected ROI, for the new and reference images, instead of zooming out to the whole image, most often when the reference's image showed up. Images with another aspect ratio fit the selected ROI again.</li>
+<li class="">Output Files tags runs <strong>Bit-accurate</strong> when their output files match the reference's: like <code>qa check-bit-accuracy</code>, it only checks the files that match <code>bit_accuracy.patterns</code> in <em>qaboard.yaml</em> (all files by default, except logs, <code>run.json</code> and <code>metrics.json</code>). The other files are still listed when they differ, greyed and tagged "not checked". See <a class="" href="https://samsung.github.io/qaboard/docs/bit-accuracy#what-files-are-checked">bit-accuracy tests</a>.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
