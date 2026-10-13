@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.e872f277.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.19dfa8af.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.1bd27113.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.2f5b1c51.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -133,7 +133,7 @@ other commit is compared with.</p>
 branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>). The <strong>Metrics Diff</strong> view shows how each metric changed, run
 by run: green when it got better, red when it got worse. The outputs show side by side. To compare with a release
 instead, make it a <a class="" href="/qaboard/docs/references-and-milestones">milestone</a>.</p>
-<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Screenshot not captured yet: int8 against fp32 per slice: latency green everywhere, AP small red on the small-objects slice."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Screenshot not captured yet</span><p class="placeholderShows_Lq6i">int8 against fp32 per slice: latency green everywhere, AP small red on the small-objects slice.</p><span class="placeholderIds_FT2E"><code>commit/metrics-diff</code></span></div></div></figure>
+<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Screenshot not captured yet: int8 against fp32 per slice: model size green everywhere, mAP and AP small red on the indoor slice, AP small red on small-objects."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Screenshot not captured yet</span><p class="placeholderShows_Lq6i">int8 against fp32 per slice: model size green everywhere, mAP and AP small red on the indoor slice, AP small red on small-objects.</p><span class="placeholderIds_FT2E"><code>commit/metrics-diff</code></span></div></div></figure>
 <div class="theme-admonition theme-admonition-caution admonition_xJq3 alert alert--warning"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13.499a.98.98 0 0 0 0 1.001c.193.31.53.501.886.501h13.964c.367 0 .704-.19.877-.5a1.03 1.03 0 0 0 .01-1.002L8.893 1.5zm.133 11.497H6.987v-2.003h2.039v2.003zm0-3.004H6.987V5.987h2.039v4.006z"></path></svg></span>Experimental</div><div class="admonitionContent_BuS1"><p><code>qa gate</code> and the <code>gate:</code> section of <em>qaboard.yaml</em> may change without notice.</p></div></div>
 <p>To fail CI when quality regresses, add rules under <code>gate:</code> in <em>qaboard.yaml</em>, and run <code>qa gate</code> after <code>qa batch ci</code>.
 It compares the commit&#x27;s metrics with the reference&#x27;s, and fails the CI job when a rule fails. The camera ISP example
