@@ -36,6 +36,7 @@
 <li class="">When you filter a batch's runs, the commit bar menu redoes only the runs that match the filter. Follow redone runs in the Logs view, under "Started from QA-Board". See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/running-from-the-webapp">user guide</a>.</li>
 <li class="">Find your way around from the History page: the sidebar shows the project's navigation (the branch's commits, Code, History, Integrations, Milestones), and moving between these pages no longer reloads the app.</li>
 <li class="">See who made a commit at a glance: when there's no avatar picture, committers, users and projects show their initials on a color that stays the same everywhere.</li>
+<li class="">The Analysis view of a <code>qa optimize</code> experiment plots its convergence itself: each iteration's objective and the best one so far, even when matplotlib isn't installed where <code>qa optimize</code> ran.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -161,6 +162,10 @@
 <li class="">The chart above a branch's commits shows the branch's metrics, the median or average over each commit's runs, instead of staying empty. Each commit row also shows the median and average of the default metric over its CI runs.</li>
 <li class="">The Auto-Tuning Analysis plots each iteration's metrics (those in the objective) next to the objective, for tunings run from now on: <code>qa optimize</code> used to get no metrics from the server.</li>
 <li class="">The commit list's day headers say "1 commit" instead of "1 Commits".</li>
+<li class="">HTML outputs (like a run's report) show their images and links, which are relative to their own folder, and their styles no longer change the rest of the page: they show in a frame, without running scripts.</li>
+<li class="">The Summary only warns that it mixes runs with different parameters when the runs it aggregates really have different parameters: filter the runs to compare one configuration.</li>
+<li class="">Artifacts &amp; Configurations shows the artifacts again when the commit loads after the view, instead of "Could not find" them.</li>
+<li class="">Run Tests / Tuning runs as you when you open it from a link: it no longer asks for a user it can't let you type, with Send disabled.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
