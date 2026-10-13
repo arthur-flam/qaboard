@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.8cc0dce3.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.ac405cc3.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.7b416879.js" defer="defer"></script>
 </head>
 <body>
@@ -156,6 +156,7 @@
 <li class="">The image viewer&#x27;s <strong>Auto ROIs</strong> finds regions again, instead of failing with an error.</li>
 <li class="">In the image viewer, selecting a region (the selection button, or <code>c</code>) draws it again and shows its histograms, instead of panning the image.</li>
 <li class="">With Python 3.12 and later, <code>qa</code> no longer prints a <code>SyntaxWarning: invalid escape sequence</code> when it starts.</li>
+<li class=""><code>qa batch --tuning-search</code> runs a grid search when the JSON doesn&#x27;t say <code>search_type</code>, as the docs show, instead of failing with <code>KeyError: &#x27;search_type&#x27;</code>.</li>
 <li class="">The Summary&#x27;s change in % has the right sign for metrics with negative values, and runs that return no value (<code>null</code>) for a metric no longer count as 0 in its median.</li>
 <li class="">Plots saved with <code>side_by_side: false</code> draw the reference run&#x27;s traces on the same axes, instead of nothing when a figure has several traces. Traces keep their own dash style.</li>
 <li class="">Differential flame graphs are colored by what changed: red for frames that take more time than in the reference, blue for less, orange for new ones. The colors no longer exaggerate changes near the root.</li>
