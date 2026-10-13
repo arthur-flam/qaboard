@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.78ba3954.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.d53fa530.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.eeb30d11.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.eac12b4c.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -31,8 +31,7 @@ better.</p>
 <p>This tour follows the teams of Kitefin Robotics, a fictional company that builds camera robots. They use QA-Board for
 a camera pipeline, an object detector and an inference server. Their projects are real code, in
 <a href="https://github.com/Samsung/qaboard/tree/master/examples" target="_blank" rel="noopener noreferrer" class=""><code>examples/</code></a>: the history is made up, but every number and
-image comes from running them. The detector and the inference server are still being built: their clips show as
-placeholders until then.</p>
+image comes from running them. Some clips are still being recorded: they show as placeholders until then.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="1-run">1. Run<a href="#1-run" class="hash-link" aria-label="Direct link to 1. Run" title="Direct link to 1. Run" translate="no">​</a></h2>
 <p>Wrap your code with <code>qa</code>, then run it on a batch of inputs: on your computer, on a cluster, or in CI on every push.
 The detector team&#x27;s CI runs <code>qa batch ci</code> on each commit: the evaluation slices, with the fp32 and int8 models.</p>
@@ -81,6 +80,7 @@ reference, rule by rule, and fails the CI job.</p>
 <li class=""><strong>Bit accuracy:</strong> check that a change didn&#x27;t alter any output file, e.g. before handing a model to a hardware team.
 See <a class="" href="/qaboard/docs/bit-accuracy">Bit accuracy</a>.</li>
 </ul>
+<p>A run&#x27;s log, live: it follows the end, counts the errors, and jumps to the next one.</p>
 <figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Clip not recorded yet: A running run&#x27;s log follows the end, the error count grows, Next error jumps to a missed deadline (a bursty-high run of tuned-batching started during the recording)."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Clip not recorded yet</span><p class="placeholderShows_Lq6i">A running run&#x27;s log follows the end, the error count grows, Next error jumps to a missed deadline (a bursty-high run of tuned-batching started during the recording).</p><span class="placeholderIds_FT2E"><code>logs/live-tail</code></span></div></div></figure>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="try-it">Try it<a href="#try-it" class="hash-link" aria-label="Direct link to Try it" title="Direct link to Try it" translate="no">​</a></h2>
 <ul>

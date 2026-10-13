@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.78ba3954.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.d53fa530.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.eeb30d11.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.eac12b4c.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -64,6 +64,9 @@ new.</p>
 fixed, open-loop load, throughput is the load itself.) With batching off, the maximum delay changes nothing: those
 runs land apart only by noise, which shows how far apart two configurations must be to differ.</p>
 <figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Screenshot not captured yet: The tune-batching sweep&#x27;s efficient frontier of CPU per request against p99 (12 configurations), with the chosen one on it, within the noise between identical configurations."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Screenshot not captured yet</span><p class="placeholderShows_Lq6i">The tune-batching sweep&#x27;s efficient frontier of CPU per request against p99 (12 configurations), with the chosen one on it, within the noise between identical configurations.</p><span class="placeholderIds_FT2E"><code>tuning/frontier</code></span></div></div></figure>
+<p><strong>History</strong> finds the payload copy: filtered on the heavy-tailed profile, the p99 line jumps at that commit, and
+hovering along it shows each commit&#x27;s results next to the commit before.</p>
+<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Clip not recorded yet: Filtered on heavy-tail-high, hovering along the line until the card changes at payload-copy, then a click freezes it as the reference."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Clip not recorded yet</span><p class="placeholderShows_Lq6i">Filtered on heavy-tail-high, hovering along the line until the card changes at payload-copy, then a click freezes it as the reference.</p><span class="placeholderIds_FT2E"><code>history/find-regression</code></span></div></div></figure>
 <p><strong>The quality gate</strong> (experimental) fails CI on the agent&#x27;s commit: p99 is over its limit.</p>
 <figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Terminal recording not recorded yet: `qa gate` on the shared-cache commit: the rules table, p99 much worse than the 10% limit, exit code 1."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Terminal recording not recorded yet</span><p class="placeholderShows_Lq6i">`qa gate` on the shared-cache commit: the rules table, p99 much worse than the 10% limit, exit code 1.</p><span class="placeholderIds_FT2E"><code>cli/gate</code></span></div></div></figure>
 <p>See <a class="" href="/qaboard/docs/quality-gate">Quality gate</a> to set rules on your own metrics.</p>

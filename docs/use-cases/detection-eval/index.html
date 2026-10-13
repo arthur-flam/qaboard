@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.78ba3954.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.d53fa530.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.eeb30d11.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.eac12b4c.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -65,6 +65,9 @@ the indoor slice.</p>
 <p><strong>Automated tuning</strong>: <code>qa optimize</code> tries quantization settings; the Analysis view shows their convergence, each
 parameter&#x27;s effect, and the trade-offs.</p>
 <figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Screenshot not captured yet: The tune-int8 Analysis: convergence, sensitivity to each parameter, parallel coordinates, best parameters."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Screenshot not captured yet</span><p class="placeholderShows_Lq6i">The tune-int8 Analysis: convergence, sensitivity to each parameter, parallel coordinates, best parameters.</p><span class="placeholderIds_FT2E"><code>tuning/analysis</code></span></div></div></figure>
+<p><strong>A milestone</strong> for the release: the tuned model&#x27;s commit is saved with a label and notes, shared with the team, and
+becomes the reference the next changes are compared with.</p>
+<figure class="figure_SMyr"><div class="placeholder_h76v" style="aspect-ratio:16 / 10" role="img" aria-label="Screenshot not captured yet: The star&#x27;s dialog on kd-1-3, with a label, notes and Shared on."><div class="placeholderBody_daQp" aria-hidden="true"><span class="placeholderLabel_eDiU">Screenshot not captured yet</span><p class="placeholderShows_Lq6i">The star&#x27;s dialog on kd-1-3, with a label, notes and Shared on.</p><span class="placeholderIds_FT2E"><code>commit/milestone</code></span></div></div></figure>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="the-configuration">The configuration<a href="#the-configuration" class="hash-link" aria-label="Direct link to The configuration" title="Direct link to The configuration" translate="no">​</a></h2>
 <p><code>:image</code> in a path gives a slider over the slice&#x27;s images, synced across runs. The plots set their traces&#x27; colors, so
 with <code>side_by_side: false</code> the web app draws the reference dashed and faded on the same axes.</p>
