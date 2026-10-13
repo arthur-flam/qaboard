@@ -14,9 +14,9 @@
 
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
-<link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8ea867f4.css">
-<script src="/qaboard/assets/js/runtime~main.3513a5cc.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.73e1cc31.js" defer="defer"></script>
+<link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.42b44343.css">
+<script src="/qaboard/assets/js/runtime~main.47260e5f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.e6076fa3.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -124,9 +124,9 @@ better, it should be checked like a person&#x27;s change: same batches, same Met
 make that the default.</p>
 <div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u shipped_J_ht" title="Released and documented: use it today.">Shipped</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="bit-accuracy-checks-in-ci">Bit-accuracy checks in CI<a href="#bit-accuracy-checks-in-ci" class="hash-link" aria-label="Direct link to Bit-accuracy checks in CI" title="Direct link to Bit-accuracy checks in CI" translate="no">​</a></h3><p><code>qa check-bit-accuracy</code> fails the CI job when outputs differ from the reference&#x27;s, and prints a link to the
 differences. See <a class="" href="/qaboard/docs/bit-accuracy">Bit accuracy</a>.</p></div></div>
-<div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u next_LvKC" title="What we&#x27;re building now or next.">Next</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="quality-gate">Quality gate<a href="#quality-gate" class="hash-link" aria-label="Direct link to Quality gate" title="Direct link to Quality gate" translate="no">​</a></h3><p><code>qa gate</code> fails CI when quality regresses against the reference: rules per metric (a maximum regression, an absolute
-floor, a limit for each test), a summary in the CI job, and a commit status that links to the Metrics Diff. An
-experimental first version is in progress.</p></div></div>
+<div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u experimental_lC3d" title="Released, but may change without notice.">Experimental</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="quality-gate">Quality gate<a href="#quality-gate" class="hash-link" aria-label="Direct link to Quality gate" title="Direct link to Quality gate" translate="no">​</a></h3><p><code>qa gate</code> fails CI when quality regresses against the reference: rules per metric (a maximum regression, an absolute
+floor, a limit for each test), a summary in the CI job, and a commit status that links to the Metrics Diff. See
+<a class="" href="/qaboard/docs/quality-gate">Quality gate</a>.</p></div></div>
 <div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u next_LvKC" title="What we&#x27;re building now or next.">Next</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="openapi-spec-and-json-output">OpenAPI spec and JSON output<a href="#openapi-spec-and-json-output" class="hash-link" aria-label="Direct link to OpenAPI spec and JSON output" title="Direct link to OpenAPI spec and JSON output" translate="no">​</a></h3><p>A documented HTTP API, and JSON output from <code>qa</code> commands, so that scripts and agents read results without parsing
 text.</p></div></div>
 <div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u next_LvKC" title="What we&#x27;re building now or next.">Next</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="an-mcp-server-read-only-first">An MCP server, read-only first<a href="#an-mcp-server-read-only-first" class="hash-link" aria-label="Direct link to An MCP server, read-only first" title="Direct link to An MCP server, read-only first" translate="no">​</a></h3><p><code>qa mcp</code> lets agents read results, Metrics Diffs, failing tests and image crops. Starting batches comes later.</p></div></div>

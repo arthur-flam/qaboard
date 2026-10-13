@@ -50,6 +50,7 @@
 <li class="">Configure the Windows runner's PowerShell <code>$ErrorActionPreference</code> per job (the batch's <code>error_action:</code> option) or with the <code>QA_RUNNER_ERROR_ACTION</code> environment variable (default <code>Stop</code>).</li>
 <li class=""><code>qa batch --runs-file runs.json</code> does a list of runs, each with its input, configurations, parameters and runner options. QA-Board uses it to redo runs together. See the <a class="" href="https://samsung.github.io/qaboard/docs/using-the-qa-cli">CLI tips</a>.</li>
 <li class="">With <code>--no-wait</code> and an existing Dask cluster (<code>scheduler_address</code>), the Dask runner now enforces <code>concurrency</code>: a driver LSF job sends the runs, as without <code>scheduler_address</code>. See the <a class="" href="https://samsung.github.io/qaboard/docs/dask-integration">Dask runner</a>.</li>
+<li class="">Fail the CI when quality regresses, with the experimental <code>qa gate</code>: set rules in <em>qaboard.yaml</em> (<code>gate:</code>) on the median of a metric vs a reference branch, milestone or commit, on each test, on failed runs or on bit-accuracy. It prints a table (or Markdown, or JSON), fills the GitHub Actions job summary, and can post a commit status to GitHub or GitLab that links to the Metrics Diff. See <a class="" href="https://samsung.github.io/qaboard/docs/quality-gate">Quality gate</a>.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>
@@ -75,6 +76,7 @@
 <li class="">Try QA-Board on your laptop with kind: <code>charts/qaboard/quickstart.yaml</code> and <code>charts/qaboard/kind.yaml</code> start a small cluster where the <code>qa</code> CLI can save results (see <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/kubernetes">the quickstart</a>).</li>
 <li class="">Mount the storage where runs save results with the chart's new <code>results</code> setting (an existing claim, a new volume, NFS or a node folder): the chart mounts it where the backend, nginx and Cantaloupe expect it, and sets <code>QABOARD_STORAGE_ROOTS</code>.</li>
 <li class="">At SIRC, QA-Board no longer serves the storage over WebDAV (<code>/davs/algo/</code>): it let anyone write and delete files. <code>services/nginx/webdav.conf</code> explains how to bring it back.</li>
+<li class="">Get the numbers of the Summary and Metrics Diff views from scripts and agents, with the experimental <code>/api/v1/commit/&lt;sha&gt;/compare</code>: each metric's median vs a reference, each run vs its reference run, and how many runs failed. See <a class="" href="https://samsung.github.io/qaboard/docs/quality-gate#from-scripts-and-agents">Quality gate</a>.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="documentation">Documentation<a href="https://samsung.github.io/qaboard/release-notes/2026-10#documentation" class="hash-link" aria-label="Direct link to Documentation" title="Direct link to Documentation" translate="no">​</a></h2>
 <ul>
@@ -138,6 +140,7 @@
 <li class="">The image viewer's <strong>Auto ROIs</strong> finds regions again, instead of failing with an error.</li>
 <li class="">In the image viewer, selecting a region (the selection button, or <code>c</code>) draws it again and shows its histograms, instead of panning the image.</li>
 <li class="">With Python 3.12 and later, <code>qa</code> no longer prints a <code>SyntaxWarning: invalid escape sequence</code> when it starts.</li>
+<li class="">The Summary's change in % has the right sign for metrics with negative values, and runs that return no value (<code>null</code>) for a metric no longer count as 0 in its median.</li>
 </ul>]]></content:encoded>
         </item>
         <item>
