@@ -155,6 +155,9 @@
 <li class="">Counters say "1 output", "1 run" and "1 project" instead of "1 outputs", "1 runs" and "1 projects".</li>
 <li class="">In the image viewer, changing a Dynamic Option (e.g. a slider over your pipeline's stages) keeps the zoom and the selected ROI, for the new and reference images, instead of zooming out to the whole image, most often when the reference's image showed up. Images with another aspect ratio fit the selected ROI again.</li>
 <li class="">Output Files tags runs <strong>Bit-accurate</strong> when their output files match the reference's: like <code>qa check-bit-accuracy</code>, it only checks the files that match <code>bit_accuracy.patterns</code> in <em>qaboard.yaml</em> (all files by default, except logs, <code>run.json</code> and <code>metrics.json</code>). The other files are still listed when they differ, greyed and tagged "not checked". See <a class="" href="https://samsung.github.io/qaboard/docs/bit-accuracy#what-files-are-checked">bit-accuracy tests</a>.</li>
+<li class="">The chart above a branch's commits shows the branch's metrics, the median or average over each commit's runs, instead of staying empty. Each commit row also shows the median and average of the default metric over its CI runs.</li>
+<li class="">The Auto-Tuning Analysis plots each iteration's metrics (those in the objective) next to the objective, for tunings run from now on: <code>qa optimize</code> used to get no metrics from the server.</li>
+<li class="">The commit list's day headers say "1 commit" instead of "1 Commits".</li>
 </ul>]]></content>
     </entry>
     <entry>
