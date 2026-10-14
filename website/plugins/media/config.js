@@ -23,6 +23,8 @@ const truthy = value => ['1', 'true', 'yes', 'on'].includes(String(value ?? '').
 /**
  * QABOARD_MEDIA=local|remote|placeholder overrides the mode (default: local for builds, remote otherwise),
  * QABOARD_MEDIA_BASE_URL points at a mirror of the bucket, QABOARD_MEDIA_STRICT=1 turns warnings into errors.
+ * QABOARD_MEDIA_MISSING=placeholder: in local mode, shots whose files can't be downloaded (e.g. a proxy blocks videos)
+ * render as placeholders instead of failing the build.
  */
 function resolveMediaConfig(env = process.env, argv = process.argv) {
   const requested = String(env.QABOARD_MEDIA ?? '').trim().toLowerCase();
@@ -32,10 +34,14 @@ function resolveMediaConfig(env = process.env, argv = process.argv) {
   const baseUrlOverride = String(env.QABOARD_MEDIA_BASE_URL ?? '').trim().replace(/\/+$/, '');
   if (baseUrlOverride && !/^https?:\/\/[^/]+/.test(baseUrlOverride))
     throw new Error(`QABOARD_MEDIA_BASE_URL=${baseUrlOverride}: expected an http(s) URL`);
+  const missing = String(env.QABOARD_MEDIA_MISSING ?? '').trim().toLowerCase() || 'fail';
+  if (!['fail', 'placeholder'].includes(missing))
+    throw new Error(`QABOARD_MEDIA_MISSING=${env.QABOARD_MEDIA_MISSING}: expected fail or placeholder`);
   return {
     mode: requested || (isBuild ? 'local' : 'remote'),
     strict: truthy(env.QABOARD_MEDIA_STRICT),
     baseUrlOverride: baseUrlOverride || null,
+    missing,
     isBuild,
   };
 }

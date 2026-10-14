@@ -113,9 +113,19 @@ module.exports = function qaboardMediaPlugin(context, options = {}) {
         if (config.mode === 'local') {
           content.base = `/${SERVED_PREFIX}/`;
           const wanted = published.flatMap(id => Object.values(files[id]));
-          const stats = await syncMedia(wanted, {baseUrl, destDir: cacheDir, log: m => logger.info(`[qaboard-media] ${m}`)});
+          const allowFailures = config.missing === 'placeholder' && !config.strict;
+          const stats = await syncMedia(wanted, {baseUrl, destDir: cacheDir, allowFailures, log: m => logger.info(`[qaboard-media] ${m}`)});
           if (stats.removed)
             logger.info(`[qaboard-media] removed ${stats.removed} cached files no page uses`);
+          // QABOARD_MEDIA_MISSING=placeholder: shots with a file we couldn't download become placeholders
+          const failed = new Set(stats.failed);
+          const incomplete = published.filter(id => Object.values(files[id]).some(file => failed.has(file.key)));
+          for (const id of incomplete) {
+            delete content.shots[id];
+            content.planned[id] = plannedEntry(manifest.shots[id], shotList?.[id]);
+          }
+          if (incomplete.length)
+            logger.warn(`[qaboard-media] ${incomplete.length} shots render as placeholders, some of their files could not be downloaded: ${incomplete.join(', ')}`);
           // A static directory with folders but no files makes the build fail
           if (!wanted.length)
             fs.rmSync(path.join(siteDir, CACHE_DIR), {recursive: true, force: true});

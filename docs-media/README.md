@@ -521,8 +521,10 @@ tooling and contributors only: it never appears in a page.
 - **Remote** mode (default for `yarn start`): components load straight from `base_url`, nothing is downloaded. The
   bucket's CORS headers let clips load their captions cross-origin.
 - `QABOARD_MEDIA=local|remote|placeholder` overrides the mode. `placeholder` builds without network access (every
-  shot renders as a placeholder). `QABOARD_MEDIA_BASE_URL` points at a mirror for air-gapped builds. The website
-  image passes both as build args.
+  shot renders as a placeholder). `QABOARD_MEDIA_BASE_URL` points at a mirror for air-gapped builds.
+  `QABOARD_MEDIA_MISSING=placeholder` keeps a local build going when some files can't be downloaded (e.g. a proxy
+  blocks videos): those shots render as placeholders, with a warning (strict builds still fail). An HTML answer for a
+  media file (a proxy's "blocked" page) isn't retried. The website image passes all three as build args.
 - The plugin exposes `{mode, base, shots, planned}` as global data for the components (`planned`: what placeholders
   show).
 - After a build in local or placeholder mode, the build fails if the media hostname (or the mirror's) appears in the
