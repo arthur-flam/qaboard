@@ -25,7 +25,8 @@ from ..runners import Job, JobGroup
 from ..conventions import make_batch_conf_dir, serialize_config
 from ..utils import load_tuning_search, getenvs
 from ..api import url_to_dir, print_url, get_outputs, notify_qa_database, serialize_paths
-from ..iterators import iter_inputs, iter_parameters
+from ..iterators import iter_inputs, iter_parameters, load_runs_file, iter_runs, rerun_job_options, local_job_options
+from ..batch_logs import saves_logs, batch_log
 from ..config import project, subproject, config, commit_id, outputs_commit, is_ci, on_windows
 from ..config import get_default_database, default_batch_label, default_platform
 from ..config import get_default_configuration, default_input_type
@@ -46,6 +47,7 @@ PANEL_DASK = "Dask runner"
     allow_interspersed_args=True,
   ),
 )
+@saves_logs
 def batch(
   ctx: typer.Context,
   batch_names: Annotated[Optional[List[str]], typer.Argument(
@@ -60,6 +62,10 @@ def batch(
     '--batches-file', parser=Path, metavar='PATH', rich_help_panel=PANEL_BATCHES,
     help="YAML files defining batches. Defaults to `inputs.batches` in qaboard.yaml.",
   )] = default_batches_files_list,
+  runs_file: Annotated[Optional[Path], typer.Option(
+    '--runs-file', parser=Path, metavar='PATH', rich_help_panel=PANEL_BATCHES,
+    help='Instead of batches, a JSON file listing the runs to do, e.g. to redo runs: {"runs": [{"input_path", "database", "type", "platform", "configurations", "extra_parameters", "job_options"}]}. Runs are done with the runner and job options they list, unless you give a --runner.',
+  )] = None,
   tuning_search_dict: Annotated[Optional[str], typer.Option(
     '--tuning-search', metavar='JSON', rich_help_panel=PANEL_BATCHES,
     help="""Tuning parameters to explore, as JSON: {"parameter_search": {"gain": [1, 2]}}. Optional: "search_type": "grid" (default) or "sampler" with "search_options": {"n_iter": 10}.""",
@@ -153,11 +159,12 @@ def batch(
       qa --share --label new-denoiser batch my-batch other-batch --runner local
       qa batch my-batch --list
       qa batch my-batch -- --flag-for-your-code
+      qa batch --runs-file runs.json
   """
   from ..runners import runners
   from .run import use_click_compat_context
   use_click_compat_context(ctx) # for the iter_inputs() and metadata() functions of user code
-  if not batches_files:
+  if not batches_files and not runs_file:
     typer.secho('WARNING: Could not find how to identify input tests.', fg='red', err=True, bold=True)
     typer.secho('Consider adding to qaboard.yaml somelike like:\n```\ninputs:\n  batches: batches.yaml\n```', fg='red', err=True)
     typer.secho('Where batches.yaml is formatted like in https://samsung.github.io/qaboard/docs/batches-running-on-multiple-inputs', fg='red', err=True)
@@ -179,15 +186,26 @@ def batch(
       filtered_batch_names.append(arg)
   batches = list(filtered_batch_names) + list(batches)
 
-  if not batches:
+  if runs_file and batches:
+    raise typer.BadParameter("Use either batches or --runs-file, not both.", param_hint="'--runs-file'")
+  if not batches and not runs_file:
     typer.secho('ERROR: you must provide a batch', fg='red', err=True, bold=True)
     typer.secho('Use either `qa batch BATCH`, `qa batch BATCH_1 BATCH_2` or `qa batch --batch BATCH_2 --batch BATCH_2`', fg='red', err=True)
     raise typer.Exit(1)
 
+  runs = load_runs_file(runs_file) if runs_file else None
+  # How the runs were started. Some options are for the whole batch, e.g. the concurrency
+  runs_job_options: Dict[str, Any] = next((run['job_options'] for run in runs or [] if run.get('job_options')), {})
+  # Unless asked otherwise, runs are done again with the runner they were started with
+  keeps_runs_runner = runs is not None and runner == default_runner
+  if keeps_runs_runner and runs_job_options.get('type'):
+    runner = runs_job_options['type']
+
   print_url(ctx)
   # if the commit does not exist or there are network errors it will return empty data
   existing_outputs = get_outputs(ctx.obj, ignore_errors=True)
-  command_id = os.environ.get('QA_BATCH_COMMAND_ID', str(uuid.uuid4())) # unique IDs for triggered runs makes it easier to wait/cancel them
+  log = batch_log(ctx)
+  command_id = os.environ.get('QA_BATCH_COMMAND_ID', log['command_id'] if log else str(uuid.uuid4())) # unique IDs for triggered runs makes it easier to wait/cancel them
   if 'QA_BATCH_COMMAND_ID' in os.environ:
     # some projects have run() trigger further "qa batch" commands, notably in "pipelines"
     # so if we keep it defined we'll end up with deadlocks as those batch wait for the current batch to end...
@@ -204,9 +222,12 @@ def batch(
       "runner": runner,
       **ctx.obj,
     }
-    if runner == 'dask' and dask_config.get('scheduler_address'):
+    if log:
+      command_data['log'] = log['path'] # relative to the batch directory
+    scheduler_address = runs_job_options.get('scheduler_address', dask_config.get('scheduler_address'))
+    if runner == 'dask' and scheduler_address:
       # so that the backend can stop the batch
-      command_data['scheduler_address'] = dask_config['scheduler_address']
+      command_data['scheduler_address'] = scheduler_address
     job_url = getenvs(('BUILD_URL', 'CI_JOB_URL', 'CIRCLE_BUILD_URL', 'TRAVIS_BUILD_WEB_URL')) # jenkins, gitlabCI, circleCI, travisCI
     if job_url:
       command_data['job_url'] = job_url
@@ -277,14 +298,27 @@ def batch(
   # For backward compatibility, combine for JobGroup
   default_runner_options = {**base_runner_options, **cli_runner_overrides}
 
-  jobs = JobGroup(job_options=default_runner_options)
+  if runs is None:
+    jobs = JobGroup(job_options=default_runner_options)
+    inputs_iter = iter_inputs(batches, batches_files, ctx.obj['database'], ctx.obj['configurations'], ctx.obj['platform'], base_runner_options, config, ctx.obj['inputs_settings'], cli_runner_overrides=cli_runner_overrides)
+  else:
+    # The runs keep the job options they were started with, except those we were explicitly given
+    explicit_runner_overrides = {k: v for k, v in cli_runner_overrides.items() if k not in (*local_job_options, 'type', 'project')}
+    if not keeps_runs_runner:
+      explicit_runner_overrides['type'] = runner
+    inputs_iter = iter_runs(runs, default_input_type, ctx.obj['platform'], default_runner_options, explicit_runner_overrides)
+    jobs = JobGroup(job_options=rerun_job_options(runs_job_options, default_runner_options, explicit_runner_overrides))
 
   total_runs = 0
   existing_runs, missing_runs = 0, []
-  inputs_iter = iter_inputs(batches, batches_files, ctx.obj['database'], ctx.obj['configurations'], ctx.obj['platform'], base_runner_options, config, ctx.obj['inputs_settings'], cli_runner_overrides=cli_runner_overrides)
   for run_context in inputs_iter:
     input_configuration_str = serialize_config(run_context.configurations)
-    for tuning_params, tuning_str, tuning_hash in iter_parameters(tuning_search, filetype=filetype, extra_parameters=ctx.obj['extra_parameters']):
+    extra_parameters, input_forwarded_args = ctx.obj['extra_parameters'], forwarded_args
+    if runs is not None:
+      # Each run from --runs-file has its own tuning parameters and forwarded arguments
+      extra_parameters = {**ctx.obj['extra_parameters'], **run_context.extra_parameters}
+      input_forwarded_args = [*forwarded_args, *extra_parameters.pop('forwarded_args', [])]
+    for tuning_params, tuning_str, tuning_hash in iter_parameters(tuning_search, filetype=filetype, extra_parameters=extra_parameters):
       if not prefix_outputs_path:
           batch_conf_dir = make_batch_conf_dir(
             outputs_commit,
@@ -302,8 +336,8 @@ def batch(
               batch_conf_dir = batch_conf_dir / tuning_hash
       from ..conventions import output_dirs_for_input_part
       run_context.output_dir = batch_conf_dir / output_dirs_for_input_part(run_context.rel_input_path, run_context.database, config)
-      if forwarded_args:
-        run_forwarded_args = [a for a in forwarded_args if not a in ("--keep-previous", "--no-postprocess", "--save-manifests-in-database")]
+      if input_forwarded_args:
+        run_forwarded_args = [a for a in input_forwarded_args if not a in ("--keep-previous", "--no-postprocess", "--save-manifests-in-database")]
         if run_forwarded_args:
           run_context.extra_parameters = {"forwarded_args": run_forwarded_args, **tuning_params}
         else:
@@ -352,10 +386,10 @@ def batch(
       if is_pending and action_on_pending == 'skip':
           continue
 
-      if not forwarded_args:
+      if not input_forwarded_args:
         forwarded_args_cli = None
       else:
-        forwarded_args_cli = ' '.join(cli_quote(a) for a in forwarded_args)
+        forwarded_args_cli = ' '.join(cli_quote(a) for a in input_forwarded_args)
 
       if input_configuration_str == get_default_configuration(ctx.obj['inputs_settings']):
         configuration_cli = None
@@ -456,8 +490,10 @@ def batch(
       qa_context=ctx.obj,
     )
 
-    from ..gitlab import gitlab_token, update_gitlab_status
-    if gitlab_token and jobs and is_ci and 'QABOARD_TUNING' not in os.environ:
+    # A commit status on GitLab/GitHub links to the results
+    from ..git_hosts import git_host, update_ci_status
+    host = git_host() if jobs and is_ci and 'QABOARD_TUNING' not in os.environ else None
+    if host and host.token:
       name = f"QA {subproject.name}" if subproject else 'QA'
       from ..api import qaboard_url
       target_url = f"{qaboard_url}/{config['project']['name']}/commit/{commit_id}"
@@ -465,7 +501,7 @@ def batch(
       if label != "default":
         name += f" | {label}"
         target_url += f"?batch={label}"
-      update_gitlab_status(
+      update_ci_status(
         state='failed' if is_failed else 'success',
         name=name,
         target_url=target_url,

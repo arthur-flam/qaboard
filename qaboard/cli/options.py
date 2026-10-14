@@ -91,7 +91,8 @@ default_lsf_priority = lsf_config.get('priority')
 default_lsf_options = lsf_config.get('options')
 default_lsf_concurrency = lsf_config.get('concurrency', 0)
 default_dask_concurrency = dask_config.get('concurrency')
-default_local_concurrency = os.environ.get('QA_BATCH_CONCURRENCY', local_config.get('concurrency'))
+# An int like --local-concurrency's: a string would differ from it, and count as given on the command line
+default_local_concurrency = int(os.environ['QA_BATCH_CONCURRENCY']) if os.environ.get('QA_BATCH_CONCURRENCY') else local_config.get('concurrency')
 default_local_timeout = int(float(os.environ.get('QA_BATCH_TIMEOUT', local_config.get('timeout', 0))))
 
 outputs_config = config.get('outputs', {})

@@ -46,6 +46,9 @@ def pytest_configure():
     auth_mod.__package__ = 'backend.api'
     auth_mod.get_current_user = MagicMock()
     auth_mod.is_authorized_user = MagicMock()
+    auth_mod.restrictions = MagicMock(return_value={})
+    auth_mod.restricted_project_key = MagicMock()
+    auth_mod.matches_rules = MagicMock()
     # Pass-through: the decorator itself is tested in tests/test_security.py
     auth_mod.login_required = lambda f: f
     sys.modules['backend.api.auth'] = auth_mod
@@ -59,6 +62,7 @@ def pytest_configure():
     models_mod.CiCommit = MagicMock()
     models_mod.latest_successful_commit = MagicMock()
     models_mod.Batch = MagicMock()
+    models_mod.batches_stats = MagicMock()
     sys.modules['backend.models'] = models_mod
     sys.modules['backend.backend'] = types.ModuleType('backend.backend')
 

@@ -238,6 +238,17 @@
           ],
           "required": false
         },
+        "runs_file": {
+          "envvar": "QA_BATCH_RUNS_FILE",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--runs-file"
+          ],
+          "required": false
+        },
         "tuning_search_dict": {
           "envvar": "QA_BATCH_TUNING_SEARCH_DICT",
           "is_flag": false,
@@ -368,6 +379,122 @@
           "nargs": 1,
           "opts": [
             "--strict"
+          ],
+          "required": false
+        }
+      }
+    },
+    "gate": {
+      "context_settings": {},
+      "params": {
+        "as_json": {
+          "envvar": "QA_GATE_AS_JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--json"
+          ],
+          "required": false
+        },
+        "batches": {
+          "envvar": "QA_GATE_BATCHES",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "nargs": 1,
+          "opts": [
+            "--batch",
+            "-b"
+          ],
+          "required": false
+        },
+        "commit": {
+          "envvar": "QA_GATE_COMMIT",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--commit"
+          ],
+          "required": false
+        },
+        "interval": {
+          "envvar": "QA_GATE_INTERVAL",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--interval"
+          ],
+          "required": false
+        },
+        "output_format": {
+          "envvar": "QA_GATE_OUTPUT_FORMAT",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--format"
+          ],
+          "required": false
+        },
+        "post_status": {
+          "envvar": "QA_GATE_POST_STATUS",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--post-status"
+          ],
+          "required": false
+        },
+        "reference": {
+          "envvar": "QA_GATE_REFERENCE",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--reference"
+          ],
+          "required": false
+        },
+        "server": {
+          "envvar": "QA_GATE_SERVER",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--server"
+          ],
+          "required": false
+        },
+        "timeout": {
+          "envvar": "QA_GATE_TIMEOUT",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--timeout"
+          ],
+          "required": false
+        },
+        "wait": {
+          "envvar": "QA_GATE_WAIT",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "nargs": 1,
+          "opts": [
+            "--wait"
           ],
           "required": false
         }

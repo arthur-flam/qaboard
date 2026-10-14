@@ -30,7 +30,7 @@ class QaGroup(TyperGroup):
   # Order in `qa --help`, by help panel
   commands_order = (
     'run', 'batch', 'postprocess', 'sync', 'wait',
-    'check-bit-accuracy', 'check-bit-accuracy-manifest',
+    'check-bit-accuracy', 'check-bit-accuracy-manifest', 'gate',
     'optimize',
     'get', 'init', 'save-artifacts',
   )

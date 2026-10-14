@@ -409,7 +409,7 @@ def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
 def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference_label, reference_platform):
     """Checks the bit accuracy of the results versus a reference commit. CLI: qaboard/cli/results.py"""
     from .config import is_in_git_repo, commit_branch, is_ci, outputs_project_root, repo_root
-    from .gitlab import lastest_successful_ci_commit
+    from .git_hosts import lastest_successful_ci_commit
     from .api import qaboard_url
     from .conventions import get_commit_dirs
     from .git import latest_commit, git_parents

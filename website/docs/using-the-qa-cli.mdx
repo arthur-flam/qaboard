@@ -3,7 +3,6 @@ id: using-the-qa-cli
 sidebar_label: The qa CLI
 title: Using the qa CLI
 ---
-import useBaseUrl from '@docusaurus/useBaseUrl';
 
 `qa` wraps your code: it runs it on inputs, saves the results and tells QA-Board about them.
 
@@ -26,6 +25,7 @@ Global options describe *what* you run: the configurations, the label, the platf
 | `qa wait --output-id ID` | Waits for a pending run, used by `qa batch`. |
 | `qa check-bit-accuracy` | Checks that outputs are the same as a reference commit's. See [bit-accuracy](bit-accuracy). |
 | `qa check-bit-accuracy-manifest` | Checks that outputs are the same as the manifests saved next to the inputs. |
+| `qa gate` | Fails when metrics regress against a reference (experimental). See [quality gate](quality-gate). |
 | `qa optimize` | [Optimizes parameters](auto-optimization): each evaluation is a `qa batch`. |
 | `qa get [VARIABLE]` | Prints the project's variables: commit, storage locations, output directory of a run... |
 | `qa init` | Starts a QA-Board project: creates *qaboard.yaml* and a sample entrypoint. See [project init](project-init). |
@@ -60,7 +60,7 @@ A few more variables change how `qa` behaves:
 
 ## Flags worth knowing
 ### `qa --share`
-When you run `qa batch` or `qa run` on your terminal, results are saved locally under **output/**, and *they are not visible in QA-Board*. To make them visible:
+When you run `qa batch` or `qa run` on your terminal, results are saved locally under **output/**, and *they are not visible in QA-Board*. To make them visible, add `--share`:
 
 ```bash
 qa --share batch my-batch
@@ -72,8 +72,10 @@ To make `--share` the default, set it in your shell's config: `export QA_SHARE=t
 
 In CI, results are always shared.
 
+With `--share`, `qa batch` and `qa optimize` also save what they print, errors included, in the batch directory, under `qa-batch-logs/`. QA-Board shows these logs with the batch, in the *Logs* view. They are not saved in the CI, which keeps the logs. `qa optimize` saves the output of its iterations in its own log.
+
 ### `qa --dryrun`
-`qa` commmands support a `--dryrun` mode, where they print actions they would take, but don't actually do anything. In particular it helps see quickly what inputs you defined in a batch:
+`qa` commands support a `--dryrun` mode, where they print actions they would take, but don't actually do anything. In particular it helps see quickly what inputs you defined in a batch:
 
 ```bash
 qa --dryrun batch my-batch
@@ -86,17 +88,22 @@ For `qa --dryrun run`, you are expected to handle `if context.dryrun: ...` yours
 :::
 
 ### `qa --label my-label`
-Everytime you `qa run`, it erases previous results. So if you want compare different versions by tweaking doing `qa run`, it won't work. Fortunately, `qa` lets you give a "label", or "experiment name" to runs. Results with different labels are stored separately:
+Every time you `qa run`, it erases previous results. So if you want compare different versions by tweaking doing `qa run`, it won't work. Fortunately, `qa` lets you give a "label", or "experiment name" to runs. Results with different labels are stored separately:
 
 ```
 qa --label without-optimizations batch validation-images
 qa --label    with-optimizations batch validation-images
 ```
 
-<img alt="select-batch" src={useBaseUrl('img/select-batch.png')} />
+Each label is a batch of its own: pick it in the web app's batch selector.
+
+<Shot
+  id="commit/batch-picker"
+  caption="The CI batch, someone's local runs (🏠) and a tuning experiment, each with how many of its runs succeeded."
+/>
 
 :::tip
-To keep previous output files, use `qa run --keep-previous` (or `export QABOARD_RUN_KEEP=true`). It can be useful if you are debugging long runs and implemented a caching mecanism. *(Experimental)*
+To keep previous output files, use `qa run --keep-previous` (or `export QABOARD_RUN_KEEP=true`). It can be useful if you are debugging long runs and implemented a caching mechanism. *(Experimental)*
 :::
 
 ### `qa --offline`
@@ -137,6 +144,27 @@ qa batch my-batch --tuning-search '{"parameter_search": {"gain": [1, 2], "mode":
 
 Use `"search_type": "sampler"` and `"search_options": {"n_iter": 10}` to sample 10 random combinations instead. In your code, the parameters are in `context.params`. It's what QA-Board uses to [tune from the web app](tuning-from-the-webapp).
 
+### Running a list of runs
+Instead of batches, `qa batch --runs-file runs.json` does the runs listed in a JSON file. QA-Board uses it to redo runs: they are started together, so the batch's runner settings (e.g. its concurrency) apply to all of them.
+
+```json title="runs.json"
+{
+  "runs": [
+    {
+      "input_path": "images/A.jpg",
+      "database": "/datasets",
+      "type": "image",
+      "platform": "linux",
+      "configurations": ["base", {"threshold": 0.5}],
+      "extra_parameters": {"iterations": 3},
+      "job_options": {"type": "dask", "concurrency": 20}
+    }
+  ]
+}
+```
+
+Only `input_path` (relative to `database`) and `database` are required. Runs are done with the runner and options in `job_options`, completed by the defaults from *qaboard.yaml*. Options you give on the command line, like `--runner` or `--lsf-queue`, win.
+
 ## `qa get`
 Prints variables about the project and the commit. Without a variable, it prints the main ones, as JSON:
 
@@ -158,13 +186,13 @@ qa --install-completion   # bash, zsh, fish or powershell, then open a new shell
 ```
 
 ## Exit codes
-`qa` exits with `0` on success, `1` when runs fail (`qa run`, `qa postprocess`, `qa batch`, bit-accuracy checks...) and `2` when the command line is invalid, e.g. a missing `--input` or an unknown `--runner` value (options that `qa run` and `qa batch` don't know are given to your code). `qa run`, `qa postprocess` and `qa sync` print the run's metrics as JSON, on the last line of their output. See also [using qa from scripts, CI and AI agents](apis#using-qa-from-scripts-ci-and-ai-agents).
+`qa` exits with `0` on success, `1` when runs fail (`qa run`, `qa postprocess`, `qa batch`, bit-accuracy checks...) and `2` when the command line is invalid (`qa gate` also uses `2` when its verdict is undecidable), e.g. a missing `--input` or an unknown `--runner` value (options that `qa run` and `qa batch` don't know are given to your code). `qa run`, `qa postprocess` and `qa sync` print the run's metrics as JSON, on the last line of their output. See also [using qa from scripts, CI and AI agents](apis#using-qa-from-scripts-ci-and-ai-agents).
 
 ---
 
 ## Connecting to a custom QA-Board instance
 Use `qa --offline` to ensure you don't connect to a QA-Board instance. It's useful if... you don't have one (?).
-The default connection settings can be overriden by environment variables. For example:
+The default connection settings can be overridden by environment variables. For example:
 
 ```bash
 export QABOARD_PROTOCOL=http

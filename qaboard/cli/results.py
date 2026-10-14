@@ -1,9 +1,9 @@
 """
-Commands comparing or optimizing results: check-bit-accuracy, check-bit-accuracy-manifest, optimize.
-Their logic is in qaboard/bit_accuracy.py and qaboard/optimize.py.
+Commands comparing or optimizing results: check-bit-accuracy, check-bit-accuracy-manifest, gate, optimize.
+Their logic is in qaboard/bit_accuracy.py, qaboard/gate.py and qaboard/optimize.py.
 """
 from pathlib import Path
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 
 import typer
 
@@ -85,3 +85,31 @@ def optimize(
   """
   from ..optimize import optimize as optimize_
   optimize_(ctx, batches, batches_files, config_file, checkpoint, parallel_param_sampling, tuple(forwarded_args or ()))
+
+
+@app.command(rich_help_panel="Compare results")
+def gate(
+  reference: Annotated[Optional[str], typer.Option('--reference', help="Compare with this branch, milestone or commit. Default: `gate.reference` in qaboard.yaml, else `project.reference_branch`.")] = None,
+  batches: Annotated[List[str], typer.Option('--batch', '-b', metavar='LABEL', help="The label of a batch to check, repeat for several. Default: `gate.batches`, else the CI batch (default).")] = [],
+  commit: Annotated[Optional[str], typer.Option('--commit', help="The commit to check. Default: the current commit.")] = None,
+  output_format: Annotated[Literal['text', 'markdown', 'json'], typer.Option('--format', help="Output format.")] = 'text',
+  as_json: Annotated[bool, typer.Option('--json', help="Same as --format json.")] = False,
+  wait: Annotated[bool, typer.Option('--wait', help="While the verdict is undecidable (e.g. the reference is still running), check again until --timeout.")] = False,
+  timeout: Annotated[float, typer.Option('--timeout', help="With --wait, give up after this many seconds.")] = 1800,
+  interval: Annotated[float, typer.Option('--interval', help="With --wait, seconds between checks.")] = 30,
+  post_status: Annotated[Optional[Literal['github', 'gitlab']], typer.Option('--post-status', help="Post a commit status that links to the Metrics Diff.")] = None,
+  server: Annotated[Optional[str], typer.Option('--server', help="The QA-Board URL, e.g. http://localhost:5151. Default: from QABOARD_URL or your site's settings.")] = None,
+):
+  """
+  Fail when quality regresses vs a reference (experimental). Exits with 0 (pass), 1 (fail) or 2 (undecidable).
+
+  The rules are in the `gate:` section of qaboard.yaml. The numbers are the ones the web app's Metrics Diff shows.
+
+  Examples:
+
+      qa gate
+      qa gate --reference main --batch default --json
+      qa gate --wait --post-status github
+  """
+  from ..gate import gate as gate_
+  gate_(reference, batches, commit, output_format, as_json, wait, timeout, interval, post_status, server)

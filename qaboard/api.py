@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional, List
 
 import typer
 
-from .config import project, commit_id, is_ci, available_metrics, ignore_config_errors
+from .config import project, commit_id, is_ci, available_metrics, asks_for_help
 from .run import RunContext
 
 from .site_config import site_config, user_secret, as_requests_verify
@@ -27,14 +27,17 @@ if qaboard_hostname and qaboard_port:
 elif qaboard_host:
   qaboard_url = f"{qaboard_protocol}://{qaboard_host}"
 else:
-  qaboard_url = site_config('QABOARD_URL', 'http://localhost:5151')
-  if qaboard_url == 'http://localhost:5151' and not ignore_config_errors:
-    typer.secho(f"WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
-    typer.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
-    typer.secho(f"         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
-    typer.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
-    typer.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
-    typer.secho(f"       > If your organization has a site package (e.g. qaboard-site-sirc), install it.", fg='yellow', err=True)
+  qaboard_url = site_config('QABOARD_URL')
+  # Only when nothing says where the server is: QABOARD_URL=http://localhost:5151 is fine
+  if not qaboard_url:
+    qaboard_url = 'http://localhost:5151'
+    if not asks_for_help: # not for --help, --version, init
+      typer.secho(f"WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
+      typer.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
+      typer.secho(f"         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
+      typer.secho(f"         If needed you can define QABOARD_PROTOCOL (default: http). You can also provide both QABOARD_HOSTNAME and QABOARD_PORT.", fg='yellow', err=True)
+      typer.secho(f"       > If you have not started a QA-Board server, read the docs to learn how to start one!", fg='yellow', err=True)
+      typer.secho(f"       > If your organization has a site package (e.g. qaboard-site-sirc), install it.", fg='yellow', err=True)
 
 api_prefix = site_config('QABOARD_API_PREFIX', f"{qaboard_url}/api/v1")
 # Whether requests to the API check TLS certificates: true (default), false, or the path to a CA bundle.
@@ -138,7 +141,7 @@ def notify_qa_database(object_type='output', **kwargs):
   Updating the QA database.
   """
   import requests
-  from .config import is_ci, is_in_git_repo, config, _metrics
+  from .config import is_ci, config, _metrics
   from .config import commit_id, commit_branch, commit_tag, commit_committer_name, commit_committer_email, commit_authored_datetime, commit_parents, commit_message
 
   if kwargs.get('offline'):
@@ -156,8 +159,8 @@ def notify_qa_database(object_type='output', **kwargs):
     # send all the data, with some light custom serialization for Path objects
     **serialize_paths(kwargs),
   }
-  # if object_type != "output"  # le'ts be wasteful to make init easier
-  # Will help initialize/update the commit/batch in QA-Board
+  # Will help initialize/update the commit/batch in QA-Board.
+  # We send it with every object type, even if it's wasteful: it makes init easier
   data.update({
     'commit_branch': commit_branch,
     'commit_tag': commit_tag,
@@ -193,8 +196,8 @@ def notify_qa_database(object_type='output', **kwargs):
         del data[k]
     typer.secho(str(data), fg='yellow', err=True)
     try:
-      typer.secho(str(r.request.headers), fg='yellow', dim=True, err=True)
-      # typer.secho(str(r.request.body), fg='yellow', dim=True, err=True)
+      request_headers = {k: '<redacted>' if k.lower() == 'authorization' else v for k, v in r.request.headers.items()}
+      typer.secho(str(request_headers), fg='yellow', dim=True, err=True)
       typer.secho(f'{r.status_code}: {r.text}', fg='yellow', dim=True, err=True)
     except Exception:
       pass
@@ -219,7 +222,8 @@ def batch_info(reference, batch, is_branch=False, project=project, metrics: Opti
   """Get data about a batch of outputs in the database"""
   import requests
   params = {
-    "project": str(project),
+    # project names use "/", but Path() uses "\\" on Windows
+    "project": Path(project).as_posix(),
     "batch": batch,
     # the format is metric: target.... not great.
     "metrics": json.dumps({m: 0 for m in (metrics or available_metrics.keys())}),
@@ -280,7 +284,7 @@ def aggregated_metrics(batch_label, metrics=None):
 
 def matching_output(output_reference: RunContext, outputs: List[Dict]):
   """
-  Return the output from from a given batch that is like a given output.
+  Return the output from a given batch that is like a given output.
   This helps us compare an output to historical results.
   """
   matching_outputs = [o for o in outputs if f'{o["test_input_database"]}/{o["test_input_path"]}' == output_reference.input_path.as_posix()]
@@ -297,6 +301,6 @@ def matching_output(output_reference: RunContext, outputs: List[Dict]):
   valid_outputs = [o for o in valid_outputs if match_ref(o)]
   if not valid_outputs:
     return None
-  # at most 1, garanteed by database constaints
+  # at most 1, guaranteed by database constraints
   assert len(valid_outputs) == 1
   return valid_outputs[0]

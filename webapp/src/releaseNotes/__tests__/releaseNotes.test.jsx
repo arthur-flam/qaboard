@@ -4,14 +4,11 @@
  */
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { Provider } from 'react-redux';
-import { createStore } from 'redux';
 import { IconNames } from '@blueprintjs/icons';
 
-import bundle from '../release-notes.json';
+import bundle from 'virtual:release-notes';
 import {
   LAST_SEEN_KEY,
   popupNotes,
@@ -24,6 +21,7 @@ import {
   renderHtml,
 } from '../logic';
 import { ReleaseNotesProvider, WhatsNewButton } from '../ReleaseNotes';
+import { renderWithProviders } from '../../test-utils';
 
 
 const note = (slug, date, extra = {}) => ({
@@ -101,26 +99,13 @@ test('search matches every word, in any field', () => {
 
 
 describe('the bundle', () => {
-  // The web app bundles website/release-notes/*.md as release-notes.json
+  // vite bundles website/release-notes/*.md (see webapp/releaseNotes.js)
   const notes_dir = path.join(import.meta.dirname, '../../../../website/release-notes');
-  const sources = fs.existsSync(notes_dir)
-    ? fs.readdirSync(notes_dir).filter(f => f.endsWith('.md') && !f.startsWith('_'))
-    : [];
+  const sources = fs.readdirSync(notes_dir).filter(f => f.endsWith('.md') && !f.startsWith('_'));
 
-  (sources.length > 0 ? test : test.skip)('is up to date with website/release-notes/', () => {
-    const published = sources.map(f => {
-      const text = fs.readFileSync(path.join(notes_dir, f));
-      const frontmatter = text.toString('utf-8').split(/^---$/m)[1] || '';
-      return {
-        slug: (frontmatter.match(/^slug:\s*(\S+)/m) || [])[1] || f.replace(/\.md$/, ''),
-        draft: /^draft:\s*true/m.test(frontmatter),
-        sha256: crypto.createHash('sha256').update(text).digest('hex'),
-      };
-    }).filter(n => !n.draft);
-    const message = 'Run: website/release-notes/release_notes.py build';
-    const bundled = Object.fromEntries(bundle.notes.map(n => [n.slug, n.sha256]));
-    for (const n of published)
-      expect([n.slug, bundled[n.slug] === n.sha256 ? 'up to date' : message]).toEqual([n.slug, 'up to date']);
+  test('has every published note of website/release-notes/', () => {
+    const published = sources.filter(f => !/^draft:\s*true/m.test(fs.readFileSync(path.join(notes_dir, f), 'utf-8')));
+    expect(published.length).toBeGreaterThan(0);
     expect(bundle.notes.length).toBe(published.length);
   });
 
@@ -133,7 +118,7 @@ describe('the bundle', () => {
       }
   });
 
-  test('has no raw HTML (release_notes.py escapes it)', () => {
+  test('has no raw HTML (it is escaped)', () => {
     for (const n of bundle.notes)
       expect([n.slug, /<(script|iframe|style|img)\b|\son\w+=|javascript:/i.test(n.html)]).toEqual([n.slug, false]);
   });
@@ -146,7 +131,6 @@ describe('the bundle', () => {
 
 
 describe('the What\'s new popup', () => {
-  const store = createStore(() => ({ siteConfig: { docs_root: '/' } }));
   // last month: finished, and recent enough to pop up
   const d = new Date();
   const lastMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0));
@@ -156,12 +140,11 @@ describe('the What\'s new popup', () => {
     highlights: [{ title: 'Flying cars', description: 'They fly.', audience: 'users', icon: 'airplane', link: '/docs/faq' }],
     html: '<h2>Web app</h2><ul><li>Added flying cars</li></ul>',
   });
-  const renderApp = () => render(
-    <Provider store={store}>
-      <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
-        <WhatsNewButton />
-      </ReleaseNotesProvider>
-    </Provider>
+  const renderApp = () => renderWithProviders(
+    <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
+      <WhatsNewButton />
+    </ReleaseNotesProvider>,
+    { siteConfig: { docs_root: '/' } }
   );
   beforeEach(() => window.localStorage.clear());
 
@@ -198,11 +181,9 @@ describe('the What\'s new popup', () => {
     await waitFor(() => expect(screen.queryByText('Flying cars')).not.toBeInTheDocument());
     window.history.pushState({}, '', '/other/project');
     rerender(
-      <Provider store={store}>
-        <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
-          <WhatsNewButton />
-        </ReleaseNotesProvider>
-      </Provider>
+      <ReleaseNotesProvider load={() => Promise.resolve([recent])} popupDelay={0}>
+        <WhatsNewButton />
+      </ReleaseNotesProvider>
     );
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(screen.queryByText('Flying cars')).not.toBeInTheDocument();
@@ -212,12 +193,11 @@ describe('the What\'s new popup', () => {
     const current = note(new Date().toISOString().slice(0, 7), new Date().toISOString().slice(0, 10), {
       highlights: [{ title: 'Hover boards', description: 'Soon.', audience: 'users', icon: 'airplane' }],
     });
-    render(
-      <Provider store={store}>
-        <ReleaseNotesProvider load={() => Promise.resolve([current])} popupDelay={0}>
-          <WhatsNewButton />
-        </ReleaseNotesProvider>
-      </Provider>
+    renderWithProviders(
+      <ReleaseNotesProvider load={() => Promise.resolve([current])} popupDelay={0}>
+        <WhatsNewButton />
+      </ReleaseNotesProvider>,
+      { siteConfig: { docs_root: '/' } }
     );
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(screen.queryByText('Hover boards')).not.toBeInTheDocument();

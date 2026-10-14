@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 
 import typer
-from qaboard.config import root_qatools, available_metrics
+from qaboard.config import root_qatools
 
 
 
@@ -63,7 +63,7 @@ def aggregate():
         output_dir = Path(output_dir)
         metrics_path = output_dir / 'metrics.json'
         if not metrics_path.exists():
-            typer.secho('WARNING: Could not find expected metrics at "{metrics_path}"', fg='yellow')
+            typer.secho(f'WARNING: Could not find expected metrics at "{metrics_path}"', fg='yellow')
             continue
         with metrics_path.open() as f:
             metrics = json.load(f)
