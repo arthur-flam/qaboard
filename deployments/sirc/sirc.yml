@@ -97,6 +97,12 @@ services:
     - ${QABOARD_EXTRA_SIRC_PORT_2:-5002}:5002
     environment:
     - NGINX_USER=ispq
+    # The access logs go to docker: rotate them, whatever the daemon's defaults
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
     volumes:
     # The folder, not each file: a file's bind mount keeps showing the old version after `git checkout` replaces it,
     # so deploys would reload nginx with the old configuration (see services/nginx/configure.sh)

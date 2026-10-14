@@ -49,6 +49,8 @@ services:
       AS_USER_GROUP: uucp
       AS_USER_UID: "1411"
       AS_USER_GID: "10"
+      # The daily backups are ~20GB. Named ones (e.g. before-upgrade.dump) are kept, remove them by hand
+      BACKUP_KEEP: "7"
     logging:
       driver: "fluentd"
       options:

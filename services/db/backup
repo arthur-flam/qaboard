@@ -1,5 +1,9 @@
 #!/bin/sh
 # Creates a backup
+#   backup           daily backup: /backups/YYYY-MM-DD.dump
+#   backup NAME      e.g. before-upgrade.dump
+# BACKUP_KEEP=N: after a daily backup, keep only the N latest daily backups. Named backups are never removed,
+#                and nothing is removed if the backup fails.
 set -ex
 
 if [ "$1" = "" ]; then
@@ -8,17 +12,27 @@ else
     backup=$1
 fi
 
-# Written to a temporary file then renamed: a failed dump never looks like a valid backup
-if [ -z ${AS_USER_NAME+x} ]; then
-  pg_dump -Fc > "/backups/.$backup.tmp"
-  mv "/backups/.$backup.tmp" "/backups/$backup"
-else
+as_user() {
+  if [ -z ${AS_USER_NAME+x} ]; then
+    sh -c "$1"
+  else
+    su $AS_USER_NAME -c "$1"
+  fi
+}
+if [ -n "${AS_USER_NAME+x}" ]; then
   # we should use gosu but it's nice to use the official image as-is
   addgroup -S $AS_USER_GROUP -g $AS_USER_GID group                            || true
   adduser --disabled-password $AS_USER_NAME -u $AS_USER_UID -G $AS_USER_GROUP || true
-  su $AS_USER_NAME -c "pg_dump -Fc > '/backups/.$backup.tmp' && mv '/backups/.$backup.tmp' '/backups/$backup'"
+fi
+
+# Written to a temporary file then renamed: a failed dump never looks like a valid backup
+as_user "pg_dump -Fc > '/backups/.$backup.tmp' && mv '/backups/.$backup.tmp' '/backups/$backup'"
+
+if [ "$1" = "" ] && [ -n "$BACKUP_KEEP" ]; then
+  ls /backups | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}\.dump$' | sort -r | tail -n +$((BACKUP_KEEP + 1)) | while read -r old; do
+    as_user "rm -v '/backups/$old'"
+  done
 fi
 
 # TODO:
-# - Remove backups older than X
 # - upload the backup to e.g. S3

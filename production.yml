@@ -29,8 +29,8 @@ services:
     - UWSGI_PROCESSES=${QABOARD_UWSGI_PROCESSES:-16}              # max
     - UWSGI_CHEAPER=${QABOARD_UWSGI_CHEAPER:-8}                   # minimum
     - UWSGI_CHEAPER_OVERLOAD=15
-    # values in bytes
-    - UWSGI_CHEAPER_RSS_LIMIT_SOFT=17179869184 #16GB
+    # Per replica, in bytes: no new workers past this total RSS (it counts the memory shared by the workers several times)
+    - UWSGI_CHEAPER_RSS_LIMIT_SOFT=${QABOARD_UWSGI_CHEAPER_RSS_LIMIT_SOFT:-17179869184}  # 16GB
     - UWSGI_CHEAPER_RSS_LIMIT_HARD=
     - UWSGI_STATS=true
     # Several replicas behind nginx survive crashes and allow zero-downtime deploys with deployments/deploy.py
@@ -65,6 +65,8 @@ services:
       PGDATABASE: qaboard
       PGUSER: qaboard
       PGPASSWORD: password
+      # Keep only the N latest daily backups (named backups are never removed)
+      # BACKUP_KEEP: "7"
       # Uncomment and set to run backups as a specific user (useful with NFS)
       # AS_USER_NAME: qaboard
       # AS_USER_GROUP: qaboard

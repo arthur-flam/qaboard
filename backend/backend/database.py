@@ -31,6 +31,8 @@ engine = create_engine(
 	echo=db_echo,
 	pool_size=10,
 	max_overflow=5,
+	# Replaces connections closed by the database (restarts, idle_in_transaction_session_timeout...) instead of failing requests
+	pool_pre_ping=True,
 	json_deserializer=ujson.loads,
 	json_serializer=ujson.dumps,
 	connect_args={"connect_timeout": 20}, #limit connection timeout
