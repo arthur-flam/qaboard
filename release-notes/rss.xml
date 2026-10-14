@@ -37,6 +37,8 @@
 <li class="">Find your way around from the History page: the sidebar shows the project's navigation (the branch's commits, Code, History, Integrations, Milestones), and moving between these pages no longer reloads the app.</li>
 <li class="">See who made a commit at a glance: when there's no avatar picture, committers, users and projects show their initials on a color that stays the same everywhere.</li>
 <li class="">The Analysis view of a <code>qa optimize</code> experiment plots its convergence itself: each iteration's objective and the best one so far, even when matplotlib isn't installed where <code>qa optimize</code> ran.</li>
+<li class="">Run cards fit the window when <em>qaboard.yaml</em> doesn't set their width (<code>outputs.style.width</code>): they used to be 1500 px wide, wider than a laptop's screen.</li>
+<li class="">Link to History with or without the breakdown per test, or relative to the first commit: <code>?breakdown_per_test=false</code> and <code>?relative=true</code> in the URL now work.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -52,6 +54,7 @@
 <li class=""><code>qa batch --runs-file runs.json</code> does a list of runs, each with its input, configurations, parameters and runner options. QA-Board uses it to redo runs together. See the <a class="" href="https://samsung.github.io/qaboard/docs/using-the-qa-cli">CLI tips</a>.</li>
 <li class="">With <code>--no-wait</code> and an existing Dask cluster (<code>scheduler_address</code>), the Dask runner now enforces <code>concurrency</code>: a driver LSF job sends the runs, as without <code>scheduler_address</code>. See the <a class="" href="https://samsung.github.io/qaboard/docs/dask-integration">Dask runner</a>.</li>
 <li class="">Fail the CI when quality regresses, with the experimental <code>qa gate</code>: set rules in <em>qaboard.yaml</em> (<code>gate:</code>) on the median of a metric vs a reference branch, milestone or commit, on each test, on failed runs or on bit-accuracy. It prints a table (or Markdown, or JSON), fills the GitHub Actions job summary, and can post a commit status to GitHub or GitLab that links to the Metrics Diff. See <a class="" href="https://samsung.github.io/qaboard/docs/quality-gate">Quality gate</a>.</li>
+<li class="">Batches list their inputs in the same order on every machine: the inputs found by <code>globs</code> are sorted by path, instead of coming in the order the filesystem lists them.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>
@@ -99,6 +102,7 @@
 <li class="">Put your project on QA-Board step by step with the <a class="" href="https://samsung.github.io/qaboard/docs/get-started/tutorial">tutorial</a>: pick your server, code hosting, CI and runners once at the top, and every step shows the instructions for your stack. Links keep your choices (e.g. <code>?server=k8s&amp;ci=gitlab-ci</code>).</li>
 <li class="">See what QA-Board is for in <a class="" href="https://samsung.github.io/qaboard/docs/tour">QA-Board in 5 minutes</a> and in one use case per demo project of a fictional robotics company, starting with <a class="" href="https://samsung.github.io/qaboard/docs/use-cases/image-quality">image quality</a>. The <a class="" href="https://samsung.github.io/qaboard/docs/get-started/concepts">key concepts</a> fit in one page.</li>
 <li class="">Find the quickstart, the review loop and what's coming next on the website's new home page.</li>
+<li class="">Links to the docs shared in chats and social networks show a card with QA-Board's tagline and a glimpse of the web app.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="fixes">Fixes<a href="https://samsung.github.io/qaboard/release-notes/2026-10#fixes" class="hash-link" aria-label="Direct link to Fixes" title="Direct link to Fixes" translate="no">​</a></h2>
 <ul>
@@ -166,6 +170,9 @@
 <li class="">The Summary only warns that it mixes runs with different parameters when the runs it aggregates really have different parameters: filter the runs to compare one configuration.</li>
 <li class="">Artifacts &amp; Configurations shows the artifacts again when the commit loads after the view, instead of "Could not find" them.</li>
 <li class="">Run Tests / Tuning runs as you when you open it from a link: it no longer asks for a user it can't let you type, with Send disabled.</li>
+<li class="">History's y axis no longer cuts off the start of its top label ("000 ms" for 1000 ms).</li>
+<li class="">The chart above a branch's commits leaves out the commits that don't have the metric, instead of drawing gaps in its line.</li>
+<li class="">The Summary's box plots on a log scale show a few round ticks, instead of labels that overlapped.</li>
 <li class="">Projects whose inputs are inside the project (a relative <code>inputs.database</code>, like <code>inputs</code>) see their tests in the Run Tests / Tuning form and in Available Tests: they are looked for in the commit's artifacts, where the runs started from QA-Board run, instead of in a folder of the server.</li>
 <li class="">Runs started from QA-Board are the logged-in user's, instead of the server's user.</li>
 </ul>]]></content:encoded>
