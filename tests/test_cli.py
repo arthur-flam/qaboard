@@ -8,6 +8,8 @@ import unittest
 import typer
 from typer.testing import CliRunner
 
+from tests import fresh_qaboard
+
 os.environ['QA_TESTING'] = 'true'
 
 # Missing:
@@ -20,7 +22,8 @@ class TestQaCli(unittest.TestCase):
   def setUpClass(self):
     self.previous_cwd = os.getcwd()
     root_repo = Path(__file__).resolve().parent.parent
-    os.chdir(root_repo / 'qaboard/sample_project')
+    self.test_dir = root_repo / 'qaboard/sample_project'
+    os.chdir(self.test_dir)
     # we create some files...
     os.system("mkdir -p cli_tests/dir; touch cli_tests/a.jpg; touch cli_tests/b.jpg; touch cli_tests/dir/c.jpg")
     database = str(Path())
@@ -42,10 +45,10 @@ class TestQaCli(unittest.TestCase):
     os.chdir(self.previous_cwd)
 
   def setUp(self):
-    from importlib import reload
+    # `qa` changes the working directory to the project's root
+    os.chdir(self.test_dir)
     def qa_(*argv):
-      import qaboard
-      qaboard = reload(qaboard)
+      qaboard = fresh_qaboard()
       runner = CliRunner()
       result = runner.invoke(qaboard.qa, argv, obj={}, auto_envvar_prefix='QA', color=False)
       if result.exception:
