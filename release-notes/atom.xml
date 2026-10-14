@@ -40,6 +40,9 @@
 <li class="">The Analysis view of a <code>qa optimize</code> experiment plots its convergence itself: each iteration's objective and the best one so far, even when matplotlib isn't installed where <code>qa optimize</code> ran.</li>
 <li class="">Run cards fit the window when <em>qaboard.yaml</em> doesn't set their width (<code>outputs.style.width</code>): they used to be 1500 px wide, wider than a laptop's screen.</li>
 <li class="">Link to History with or without the breakdown per test, or relative to the first commit: <code>?breakdown_per_test=false</code> and <code>?relative=true</code> in the URL now work.</li>
+<li class="">Compare videos with a wipe, by toggling between them in place, or as their difference, besides side by side. Zoom with the mouse wheel or a pinch and drag to pan: both videos follow, and zoomed in you see the actual pixels. See <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/comparing-results#video-viewer">comparing videos</a>.</li>
+<li class="">Step through videos frame by frame with the arrow keys, scrub, slow down to 0.1× or loop: new and reference stay on the same frame, and wait for each other when one is still downloading.</li>
+<li class="">Copy the current frame of a video (new, reference or their difference) to the clipboard, or save it as a PNG.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -57,6 +60,7 @@
 <li class="">With <code>--no-wait</code> and an existing Dask cluster (<code>scheduler_address</code>), the Dask runner now enforces <code>concurrency</code>: a driver LSF job sends the runs, as without <code>scheduler_address</code>. See the <a class="" href="https://samsung.github.io/qaboard/docs/dask-integration">Dask runner</a>.</li>
 <li class="">Fail the CI when quality regresses, with the experimental <code>qa gate</code>: set rules in <em>qaboard.yaml</em> (<code>gate:</code>) on the median of a metric vs a reference branch, milestone or commit, on each test, on failed runs or on bit-accuracy. It prints a table (or Markdown, or JSON), fills the GitHub Actions job summary, and can post a commit status to GitHub or GitLab that links to the Metrics Diff. See <a class="" href="https://samsung.github.io/qaboard/docs/quality-gate">Quality gate</a>.</li>
 <li class="">Batches list their inputs in the same order on every machine: the inputs found by <code>globs</code> are sorted by path, instead of coming in the order the filesystem lists them.</li>
+<li class="">Set the frame rate of a video visualization with <code>fps</code> in <em>qaboard.yaml</em>, when the web app's guess is wrong. See <a class="" href="https://samsung.github.io/qaboard/docs/visualizations#video-viewer">the video viewer</a>.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>
@@ -139,6 +143,8 @@
 <li class="">Redoing runs from QA-Board respects the batch's concurrency, and uses the runner the runs were started with (e.g. Dask) and its settings. QA-Board used to start each run with its own <code>qa batch</code>, so they all ran at once, with the default runner.</li>
 <li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
 <li class="">Commit pages and the branch list no longer break when results were sent without a branch.</li>
+<li class="">Playing or pausing a video that has no reference no longer raises errors ("pause is not a function").</li>
+<li class="">Videos your browser can't play (e.g. HEVC) say so, with the command to convert them, instead of staying black. Animated <em>.webp</em> and <em>.gif</em> files now show, side by side with the reference's, instead of a black box or their bytes as text.</li>
 <li class="">Finished runs whose metrics don't include <code>is_failed</code> count as successful, instead of neither successful nor failed.</li>
 <li class="">A run is compared with the reference run of the same platform: when the reference batch had the same input and configuration on two platforms, the other platform's run was picked.</li>
 <li class="">The History page's per-test tables show their metric columns again, in tabs named "Metrics Table" and "Metrics Diff" like on commit pages.</li>
