@@ -59,7 +59,12 @@ const parseBody = async (response, responseType) => {
   }
 };
 
-export async function request(method, url, { params, data, signal, headers, responseType = 'auto' } = {}) {
+// Told about 401 answers, e.g. to ask users to log in (see components/authentication/login.jsx).
+// `background` requests are those users didn't ask for: status polling, pre-flight checks...
+let unauthorized_handler = null;
+export const onUnauthorized = handler => { unauthorized_handler = handler; };
+
+export async function request(method, url, { params, data, signal, headers, responseType = 'auto', background = false } = {}) {
   const init = { method, signal, headers: { ...headers }, credentials: 'same-origin' };
   if (data !== undefined) {
     if (data instanceof FormData || data instanceof Blob || typeof data === 'string') {
@@ -79,7 +84,10 @@ export async function request(method, url, { params, data, signal, headers, resp
     statusText: response.statusText,
     headers: response.headers,
   };
-  if (!response.ok) throw new HttpError(result);
+  if (!response.ok) {
+    if (response.status === 401) unauthorized_handler?.({ url, background });
+    throw new HttpError(result);
+  }
   return result;
 }
 
@@ -96,6 +104,12 @@ export const errorMessage = error => {
   if (!error) return '';
   const data = error.response?.data;
   if (data?.error) return String(data.error);
-  if (error.response) return `${error.response.status} ${error.response.statusText}${typeof data === 'string' && data ? `: ${data}` : ''}`;
+  if (Array.isArray(data?.errors) && data.errors.length > 0) return data.errors.join(' ');
+  // not error pages (e.g. a proxy's HTML), nor whole logs
+  const text = typeof data === 'string' && data && data.length < 500 && !data.trimStart().startsWith('<') ? `: ${data}` : '';
+  if (error.response) return `${error.response.status} ${error.response.statusText}${text}`;
   return error.message ?? String(error);
 };
+
+// 409: the commit's artifacts are missing. QA-Board may have asked the CI to recreate them.
+export const isArtifactsError = error => error?.response?.status === 409 && !!error?.response?.data?.artifacts;

@@ -14,8 +14,9 @@ import {
   Button,
 } from "@blueprintjs/core";
 
-import { http, errorMessage, isAbort } from "../api/http";
-import { useRefreshCommit } from "../hooks";
+import { http, errorMessage, isAbort, isArtifactsError } from "../api/http";
+import { useRefreshCommit, useUser } from "../hooks";
+import { LoginMenuItem } from "./authentication/login";
 import { linux_to_windows } from '../utils'
 import { folder_url } from '../utils/paths'
 import { toaster } from "../toaster"
@@ -254,14 +255,20 @@ const RunBadge = ({badge}) => {
 const RunActionsMenu = ({ output, project, commit }) => {
   const [waiting, setWaiting] = useState(false)
   const refreshCommit = useRefreshCommit()
+  const is_logged = useUser().is_logged
   const { id, deleted, is_pending } = output
   const refresh = () => refreshCommit(project, commit.id)
   const act = (request, requested, done) => {
     setWaiting(true)
     toaster.show({message: requested});
     request()
-      .then(() => toaster.show({message: done, intent: Intent.SUCCESS}))
-      .catch(error => toaster.show({message: errorMessage(error), intent: Intent.DANGER}))
+      .then(response => {
+        toaster.show({message: done, intent: Intent.SUCCESS})
+        // e.g. only the source files could be restored
+        if (response?.data?.warning) toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000})
+      })
+      // 409: the artifacts are missing, maybe being recreated by the CI
+      .catch(error => toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000}))
       .finally(() => {
         setWaiting(false)
         refresh()
@@ -269,13 +276,14 @@ const RunActionsMenu = ({ output, project, commit }) => {
   }
   return (
     <Menu>
+      {!is_logged && <LoginMenuItem text="Log in to redo or delete"/>}
       {id && is_pending && <MenuItem
         icon="stop"
         text="Mark as Failed"
         htmlTitle="For runs stuck as pending or running: their job is gone and will never report"
         intent={Intent.WARNING}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => act(
           () => http.put(`/api/v1/output/${id}/`, {is_pending: false, is_running: false, is_failed: true}),
           "Requested to mark as 'Failed'.",
@@ -287,7 +295,7 @@ const RunActionsMenu = ({ output, project, commit }) => {
         text="Redo"
         intent={Intent.WARNING}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => act(
           () => http.post(`/api/v1/output/redo/${id}/`, {is_pending: false, is_running: false}),
           "Requested Redo.",
@@ -299,7 +307,7 @@ const RunActionsMenu = ({ output, project, commit }) => {
         text="Delete"
         intent={Intent.DANGER}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => act(() => http.delete(`/api/v1/output/${id}/`), "Delete requested.", "Deleted.")}
       />}
       {id && !deleted && <MenuItem
@@ -307,7 +315,7 @@ const RunActionsMenu = ({ output, project, commit }) => {
         text="Delete Output Files"
         intent={Intent.DANGER}
         minimal
-        disabled={waiting}
+        disabled={waiting || !is_logged}
         onClick={() => act(() => http.delete(`/api/v1/output/${id}/`, {params: {soft: true}}), "Delete requested.", "Deleted.")}
       />}
     </Menu>

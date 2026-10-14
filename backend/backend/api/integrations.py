@@ -126,6 +126,7 @@ def integration_error(e):
   return jsonify({"error": str(e)}), getattr(e, 'status', 500)
 
 
+
 jenkins_credentials = json.loads(os.environ.get('JENKINS_AUTH', '{}'))
 def jenkins_hostname_credentials(build_url):
   hostname = urlparse(build_url).hostname
@@ -612,18 +613,26 @@ def jenkins_build_trigger():
   """
   Trigger a Jenkins build.
   """
-  data = request.get_json()
+  return trigger_jenkins_build(request.get_json())
+
+
+def trigger_jenkins_build(data):
+  """
+  Triggers a Jenkins build, waits a little for Jenkins to start it, and returns the response and its status code.
+  data: {build_url, params|parameters?, token?, cause?}
+  """
   if 'build_url' not in data:
       return jsonify({"error": f"ERROR: the integration is missing `build_url` (in your qaboard.yaml)"}), 400
   jenkins_credentials = jenkins_hostname_credentials(data['build_url'])
   if not jenkins_credentials:
-    return f"ERROR: No credentials for {data['build_url']}", "403"
+    return jsonify({"error": f"No Jenkins credentials for {urlparse(data['build_url']).hostname}. Add them to JENKINS_AUTH on the server."}), 403
   build_url = re.sub("/$", "", data['build_url'])
   build_trigger_url = f"{build_url}/buildWithParameters"
   try:
     params = {
       "cause": data.get('cause', "Triggered via QA-Board"),
-      **data.get('params'),
+      # the docs used to say `parameters`
+      **(data.get('params') or data.get('parameters') or {}),
     }
     if "token" in data:
       params["token"] = data["token"]
@@ -632,6 +641,7 @@ def jenkins_build_trigger():
     r_build = requests.post(
       build_trigger_url,
       params=params,
+      timeout=60,
       **jenkins_credentials,
     )
   except Exception as e:
@@ -661,6 +671,7 @@ def jenkins_build_trigger():
     try:
       r_get = requests.get(
         build_queue_location,
+        timeout=60,
         **jenkins_credentials,
       )
       r_get.raise_for_status()

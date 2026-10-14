@@ -36,7 +36,7 @@ const renderNavbar = () => {
       selected={selected}
       update={() => () => {}}
     />
-  </MemoryRouter>, { siteConfig: {} });
+  </MemoryRouter>, { siteConfig: {}, user: { is_logged: true, user_name: 'alice' } });
 };
 
 

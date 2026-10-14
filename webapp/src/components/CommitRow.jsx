@@ -18,7 +18,8 @@ import {
 } from "@blueprintjs/core";
 
 import { http, errorMessage } from "../api/http";
-import { useRefreshCommit } from "../hooks";
+import { useRefreshCommit, useUser } from "../hooks";
+import { LoginMenuItem } from "./authentication/login";
 import { CommitAvatar } from "./avatars";
 import { DoneAtTag } from "./DoneAtTag";
 import { format, shortId, pretty_label } from "../utils";
@@ -244,6 +245,7 @@ const CommitShortId = styled.a`
 
 const CommitRow = ({ commit, project, project_data = {}, className, tag, default_batch }) => {
   const [waiting, setWaiting] = useState(false);
+  const is_logged = useUser().is_logged;
   const refreshCommit = useRefreshCommit();
   const refresh = () => refreshCommit(project, commit.id);
 
@@ -307,11 +309,12 @@ const CommitRow = ({ commit, project, project_data = {}, className, tag, default
               <MenuItem text="Copy Directory" label={<Tag minimal>linux</Tag>} className={Classes.TEXT_MUTED} minimal icon="duplicate" onClick={() => copyDirectory(commit.artifacts_url)} />
               <MenuItem text="View files in browser" rel="noopener noreferrer" target="_blank" href={commit.artifacts_url} className={Classes.TEXT_MUTED} minimal icon="folder-shared-open"/>
               <MenuDivider title="Manage"/>
+              {!is_logged && <LoginMenuItem text="Log in to delete runs"/>}
               <MenuItem
                 text="Delete All Runs"
                 icon="trash"
                 intent={Intent.DANGER}
-                disabled={waiting || commit_has_milestones}
+                disabled={waiting || !is_logged || commit_has_milestones}
                 className={Classes.TEXT_MUTED}
                 minimal
                 onClick={() => deleteRuns(`/api/v1/commit/${project}/${commit.id}/batches/`)}
@@ -320,7 +323,7 @@ const CommitRow = ({ commit, project, project_data = {}, className, tag, default
                 text="Delete All Runs (in all other projects for this commit!)"
                 icon="trash"
                 intent={Intent.DANGER}
-                disabled={waiting || commit_has_milestones}
+                disabled={waiting || !is_logged || commit_has_milestones}
                 className={Classes.TEXT_MUTED}
                 minimal
                 onClick={() => deleteRuns(`/api/v1/commit/${commit.id}/batches/`)}

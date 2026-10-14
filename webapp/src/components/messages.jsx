@@ -9,10 +9,16 @@ import {
   NonIdealState,
 } from "@blueprintjs/core";
 import { ConfigurationsTags, ExtraParametersTags } from './tags'
-import { http, errorMessage } from "../api/http";
-import { useRefreshCommit } from "../hooks";
+import { http, errorMessage, isArtifactsError } from "../api/http";
+import { useRefreshCommit, useUser } from "../hooks";
 import { toaster } from "../toaster"
 import { SubmissionCallout } from "./logs/BatchSubmissions"
+import { ArtifactsCallout } from "./ArtifactsCallout"
+import { LoginHint } from "./authentication/login"
+
+// When a redo worked but e.g. only the source files could be restored
+const showWarning = response => response?.data?.warning && toaster.show({message: response.data.warning, intent: Intent.WARNING, timeout: 15000})
+const redoErrorToast = error => toaster.show({message: errorMessage(error), intent: isArtifactsError(error) ? Intent.WARNING : Intent.DANGER, timeout: 15000})
 
 
 const CommitWarningMessages = ({ project, commit }) => {
@@ -23,16 +29,20 @@ const CommitWarningMessages = ({ project, commit }) => {
     if (commit === undefined || commit === null) return;
     const refresh = () => refreshCommit(project, commit.id)
     setWaiting(true)
-    toaster.show({message: "Restoring artifacts..."});
+    toaster.show({message: commit.artifacts?.recreate ? "Asking to recreate the artifacts..." : "Restoring the artifacts from the source code..."});
     http.post(`/api/v1/commit/save-artifacts/`, {hexsha: commit.id, project})
-      .then(() => {
-        setWaiting(false)
-        toaster.show({message: `Restore artifacts.`, intent: Intent.PRIMARY});
-        refresh()
+      .then(response => {
+        toaster.show({
+          message: response.data?.message ?? "Restored the artifacts.",
+          intent: response.data?.status === 'restored' ? Intent.SUCCESS : Intent.PRIMARY,
+          timeout: 10000,
+        });
       })
       .catch(error => {
+        toaster.show({message: errorMessage(error), intent: Intent.DANGER, timeout: 15000});
+      })
+      .finally(() => {
         setWaiting(false)
-        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
         refresh()
       });
   }
@@ -44,22 +54,13 @@ const CommitWarningMessages = ({ project, commit }) => {
       icon="folder-open"
     />;
   }
-  if (commit?.deleted) {
-    return <Callout
-        icon="trash"
-        title={`This commit's artifacts have been deleted!`}
-      >
-        <p>We can restore the artifacts for you, but you'll likely need to rebuild too..!</p>
-        <Button
-          icon="redo"
-          text="Restore Artifacts"
-          minimal
-          disabled={waiting}
-          onClick={restore_artifacts}
-        />
-    </Callout>
-  }
-  return <span></span>
+  if (!commit) return <span></span>
+  return <ArtifactsCallout
+    deleted={commit.deleted}
+    artifacts={commit.artifacts}
+    waiting={waiting}
+    onRestore={restore_artifacts}
+  />
 }
 
 
@@ -93,6 +94,7 @@ const BatchStatusMessages = ({ project, commit, batch }) => {
   const [waiting_stop, setWaitingStop] = useState(false);
   const [waiting_redo, setWaitingRedo] = useState(false);
   const refreshCommit = useRefreshCommit();
+  const is_logged = useUser().is_logged;
 
   const refresh = (refresh_again = true) => {
     if (!commit?.id) return
@@ -121,12 +123,11 @@ const BatchStatusMessages = ({ project, commit, batch }) => {
     setWaitingRedo(true)
     toaster.show({message: "Redo requested."});
     http.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
-      .then(() => {
+      .then(response => {
         toaster.show({message: `Redo ${batch.label}.`, intent: Intent.PRIMARY});
+        showWarning(response)
       })
-      .catch(error => {
-        toaster.show({message: errorMessage(error), intent: Intent.DANGER});
-      })
+      .catch(redoErrorToast)
       .finally(() => {
         setWaitingRedo(false)
         refresh()
@@ -150,7 +151,8 @@ const BatchStatusMessages = ({ project, commit, batch }) => {
   const outputs = batch.filtered.outputs.map(id => batch.outputs[id])
   let some_pending = outputs.some(o => o.is_pending);
   let stop_runs = some_pending && <Callout>
-    <Button icon="stop" disabled={waiting_stop} onClick={stop_batch} minimal>Stop runs</Button>
+    <Button icon="stop" disabled={waiting_stop || !is_logged} onClick={stop_batch} minimal>Stop runs</Button>
+    {!is_logged && <LoginHint text="Log in to stop runs"/>}
   </Callout>
 
 
@@ -207,11 +209,12 @@ const BatchStatusMessages = ({ project, commit, batch }) => {
     >
       <Button
         icon="redo"
-        text={`Redo Deleted Outputs${commit?.deleted ? '. Requires artifacts.' : ''}`}
+        text={`Redo Deleted Outputs${commit?.deleted ? ' (restores the artifacts first)' : ''}`}
         minimal
-        disabled={waiting_redo || commit?.deleted}
+        disabled={waiting_redo || !is_logged}
         onClick={redo_batch}
       />
+      {!is_logged && <LoginHint text="Log in to redo runs"/>}
     </Callout>
   )
 
