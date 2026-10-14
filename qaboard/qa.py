@@ -168,16 +168,16 @@ def get(ctx, input_path, output_path, variable):
     variable = "artifacts_branch_root"
   if variable == "commit_ci_dir":
     variable = "outputs_commit"
-  locals().update(globals())
-  locals().update(ctx.obj)
+  # Not locals().update(): since python 3.13 (PEP 667) it doesn't change the function's variables
+  variables = {**globals(), **locals(), **ctx.obj}
   try:
     run_context = RunContext.from_click_run_context(ctx, config)
-    locals().update(run_context.asdict())
+    variables.update(run_context.asdict())
   except Exception:
     pass
 
-  if variable in locals():
-    print(locals().get(variable))
+  if variable in variables:
+    print(variables[variable])
   else:
     click.secho(f"Could not find {variable}", err=True, fg='red')
     exit(1)
