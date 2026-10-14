@@ -18,13 +18,16 @@
 <li class="">Added the "What's new" panel: the release notes, newest first, with a search box. The link <code>/#whats-new</code> opens it, handy to share in a chat.</li>
 <li class="">The "What's new" dialog pops up once a month (or quarter) is over, with everything that changed in it. The notes of the current month show in the panel as a preview, tagged "In progress".</li>
 <li class="">The sidebar's help button opens the new <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/overview">user guide</a>.</li>
-<li class="">The Logs view lets you filter runs (all, failed, running), tags failed runs with the reason (e.g. "LSF: out of memory"), and stays fast with hundreds of runs.</li>
+<li class="">The Logs view lets you filter runs (all, failed, running), and tags failed runs with the reason (e.g. "LSF: out of memory").</li>
 <li class="">In the Logs view, each run fits on one line, with its configuration in short and buttons to open its output directory, redo, mark as failed or delete it. The full configuration shows when you open the run's logs, and the logs no longer get wider than the window.</li>
 <li class="">The sidebar's Logs entry shows how many runs failed, or are still running.</li>
 <li class="">Switch between a run's <code>log.txt</code>, <code>log.lsf.txt</code> and <code>log.dask.txt</code>. For LSF runs, a summary shows the exit reason, host, run time and memory used vs requested, with hints that point to the batch's <code>lsf:</code> options.</li>
 <li class="">Batches started from QA-Board (tuning, "Run Tests") show whether <code>qa batch</code> is waiting for LSF, running, failed (with the error) or didn't start any run, with a link to its logs.</li>
 <li class="">Links to commits and projects use your server's git host instead of a hardcoded one, and the "Quotas" links only show when the server has a quota dashboard.</li>
 <li class="">The error page links to your server's support page.</li>
+<li class="">The URL now keeps everything you select: the commit list's date range, the metrics shown in tables, the commits highlighted on the History page. Share the link, reload, or use the back button: you get the same view. Typing filters and toggling viewer options no longer adds entries to the browser's history.</li>
+<li class="">Dynamic options (e.g. which frame to show) work across runs with different values: the controls panel lists the values of all runs, and a run that doesn't have the selected value shows the closest one and says so. Options are linked across runs from the start, and unlinking one gives each card its own selector, starting from the same value. See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/commit-page#the-controls-panel">user guide</a>.</li>
+<li class="">Links are much shorter: the URL only keeps what differs from the defaults (batch, filters, metrics, view, visualization controls, plot options).</li>
 <li class="">Open a folder under <code>/s/</code> in your browser to get the new <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/files">file browser</a>: sort and filter files (e.g. <code>*.png</code>), copy their Linux or Windows paths, paste a path to go there, and navigate with the keyboard (press <code>?</code>). Scripts and <code>curl</code> still get nginx's plain index.</li>
 <li class="">In the file browser, a bar shows the run whose folder you are in, with its status and a link to its results: <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/files#runs">redo it, delete it or mark it as failed</a> from there.</li>
 <li class="">The Available Tests view is a real editor for your private and shared batches: it flags YAML mistakes as you type, shows if your changes are saved next to the Save button (or <code>Ctrl+S</code>), lets you review or discard them, and keeps them if you leave before saving. It also warns instead of overwriting someone else's changes to the shared batches. See the <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/commit-page#available-tests">user guide</a>.</li>
@@ -112,87 +115,139 @@
 <li class="">Links to the docs shared in chats and social networks show a card with QA-Board's tagline and a glimpse of the web app.</li>
 <li class="">The docs show a placeholder that describes a screenshot or clip when your browser can't load it, instead of a broken image.</li>
 </ul>
-<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="fixes">Fixes<a href="https://samsung.github.io/qaboard/release-notes/2026-10#fixes" class="hash-link" aria-label="Direct link to Fixes" title="Direct link to Fixes" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="performance">Performance<a href="https://samsung.github.io/qaboard/release-notes/2026-10#performance" class="hash-link" aria-label="Direct link to Performance" title="Direct link to Performance" translate="no">​</a></h2>
+<p>Measured on a commit with 1000 runs:</p>
 <ul>
-<li class="">In History, the chart's axis no longer shows the metric's unit when the values are relative to the first commit (@100).</li>
-<li class="">With LSF job arrays and the Dask runner, <code>qa run</code> no longer deletes the log file its output goes to: errors are no longer lost.</li>
-<li class="">The tuning form shows a readable error instead of the server's raw response.</li>
-<li class="">A stuck run's "Mark as Finished" action is now labelled "Mark as Failed", which is what it does.</li>
-<li class="">Security: marking a run as failed or deleting it now requires a login.</li>
-<li class="">Deleting results no longer deletes the contents of folders that they link to.</li>
-<li class="">Security: when signing up with a user name or email that is already used, the server answers "already taken" instead of an error that included the password's hash, and no longer writes the password to its logs.</li>
-<li class="">Security: logging in with an empty password is refused, and LDAP logins escape the user name.</li>
-<li class="">The batch selector no longer jumps back to the top while you scroll it, and its keyboard navigation works again. It now opens on the selected batch, marked with a check.</li>
-<li class="">Switching to a branch you had opened in a previous visit no longer crashes the commits list ("setHours is not a function").</li>
-<li class="">Runs started from a <code>git worktree</code> checkout are saved under their commit, instead of their branch name. Submodules with a relative <code>.git</code> pointer also work.</li>
-<li class="">The image viewer's diff threshold slider no longer jumps to its maximum and gets stuck: it moves step by step after you turn the diff on.</li>
-<li class="">Runs that start again (redo, <code>qa batch</code>...) no longer show as failed, and count as failed, until they finish: their status is reset when they are pending or running.</li>
-<li class="">In the file browser, going back after opening a file shows the folder again, instead of its raw listing.</li>
-<li class="">Links to a run's output directory open the file browser even when the folder doesn't exist, e.g. for runs that failed before they started, instead of an error page.</li>
-<li class="">Security: when a restricted project saves its results in a folder per user (e.g. <code>/algo/outputs/{user}</code>), the project's files are now restricted in every user's folder, not only in the server's.</li>
-<li class="">Text files in a run's output files show again when the reference run doesn't have them, and their diff with the reference no longer breaks when you press <code>t</code> to swap the sides.</li>
-<li class="">Notifications show at the bottom of the window again, instead of at the bottom of the page's first screen where they were out of sight once you scrolled down.</li>
-<li class="">The Logs view's copy buttons (logs, commands) work when QA-Board is served over plain http, not only https.</li>
+<li class="">Type in the filter box of a commit page without the page freezing: the results update in half a second, instead of after 7 seconds of a frozen page. Sorting runs, and matching them with their reference, no longer freeze the page either.</li>
+<li class="">Open the Metrics Table in a third of a second instead of 7 seconds, with a fraction of the memory (40 MB instead of 640 MB): big tables only render the rows on screen.</li>
+<li class="">Open the Visualizations twice as fast: cards download their files as they scroll into view, and files shared by several cards or viewers are downloaded once. Batches with more than 300 runs show more cards as you scroll, or all of them with "show all".</li>
+<li class="">Commit pages load in 0.6 s instead of 1 s.</li>
+<li class="">Come back to a page you already visited and it shows up at once, then refreshes in the background. Commits with running outputs keep updating.</li>
+<li class="">After a reload, the projects and your account show at once, from your browser's cache, while QA-Board fetches fresh data.</li>
+<li class="">Open tuning batches faster: runs that have an exact match in the reference no longer go through a name-similarity search.</li>
+<li class="">Scroll through hundreds of runs in the Logs view without slowdowns.</li>
+<li class="">Open very long logs (tens of thousands of lines) several times faster, and search them without the page freezing for seconds.</li>
+<li class="">See the diff of big text files (logs, configurations...) with the reference sooner: the editor loads while the files download, instead of after.</li>
+</ul>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="fixes">Fixes<a href="https://samsung.github.io/qaboard/release-notes/2026-10#fixes" class="hash-link" aria-label="Direct link to Fixes" title="Direct link to Fixes" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="across-the-web-app">Across the web app<a href="https://samsung.github.io/qaboard/release-notes/2026-10#across-the-web-app" class="hash-link" aria-label="Direct link to Across the web app" title="Direct link to Across the web app" translate="no">​</a></h3>
+<ul>
 <li class="">Copying the path of an output, batch or commit directory gives the right path when folder names contain characters like <code>#</code>, and the confirmation shows the copied path.</li>
-<li class="">Very long logs (tens of thousands of lines) open several times faster, and searching them no longer freezes the page for seconds.</li>
-<li class="">Switching between a run's log files shows the end of the new file, instead of keeping the scroll position and the highlighted error of the previous one.</li>
-<li class="">The floating panel's button no longer hides the buttons on the right of the Logs view.</li>
-<li class=""><code>qa optimize</code> works with recent versions of scikit-optimize, instead of failing with "cannot import name 'Integer'".</li>
-<li class=""><code>qa optimize</code> no longer fails at the end when matplotlib isn't installed: it only skips its convergence plot.</li>
-<li class="">On Windows, <code>qa batch</code> finds existing results for projects whose name contains a "/", instead of failing with "could not find any data on commit ID": <code>--action-on-existing</code> works there.</li>
-<li class="">Redoing runs from QA-Board respects the batch's concurrency, and uses the runner the runs were started with (e.g. Dask) and its settings. QA-Board used to start each run with its own <code>qa batch</code>, so they all ran at once, with the default runner.</li>
-<li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
-<li class="">Commit pages and the branch list no longer break when results were sent without a branch.</li>
-<li class="">Playing or pausing a video that has no reference no longer raises errors ("pause is not a function").</li>
-<li class="">Videos your browser can't play (e.g. HEVC) say so, with the command to convert them, instead of staying black. Animated <em>.webp</em> and <em>.gif</em> files now show, side by side with the reference's, instead of a black box or their bytes as text.</li>
-<li class="">Finished runs whose metrics don't include <code>is_failed</code> count as successful, instead of neither successful nor failed.</li>
-<li class="">A run is compared with the reference run of the same platform: when the reference batch had the same input and configuration on two platforms, the other platform's run was picked.</li>
-<li class="">The History page's per-test tables show their metric columns again, in tabs named "Metrics Table" and "Metrics Diff" like on commit pages.</li>
-<li class="">The SLAM and tuning plots no longer have Plotly's "Send to Cloud" button, so their data can't be uploaded to Plotly's public cloud.</li>
+<li class="">Notifications show at the bottom of the window again, instead of at the bottom of the page's first screen where they were out of sight once you scrolled down.</li>
+<li class="">Counters say "1 output", "1 run" and "1 project" instead of "1 outputs", "1 runs" and "1 projects".</li>
 <li class="">Links to the LSF docs and to the getting-started page work again, and the retired chat link now points to your server's support page (by default, QA-Board's GitHub issues).</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="commit-page-and-viewers">Commit page and viewers<a href="https://samsung.github.io/qaboard/release-notes/2026-10#commit-page-and-viewers" class="hash-link" aria-label="Direct link to Commit page and viewers" title="Direct link to Commit page and viewers" translate="no">​</a></h3>
+<ul>
+<li class="">Dynamic options no longer show an empty card when a run doesn't have the selected value, sort numbers as numbers (<code>2</code> before <code>10</code>), and no longer split into options like <code>frame_1234</code> that control nothing. Whether an option is linked is no longer remembered across projects.</li>
+<li class="">In the image viewer, changing a Dynamic Option (e.g. a slider over your pipeline's stages) keeps the zoom and the selected ROI, for the new and reference images, instead of zooming out to the whole image, most often when the reference's image showed up. Images with another aspect ratio fit the selected ROI again.</li>
+<li class="">Hiding a visualization shown by default takes one click instead of two.</li>
+<li class="">A run is compared with the reference run of the same platform: when the reference batch had the same input and configuration on two platforms, the other platform's run was picked.</li>
+<li class="">The Improvement report showed "=" for metrics that changed, and badges for those that didn't.</li>
+<li class="">The Summary's change in % has the right sign for metrics with negative values, and runs that return no value (<code>null</code>) for a metric no longer count as 0 in its median.</li>
+<li class="">The Summary only warns that it mixes runs with different parameters when the runs it aggregates really have different parameters: filter the runs to compare one configuration.</li>
+<li class="">In the Metrics Table, the New and Ref headers stay over their columns when a filter leaves out every run that has some metric, and metrics without a target show just their unit, like <code>[s]</code>.</li>
+<li class="">Removing a metric from a table's metric picker no longer also drops the selected metrics that the current batch doesn't have.</li>
+<li class="">The reference commit's refresh button works again: it was disabled once the commit had loaded.</li>
+<li class="">The error page shows the error as text, instead of inserting it in the page as HTML.</li>
+<li class="">Output Files tags runs <strong>Bit-accurate</strong> when their output files match the reference's: like <code>qa check-bit-accuracy</code>, it only checks the files that match <code>bit_accuracy.patterns</code> in <em>qaboard.yaml</em> (all files by default, except logs, <code>run.json</code> and <code>metrics.json</code>). The other files are still listed when they differ, greyed and tagged "not checked". See <a class="" href="https://samsung.github.io/qaboard/docs/bit-accuracy#what-files-are-checked">bit-accuracy tests</a>.</li>
 <li class="">Images show in the image viewer on servers that don't set <code>QABOARD_IMAGE_SERVERS</code>: the default is now Cantaloupe's <code>/iiif/2/</code> endpoint, instead of a <code>/iiif</code> URL that Cantaloupe couldn't answer.</li>
-<li class="">Upgrading the Helm chart no longer restarts the backend for nothing after a first install (its settings checksum included a generated secret that rendered differently each time).</li>
-<li class="">nginx starts on hosts without IPv6, instead of failing on its <code>listen [::]:80</code> line.</li>
-<li class=""><code>qa</code> no longer warns that it doesn't know where your server is when you set <code>QABOARD_URL=http://localhost:5151</code>.</li>
-<li class=""><code>qa</code> no longer prints a git error when the commit it runs on isn't in the local clone (e.g. shallow CI clones): it only did without the commit's details. <code>QA_VERBOSE=1</code> still shows it.</li>
-<li class="">Security: the API <code>qa</code> uses to update batches no longer lets anyone without a login delete runs. <code>qa optimize</code> still replaces its previous best iteration's runs, and only those.</li>
-<li class="">Security: when <code>qa</code> fails to update QA-Board, its warning no longer prints your API token (<code>QA_TOKEN</code>).</li>
 <li class="">JPEG images show in the image viewer again, instead of an "Image Download Error": the image server only sent them as JPEG tiles, and the viewer asks for PNG ones. They now come as PNG tiles, with the exact pixel values for the pixel tooltip and the diff. Update the <code>cantaloupe</code> image to get the fix.</li>
+<li class="">The image viewer's <strong>Auto ROIs</strong> finds regions again, instead of failing with an error.</li>
 <li class="">The image viewer's ROI thumbnails show the image the viewer shows: they no longer break for runs that save a TIFF instead of a PNG, or for images served by another image server (<code>QABOARD_IMAGE_SERVERS</code>).</li>
 <li class="">ROIs set on inputs of another size than the output images are placed right on non-square images, in the thumbnails and when you zoom on them.</li>
-<li class="">The projects list shows the description from <em>qaboard.yaml</em> (<code>project.description</code>) for projects that aren't on GitHub or GitLab too.</li>
-<li class="">The image viewer's <strong>Auto ROIs</strong> finds regions again, instead of failing with an error.</li>
 <li class="">In the image viewer, selecting a region (the selection button, or <code>c</code>) draws it again and shows its histograms, instead of panning the image.</li>
-<li class="">With Python 3.12 and later, <code>qa</code> no longer prints a <code>SyntaxWarning: invalid escape sequence</code> when it starts.</li>
-<li class=""><code>qa batch --tuning-search</code> runs a grid search when the JSON doesn't say <code>search_type</code>, as the docs show, instead of failing with <code>KeyError: 'search_type'</code>.</li>
-<li class="">The Summary's change in % has the right sign for metrics with negative values, and runs that return no value (<code>null</code>) for a metric no longer count as 0 in its median.</li>
+<li class="">The image viewer's diff threshold slider no longer jumps to its maximum and gets stuck: it moves step by step after you turn the diff on.</li>
+<li class="">In point clouds, WASD moves while the key is pressed, not after it's released.</li>
 <li class="">Plots saved with <code>side_by_side: false</code> draw the reference run's traces on the same axes, instead of nothing when a figure has several traces. Traces keep their own dash style.</li>
 <li class="">Differential flame graphs are colored by what changed: red for frames that take more time than in the reference, blue for less, orange for new ones. The colors no longer exaggerate changes near the root.</li>
-<li class="">History's "Performance over time" chart shows your project's metrics again, instead of asking you to define them.</li>
-<li class="">In the Metrics Table, the New and Ref headers stay over their columns when a filter leaves out every run that has some metric, and metrics without a target show just their unit, like <code>[s]</code>.</li>
-<li class="">Counters say "1 output", "1 run" and "1 project" instead of "1 outputs", "1 runs" and "1 projects".</li>
-<li class="">In the image viewer, changing a Dynamic Option (e.g. a slider over your pipeline's stages) keeps the zoom and the selected ROI, for the new and reference images, instead of zooming out to the whole image, most often when the reference's image showed up. Images with another aspect ratio fit the selected ROI again.</li>
-<li class="">Output Files tags runs <strong>Bit-accurate</strong> when their output files match the reference's: like <code>qa check-bit-accuracy</code>, it only checks the files that match <code>bit_accuracy.patterns</code> in <em>qaboard.yaml</em> (all files by default, except logs, <code>run.json</code> and <code>metrics.json</code>). The other files are still listed when they differ, greyed and tagged "not checked". See <a class="" href="https://samsung.github.io/qaboard/docs/bit-accuracy#what-files-are-checked">bit-accuracy tests</a>.</li>
-<li class="">The chart above a branch's commits shows the branch's metrics, the median or average over each commit's runs, instead of staying empty. Each commit row also shows the median and average of the default metric over its CI runs.</li>
-<li class="">The Auto-Tuning Analysis plots each iteration's metrics (those in the objective) next to the objective, for tunings run from now on: <code>qa optimize</code> used to get no metrics from the server.</li>
-<li class="">The commit list's day headers say "1 commit" instead of "1 Commits".</li>
+<li class="">The SLAM and tuning plots no longer have Plotly's "Send to Cloud" button, so their data can't be uploaded to Plotly's public cloud.</li>
+<li class="">Text viewers set to show only differences hide identical files, and videos play without a reference.</li>
+<li class="">Text files in a run's output files show again when the reference run doesn't have them, and their diff with the reference no longer breaks when you press <code>t</code> to swap the sides.</li>
 <li class="">HTML outputs (like a run's report) show their images and links, which are relative to their own folder, and their styles no longer change the rest of the page: they show in a frame, without running scripts.</li>
-<li class="">The Summary only warns that it mixes runs with different parameters when the runs it aggregates really have different parameters: filter the runs to compare one configuration.</li>
 <li class="">Artifacts &amp; Configurations shows the artifacts again when the commit loads after the view, instead of "Could not find" them.</li>
-<li class="">Run Tests / Tuning runs as you when you open it from a link: it no longer asks for a user it can't let you type, with Send disabled.</li>
+<li class="">Playing or pausing a video that has no reference no longer raises errors ("pause is not a function").</li>
+<li class="">Videos your browser can't play (e.g. HEVC) say so, with the command to convert them, instead of staying black. Animated <em>.webp</em> and <em>.gif</em> files now show, side by side with the reference's, instead of a black box or their bytes as text.</li>
+<li class="">The Summary's box plots on a log scale show a few round ticks, instead of labels that overlapped.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="logs">Logs<a href="https://samsung.github.io/qaboard/release-notes/2026-10#logs" class="hash-link" aria-label="Direct link to Logs" title="Direct link to Logs" translate="no">​</a></h3>
+<ul>
+<li class="">The Logs view's copy buttons (logs, commands) work when QA-Board is served over plain http, not only https.</li>
+<li class="">Switching between a run's log files shows the end of the new file, instead of keeping the scroll position and the highlighted error of the previous one.</li>
+<li class="">The floating panel's button no longer hides the buttons on the right of the Logs view.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="commits-branches-and-history">Commits, branches and history<a href="https://samsung.github.io/qaboard/release-notes/2026-10#commits-branches-and-history" class="hash-link" aria-label="Direct link to Commits, branches and history" title="Direct link to Commits, branches and history" translate="no">​</a></h3>
+<ul>
+<li class="">Reloading a page, opening a shared link or using the back button shows what the URL says: the selected commits, batches and filters could disagree with it.</li>
+<li class="">The back button takes you back in one click after following links inside QA-Board: some links added two entries to the browser's history.</li>
+<li class="">The chart above a branch's commits shows the branch's metrics, the median or average over each commit's runs, instead of staying empty. Each commit row also shows the median and average of the default metric over its CI runs.</li>
+<li class="">History's "Performance over time" chart shows your project's metrics again, instead of asking you to define them.</li>
+<li class="">In History, the chart's axis no longer shows the metric's unit when the values are relative to the first commit (@100).</li>
+<li class="">The History page's per-test tables show their metric columns again, in tabs named "Metrics Table" and "Metrics Diff" like on commit pages.</li>
+<li class="">On the History page, picking metrics updates the metrics distribution too.</li>
+<li class="">Selecting a milestone from <code>qaboard.yaml</code> selects the latest commit of its branch.</li>
+<li class="">The batch selector no longer jumps back to the top while you scroll it, and its keyboard navigation works again. It now opens on the selected batch, marked with a check.</li>
+<li class="">Switching to a branch you had opened in a previous visit no longer crashes the commits list ("setHours is not a function").</li>
+<li class="">Commit pages and the branch list no longer break when results were sent without a branch.</li>
+<li class="">The commit list's day headers say "1 commit" instead of "1 Commits".</li>
+<li class="">The projects list shows the description from <em>qaboard.yaml</em> (<code>project.description</code>) for projects that aren't on GitHub or GitLab too.</li>
 <li class="">History's y axis no longer cuts off the start of its top label ("000 ms" for 1000 ms).</li>
 <li class="">The chart above a branch's commits leaves out the commits that don't have the metric, instead of drawing gaps in its line.</li>
-<li class="">The Summary's box plots on a log scale show a few round ticks, instead of labels that overlapped.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="runs-batches-and-tuning">Runs, batches and tuning<a href="https://samsung.github.io/qaboard/release-notes/2026-10#runs-batches-and-tuning" class="hash-link" aria-label="Direct link to Runs, batches and tuning" title="Direct link to Runs, batches and tuning" translate="no">​</a></h3>
+<ul>
+<li class="">Redoing runs from QA-Board respects the batch's concurrency, and uses the runner the runs were started with (e.g. Dask) and its settings. QA-Board used to start each run with its own <code>qa batch</code>, so they all ran at once, with the default runner.</li>
+<li class="">Runs that start again (redo, <code>qa batch</code>...) no longer show as failed, and count as failed, until they finish: their status is reset when they are pending or running.</li>
+<li class="">Finished runs whose metrics don't include <code>is_failed</code> count as successful, instead of neither successful nor failed.</li>
+<li class="">A stuck run's "Mark as Finished" action is now labelled "Mark as Failed", which is what it does.</li>
+<li class="">Moving runs to another batch closes the dialog, and saving a milestone no longer risks losing it.</li>
+<li class="">The tuning form shows a readable error instead of the server's raw response.</li>
+<li class="">The tuning form remembers the "Overwrite" option, and setting the number of iterations no longer crashes.</li>
+<li class="">Run Tests / Tuning runs as you when you open it from a link: it no longer asks for a user it can't let you type, with Send disabled.</li>
+<li class="">The Auto-Tuning Analysis plots each iteration's metrics (those in the objective) next to the objective, for tunings run from now on: <code>qa optimize</code> used to get no metrics from the server.</li>
 <li class="">Projects whose inputs are inside the project (a relative <code>inputs.database</code>, like <code>inputs</code>) see their tests in the Run Tests / Tuning form and in Available Tests: they are looked for in the commit's artifacts, where the runs started from QA-Board run, instead of in a folder of the server. In monorepos, from the root <em>qaboard.yaml</em>'s folder, like <code>qa</code> does.</li>
 <li class="">Run Tests / Tuning and Available Tests find the inputs of projects whose <code>inputs.database</code> uses <code>{project}</code> or <code>{subproject}</code> (e.g. <code>/datasets/{project.name}</code>), instead of looking for them from <code>/</code>.</li>
 <li class="">When several of a commit's batch files define the same batch, Run Tests / Tuning and Available Tests use the last one, like <code>qa batch</code>, instead of the first.</li>
 <li class="">Listing a batch's tests no longer fails for commits that QA-Board saw before <code>qa</code> sent their <em>qaboard.yaml</em> (e.g. opened by branch name): it uses the project's, and the commit gets its own the next time <code>qa</code> runs on it.</li>
 <li class="">Run Tests / Tuning lists the tests of batches whose name contains <code>+</code>, <code>&amp;</code> or <code>#</code>.</li>
 <li class="">When a batch has an input it can't use, like an empty <code>-</code> or a number, <code>qa batch</code> says which batch, in which file and at which line, instead of "Could not understand the inputs in the batch" followed by all its inputs. Available Tests and Run Tests / Tuning show the same error.</li>
-<li class=""><code>qa batch</code> accepts a single input written as text (<code>inputs: a.jpg</code>), and says that a batch written as a list (<code>my-batch: [a, b]</code>) must be a mapping with <code>inputs:</code>, also in the web app (the server used to call <code>exit()</code> there).</li>
 <li class="">Runs started from QA-Board are the logged-in user's, instead of the server's user.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="file-browser">File browser<a href="https://samsung.github.io/qaboard/release-notes/2026-10#file-browser" class="hash-link" aria-label="Direct link to File browser" title="Direct link to File browser" translate="no">​</a></h3>
+<ul>
+<li class="">Going back after opening a file shows the folder again, instead of its raw listing.</li>
+<li class="">Links to a run's output directory open the file browser even when the folder doesn't exist, e.g. for runs that failed before they started, instead of an error page.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli">CLI<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli" class="hash-link" aria-label="Direct link to CLI" title="Direct link to CLI" translate="no">​</a></h3>
+<ul>
+<li class="">With LSF job arrays and the Dask runner, <code>qa run</code> no longer deletes the log file its output goes to: errors are no longer lost.</li>
+<li class="">Runs started from a <code>git worktree</code> checkout are saved under their commit, instead of their branch name. Submodules with a relative <code>.git</code> pointer also work.</li>
+<li class="">On Windows, <code>qa batch</code> finds existing results for projects whose name contains a "/", instead of failing with "could not find any data on commit ID": <code>--action-on-existing</code> works there.</li>
+<li class=""><code>qa optimize</code> works with recent versions of scikit-optimize, instead of failing with "cannot import name 'Integer'".</li>
+<li class=""><code>qa optimize</code> no longer fails at the end when matplotlib isn't installed: it only skips its convergence plot.</li>
+<li class=""><code>qa batch --tuning-search</code> runs a grid search when the JSON doesn't say <code>search_type</code>, as the docs show, instead of failing with <code>KeyError: 'search_type'</code>.</li>
+<li class=""><code>qa</code> no longer warns that it doesn't know where your server is when you set <code>QABOARD_URL=http://localhost:5151</code>.</li>
+<li class=""><code>qa</code> no longer prints a git error when the commit it runs on isn't in the local clone (e.g. shallow CI clones): it only did without the commit's details. <code>QA_VERBOSE=1</code> still shows it.</li>
+<li class="">With Python 3.12 and later, <code>qa</code> no longer prints a <code>SyntaxWarning: invalid escape sequence</code> when it starts.</li>
+<li class=""><code>qa batch</code> accepts a single input written as text (<code>inputs: a.jpg</code>), and says that a batch written as a list (<code>my-batch: [a, b]</code>) must be a mapping with <code>inputs:</code>, also in the web app (the server used to call <code>exit()</code> there).</li>
 <li class=""><code>qa get</code> works with Python 3.13: it said "Could not find" for every variable.</li>
 <li class=""><code>QA_BATCH_CONCURRENCY</code> no longer overrides the concurrency of the runs that <code>qa batch --runs-file</code> redoes, as if <code>--local-concurrency</code> was given.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration-1">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration-1" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h3>
+<ul>
+<li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
+<li class="">Upgrading the Helm chart no longer restarts the backend for nothing after a first install (its settings checksum included a generated secret that rendered differently each time).</li>
+<li class="">nginx starts on hosts without IPv6, instead of failing on its <code>listen [::]:80</code> line.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="security-and-data-safety">Security and data safety<a href="https://samsung.github.io/qaboard/release-notes/2026-10#security-and-data-safety" class="hash-link" aria-label="Direct link to Security and data safety" title="Direct link to Security and data safety" translate="no">​</a></h3>
+<ul>
+<li class="">Marking a run as failed or deleting it now requires a login.</li>
+<li class="">Deleting results no longer deletes the contents of folders that they link to.</li>
+<li class="">When a restricted project saves its results in a folder per user (e.g. <code>/algo/outputs/{user}</code>), the project's files are now restricted in every user's folder, not only in the server's.</li>
+<li class="">The API <code>qa</code> uses to update batches no longer lets anyone without a login delete runs. <code>qa optimize</code> still replaces its previous best iteration's runs, and only those.</li>
+<li class="">When <code>qa</code> fails to update QA-Board, its warning no longer prints your API token (<code>QA_TOKEN</code>).</li>
+<li class="">When signing up with a user name or email that is already used, the server answers "already taken" instead of an error that included the password's hash, and no longer writes the password to its logs.</li>
+<li class="">Logging in with an empty password is refused, and LDAP logins escape the user name.</li>
 </ul>]]></content>
     </entry>
     <entry>
