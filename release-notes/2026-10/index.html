@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.8897a192.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.a2d7ef45.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.2d7d7ae9.js" defer="defer"></script>
 </head>
 <body>
@@ -85,6 +85,12 @@
 <li class="">Buttons that were only icons have labels for screen readers, and the menus they open can be reached with the keyboard.</li>
 <li class="">The web app says &quot;runs&quot; everywhere, like the docs (&quot;8 runs&quot;, &quot;Redo failed runs&quot;), and page titles match the sidebar&#x27;s names: Metrics Table instead of &quot;Quality report&quot;, Metrics Diff instead of &quot;Improvement report&quot;, and the Analysis view is now Tuning Analysis.</li>
 <li class="">The commit, batch and run action menus open on click instead of hover, so they no longer open by accident and work on touch screens. When a run has no reference and there&#x27;s no Windows path to choose, its folder and copy buttons act directly.</li>
+<li class="">Pages use the width next to the sidebar instead of jumping between fixed widths, and the commit page&#x27;s views no longer spill out of the window on laptop screens.</li>
+<li class="">The commit page&#x27;s header fits narrower windows on one line: long commit messages and branches are cut with &quot;…&quot;, and labels with an icon hide before anything overlaps.</li>
+<li class="">In the dark theme, the metrics tables&#x27; colors are softer: neutral values stay close to the card&#x27;s color and only clear improvements and regressions stand out.</li>
+<li class="">Switch commit lists to <strong>Compact</strong> to see one commit per line, in aligned columns, with the full message, metrics and other batches on hover. The web app remembers your choice.</li>
+<li class="">Open the export box from the new <strong>Export</strong> button next to the Visualizations and Output Files titles; press Enter to export, and find the last export&#x27;s paths when you reopen it.</li>
+<li class="">See and change what the commit page shows from a clearer controls panel: <strong>Files to show</strong> (formerly Dynamic options) names each option and says which visualization it&#x27;s for. Until you pick a value it shows each run&#x27;s default, e.g. its last frame. You can choose a value per run, or reset it.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -220,6 +226,8 @@
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="commit-page-and-viewers">Commit page and viewers<a href="#commit-page-and-viewers" class="hash-link" aria-label="Direct link to Commit page and viewers" title="Direct link to Commit page and viewers" translate="no">​</a></h3>
 <ul>
+<li class="">The controls panel shows the sort actually used, the project&#x27;s default metric, instead of <em>Name</em>, and Output Files no longer shows an empty visualization filter.</li>
+<li class="">Run cards grow to fit a plot wider than their configured width (<code>outputs.style.width</code>), instead of the plot spilling out of the card.</li>
 <li class="">Visualization cards line up from the left, instead of being pushed to the edges of the page.</li>
 <li class="">The Tuning Analysis view&#x27;s efficient frontier colors points by nested tuning parameters (like <code>denoise.strength</code>) instead of drawing black dots.</li>
 <li class="">Running integrations show a spinning icon again, and the bit-accuracy legend&#x27;s gray icons have a color.</li>

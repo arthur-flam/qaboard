@@ -73,6 +73,12 @@
 <li class="">Buttons that were only icons have labels for screen readers, and the menus they open can be reached with the keyboard.</li>
 <li class="">The web app says "runs" everywhere, like the docs ("8 runs", "Redo failed runs"), and page titles match the sidebar's names: Metrics Table instead of "Quality report", Metrics Diff instead of "Improvement report", and the Analysis view is now Tuning Analysis.</li>
 <li class="">The commit, batch and run action menus open on click instead of hover, so they no longer open by accident and work on touch screens. When a run has no reference and there's no Windows path to choose, its folder and copy buttons act directly.</li>
+<li class="">Pages use the width next to the sidebar instead of jumping between fixed widths, and the commit page's views no longer spill out of the window on laptop screens.</li>
+<li class="">The commit page's header fits narrower windows on one line: long commit messages and branches are cut with "…", and labels with an icon hide before anything overlaps.</li>
+<li class="">In the dark theme, the metrics tables' colors are softer: neutral values stay close to the card's color and only clear improvements and regressions stand out.</li>
+<li class="">Switch commit lists to <strong>Compact</strong> to see one commit per line, in aligned columns, with the full message, metrics and other batches on hover. The web app remembers your choice.</li>
+<li class="">Open the export box from the new <strong>Export</strong> button next to the Visualizations and Output Files titles; press Enter to export, and find the last export's paths when you reopen it.</li>
+<li class="">See and change what the commit page shows from a clearer controls panel: <strong>Files to show</strong> (formerly Dynamic options) names each option and says which visualization it's for. Until you pick a value it shows each run's default, e.g. its last frame. You can choose a value per run, or reset it.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="cli-and-project-setup">CLI and project setup<a href="https://samsung.github.io/qaboard/release-notes/2026-10#cli-and-project-setup" class="hash-link" aria-label="Direct link to CLI and project setup" title="Direct link to CLI and project setup" translate="no">​</a></h2>
 <ul>
@@ -208,6 +214,8 @@
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="commit-page-and-viewers">Commit page and viewers<a href="https://samsung.github.io/qaboard/release-notes/2026-10#commit-page-and-viewers" class="hash-link" aria-label="Direct link to Commit page and viewers" title="Direct link to Commit page and viewers" translate="no">​</a></h3>
 <ul>
+<li class="">The controls panel shows the sort actually used, the project's default metric, instead of <em>Name</em>, and Output Files no longer shows an empty visualization filter.</li>
+<li class="">Run cards grow to fit a plot wider than their configured width (<code>outputs.style.width</code>), instead of the plot spilling out of the card.</li>
 <li class="">Visualization cards line up from the left, instead of being pushed to the edges of the page.</li>
 <li class="">The Tuning Analysis view's efficient frontier colors points by nested tuning parameters (like <code>denoise.strength</code>) instead of drawing black dots.</li>
 <li class="">Running integrations show a spinning icon again, and the bit-accuracy legend's gray icons have a color.</li>
