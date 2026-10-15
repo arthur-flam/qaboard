@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.eadb2000.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.5afc8043.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.2d7d7ae9.js" defer="defer"></script>
 </head>
 <body>
@@ -337,6 +337,8 @@
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="security-and-data-safety">Security and data safety<a href="#security-and-data-safety" class="hash-link" aria-label="Direct link to Security and data safety" title="Direct link to Security and data safety" translate="no">​</a></h3>
 <ul>
 <li class="">Marking a run as failed or deleting it now requires a login.</li>
+<li class="">On servers that restrict projects to some users, only users allowed on a project can stop, rename, move or delete its batches, delete a commit&#x27;s results, save its artifacts, or change its milestones. Exporting runs also checks you can access the reference&#x27;s project.</li>
+<li class=""><code>QABOARD_LOGIN_RESTRICTED=false</code> (or <code>0</code>) turns project restrictions off, as you would expect: any non-empty value used to turn them on.</li>
 <li class="">Deleting results no longer deletes the contents of folders that they link to.</li>
 <li class="">When a restricted project saves its results in a folder per user (e.g. <code>/algo/outputs/{user}</code>), the project&#x27;s files are now restricted in every user&#x27;s folder, not only in the server&#x27;s.</li>
 <li class="">The API <code>qa</code> uses to update batches no longer lets anyone without a login delete runs. <code>qa optimize</code> still replaces its previous best iteration&#x27;s runs, and only those.</li>

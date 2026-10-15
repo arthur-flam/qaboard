@@ -326,6 +326,8 @@
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="security-and-data-safety">Security and data safety<a href="https://samsung.github.io/qaboard/release-notes/2026-10#security-and-data-safety" class="hash-link" aria-label="Direct link to Security and data safety" title="Direct link to Security and data safety" translate="no">​</a></h3>
 <ul>
 <li class="">Marking a run as failed or deleting it now requires a login.</li>
+<li class="">On servers that restrict projects to some users, only users allowed on a project can stop, rename, move or delete its batches, delete a commit's results, save its artifacts, or change its milestones. Exporting runs also checks you can access the reference's project.</li>
+<li class=""><code>QABOARD_LOGIN_RESTRICTED=false</code> (or <code>0</code>) turns project restrictions off, as you would expect: any non-empty value used to turn them on.</li>
 <li class="">Deleting results no longer deletes the contents of folders that they link to.</li>
 <li class="">When a restricted project saves its results in a folder per user (e.g. <code>/algo/outputs/{user}</code>), the project's files are now restricted in every user's folder, not only in the server's.</li>
 <li class="">The API <code>qa</code> uses to update batches no longer lets anyone without a login delete runs. <code>qa optimize</code> still replaces its previous best iteration's runs, and only those.</li>
