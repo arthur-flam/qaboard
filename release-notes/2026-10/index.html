@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.5afc8043.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.8897a192.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.2d7d7ae9.js" defer="defer"></script>
 </head>
 <body>
@@ -164,6 +164,10 @@
 <li class="">Starts even when the database has migrations it doesn&#x27;t know, made by a newer version, e.g. after a rollback: it keeps them.</li>
 <li class="">Versions from before October 2026 don&#x27;t start on a database migrated by this one: to roll back to them, first undo the newer migrations (<a class="" href="/qaboard/docs/backend-admin/deployment">rollbacks</a>).</li>
 <li class="">The Helm chart&#x27;s migrations Job gets the chart&#x27;s <code>config:</code> settings, which data migrations need (<a class="" href="/qaboard/docs/backend-admin/kubernetes">Kubernetes</a>).</li>
+<li class="">Tune PostgreSQL with a settings file: use <code>services/db/init.sh</code> as the database&#x27;s entrypoint and it includes <code>services/db/qaboard.conf</code> (or your own, <code>QABOARD_DB_CONFIG</code>) in PostgreSQL&#x27;s configuration at every start, and in new databases right away, with the <code>pg_stat_statements</code> extension (<a class="" href="/qaboard/docs/backend-admin/deployment#database-settings">database settings</a>).</li>
+<li class="">Size the backend&#x27;s database connection pools with <code>QABOARD_DB_POOL_SIZE</code> and <code>QABOARD_DB_MAX_OVERFLOW</code> (default 4 and 2 per uwsgi process, instead of 10 and 5): PostgreSQL&#x27;s <code>max_connections</code> can stay small. The backend checks connections before using them, so it keeps working after a restart of the database.</li>
+<li class="">Daily database backups older than 14 days are deleted after each successful backup, but never the newest 3, nor dumps with other names. Set <code>QABOARD_BACKUP_RETENTION_DAYS</code> to keep them longer (<code>0</code> keeps them all). <strong>Before upgrading, move the old daily backups you want to keep</strong> (<a class="" href="/qaboard/docs/backend-admin/deployment#backups">backups</a>).</li>
+<li class="">The database gets two minutes to stop cleanly (<code>stop_grace_period</code> in <em>production.yml</em>), instead of being killed after 10 seconds and replaying its log at the next start.</li>
 <li class="">See where the backend spends its time in Sentry: traces of API requests include their database queries, and a share of the backend&#x27;s processes are profiled (<code>SENTRY_PROFILE_SESSION_SAMPLE_RATE</code>). Celery workers report their errors and tasks too (<a class="" href="/qaboard/docs/backend-admin/monitoring">Monitoring with Sentry</a>).</li>
 <li class="">See the web app&#x27;s page loads, web vitals (LCP, CLS, INP) and the API requests they make in the same Sentry trace as the backend&#x27;s work, with readable stack traces: set <code>SENTRY_AUTH_TOKEN</code>, <code>SENTRY_ORG</code>, <code>SENTRY_PROJECT</code> and <code>SENTRY_URL</code> when you build the <code>frontend</code> image to upload its source maps, that are then no longer served.</li>
 <li class="">Tell deployments and versions apart in Sentry: events are tagged with <code>SENTRY_ENVIRONMENT</code> (default: production) and the release, the version the images were built from. Send the web app&#x27;s events to its own project with <code>SENTRY_FRONTEND_DSN</code>.</li>
