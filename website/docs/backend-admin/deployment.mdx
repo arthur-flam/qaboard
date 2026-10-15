@@ -127,6 +127,54 @@ At every start, `init.sh` copies the file into the database's folder and include
 - Values set with `ALTER SYSTEM` (in `postgresql.auto.conf`) win over the file. Check where each value comes from with `SELECT name, setting, sourcefile FROM pg_settings WHERE source NOT IN ('default', 'override');`, and remove them with `ALTER SYSTEM RESET ALL;` (applied at the next restart).
 - `max_connections` must cover the backends' connection pools: each uwsgi process opens up to `QABOARD_DB_POOL_SIZE` + `QABOARD_DB_MAX_OVERFLOW` connections (default 4 + 2), times `QABOARD_UWSGI_PROCESSES`, times `QABOARD_BACKEND_REPLICAS`, and twice that during a deploy, when the old and new backends run side by side. Add your other clients (backups, dashboards, admins).
 
+## Upgrading PostgreSQL
+The `db` service runs `postgres:12-alpine`, unless `QABOARD_POSTGRES_IMAGE` says otherwise (it is also the image of the
+backups: `pg_dump` refuses to dump a newer server). A new major version can't read the data of the previous one:
+`services/db/upgrade/upgrade.sh` upgrades the data from 12 to 18 in place, with `pg_upgrade --link`. It takes seconds
+to minutes, whatever the size of the database, because the data files are reused. The `db-upgrade` service of
+*docker-compose.yml* runs it, with PostgreSQL 18 and the binaries of 12 (`services/db/upgrade/Dockerfile`).
+
+Changing `QABOARD_POSTGRES_IMAGE` alone doesn't upgrade anything: `deployments/deploy.py` refuses to deploy an image
+that doesn't match the data, and PostgreSQL refuses to start on data of another major version. Stay on the alpine
+images: a Debian image sorts text differently, which would make the indexes on text columns wrong.
+
+```bash
+dc() { docker compose --env-file deployments/mysite/production.env "$@"; }
+upgrade() { dc --profile db-upgrade run --rm db-upgrade "$@"; }
+in_db() { dc exec -T -u postgres db bash /opt/upgrade/upgrade.sh "$@"; }
+dc --profile db-upgrade build db-upgrade
+
+# 1. Stop what writes, back up, record row counts, stop the database
+dc stop backend flower cron-backup-db pgadmin
+in_db fingerprint > fingerprint-12.txt
+dc run --rm cron-backup-db /etc/periodic/daily/backup before-pg18.dump
+dc stop db
+# optional, if a disk has room for the data (a directory uid 70 can write): the fast way back after 18 started
+dc --profile db-upgrade run --rm -v /srv/room/pg12-copy:/backup db-upgrade backup-files /backup
+
+# 2. Check (changes nothing), upgrade
+upgrade check
+upgrade run
+
+# 3. Start PostgreSQL 18, update the extensions, re-hash the password with SCRAM, compare
+export QABOARD_POSTGRES_IMAGE=postgres:18-alpine
+dc up -d --no-deps db
+in_db post
+in_db fingerprint | diff fingerprint-12.txt - && echo IDENTICAL
+deployments/deploy.py deployments/mysite/production.env up
+```
+Then set `QABOARD_POSTGRES_IMAGE=postgres:18-alpine` in your env file. Notes:
+- `check` and `run` stop at anything unexpected (the database still running, `ALTER SYSTEM` settings, prepared
+  transactions...) and say what to do. The new cluster gets the old one's encoding, locale and checksum setting, and its
+  `pg_hba.conf`: logins keep working. `post` stores the `POSTGRES_USER`'s password with SCRAM, PostgreSQL 18's default.
+- Rollback: until PostgreSQL 18 has started on the data, `upgrade rollback` puts PostgreSQL 12 back in seconds. After,
+  the old cluster can't be used anymore (link mode: the clusters share their files): stop the db,
+  `restore-files /backup --yes` restores the copy of the files, or `upgrade empty-volume --yes`, start the db with the
+  12 image, and `restore-db before-pg18.dump`. On a filesystem with copy-on-write (XFS with reflinks, btrfs), `check`
+  says so: `UPGRADE_MODE=clone upgrade run` keeps the old cluster intact, and `upgrade rollback --discard-new` works anytime.
+- Optional, at a quiet time: `in_db amcheck` verifies all the btree indexes. Days later, `in_db cleanup --yes`
+  deletes the old cluster (`pg12-old/` in the data directory).
+
 ## Host maintenance
 Before upgrading the host (CPU, memory, storage, OS...):
 1. Pause your automatic deploys, if you have some.
@@ -180,4 +228,5 @@ In the env file, or the shell's environment (which takes precedence):
 | `QABOARD_SEED_SOURCE` | _none_ | `seed-db`: the database to copy recent data from, `postgresql://user:password@host:port/db` |
 | `QABOARD_SEED_DAYS` | 30 | `seed-db`: keep the commits of the last N days |
 | `QABOARD_BACKUP_RETENTION_DAYS` | 14 | Daily backups older than this are deleted, except the newest 3. `0` keeps them all |
+| `QABOARD_POSTGRES_IMAGE` | `postgres:12-alpine` | Image of the database and of its backups. Change it only with an upgrade of the data: [upgrading PostgreSQL](#upgrading-postgresql) |
 | `QABOARD_DB_CONFIG` | `qaboard.conf` next to `init.sh` | With `services/db/init.sh` as the db's entrypoint: the PostgreSQL settings file, `none` to remove it (see [Database settings](#database-settings)) |

@@ -51,7 +51,12 @@ services:
   # https://hub.docker.com/_/postgres
   # https://stackoverflow.com/questions/30848670/how-to-customize-the-configuration-file-of-the-official-postgresql-docker-image
   db:
-    image: postgres:12-alpine
+    # One variable for the db and its backups (cron-backup-db in production.yml): pg_dump refuses newer servers.
+    # Major versions can't read each other's data: changing it needs an upgrade of the data, with pg_upgrade
+    # (services/db/upgrade/upgrade.sh) or a dump and restore. PostgreSQL refuses to start on data of another major
+    # version, and deployments/deploy.py refuses to deploy an image that doesn't match the data.
+    # Stay on alpine (musl): a Debian image (glibc) sorts text differently, which corrupts the indexes on text.
+    image: ${QABOARD_POSTGRES_IMAGE:-postgres:12-alpine}
     expose:
     - "5432"
     volumes:
@@ -61,6 +66,9 @@ services:
       - POSTGRES_USER=qaboard
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=qaboard
+      # The data is at the root of the db volume, whatever the version: from 18, the image's default is
+      # /var/lib/postgresql/18/docker (it would refuse to start, seeing a database in /var/lib/postgresql/data)
+      - PGDATA=/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U qaboard -d qaboard"]
       interval: 10s
@@ -239,6 +247,28 @@ services:
     ports:
     - "${PGADMIN_PORT:-5050}:80"
 
+
+  # Upgrades the db volume from PostgreSQL 12 to 18 in place, with pg_upgrade (services/db/upgrade/upgrade.sh).
+  # Only runs on demand, with the db stopped: docker compose --profile db-upgrade run --rm db-upgrade check
+  db-upgrade:
+    profiles: [db-upgrade]
+    image: qaboard-db-upgrade:12-to-18
+    build:
+      context: services/db/upgrade
+    # The owner of the data (postgres in the alpine images): works on storage where root can't write (NFS root_squash)
+    user: "70:70"
+    entrypoint: ["bash", "/opt/upgrade/upgrade.sh"]
+    command: ["help"]
+    network_mode: none
+    # pg_upgrade starts both servers: as much shared memory as the db service (production.yml)
+    shm_size: 1g
+    volumes:
+      - db:/var/lib/postgresql/data
+      - ./services/db:/opt:ro
+    environment:
+      - PGDATA=/var/lib/postgresql/data
+      - POSTGRES_USER=qaboard
+      - UPGRADE_MODE
 
   redis:
     image: redis:7

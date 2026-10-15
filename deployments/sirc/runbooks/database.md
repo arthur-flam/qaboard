@@ -2,7 +2,7 @@
 
 SIRC's runbook. The generic version is on the docs website:
 [Database settings](https://samsung.github.io/qaboard/docs/backend-admin/deployment#database-settings)
-(source: `website/docs/backend-admin/deployment.mdx`).
+(source: `website/docs/backend-admin/deployment.mdx`). Upgrading from PostgreSQL 12 to 18: [postgres-upgrade.md](postgres-upgrade.md).
 
 How it works:
 - The settings are in [`services/db/qaboard.conf`](../../../services/db/qaboard.conf): only what differs from PostgreSQL's

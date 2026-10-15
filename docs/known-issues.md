@@ -50,7 +50,9 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
   `alembic downgrade head || alembic stamp head` and the app creates the tables, so it works, but it's noisy.
   Worse: the fallback also hides real migration failures, so `deploy.py`/the helm Job can't stop a deploy on them.
   Fix the baseline, then remove the fallback.
-- PostgreSQL 12 is EOL (Nov 2024). Upgrade with dump/restore, e.g. when moving to kubernetes (CloudNativePG uses 16).
+- PostgreSQL 12 is EOL (Nov 2024). docker compose: upgrade in place to 18 with `services/db/upgrade/upgrade.sh`
+  (SIRC: `deployments/sirc/runbooks/postgres-upgrade.md`), then set `QABOARD_POSTGRES_IMAGE`. The helm chart uses 16
+  (CloudNativePG or `postgres:16-alpine`): moving to it is a dump/restore. Remove this entry once SIRC runs 18.
 - Deploys need docker compose ≥ 2.24 on the hosts and on the GitLab runner (`${VAR:+...}` interpolation,
   `pull --policy`). SIRC's hosts run Docker Engine 24 (API 1.43): fine, but not healthcheck `start_interval`.
 - With docker compose, nginx is restarted (~1s of refused connections) when the *proxy image* changes.

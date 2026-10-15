@@ -126,3 +126,4 @@ In the env file, or the shell's environment (which takes precedence):
 | `QABOARD_RUN_MIGRATIONS` | 1 | Set to 0 to not run migrations when the backend starts |
 | `QABOARD_SEED_SOURCE` | _none_ | `seed-db`: the database to copy recent data from, `postgresql://user:password@host:port/db` |
 | `QABOARD_SEED_DAYS` | 30 | `seed-db`: keep the commits of the last N days |
+| `QABOARD_POSTGRES_IMAGE` | `postgres:12-alpine` | Image of the database and of its backups. Change it only with an upgrade of the data: [postgres-upgrade.md](postgres-upgrade.md) |

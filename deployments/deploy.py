@@ -248,6 +248,7 @@ class Deployment:
 
         # 2. Migrations
         if "db" in services:
+            self.check_postgres_version()
             self.compose("up", "-d", "--no-build", "--no-recreate", "db")
         log("Applying database migrations")
         self.compose("run", "--rm", "--no-deps", "--pull", "never", "backend", "bash", "-c",
@@ -282,6 +283,27 @@ class Deployment:
         self.state_path.write_text(json.dumps(self.state, indent=2))
         self.cleanup_images(config, ours)
         log(f"✅ Deployed {self.project} {self.version or ''}")
+
+    def check_postgres_version(self) -> None:
+        """
+        A PostgreSQL image can't use the data of another major version: we would recreate the db with an image that
+        refuses to start (and stays down). That's what happens if QABOARD_POSTGRES_IMAGE changes before the data
+        is upgraded (services/db/upgrade/upgrade.sh). We check the image against the data in the volume first.
+        """
+        r = self.compose("run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "db", "-c",
+                         'v=$(postgres -V); v=${v##* }; echo "${v%%.*} $(cat "$PGDATA/PG_VERSION" 2>/dev/null)"',
+                         check=False, capture=True)
+        found = r.stdout.split()
+        if r.returncode or not found:
+            log(f"WARNING: could not check the PostgreSQL version of the data: {r.stderr.strip()[-500:]}")
+            return
+        image_major, data_major = found[-2:] if len(found) > 1 else (found[0], "")
+        if data_major and image_major != data_major:
+            fix = ("upgrade the data first (services/db/upgrade/upgrade.sh), or " if image_major.isdigit() and data_major.isdigit() and int(image_major) > int(data_major) else "")
+            die(f"The db image is PostgreSQL {image_major} but the data in its volume is PostgreSQL {data_major}: "
+                f"the database would not start. To fix: {fix}set QABOARD_POSTGRES_IMAGE to an image of version "
+                f"{data_major} (e.g. postgres:{data_major}-alpine) in {self.env_file.name}. Nothing was changed.")
+        log(f"PostgreSQL {image_major}, data {data_major or '(none yet)'}")
 
     def rolling_update(self, service: str, replicas: int, services: List[str]) -> None:
         for c in self.containers(service):
