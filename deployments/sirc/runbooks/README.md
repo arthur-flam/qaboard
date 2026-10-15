@@ -13,6 +13,7 @@ They used to be pages of the public docs website. The website now only has the g
 | [deployment.md](deployment.md) | Environments (production on `qa`, staging on `alginfra1`), GitLab CI deploys, rollbacks, staging data, backups, first-time host setup |
 | [troubleshooting.md](troubleshooting.md) | Logs, shells, restarts, disk full |
 | [host-upgrades.md](host-upgrades.md) | Maintenance of the `qa` host: pause deploys, backup, restart, checks |
+| [host-maintenance.md](host-maintenance.md) | Fixes on the `qa` host itself: docker's open API port, swap, disk space (dumps, volumes, logs), memory limits |
 | [ssl-certificates.md](ssl-certificates.md) | Getting the HTTPS certificate from IT |
 
 Keep them in sync with the generic pages: when a change is not SIRC-specific, document it on the website too.

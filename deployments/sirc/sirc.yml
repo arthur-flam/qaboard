@@ -21,8 +21,25 @@ services:
     - /home/ispq/qaboard_data_prod/database_backups:/backups
     ports:
       - ${QABOARD_EXPOSED_DB_PORT:-5432}:5432
+    # The host is shared and short on memory. If the kernel must kill a process, it should not be postgres:
+    # killing one of its processes restarts the database (crash recovery) and fails every connection.
+    # No memory limit for the same reason: at the limit, the kernel kills one of the container's processes.
+    # Check the host allows it before deploying (else the database doesn't start, set it to 0 in the env file):
+    #   docker run --rm --oom-score-adj -500 postgres:12-alpine true
+    oom_score_adj: ${QABOARD_DB_OOM_SCORE_ADJ:--500}
 
   backend:
+    # The backend's memory grows with big requests: a guard so that a runaway replica doesn't take the host down
+    # (the kernel then kills its biggest uwsgi worker, which the master replaces). Well above normal use (~4.3GB):
+    # uwsgi recycles its workers before (QABOARD_UWSGI_RSS_LIMIT_SOFT, QABOARD_UWSGI_RELOAD_ON_RSS).
+    # Per replica: during deploys, the old and the new replicas run side by side.
+    deploy:
+      resources:
+        limits:
+          memory: ${QABOARD_BACKEND_MEM_LIMIT:-8g}
+    # The same: no swap on top (docker allows as much swap as the limit by default). A runaway request
+    # would otherwise swap GBs before it's stopped, slowing down everything on the host.
+    memswap_limit: ${QABOARD_BACKEND_MEM_LIMIT:-8g}
     image: "gitlab-srv:4567/common-infrastructure/qaboard:backend${QABOARD_VERSION:+-$QABOARD_VERSION}"
     build:
       ssh: [default]

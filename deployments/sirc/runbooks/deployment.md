@@ -122,6 +122,11 @@ In the env file, or the shell's environment (which takes precedence):
 | `QABOARD_VERSION` | _none_ | Image version (tag suffix). Set by CI to the commit. |
 | `QABOARD_BACKEND_REPLICAS` | 1 | Backend replicas. 2+ for zero-downtime deploys. |
 | `QABOARD_UWSGI_PROCESSES`, `QABOARD_UWSGI_CHEAPER`, `QABOARD_UWSGI_CHEAPER_INITIAL` | 16, 8, 16 | uwsgi processes *per replica* (max, min, initial) |
+| `QABOARD_UWSGI_RSS_LIMIT_SOFT`, `QABOARD_UWSGI_RSS_LIMIT_HARD` | 16GB (production: 6GB), _none_ | Bytes, *per replica*: uwsgi doesn't spawn workers above the soft limit (the sum of their RSS, which counts shared memory several times), and stops some above the hard limit (must be higher than the soft limit) |
+| `QABOARD_UWSGI_RELOAD_ON_RSS` | 2048 (production: 1536) | MB: workers using more are replaced after their request |
+| `QABOARD_PROXY_LOG_MAX_SIZE` | 50m | nginx logs requests to the container's logs, rotated at this size (5 files) |
+| `QABOARD_BACKEND_MEM_LIMIT` | 8g | Memory limit of each backend replica (`deployments/sirc/sirc.yml`), without swap |
+| `QABOARD_DB_OOM_SCORE_ADJ` | -500 | Makes the kernel kill other processes than postgres when the host is out of memory. 0 if the host refuses it |
 | `QABOARD_DEPLOY_PRE_HOOK` | _none_ | A command run before deploying (at SIRC: mounting autofs volumes) |
 | `QABOARD_RUN_MIGRATIONS` | 1 | Set to 0 to not run migrations when the backend starts |
 | `QABOARD_SEED_SOURCE` | _none_ | `seed-db`: the database to copy recent data from, `postgresql://user:password@host:port/db` |

@@ -35,6 +35,9 @@ docker compose --env-file deployments/sirc/production.env run --rm cron-backup-d
 ## Maintenance Period
 > CPU/Memory/Storage upgrade...
 
+Host fixes waiting for a maintenance night (restarting docker, the database...): see [host-maintenance.md](host-maintenance.md).
+Never remove docker volumes while the stacks are stopped.
+
 ## Restart
 After the boot, make sure everything is up:
 ```bash

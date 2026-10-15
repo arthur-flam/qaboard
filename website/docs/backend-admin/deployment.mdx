@@ -156,6 +156,9 @@ In the env file, or the shell's environment (which takes precedence):
 | `QABOARD_VERSION` | the deployed version | Image version (tag suffix), e.g. the commit. `up --version` sets it. |
 | `QABOARD_BACKEND_REPLICAS` | 1 | Backend replicas. 2+ for zero-downtime deploys. |
 | `QABOARD_UWSGI_PROCESSES`, `QABOARD_UWSGI_CHEAPER`, `QABOARD_UWSGI_CHEAPER_INITIAL` | 16, 8, 16 | uwsgi processes *per replica* (max, min, initial) |
+| `QABOARD_UWSGI_RSS_LIMIT_SOFT`, `QABOARD_UWSGI_RSS_LIMIT_HARD` | 16GB, _none_ | Bytes, *per replica*: uwsgi doesn't spawn workers above the soft limit (the sum of their RSS, which counts shared memory several times), and stops some above the hard limit (must be higher than the soft limit) |
+| `QABOARD_UWSGI_RELOAD_ON_RSS` | 2048 | MB: workers using more are replaced after their request |
+| `QABOARD_PROXY_LOG_MAX_SIZE` | 50m | nginx logs requests to the container's logs, rotated at this size (5 files) |
 | `QABOARD_DEPLOY_PRE_HOOK` | _none_ | A command run before deploying, e.g. to mount network volumes |
 | `QABOARD_RUN_MIGRATIONS` | 1 | Set to 0 to not run migrations when the backend starts |
 | `QABOARD_SEED_SOURCE` | _none_ | `seed-db`: the database to copy recent data from, `postgresql://user:password@host:port/db` |

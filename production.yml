@@ -29,9 +29,13 @@ services:
     - UWSGI_PROCESSES=${QABOARD_UWSGI_PROCESSES:-16}              # max
     - UWSGI_CHEAPER=${QABOARD_UWSGI_CHEAPER:-8}                   # minimum
     - UWSGI_CHEAPER_OVERLOAD=15
-    # values in bytes
-    - UWSGI_CHEAPER_RSS_LIMIT_SOFT=17179869184 #16GB
-    - UWSGI_CHEAPER_RSS_LIMIT_HARD=
+    # Memory, per replica like the processes above (in bytes). Above the soft limit, uwsgi stops spawning workers.
+    # It sums the workers' RSS, which counts the memory they share several times: it's more than `docker stats` shows.
+    # The hard limit (empty: none) stops workers above it, and must be higher than the soft limit, or uwsgi doesn't start.
+    - UWSGI_CHEAPER_RSS_LIMIT_SOFT=${QABOARD_UWSGI_RSS_LIMIT_SOFT:-17179869184}
+    - UWSGI_CHEAPER_RSS_LIMIT_HARD=${QABOARD_UWSGI_RSS_LIMIT_HARD:-}
+    # A worker using more than this (MB) is replaced after its request: cheap, they are forked from the master
+    - UWSGI_RELOAD_ON_RSS=${QABOARD_UWSGI_RELOAD_ON_RSS:-2048}
     - UWSGI_STATS=true
     # Several replicas behind nginx survive crashes and allow zero-downtime deploys with deployments/deploy.py
     # Note: we don't publish ports on the host (it would conflict between replicas). To debug without nginx:
@@ -44,6 +48,13 @@ services:
 
   proxy:
     restart: always
+    # nginx logs every request to the container's logs: rotate them, docker doesn't by default.
+    # (json-file is docker's default driver: `docker compose logs` works with it)
+    logging:
+      driver: json-file
+      options:
+        max-size: ${QABOARD_PROXY_LOG_MAX_SIZE:-50m}
+        max-file: "5"
   cantaloupe:
     restart: always
   rabbitmq:

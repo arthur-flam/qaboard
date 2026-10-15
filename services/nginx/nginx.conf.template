@@ -1,6 +1,10 @@
 # https://www.nginx.com/resources/wiki/start/topics/examples/full/
 user ${NGINX_USER} uucp;
 worker_processes auto;
+# Each worker may open this many files: every proxied request uses 2 (client + upstream), served files 1 more.
+# Must stay above worker_connections (below). Docker's default soft limit (1024 with recent versions) is too low,
+# the master sets this one while it's still root.
+worker_rlimit_nofile 16384;
 
 # https://github.com/docker-library/docs/tree/master/nginx#running-nginx-as-a-non-root-user
 pid        /tmp/nginx.pid;
@@ -8,6 +12,7 @@ pid        /tmp/nginx.pid;
 include /etc/nginx/modules-enabled/*.conf;
 
 events {
+	# <= worker_rlimit_nofile / 2 (a proxied request holds 2 connections)
 	worker_connections 4096;
 }
 
@@ -29,9 +34,12 @@ http {
 	# SSL Settings
 	ssl_session_cache shared:SSL:10m;
 	ssl_session_timeout 1h;
-	ssl_protocols TLSv1 TLSv1.1 TLSv1.2; # Dropping SSLv3, ref: POODLE
+	# TLS 1.0/1.1 are deprecated (RFC 8996) and refused by current browsers. Clients too old for TLS 1.2
+	# (e.g. python 2.6, CentOS 5's curl) can still use plain HTTP on the ports that serve it.
+	ssl_protocols TLSv1.2 TLSv1.3;
 	ssl_prefer_server_ciphers on;
-	ssl_ciphers EECDH+CHACHA20:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5;
+	# No 3DES: it was only there for TLS 1.0 clients, and is weak (SWEET32)
+	ssl_ciphers EECDH+CHACHA20:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:!MD5;
 
 
 	# https://github.com/docker-library/docs/tree/master/nginx#running-nginx-as-a-non-root-user
@@ -42,8 +50,11 @@ http {
     scgi_temp_path        /tmp/scgi_temp;
 
 	# Logging Settings
-	access_log /tmp/access.log;
-	error_log /tmp/error.log;
+	# To the container's logs (`docker compose logs proxy`): docker rotates them (see the proxy's `logging` in
+	# production.yml), while files in the container grew until it was recreated (/tmp/access.log reached GBs).
+	# nginx's master opens them as root before starting the workers, so it works with any NGINX_USER.
+	access_log /dev/stdout;
+	error_log stderr;
 
 	# Gzip Settings
 	gzip on;
@@ -52,10 +63,26 @@ http {
 	gzip_vary on;
 	gzip_min_length 1000;
 	gzip_proxied    expired no-cache no-store private auth;
-	gzip_comp_level 6;
+	# Above 4, responses are barely smaller but cost much more CPU (the host is shared and often busy)
+	gzip_comp_level 4;
 	# gzip_proxied any;
 	# gzip_http_version 1.1;
-	gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript text/csv;
+	gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript text/csv image/svg+xml;
+
+	# Caches open file descriptors and their size/mtime, saving open()+stat() calls.
+	# It's *disabled* for the files under /s/ (snippets/qaboard-files.conf): they live on NFS and change while
+	# runs write them. The web app follows logs by asking every 2s for the bytes after the end it knows
+	# (Range: bytes=N-, webapp/src/components/logs/useLogTail.js): with a cached size, nginx would answer
+	# "nothing new" for up to open_file_cache_valid seconds, and files truncated or rewritten in place
+	# (re-runs) would be served with the wrong length. On top of that, nginx revalidates with stat(), which NFS
+	# answers from its attribute cache (up to acregmax=60s): only open() forces NFS to check for changes.
+	# Here it only helps with the web app's bundles and the docs (local volumes, replaced at deploys: at worst
+	# an old index.html for open_file_cache_valid seconds, whose bundles are still served).
+	open_file_cache max=10000 inactive=60s;
+	open_file_cache_valid 30s;
+	open_file_cache_min_uses 2;
+	# don't cache "not found": a new deploy's files must show up at once
+	open_file_cache_errors off;
 
 	# Virtual Host Configs
 	include /etc/nginx/conf.d/*.conf;
