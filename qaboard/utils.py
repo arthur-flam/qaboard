@@ -16,8 +16,9 @@ from contextlib import contextmanager
 from typing import Optional, Dict, Iterable, Tuple, Union
 
 import yaml
-import click
-from click._compat import isatty #, strip_ansi
+import typer
+# What typer handles: it prints "Error: <message>" and exits. It vendors click since 0.27, without exporting them
+from typer._click.exceptions import ClickException, UsageError  # noqa: F401
 
 
 def merge(src: Dict, dest: Dict) -> Dict:
@@ -49,13 +50,11 @@ def getenvs(variables: Iterable[str], default=None) -> Optional[str]:
       return os.environ[name]
   return default
 
-class PathType(click.ParamType):
-  """Wrapper for pathlib's Path type, for use with the Click CLI package."""
-  name = 'path'
-  def convert(self, value, param, ctx):
-    if value is None:
-      return None
-    return Path(value)
+def isatty(stream) -> bool:
+  try:
+    return stream.isatty()
+  except Exception:
+    return False
 
 class RedirectStream():
   def __init__(self, stream_name, file, color):
@@ -191,11 +190,11 @@ def tee_std_streams(file):
     yield
   except BaseException as e:
     try:
-      if isinstance(e, (KeyboardInterrupt, click.exceptions.Abort)):
+      if isinstance(e, (KeyboardInterrupt, typer.Abort)):
         file.write('\nAborted!\n')
-      elif isinstance(e, click.ClickException):
+      elif isinstance(e, ClickException):
         file.write(f'Error: {e.format_message()}\n')
-      elif not isinstance(e, (SystemExit, click.exceptions.Exit)):
+      elif not isinstance(e, (SystemExit, typer.Exit)):
         file.write(traceback.format_exc())
       file.flush()
     except (OSError, ValueError):
@@ -215,8 +214,8 @@ class FailingEntrypoint:
 def entrypoint_module(config):
   entrypoint = config.get('project', {}).get('entrypoint')
   if not entrypoint:
-    click.secho(f'ERROR: Could not find the entrypoint', fg='red', err=True, bold=True)
-    click.secho(f'Add to qaboard.yaml:\n```\nproject:\n  entrypoint: my_main.py\n```', fg='red', err=True, dim=True)
+    typer.secho(f'ERROR: Could not find the entrypoint', fg='red', err=True, bold=True)
+    typer.secho(f'Add to qaboard.yaml:\n```\nproject:\n  entrypoint: my_main.py\n```', fg='red', err=True, dim=True)
     return FailingEntrypoint()
   else:
     entrypoint = Path(entrypoint)
@@ -236,9 +235,9 @@ def entrypoint_module_path(entrypoint):
       spec.loader.exec_module(module)
   except Exception:
       exc_type, exc_value, exc_traceback = sys.exc_info()
-      click.secho(f'ERROR: Error importing the entrypoint ({entrypoint}).', fg='red', err=True, bold=True)
-      click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
-      click.secho(
+      typer.secho(f'ERROR: Error importing the entrypoint ({entrypoint}).', fg='red', err=True, bold=True)
+      typer.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
+      typer.secho(
           f'{entrypoint} must implement a `run(context)` function, and optionally `postprocess` / `metadata` / `iter_inputs`.\n'
           'Please read the tutorial at https://samsung.github.io/qaboard/docs\n',
           dim=True, err=True)
@@ -257,8 +256,8 @@ def input_metadata(absolute_input_path, database, input_path, config):
         metadata = {}
     except Exception:
       exc_type, exc_value, exc_traceback = sys.exc_info()
-      click.secho('[ERROR] The `metadata` function in your entrypoint raised an exception:', fg='red', bold=True)
-      click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
+      typer.secho('[ERROR] The `metadata` function in your entrypoint raised an exception:', fg='red', bold=True)
+      typer.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
       metadata = {}
   # We don't fall back to iter_inputs' metadata: it loops easily if users use iter_inputs_at_path.
   # Let's ask users to be explicit
@@ -312,7 +311,7 @@ def is_plaintext(path, config=None):
     return any(fnmatch(path.name, p) for p in plaintext_patterns)
   if not plaintext_patterns and binary_patterns:
     return not any(fnmatch(path.name, p) for p in binary_patterns)
-  click.secho('ERROR: Cannot define both bit_accuracy.binary and bit_accuracy.plaintext in qaboard.yaml', fg='red')
+  typer.secho('ERROR: Cannot define both bit_accuracy.binary and bit_accuracy.plaintext in qaboard.yaml', fg='red')
   exit(1)
 
 
@@ -456,13 +455,13 @@ def total_storage(manifest):
   return sum([f['st_size'] for f in manifest.values()])
 
 
-def load_tuning_search(tuning_search: str, tuning_search_file: Path) -> Tuple[Dict, str]:
+def load_tuning_search(tuning_search: Optional[str], tuning_search_file: Optional[Path]) -> Tuple[Optional[Dict], str]:
   if tuning_search and tuning_search_file:
-    click.secho('Error: specify only one of --tuning-search or --tuning-search-file', fg='red', err=True)
+    typer.secho('Error: specify only one of --tuning-search or --tuning-search-file', fg='red', err=True)
     exit(1)
   if tuning_search_file:
     if not tuning_search_file.exists():
-      click.secho('Error: could not find the file specified by --tuning-search-file', fg='red', err=True)
+      typer.secho('Error: could not find the file specified by --tuning-search-file', fg='red', err=True)
       exit(1)
     with tuning_search_file.open('r') as f:
       tuning_search = f.read()

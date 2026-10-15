@@ -2,7 +2,7 @@ import os
 import subprocess
 from typing import List, Dict, Any
 
-import click
+import typer
 
 from .base import BaseRunner
 from .job import Job
@@ -30,7 +30,7 @@ class LocalRunner(BaseRunner):
   @staticmethod
   def start_jobs(jobs: List[Job], job_options: Dict[str, Any], blocking=True):
       if not blocking:
-        click.secho(f'WARNING: We currently dont support non-blocking local runs.', fg='yellow', err=True)
+        typer.secho(f'WARNING: We currently dont support non-blocking local runs.', fg='yellow', err=True)
 
       from joblib import Parallel, delayed
       # multiprocessing will try to reimport qaboard, which relies on the CWD

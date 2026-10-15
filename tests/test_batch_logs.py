@@ -2,14 +2,15 @@
 Tests for the logs that `qa batch` saves when it's started from a terminal.
 """
 import os
+import re
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-import click
-from click.testing import CliRunner
+import typer
+from typer.testing import CliRunner
 
 
 class TestTeeStdStreams(unittest.TestCase):
@@ -38,13 +39,13 @@ class TestTeeStdStreams(unittest.TestCase):
       with path.open('a') as file:
         with self.assertRaises(SystemExit):
           with tee_std_streams(file):
-            click.secho('3 runs failed', fg='red', err=True)
+            typer.secho('3 runs failed', fg='red', err=True)
             sys.exit(1)
-        with self.assertRaises(click.exceptions.Exit):
+        with self.assertRaises(typer.Exit):
           with tee_std_streams(file):
-            raise click.exceptions.Exit(0)
+            raise typer.Exit(0)
       # colors depend on the terminal, but there is no traceback
-      self.assertEqual(click.unstyle(path.read_text()), '3 runs failed\n')
+      self.assertEqual(re.sub(r'\x1b\[[0-9;]*m', '', path.read_text()), '3 runs failed\n')
 
   def test_stream(self):
     from qaboard.utils import TeeStream
@@ -53,14 +54,14 @@ class TestTeeStdStreams(unittest.TestCase):
       self.assertEqual(tee.fileno(), stream.fileno())
       self.assertFalse(tee.closed)
       self.assertFalse(tee.isatty())
-      # click would write to it instead of us
+      # typer (click) would write to it instead of us
       self.assertFalse(hasattr(tee, 'buffer'))
 
 
-@click.command()
-@click.option('--list-inputs', is_flag=True)
-@click.pass_context
-def fake_batch(ctx, list_inputs):
+fake_batch = typer.Typer()
+
+@fake_batch.command()
+def fake_batch_command(ctx: typer.Context, list_inputs: bool = typer.Option(False, '--list-inputs')):
   from qaboard.batch_logs import saves_logs, batch_log
   @saves_logs
   def body(ctx, list_inputs):

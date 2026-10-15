@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Tuple
 import subprocess
 import shutil
 
-import click
+import typer
 import yaml
 
 from .config import find_configs
@@ -84,29 +84,29 @@ def qa_init(ctx):
   """Initialize a qatools repository"""
   config_paths = [p for  _, p in find_configs(Path('.'))]
   if config_paths:
-    click.secho(f'You already have a qaboard.yaml configuration:', fg='green', bold=True, err=True)
+    typer.secho(f'You already have a qaboard.yaml configuration:', fg='green', bold=True, err=True)
     for p in config_paths:
-      click.secho(str(p), fg='green')
+      typer.secho(str(p), fg='green')
     exit(0)
 
   # Locate the sample project's configuration
   qatools_dir = Path(__file__).resolve().parent
 
-  click.secho('Creating a `qatools` configuration based on the sample project 🎉', fg='green')
+  typer.secho('Creating a `qatools` configuration based on the sample project 🎉', fg='green')
   sample_config = (qatools_dir / 'sample_project/qaboard.yaml').read_text()
   site = site_qaboard_config()
   if site:
-    click.secho(f'Using the site defaults from {site_qaboard_config_path()} for: {", ".join(site)}', fg='green')
+    typer.secho(f'Using the site defaults from {site_qaboard_config_path()} for: {", ".join(site)}', fg='green')
     sample_config = use_site_defaults(sample_config, site)
   if not ctx.obj['dryrun']:
     Path('qaboard.yaml').write_text(sample_config)
 
-  click.secho('...added qaboard.yaml', fg='green', dim=True)
+  typer.secho('...added qaboard.yaml', fg='green', dim=True)
   if not ctx.obj['dryrun']:
     shutil.copytree(str(qatools_dir/'sample_project/qa'), 'qa')
 
-  click.secho('...added qa/', fg='green', dim=True)
-  click.secho(
+  typer.secho('...added qa/', fg='green', dim=True)
+  typer.secho(
     'If you need help configuring qatools. please read the tutorial at https://samsung.github.io/qaboard\n',
     fg='blue'
   )
@@ -115,7 +115,7 @@ def qa_init(ctx):
   try:
     subprocess.run("git rev-parse --is-inside-work-tree", shell=True, stdout=subprocess.PIPE, check=True)
   except Exception:
-    click.secho('Warning: Could not find a git repository', fg='yellow')
+    typer.secho('Warning: Could not find a git repository', fg='yellow')
     exit(0)
 
 
@@ -137,15 +137,13 @@ def qa_init(ctx):
       name =  '/'.join(url.split('/')[3:]).replace('.git', '')
     print(f"project name: {name}")
 
-    p = subprocess.run(f"git remote show {remote}", stdout=subprocess.PIPE, shell=True, check=True, encoding='utf-8')
-    head_info = [l for l in p.stdout.strip().splitlines() if 'HEAD branch:' in l]
-    reference_branch = head_info[0].split(':')[1]
+    # Needs to reach the remote
     try:
       p = subprocess.run(f"git remote show {remote}", stdout=subprocess.PIPE, shell=True, check=True, encoding='utf-8')
       head_info = [l for l in p.stdout.strip().splitlines() if 'HEAD branch:' in l]
       reference_branch = head_info[0].split(':')[1]
     except Exception:
-      click.secho('Warning: Could not find the remote HEAD, using master as reference branch', fg='yellow')
+      typer.secho('Warning: Could not find the remote HEAD, using master as reference branch', fg='yellow')
       reference_branch = 'master'
     print(f"reference_branch: {reference_branch}")
 
@@ -159,4 +157,4 @@ def qa_init(ctx):
       if not ctx.obj['dryrun']:
         f.write(config_content)
   except Exception:
-    click.secho('Please edit qaboard.yaml with your project name and url ', fg='yellow')
+    typer.secho('Please edit qaboard.yaml with your project name and url ', fg='yellow')

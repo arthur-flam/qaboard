@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
-import click
+import typer
 
 
 EXIT_CODES = {'pass': 0, 'fail': 1, 'undecidable': 2}
@@ -561,29 +561,17 @@ def run_gate(gate: GateConfig, project: str, commit: str, fetch: Callable[[str],
   return result
 
 
-@click.command()
-@click.option('--reference', help="Compare with this branch, milestone or commit. Default: gate.reference in qaboard.yaml, else project.reference_branch.")
-@click.option('--batch', '-b', 'batches', multiple=True, help="The label of a batch to check (repeat for several). Default: gate.batches, else the CI batch (default).")
-@click.option('--commit', 'commit', help="The commit to check. Default: the current commit.")
-@click.option('--format', 'output_format', type=click.Choice(['text', 'markdown', 'json']), default='text', show_default=True, help="Output format.")
-@click.option('--json', 'as_json', is_flag=True, help="Same as --format json.")
-@click.option('--wait', is_flag=True, help="While the verdict is undecidable (e.g. the reference is still running), check again until --timeout.")
-@click.option('--timeout', type=float, default=1800, show_default=True, help="With --wait, give up after this many seconds.")
-@click.option('--interval', type=float, default=30, show_default=True, help="With --wait, seconds between checks.")
-@click.option('--post-status', type=click.Choice(['github', 'gitlab']), help="Post a commit status that links to the Metrics Diff.")
-@click.option('--server', help="The QA-Board URL, e.g. http://localhost:5151. Default: from QABOARD_URL or your site's settings.")
-@click.pass_context
-def gate(ctx, reference, batches, commit, output_format, as_json, wait, timeout, interval, post_status, server):
-  """Fail when quality regresses vs a reference (experimental). Exit codes: 0 pass, 1 fail, 2 undecidable."""
+def gate(reference, batches, commit, output_format, as_json, wait, timeout, interval, post_status, server):
+  """`qa gate`, see qaboard/cli/results.py"""
   from .config import config, available_metrics, commit_id, project, project_root, subproject
   from . import api
-  click.secho(EXPERIMENTAL_NOTICE, fg='yellow', err=True)
+  typer.secho(EXPERIMENTAL_NOTICE, fg='yellow', err=True)
   output_format = 'json' if as_json else output_format
 
   try:
     gate_config = parse_config(config)
   except GateConfigError as e:
-    click.secho(f"ERROR: {e}", fg='red', bold=True, err=True)
+    typer.secho(f"ERROR: {e}", fg='red', bold=True, err=True)
     sys.exit(EXIT_CODES['fail'])
   if reference:
     gate_config.reference = reference
@@ -595,7 +583,7 @@ def gate(ctx, reference, batches, commit, output_format, as_json, wait, timeout,
   commit = commit or commit_id
   project_name = Path(project).as_posix() if project else None
   if not commit or not project_name or commit.startswith('<local'):
-    click.secho("ERROR: qa gate needs a project (qaboard.yaml) and a git commit, or --commit", fg='red', bold=True, err=True)
+    typer.secho("ERROR: qa gate needs a project (qaboard.yaml) and a git commit, or --commit", fg='red', bold=True, err=True)
     sys.exit(EXIT_CODES['undecidable'])
 
   qaboard_url = server.rstrip('/') if server else api.qaboard_url
@@ -609,25 +597,25 @@ def gate(ctx, reference, batches, commit, output_format, as_json, wait, timeout,
     try:
       result = run_gate(gate_config, project_name, commit, fetch, available_metrics, qaboard_url)
     except GateConfigError as e:
-      click.secho(f"ERROR: {e}", fg='red', bold=True, err=True)
+      typer.secho(f"ERROR: {e}", fg='red', bold=True, err=True)
       sys.exit(EXIT_CODES['fail'])
     if result['verdict'] != 'undecidable' or not wait or time.monotonic() + interval > deadline:
       break
     reasons = [m for b in result['batches'] for m in b.get('messages') or []] or ['undecidable']
-    click.secho(f"Waiting {interval:g}s: {' '.join(reasons)}", dim=True, err=True)
+    typer.secho(f"Waiting {interval:g}s: {' '.join(reasons)}", dim=True, err=True)
     time.sleep(interval)
 
-  click.echo(render(result, output_format))
+  typer.echo(render(result, output_format))
   step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
   if step_summary:
     try:
       with open(step_summary, 'a') as f:
         f.write(render_markdown(result))
     except OSError as e:
-      click.secho(f"WARNING: could not write the job summary: {e}", fg='yellow', err=True)
+      typer.secho(f"WARNING: could not write the job summary: {e}", fg='yellow', err=True)
   if post_status:
     context = 'qaboard/gate' + (f"/{Path(subproject).as_posix()}" if subproject and Path(subproject) != Path('.') else '')
     error = post_commit_status(post_status, result, context, Path(project_root).as_posix() if project_root else project_name)
     if error:
-      click.secho(f"WARNING: {error}", fg='yellow', err=True)
+      typer.secho(f"WARNING: {error}", fg='yellow', err=True)
   sys.exit(result['exit_code'])

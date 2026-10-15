@@ -9,19 +9,19 @@ import numbers
 import fnmatch
 import traceback
 from copy import deepcopy
-from pathlib import Path
+from pathlib import Path, PurePath
 from itertools import chain, product
 from dataclasses import replace
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import List, Union, Dict, Tuple, Iterator, Any, Optional, cast
+from typing import List, Union, Dict, Tuple, Iterator, Any, Optional, Sequence, TypeVar, cast
 
 import yaml
-import click
+import typer
 
 from .conventions import pretty_hash, get_settings, location_from_spec
-from .utils import input_metadata, entrypoint_module
-from .compat import cased_path
+from .utils import input_metadata, entrypoint_module, ClickException, UsageError
+from .compat import cased_path, linux_to_windows
 from .run import RunContext
 
 
@@ -47,7 +47,7 @@ def _record_missing_input(path, database, globs=None):
     missing.append({"input": str(path) if path else "*", "database": str(database), **({"globs": [str(g) for g in globs]} if globs else {})})
 
 
-class BatchError(click.ClickException, ValueError):
+class BatchError(ClickException, ValueError):
   """
   A batch definition we can't use. `qa batch` prints "Error: <message>", the server shows the message.
   `input_index` is the position of the faulty input in the batch's inputs, to find its line.
@@ -160,13 +160,13 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
   if not input_paths:
     _record_missing_input(path, database)
     if 'QA_BATCH_FAIL_IF_EMPTY' in os.environ:
-      click.secho(f'ERROR: No inputs found for the batch "{path}" under {database}', fg='red', err=True)
+      typer.secho(f'ERROR: No inputs found for the batch "{path}" under {database}', fg='red', err=True)
       exit(1)
     else:
-      click.secho(f'WARNING: No inputs found for the batch "{path}" under {database}', fg='yellow', err=True)
+      typer.secho(f'WARNING: No inputs found for the batch "{path}" under {database}', fg='yellow', err=True)
       if 'QABOARD_TUNING' in os.environ and not database.is_absolute():
-        click.secho('         You look for your input inside the project directory, but we cannot find them...', fg='red', err=True)
-        click.secho('         Make sure that (1) your inputs are declared as artifacts, and (2) you called `qa save-artifacts`.', fg='red', err=True)
+        typer.secho('         You look for your input inside the project directory, but we cannot find them...', fg='red', err=True)
+        typer.secho('         Make sure that (1) your inputs are declared as artifacts, and (2) you called `qa save-artifacts`.', fg='red', err=True)
       return
 
   if not globs:
@@ -229,17 +229,52 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
   if not seen_inputs:
     _record_missing_input(path, database, globs)
     if 'QA_BATCH_FAIL_IF_EMPTY' in os.environ:
-      click.secho(f'ERROR: No inputs found matching "{path}" [{globs}] under "{database}".', fg='red', err=True)
+      typer.secho(f'ERROR: No inputs found matching "{path}" [{globs}] under "{database}".', fg='red', err=True)
       raise ValueError(f'No inputs found matching "{path}" [{globs}] under "{database}".')
     else:
-      click.secho(f'WARNING: No inputs found matching "{path}" [{globs}] under "{database}".', fg='yellow', err=True)
+      typer.secho(f'WARNING: No inputs found matching "{path}" [{globs}] under "{database}".', fg='yellow', err=True)
+
+
+def local_input_path(path: str, windows: bool = os.name == 'nt') -> str:
+  """
+  Batches files are often shared between Linux and Windows: on Windows, Linux paths are mapped (QABOARD_PATH_MAPPINGS).
+  They may already use backslashes, e.g. when given on the CLI: /algo/x becomes \\algo\\x.
+  """
+  if not windows:
+    return path
+  posix = path.replace('\\', '/')
+  if posix.startswith('/') and not posix.startswith('//'): # not \\host\\share
+    return linux_to_windows(posix)
+  return path
+
+
+def local_database(database, windows: bool = os.name == 'nt') -> Path:
+  """
+  The database's path, usable here: on Windows Linux paths are mapped, and paths without a drive get the current one.
+  Relative paths are kept relative.
+  """
+  database = Path(local_input_path(str(database), windows=windows))
+  if database.anchor and not database.is_absolute():
+    database = Path(os.path.abspath(database))
+  return database
+
+
+AnyPath = TypeVar('AnyPath', bound=PurePath)
+
+def split_absolute(path: AnyPath) -> Tuple[AnyPath, AnyPath]:
+  """
+  An absolute input path, as (database, path relative to the database): we can only glob relative patterns.
+  Checks the anchor and not is_absolute(): on Windows, paths without a drive like \\algo\\inputs are not "absolute".
+  """
+  return type(path)(path.anchor), type(path)(path.relative_to(path.anchor))
 
 
 def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exclude=None):
-  if path and Path(path).is_absolute():
-    database_str, *path_parts =  Path(path).resolve().parts
-    path = Path(*path_parts)
-    database = Path(database_str)
+  if path:
+    path = local_input_path(str(path))
+    if Path(path).anchor:
+      database, path = split_absolute(Path(path).resolve())
+  database = local_database(database)
   if database.is_absolute(): # normalization to avoid common issues where users ask for "//some/path" instead of "/some/path"
     database = database.resolve()
   entrypoint_module_ = entrypoint_module(qatools_config)
@@ -252,8 +287,8 @@ def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exc
       # we really could send a batch update to /our/ database here with all the metadata?
     except Exception:
       exc_type, exc_value, exc_traceback = sys.exc_info()
-      click.secho(f'[ERROR] The `iter_inputs` function in your entrypoint raised an exception:', fg='red', bold=True, err=True)
-      click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
+      typer.secho(f'[ERROR] The `iter_inputs` function in your entrypoint raised an exception:', fg='red', bold=True, err=True)
+      typer.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
     return
 
   globs = inputs_settings.get('globs', inputs_settings.get('glob'))
@@ -267,8 +302,8 @@ def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exc
 
 
 def iter_inputs(
-  batches: List[str],
-  batches_files: List[os.PathLike],
+  batches: Sequence[str],
+  batches_files: Sequence[os.PathLike],
   default_database: Path,
   default_configurations: List,
   default_platform: str,
@@ -290,15 +325,15 @@ def iter_inputs(
       batches_file_path = location_from_spec(batches_file, {"project": project, "subproject": subproject})
       new_batches = yaml.load(open(batches_file_path), Loader=yaml.SafeLoader)
       if new_batches is None:
-        click.secho(f"WARNING: no data in: {batches_file}", fg='yellow', err=True)
+        typer.secho(f"WARNING: no data in: {batches_file}", fg='yellow', err=True)
         continue
       if not isinstance(new_batches, dict):
-        click.secho(f"WARNING: Invalid YAML (expected mapping/dict) in: {batches_file}", fg='yellow', err=True)
+        typer.secho(f"WARNING: Invalid YAML (expected mapping/dict) in: {batches_file}", fg='yellow', err=True)
         continue
       if not new_batches:
         continue
     except Exception as e:
-      click.secho(f"ERROR: Invalid YAML: {batches_file}", err=True)
+      typer.secho(f"ERROR: Invalid YAML: {batches_file}", err=True)
       raise e
     # deep-merge the aliases
     old_aliases = available_batches.get('aliases', {})
@@ -333,16 +368,16 @@ def iter_inputs(
           available_batches['aliases'][new_batch].append(f"{new_batch}@{batches_file}")
           available_batches[f"{new_batch}@{batches_file}"] = new_batches[new_batch]
   if debug:
-    click.secho(str(available_batches), dim=True, err=True)
+    typer.secho(str(available_batches), dim=True, err=True)
 
   batch_aliases = available_batches.get('aliases', {})
   batches = list(resolve_aliases(batches, batch_aliases)) # type: ignore
   if not batches:
     if 'QA_BATCH_FAIL_IF_EMPTY' in os.environ:
-      click.secho(f'ERROR: No batch was chosen.', fg='red', err=True)
+      typer.secho(f'ERROR: No batch was chosen.', fg='red', err=True)
       raise ValueError('No batch was chosen.')
     else:
-      click.secho(f'WARNING: No batch was chosen.', fg='yellow', err=True)
+      typer.secho(f'WARNING: No batch was chosen.', fg='yellow', err=True)
 
   if not default_inputs_settings:
     inputs_settings = get_settings(qatools_config.get('inputs', {}).get('types', {}).get('default', 'default'), qatools_config)
@@ -381,11 +416,11 @@ def iter_inputs(
 
   def check_batch(batch):
     if available_batches[batch] is None:
-      click.secho(f"WARNING: Cannot use empty batch definitions like '{batch}:'. Check your batch YAML.", fg='yellow', err=True)
-      click.secho(f"         If you want to run on all inputs consider using '{batch}: inputs:'.", fg='yellow', err=True)
+      typer.secho(f"WARNING: Cannot use empty batch definitions like '{batch}:'. Check your batch YAML.", fg='yellow', err=True)
+      typer.secho(f"         If you want to run on all inputs consider using '{batch}: inputs:'.", fg='yellow', err=True)
 
   for batch in batches:
-    if debug: click.secho(f'batch: {batch}', dim=True, err=True)
+    if debug: typer.secho(f'batch: {batch}', dim=True, err=True)
 
     # 1. Batches can directly match specifications from YAML files
     if batch in available_batches:
@@ -406,7 +441,7 @@ def iter_inputs(
       continue
 
     # 3. Batch can be directly paths to inputs (semi-deprecated...) 
-    if debug: click.secho(str(batch), bold=True, fg='cyan', err=True)
+    if debug: typer.secho(str(batch), bold=True, fg='cyan', err=True)
     inputs_iter = _iter_inputs(batch, run_context.database, inputs_settings, qatools_config)
     yield from (replace(run_context, input_path=i, database=d) for i, d in inputs_iter)
 
@@ -462,7 +497,7 @@ def parse_batch(batch_name, batch):
   """Returns an empty batch if there is an issue with the batch's content"""
   # Happens often when there is an orphan "my-batch:" in in the yaml file
   if batch is None:
-    click.secho(f'WARNING: Empty definition for the batch {batch_name}', fg='yellow', err=True)
+    typer.secho(f'WARNING: Empty definition for the batch {batch_name}', fg='yellow', err=True)
     return None
   if not isinstance(batch, dict):
     raise BatchError(f'The batch "{batch_name}" must be a mapping with keys like inputs, configurations, database..., got a {type(batch).__name__}: {batch}', batch_name)
@@ -630,7 +665,7 @@ def iter_batch(batch: Dict, default_run_context: RunContext, qatools_config, def
           location_run_context.configurations = [*location_run_context.configurations, *list(flatten(location_configurations))]
         else: # string?
           location_run_context.configurations =  [*location_run_context.configurations, location_configurations]
-      if debug: click.secho(str(location_run_context.database / location), bold=True, fg='cyan', err=True)
+      if debug: typer.secho(str(location_run_context.database / location), bold=True, fg='cyan', err=True)
       inputs_iter = _iter_inputs(location, location_run_context.database, location_inputs_settings, qatools_config, only=batch.get('only'), exclude=batch.get('exclude'))
       yield from (replace(location_run_context, input_path=i, database=d) for i, d in inputs_iter)
 
@@ -647,11 +682,11 @@ def load_runs_file(path) -> List[Dict[str, Any]]:
     with Path(path).open() as f:
       data = json.load(f)
   except (OSError, ValueError) as e:
-    raise click.UsageError(f"Could not read the runs file {path}: {e}")
+    raise UsageError(f"Could not read the runs file {path}: {e}")
   runs = data.get('runs') if isinstance(data, dict) else None
   is_run = lambda run: isinstance(run, dict) and 'input_path' in run and 'database' in run and isinstance(run.get('job_options') or {}, dict)
   if not isinstance(runs, list) or not all(is_run(run) for run in runs):
-    raise click.UsageError(f'Invalid runs file {path}: expected {{"runs": [{{"input_path": ..., "database": ..., ...}}]}}')
+    raise UsageError(f'Invalid runs file {path}: expected {{"runs": [{{"input_path": ..., "database": ..., ...}}]}}')
   return runs
 
 
@@ -735,7 +770,7 @@ def iter_parameters(tuning_search=None, filetype='json', extra_parameters=None):
 
   for counter, params_ in enumerate(params_iterator):
     if n_iter and counter >= n_iter and n_iter > 0:
-        click.secho(f"Stopping tuning combination after {n_iter} iterations", fg='yellow', err=True)
+        typer.secho(f"Stopping tuning combination after {n_iter} iterations", fg='yellow', err=True)
         return
     # the search overrides the extra parameters specified earlier
     params = {**extra_params, **params_}

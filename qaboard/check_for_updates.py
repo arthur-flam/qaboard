@@ -12,7 +12,7 @@ import json
 import datetime
 from pathlib import Path
 
-import click
+import typer
 
 
 def latest_qaboard_version():
@@ -27,8 +27,8 @@ def latest_qaboard_version():
     r = requests.get(url, timeout=1)
     r.raise_for_status()
   except Exception as e:
-    click.secho(f'WARNING: Unable to find latest qaboard version', fg='yellow', bold=True, err=True)
-    click.secho(str(e), fg='yellow', err=True)
+    typer.secho(f'WARNING: Unable to find latest qaboard version', fg='yellow', bold=True, err=True)
+    typer.secho(str(e), fg='yellow', err=True)
     return None
   try:
     return r.json()['info']['version']
@@ -88,7 +88,7 @@ def check_for_updates():
     to_ints = lambda v: [int(n) for n in v.split('.')]
     newer_version_available = to_ints(current_version) < to_ints(latest_version)
     if newer_version_available:
-      click.secho(f'[INFO] A new version of qaboard is available! Upgrade to {latest_version}:', fg='yellow', bold=True, err=True)
+      typer.secho(f'[INFO] A new version of qaboard is available! Upgrade to {latest_version}:', fg='yellow', bold=True, err=True)
       from .site_config import site_config
       upgrade_command = site_config('QABOARD_UPGRADE_COMMAND', 'pip install --upgrade qaboard')
-      click.secho(f'       $ {upgrade_command}', fg='yellow', err=True)
+      typer.secho(f'       $ {upgrade_command}', fg='yellow', err=True)
