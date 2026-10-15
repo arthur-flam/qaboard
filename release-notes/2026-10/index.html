@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.c1ca28c2.css">
-<script src="/qaboard/assets/js/runtime~main.77c7f30f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.263cc6b2.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.8a315988.js" defer="defer"></script>
 </head>
 <body>
@@ -300,6 +300,7 @@
 <li class="">nginx starts on hosts without IPv6, instead of failing on its <code>listen [::]:80</code> line.</li>
 <li class="">Repositories whose clone is broken are cloned again, instead of failing until an admin deletes them. The broken clone is only replaced once the new clone succeeded.</li>
 <li class="">Tag pushes record the tag&#x27;s whole name: its first character was cut.</li>
+<li class="">Pushes to repositories with files or folders whose name only looks like <em>qaboard.yaml</em> (for example an agent skill folder named <code>qaboard-yaml</code>) no longer fail: only files named exactly <em>qaboard.yaml</em> or <em>qatools.yaml</em> define projects.</li>
 <li class="">Servers outside SIRC no longer show avatars from SIRC&#x27;s directory for GitLab users without one: set <code>QABOARD_AVATAR_URL</code> to use your own (<a class="" href="/qaboard/docs/deploy#optional-environment-variables">environment variables</a>).</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="security-and-data-safety">Security and data safety<a href="#security-and-data-safety" class="hash-link" aria-label="Direct link to Security and data safety" title="Direct link to Security and data safety" translate="no">​</a></h3>
