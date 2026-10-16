@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8b97510b.css">
-<script src="/qaboard/assets/js/runtime~main.1801cb6f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.d997852f.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.7e271e3a.js" defer="defer"></script>
 </head>
 <body>
@@ -217,6 +217,10 @@
 <li class="">Scroll through hundreds of runs in the Logs view without slowdowns.</li>
 <li class="">Open very long logs (tens of thousands of lines) several times faster, and search them without the page freezing for seconds.</li>
 <li class="">See the diff of big text files (logs, configurations...) with the reference sooner: the editor loads while the files download, instead of after.</li>
+<li class="">Start the web app faster: it downloads a quarter less JavaScript on first load (date picker, error reporting and number formatting load only when needed), and servers send precompressed files.</li>
+<li class="">Open a commit sooner from the lists of commits: hovering a commit starts loading its page.</li>
+<li class="">Open the commits of a project you visited recently sooner after a reload: they no longer wait for the project&#x27;s configuration.</li>
+<li class="">Hover the History plot and image-heavy pages more smoothly: the page updates once you pause on a commit, and image viewers you&#x27;ve left no longer keep redrawing in the background.</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="fixes">Fixes<a href="#fixes" class="hash-link" aria-label="Direct link to Fixes" title="Direct link to Fixes" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="across-the-web-app">Across the web app<a href="#across-the-web-app" class="hash-link" aria-label="Direct link to Across the web app" title="Direct link to Across the web app" translate="no">​</a></h3>
