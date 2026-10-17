@@ -254,7 +254,7 @@
 <p>Zoom in and read the values of the pixels, written on them in black or white so that they stay readable: the image's own values (10-bit, 16-bit, float, raw...) or the 8-bit colors on screen, picked from the <strong>123</strong> button above the images. A badge says which ones you're reading, <code>p</code> hides them, and in difference mode they're new − reference. See <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/comparing-results#pixel-values-the-images-or-the-displayed-ones">pixel values</a>.</p>
 </li>
 <li class="">
-<p>Hover an image to see the pixel's own values, labelled <em>image</em> with what they are (e.g. <code>I;16</code>), next to the color on screen, labelled <em>display</em>, in both images, and their difference.</p>
+<p>Hover an image to see the pixel's own values, labelled <em>image</em> with what they are (e.g. <code>I;16</code>), next to the color on screen, labelled <em>display</em>, in both images, and their difference. 8-bit images show one set of values: the screen shows them as they are.</p>
 </li>
 <li class="">
 <p>Compare images in full screen: the button at the right of the image viewer's toolbar, or <code>f</code>, gives the screen to the images, with all the viewer's tools, and the difference under them when that makes them larger. See <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/comparing-results#full-screen">full screen</a>.</p>
@@ -278,10 +278,10 @@
 <p>Copy or save the new, reference or difference image as you see them, with the adjustments, or open the original files, from the copy button above the images. The image viewer's keys act on the viewer under the mouse, like the video viewer's.</p>
 </li>
 <li class="">
-<p>Find which runs' images changed most: <strong>Where they differ, in all N runs…</strong> in the image viewer's regions menu compares every run of the page with its reference and ranks them, from the largest difference to the identical ones. <strong>Show</strong> takes you to a run, on the region that changed most. See <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/comparing-results#which-runs-changed-most">which runs changed most</a>.</p>
+<p>Find which runs' images changed most: <strong>Where they differ, in all N runs…</strong> in the image viewer's regions menu compares every run of the page with its reference and ranks them, from the largest difference to the identical ones. <strong>Show</strong> takes you to a run, on the region that changed most. The list says which runs it's comparing and for how long, and which wait for their turn. See <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/comparing-results#which-runs-changed-most">which runs changed most</a>.</p>
 </li>
 <li class="">
-<p>See how much images differ in each of the regions where they differ (e.g. <em>#1 · 3.2%</em>). The regions are spread over the image, one per place that changed instead of twenty on the same leaves, and show the difference with some context around. The region set you pick applies to every viewer of the same file.</p>
+<p>See how much images differ in each of the regions where they differ (e.g. <em>#1 · 3.2%</em>). The regions are spread over the image, one per place that changed instead of twenty on the same leaves, and show the difference with some context around. The region set you pick applies to every viewer of the same file on the page. Searches like <strong>Where they differ</strong> are for the page where you pick them: other pages don't compare their images until you ask.</p>
 </li>
 <li class="">
 <p>Use QA-Board's image viewer in your own React apps: it builds as a package (<code>npm run build:image-viewer</code>), with its props documented in its <a href="https://github.com/Samsung/qaboard/tree/master/webapp/src/image-viewer" target="_blank" rel="noopener noreferrer" class="">README</a>.</p>
@@ -547,6 +547,9 @@
 <li class="">Counters say "1 run" and "1 project" instead of "1 outputs", "1 runs" and "1 projects".</li>
 <li class="">Links to the LSF docs and to the getting-started page work again, and the retired chat link now points to your server's support page (by default, QA-Board's GitHub issues).</li>
 <li class="">The "No projects yet" page links to your server's docs and support page.</li>
+<li class="">See the links of the sidebar's <strong>Code</strong> menu again: its submenu opens next to the sidebar, instead of off-screen on the left or cut off by the sidebar, and the <strong>Integrations</strong> menu fits in small windows.</li>
+<li class="">Use the collapsed sidebar with a screen reader: its items keep their names (Summary, Visualizations, Code...), which were hidden with their text.</li>
+<li class="">Move on quickly from the sidebar's <strong>Integrations</strong> and <strong>Milestones</strong> menus: they close once the mouse leaves them, instead of staying up to 3 seconds over the page.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="commit-page-and-viewers">Commit page and viewers<a href="https://samsung.github.io/qaboard/release-notes/2026-10#commit-page-and-viewers" class="hash-link" aria-label="Direct link to Commit page and viewers" title="Direct link to Commit page and viewers" translate="no">​</a></h3>
 <ul>
