@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8b97510b.css">
-<script src="/qaboard/assets/js/runtime~main.e6a66935.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.2cb540df.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.1d4b5a61.js" defer="defer"></script>
 </head>
 <body>
@@ -94,6 +94,7 @@
 <li class="">Redo buttons work again on commits whose artifacts were deleted.</li>
 <li class="">The tuning form checks your settings while you type, and lists what would make the batch fail (unknown batch, invalid automated tuning configuration, unknown platform...) before you click Send.</li>
 <li class="">The tuning form warns when the commit&#x27;s artifacts are missing and will be restored first.</li>
+<li class="">Get an email when a batch you start from the tuning form ends: one email when its last run ends, with how many runs failed, the main metrics vs their targets, the best parameters and links to the failed runs&#x27; logs. See the <a class="" href="/qaboard/docs/user-guide/running-from-the-webapp#emails-when-batches-end">user guide</a>.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="finding-commits-and-projects">Finding commits and projects<a href="#finding-commits-and-projects" class="hash-link" aria-label="Direct link to Finding commits and projects" title="Direct link to Finding commits and projects" translate="no">​</a></h3>
 <ul>
@@ -163,6 +164,7 @@
 <li class=""><code>QABOARD_API_VERIFY</code> controls the TLS verification of the CLI&#x27;s requests to the server: <code>true</code> (the default), <code>false</code>, or the path to a CA bundle.</li>
 <li class="">Site packages (company-specific plugins) are no longer ignored on Python 3.8 and 3.9, and the package includes the <code>qatools</code> compatibility package.</li>
 <li class=""><code>qa save-artifacts</code> saves the subprojects&#x27; <em>qaboard.yaml</em>: without it, runs redone from the artifacts used the parent project&#x27;s configuration and were saved in the parent project.</li>
+<li class="">Get an email when the runs of <code>qa --share batch</code> end (<code>export QA_NOTIFY=none</code> to stop them). It&#x27;s never sent in CI, and batches started by other batches, like pipeline steps, count as part of the first one. See the <a class="" href="/qaboard/docs/using-the-qa-cli#email-when-the-runs-end">CLI tips</a>.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="runners-lsf-dask-and-windows">Runners: LSF, Dask and Windows<a href="#runners-lsf-dask-and-windows" class="hash-link" aria-label="Direct link to Runners: LSF, Dask and Windows" title="Direct link to Runners: LSF, Dask and Windows" translate="no">​</a></h3>
 <ul>
@@ -249,6 +251,7 @@
 <ul>
 <li class="">Configure the quota dashboard and support links with <code>QABOARD_QUOTA_URL_TEMPLATE</code> and <code>QABOARD_SUPPORT_URL</code>.</li>
 <li class="">Tell users which credentials to use when they can&#x27;t log in, with <code>QABOARD_LOGIN_HINT</code>, and where to install WebCDE, which opens runs with a <code>cde.sh</code>, with <code>QABOARD_WEBCDE_INSTALLER</code> (<a class="" href="/qaboard/docs/deploy#optional-environment-variables">environment variables</a>). The tuning form&#x27;s feedback link goes to <code>QABOARD_SUPPORT_URL</code>.</li>
+<li class="">Email users when the batches they start end: set <code>QABOARD_SMTP_HOST</code>, and optionally the sender, reply-to address and email domain (<code>QABOARD_EMAIL_FROM</code>, <code>QABOARD_EMAIL_REPLY_TO</code>, <code>QABOARD_EMAIL_DOMAIN</code>). A migration adds a <code>batch_notifications</code> table and an index of the pending runs, built without blocking writes (<a class="" href="/qaboard/docs/deploy#emails">emails</a>).</li>
 <li class="">Scripts can send results that describe their commit with only <code>commit_sha</code> and <code>commit_authored_datetime</code>: the other <code>commit_*</code> fields (branch, message, committer, parents) are optional, and the server doesn&#x27;t need access to the git repository.</li>
 </ul>
 </li>
