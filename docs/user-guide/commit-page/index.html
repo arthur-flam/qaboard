@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8b97510b.css">
-<script src="/qaboard/assets/js/runtime~main.ff7302b2.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.e6a66935.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.1d4b5a61.js" defer="defer"></script>
 </head>
 <body>
@@ -49,7 +49,7 @@
 <li class=""><strong>N failed</strong>: the list of failed runs. Read their <a href="#logs" class="">logs</a>.</li>
 <li class=""><strong>N of the runs below were deleted</strong>: <strong>Redo deleted runs</strong> runs them again.</li>
 <li class=""><strong>Be careful, those are local runs</strong>: the runs were started from someone&#x27;s workspace, and may not match the committed code.</li>
-<li class=""><strong>This commit&#x27;s artifacts have been deleted</strong>: <strong>Restore artifacts</strong> brings them back (you&#x27;ll likely need to rebuild to redo runs).</li>
+<li class=""><strong>This commit&#x27;s artifacts were deleted</strong> (or <strong>are incomplete</strong>, when files went missing without QA-Board knowing): it says when and by whom, and what&#x27;s missing. <strong>Recreate the artifacts</strong> asks your CI to rebuild them, if the project <a class="" href="/qaboard/docs/storage/deleting-old-data#recreating-artifacts">configured it</a>. Otherwise, <strong>Restore the artifacts</strong> restores the files from the source code, but not build outputs like binaries.</li>
 </ul>
 <p>While runs are pending, the page refreshes by itself every 15 seconds.</p>
 <a id="the-controls-panel"></a>
