@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8b97510b.css">
-<script src="/qaboard/assets/js/runtime~main.2cb540df.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.079608b0.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.1d4b5a61.js" defer="defer"></script>
 </head>
 <body>
@@ -61,7 +61,7 @@ ingest is on the <a class="" href="/qaboard/docs/roadmap#token-authenticated-ing
 <a class="" href="/qaboard/docs/installation">Installation</a>.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="3-wrap-your-code">3. Wrap your code<a href="#3-wrap-your-code" class="hash-link" aria-label="Direct link to 3. Wrap your code" title="Direct link to 3. Wrap your code" translate="no">​</a></h2>
 <p>At the root of your repository, <code>qa init</code> creates <em>qaboard.yaml</em> and a <code>qa/</code> folder: <code>qa/main.py</code> (the wrapper),
-<code>qa/batches.yaml</code> (your test sets) and <code>qa/metrics.yaml</code> (your metrics).</p>
+<code>qa/batches.yaml</code> (your test sets) and <code>qa/metrics.yaml</code> (optional: which metrics to show by default).</p>
 <div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">qa init</span><br></div></code></pre></div></div>
 <p><code>qa</code> calls the <code>run(context)</code> function of <code>qa/main.py</code> for each run. It runs your code on <code>context.input_path</code>,
 writes files in <code>context.output_dir</code>, and returns metrics.</p>

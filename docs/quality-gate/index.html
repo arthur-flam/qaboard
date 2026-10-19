@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8b97510b.css">
-<script src="/qaboard/assets/js/runtime~main.2cb540df.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.079608b0.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.1d4b5a61.js" defer="defer"></script>
 </head>
 <body>
@@ -41,9 +41,11 @@ the change sees why.</p>
 <p>Each rule names a metric, and one or more limits:</p>
 <table><thead><tr><th>Limit</th><th>Fails when</th></tr></thead><tbody><tr><td><code>max_regression: 5%</code></td><td>The metric&#x27;s median over the batch&#x27;s runs is more than 5% worse than the reference&#x27;s.</td></tr><tr><td><code>per_test_max_regression: 10%</code></td><td>One run is more than 10% worse than its reference run.</td></tr><tr><td><code>min: 0.42</code></td><td>The median is under 0.42.</td></tr><tr><td><code>max: 12</code></td><td>The median is over 12.</td></tr></tbody></table>
 <ul>
-<li class=""><strong>Worse</strong> comes from your metrics&#x27; definitions (<code>outputs.metrics</code> in <em>qaboard.yaml</em>, see
-<a class="" href="/qaboard/docs/computing-quantitative-metrics">Metrics</a>): with <code>smaller_is_better: false</code>, a smaller value is worse. Like in
-the web app, metrics are &quot;smaller is better&quot; by default. Regression rules need the metric to be declared there.</li>
+<li class=""><strong>Worse</strong> comes from your metrics&#x27; definitions, in your code or your metrics file (see
+<a class="" href="/qaboard/docs/computing-quantitative-metrics#declaring-metrics">Declaring metrics</a>): with <code>smaller_is_better: false</code>, a
+smaller value is worse. Regression rules need to know which way is better: they fail with an error for metrics that
+were not declared, declared in code without <code>smaller_is_better</code>, or with <code>smaller_is_better: null</code>. In a metrics
+file, metrics without <code>smaller_is_better</code> are &quot;smaller is better&quot;. <code>min</code> and <code>max</code> work with any metric.</li>
 <li class="">Give regressions as percentages (<code>5%</code>) or fractions (<code>0.05</code>), relative to the magnitude of the reference&#x27;s value.</li>
 <li class="">Give <code>min</code> and <code>max</code> in the unit the runs return, like <code>target</code>: before <code>scale</code> is applied.</li>
 <li class="">Combine limits in one rule: <code>{metric: psnr, max_regression: 1%, per_test_max_regression: 5%}</code>.</li>
