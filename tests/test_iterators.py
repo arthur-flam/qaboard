@@ -495,7 +495,7 @@ class TestRunsFile(unittest.TestCase):
 
   def test_load_runs_file(self):
     import json
-    import click
+    from qaboard.utils import UsageError
     import tempfile
     from qaboard.iterators import load_runs_file
     with tempfile.TemporaryDirectory() as tmp:
@@ -505,9 +505,9 @@ class TestRunsFile(unittest.TestCase):
       self.assertEqual(load_runs_file(path), runs)
       for invalid in ['not json', '[]', '{"runs": [{"input_path": "a.jpg"}]}', '{"runs": [{"input_path": "a.jpg", "database": "/", "job_options": "lsf"}]}']:
         path.write_text(invalid)
-        with self.assertRaises(click.UsageError):
+        with self.assertRaises(UsageError):
           load_runs_file(path)
-      with self.assertRaises(click.UsageError):
+      with self.assertRaises(UsageError):
         load_runs_file(Path(tmp) / 'missing.json')
 
 

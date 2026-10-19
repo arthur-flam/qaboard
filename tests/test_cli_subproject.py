@@ -5,8 +5,10 @@ from pathlib import Path
 
 import yaml
 import unittest
-import click
-from click.testing import CliRunner
+import typer
+from typer.testing import CliRunner
+
+from tests import fresh_qaboard
 
 os.environ['QA_TESTING'] = 'true'
 
@@ -20,7 +22,8 @@ class TestQaCliSubproject(unittest.TestCase):
   def setUpClass(self):
     self.previous_cwd = os.getcwd()
     root_repo = Path(__file__).resolve().parent.parent
-    os.chdir(root_repo / 'qaboard/sample_project/subproject')
+    self.test_dir = root_repo / 'qaboard/sample_project/subproject'
+    os.chdir(self.test_dir)
     # we create some files...
     os.system("mkdir -p cli_tests/dir; touch cli_tests/a.jpg; touch cli_tests/b.jpg; touch cli_tests/dir/c.jpg")
     database = str(Path())
@@ -42,9 +45,9 @@ class TestQaCliSubproject(unittest.TestCase):
     os.chdir(self.previous_cwd)
 
   def setUp(self):
-    from importlib import reload
-    import qaboard
-    qaboard = reload(qaboard)
+    # `qa` changes the working directory to the project's root
+    os.chdir(self.test_dir)
+    qaboard = fresh_qaboard()
     def qa_(*argv):
       runner = CliRunner()
       result = runner.invoke(qaboard.qa, argv, obj={}, auto_envvar_prefix='QA', color=False)
@@ -53,7 +56,7 @@ class TestQaCliSubproject(unittest.TestCase):
       if result.exc_info and result.exception:
         import traceback
         exc_type, exc_value, exc_traceback = result.exc_info
-        click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red')
+        typer.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red')
         # traceback.print_exception(exc_type, exc_value, exc_traceback)
         # traceback.print_tb(exc_traceback)
       if result.exit_code:
@@ -67,7 +70,7 @@ class TestQaCliSubproject(unittest.TestCase):
     result = self.qa('run', '-i', 'cli_tests/a.jpg', 'echo "{input_path} => {output_dir}"')
     assert result.exit_code == 0
     assert 'a.jpg =>' in result.output
-    assert "'is_failed': False" in result.output
+    assert '"is_failed": false' in result.output
 
   def test_sub_get(self):
     result = self.qa('get', 'subproject')
