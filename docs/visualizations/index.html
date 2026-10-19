@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8b97510b.css">
-<script src="/qaboard/assets/js/runtime~main.8289b465.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.e670e986.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.67707832.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.d9aac6fd.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -40,7 +40,7 @@ We plan on letting you edit simply <em>qaboard.yaml</em> locally, and update the
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="image-viewer">Image viewer<a href="#image-viewer" class="hash-link" aria-label="Direct link to Image viewer" title="Direct link to Image viewer" translate="no">​</a></h3>
 <ul>
 <li class="">Supports all common image formats, and raw images with an <a href="https://iiif.io" target="_blank" rel="noopener noreferrer" class="">IIIF</a> server that reads them.</li>
-<li class="">Compares new and reference side by side, with a wipe, toggling between them, or as their difference: perceptual (YIQ), ΔE 2000, absolute or signed per channel, or any change.</li>
+<li class="">Compares new and reference side by side, with a wipe, one at a time (single), or as their difference: perceptual (YIQ), ΔE 2000, absolute or signed per channel, or any change.</li>
 <li class="">Fast and smooth zoom &amp; pan, synced across runs and visualizations. Fast image streaming via IIIF.</li>
 <li class="">The values of the hovered pixel in both images, and their difference, with a synced cursor on the other images. For 16-bit or raw images, the image&#x27;s own values, read by the server.</li>
 <li class="">Zoomed in, the values written on the pixels.</li>
@@ -97,7 +97,7 @@ in the format above.</p>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="video-viewer">Video viewer<a href="#video-viewer" class="hash-link" aria-label="Direct link to Video viewer" title="Direct link to Video viewer" translate="no">​</a></h3>
 <ul>
 <li class="">New and reference play in sync, frame by frame: paused, both show the same frame.</li>
-<li class="">Compare them side by side, with a wipe (drag the divider), by toggling between them (<kbd>t</kbd>), or as their difference (amplified up to ×64).</li>
+<li class="">Compare them side by side, with a wipe (drag the divider), one at a time (single, <kbd>t</kbd> flips), or as their difference (amplified up to ×64).</li>
 <li class="">Zoom with the mouse wheel or a pinch, drag to pan: both videos follow, even when their resolutions differ. Zoomed in, you see the actual pixels and their coordinates.</li>
 <li class="">Step frame by frame, scrub, slow down to 0.1×, loop.</li>
 <li class="">Copy or save the current frame as a PNG.</li>
