@@ -89,7 +89,7 @@ def optimize(
 
 @app.command(rich_help_panel="Compare results")
 def gate(
-  reference: Annotated[Optional[str], typer.Option('--reference', help="Compare with this branch, milestone or commit. Default: `gate.reference` in qaboard.yaml, else `project.reference_branch`.")] = None,
+  reference: Annotated[Optional[str], typer.Option('--reference', help="Compare with this branch, milestone (its name, or #<id> from its link) or commit. Default: `gate.reference` in qaboard.yaml, else `project.reference_branch`.")] = None,
   batches: Annotated[List[str], typer.Option('--batch', '-b', metavar='LABEL', help="The label of a batch to check, repeat for several. Default: `gate.batches`, else the CI batch (default).")] = [],
   commit: Annotated[Optional[str], typer.Option('--commit', help="The commit to check. Default: the current commit.")] = None,
   output_format: Annotated[Literal['text', 'markdown', 'json'], typer.Option('--format', help="Output format.")] = 'text',

@@ -6,7 +6,7 @@ import os
 import sys
 import json
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, List, Optional
 
 import typer
 from typer.core import TyperGroup
@@ -236,23 +236,28 @@ def split_dashdash() -> List[str]:
 
 
 def init_sentry() -> bool:
-  """In CI, report errors to the Sentry project set by the site (QABOARD_SENTRY_DSN), if any. Returns whether it's enabled."""
-  from ..site_config import site_config, as_requests_verify
+  """
+  In CI, report errors to the Sentry project set by the site (QABOARD_SENTRY_DSN), if any. Returns whether it's enabled.
+  The CA bundle that signed the Sentry server's certificate can be set with SENTRY_CA_CERTS or QABOARD_SENTRY_VERIFY
+  (a path, "system", or "false" to not check it), see qaboard/sentry_utils.py.
+  """
+  from ..site_config import site_config
   dsn = site_config("QABOARD_SENTRY_DSN")
   if not os.environ.get("CI") or not dsn:
     return False
   import sentry_sdk
-  options: Dict[str, Any] = {}
-  if as_requests_verify(site_config("QABOARD_SENTRY_VERIFY")) is False:
-    import urllib3
-    urllib3.disable_warnings()
-    class InsecureHttpTransport(sentry_sdk.transport.HttpTransport):
-      def _get_pool_options(self, *args, **kwargs):
-        options = super()._get_pool_options(*args, **kwargs)
-        options["cert_reqs"] = "CERT_NONE"
-        return options
-    options["transport"] = InsecureHttpTransport
-  sentry_sdk.init(dsn=dsn, traces_sample_rate=1.0, **options)
+  from .. import __version__
+  from ..sentry_utils import sentry_options
+  ca_setting = site_config("SENTRY_CA_CERTS") or site_config("QABOARD_SENTRY_VERIFY")
+  sentry_sdk.init(**sentry_options(
+    dsn,
+    release=f"qaboard@{__version__}",
+    environment="ci",
+    traces_rate=1.0,
+    # `qa` runs are short
+    profile_session_rate=0,
+    ca_setting=ca_setting,
+  ))
   return True
 
 

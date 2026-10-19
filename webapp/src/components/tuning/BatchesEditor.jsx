@@ -97,15 +97,20 @@ const relative = date => Date.now() - date.getTime() < 10 * 1000
   : DateTime.fromJSDate(date).toRelative({ style: "short" }) ?? "just now";
 
 
-const Layout = styled.div`
+// The editor and its side panel, stacked when the content area is narrow
+const LayoutContainer = styled.div`
+  container-type: inline-size;
+`;
+const LayoutGrid = styled.div`
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
   align-items: start;
-  @media (max-width: 1100px) {
+  @container (max-width: 860px) {
     grid-template-columns: minmax(0, 1fr);
   }
 `;
+const Layout = ({ children }) => <LayoutContainer><LayoutGrid>{children}</LayoutGrid></LayoutContainer>;
 
 const Toolbar = styled.div`
   display: flex;
@@ -113,7 +118,7 @@ const Toolbar = styled.div`
   flex-wrap: wrap;
   gap: 8px 12px;
   padding: 6px 0 8px;
-  border-bottom: 1px solid rgba(17, 20, 24, 0.15);
+  border-bottom: 1px solid var(--qa-border);
   margin-bottom: 8px;
   .bp6-tab-list { align-items: center; }
 `;
@@ -139,7 +144,7 @@ const DirtyDot = styled.span`
 `;
 
 const EditorFrame = styled.div`
-  border: 1px solid rgba(17, 20, 24, 0.15);
+  border: 1px solid var(--qa-border);
   border-radius: 2px;
   overflow: hidden;
 `;
@@ -148,7 +153,7 @@ const Problems = styled.ul`
   list-style: none;
   margin: 0;
   padding: 4px 0;
-  border-top: 1px solid rgba(17, 20, 24, 0.15);
+  border-top: 1px solid var(--qa-border);
   max-height: 120px;
   overflow: auto;
   font-size: 12px;
@@ -220,6 +225,7 @@ const item_meta = item => {
   if (item.overridden_by) return `replaced, line ${item.overridden_by}`;
   if (item.kind === "alias") return `alias → ${item.targets.join(", ") || "nothing"}`;
   if (item.kind === "setting") return "file setting";
+  if (item.kind === "reused") return `reused with *${item.anchor}, not a batch`;
   if (item.kind === "pipeline") return "pipeline";
   if (item.inputs === undefined) return "";
   return `${item.inputs} input${item.inputs === 1 ? "" : "s"}`;
@@ -429,7 +435,7 @@ export function BatchesEditor({ project, commit, config, git, web_url, available
     return () => clearInterval(interval);
   }, []);
 
-  const analysis = useMemo(() => analyzeBatches(doc?.draft ?? ""), [doc?.draft]);
+  const analysis = useMemo(() => analyzeBatches(doc?.draft ?? "", { config }), [doc?.draft, config]);
   const errors = analysis.problems.filter(p => p.severity === "error");
   const warnings = analysis.problems.filter(p => p.severity === "warning");
 
@@ -573,7 +579,7 @@ export function BatchesEditor({ project, commit, config, git, web_url, available
 
   const outline_filter = outlineFilter.trim().toLowerCase();
   const outline = analysis.items.filter(i => !outline_filter || i.name.toLowerCase().includes(outline_filter));
-  const nb_batches = analysis.items.filter(i => i.kind !== "setting").length;
+  const nb_batches = analysis.items.filter(i => i.kind !== "setting" && i.kind !== "reused").length;
   const ready = doc?.status === "ready";
 
   let status;
@@ -714,14 +720,14 @@ export function BatchesEditor({ project, commit, config, git, web_url, available
                     title={`${item.name}: ${item_meta(item) || item.kind}. Go to line ${item.line}`}
                   >
                     <Icon
-                      icon={item.kind === "alias" ? "link" : item.kind === "setting" ? "cog" : item.kind === "pipeline" ? "flow-linear" : "th-list"}
+                      icon={item.kind === "alias" ? "link" : item.kind === "setting" ? "cog" : item.kind === "reused" ? "duplicate" : item.kind === "pipeline" ? "flow-linear" : "th-list"}
                       size={12}
                       className={Classes.TEXT_MUTED}
                     />
-                    <span className={`name ${item.kind === "setting" ? Classes.TEXT_MUTED : ""}`}>{item.name}</span>
+                    <span className={`name ${item.kind === "setting" || item.kind === "reused" ? Classes.TEXT_MUTED : ""}`}>{item.name}</span>
                     <span className={`meta ${Classes.TEXT_MUTED}`}>{item_meta(item)}</span>
                   </button>
-                  {item.kind !== "setting" && <span className="actions">
+                  {item.kind !== "setting" && item.kind !== "reused" && <span className="actions">
                     <Tooltip content="List its tests" placement="top">
                       <Button size="small" variant="minimal" icon="eye-open" aria-label={`List the tests in ${item.name}`} onClick={() => openPreview(item.name)} />
                     </Tooltip>
