@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.8b97510b.css">
-<script src="/qaboard/assets/js/runtime~main.4be7c465.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.d5723138.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.257d2292.js" defer="defer"></script>
 </head>
 <body>
@@ -88,6 +88,7 @@
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="logs-batches-and-redoing-runs">Logs, batches and redoing runs<a href="#logs-batches-and-redoing-runs" class="hash-link" aria-label="Direct link to Logs, batches and redoing runs" title="Direct link to Logs, batches and redoing runs" translate="no">​</a></h3>
 <ul>
 <li class="">The Logs view filters runs (all, failed, running) and tags failed runs with the reason (e.g. &quot;LSF: out of memory&quot;). The sidebar&#x27;s Logs entry shows how many runs failed, or are still running.</li>
+<li class="">Show only the runs that succeeded: with <strong>Successful</strong> in the Logs view, or with <code>status:success</code> in the commit page&#x27;s filter boxes. See the <a class="" href="/qaboard/docs/user-guide/finding-results#filter-syntax">filter syntax</a>.</li>
 <li class="">In the Logs view, each run fits on one line, with buttons to open its output directory, copy its Linux or Windows path, redo it, mark it as failed or delete it. Its full configuration shows when you open its logs.</li>
 <li class="">Switch between a run&#x27;s <code>log.txt</code>, <code>log.lsf.txt</code> and <code>log.dask.txt</code>. For LSF runs, a summary shows the exit reason, host, run time and memory used vs requested, with hints that point to the batch&#x27;s <code>lsf:</code> options.</li>
 <li class="">Batches started from QA-Board (tuning, &quot;Run Tests&quot;) show whether <code>qa batch</code> is waiting for LSF, running, failed (with the error) or didn&#x27;t start any run, with a link to its logs.</li>
