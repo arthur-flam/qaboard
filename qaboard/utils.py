@@ -316,34 +316,39 @@ def is_plaintext(path, config=None):
   exit(1)
 
 
+def _needs_eol_normalization(path: Path, block_size: int = 1024 * 1024) -> bool:
+  """True if the file has CR end-of-lines and doesn't look binary (NUL byte in its first 8000 bytes, like git)."""
+  with path.open('rb') as f:
+    head = f.read(8000)
+    if b'\0' in head:
+      return False
+    block = head
+    while block:
+      if b'\r' in block:
+        return True
+      block = f.read(block_size)
+  return False
+
+
 def file_info(path, normalize_eof=True, config=None, compute_hashes=True, has_footer=False):
   """Return metadata about a file."""
   path = Path(path)
 
-  # For bit-accuracy checks to work on text files between UNIX/windows,
-  # we need to convert end-of-lines on Windows
-  if os.name == 'nt' and is_plaintext(path, config=config) and normalize_eof:
+  # Normalize EOLs for plaintext files so manifests are comparable across UNIX/windows
+  if normalize_eof and is_plaintext(path, config=config) and _needs_eol_normalization(path):
+    # Work on bytes, like universal newlines would on UTF-8 text (CR and LF never appear inside
+    # multi-byte UTF-8 sequences), but without losing bytes that are not valid UTF-8
+    data = path.read_bytes().replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+    from tempfile import mkstemp
+    # keep the suffix: some hashes depend on it (e.g. .hex)
+    fd, normalized_file_name = mkstemp(suffix=path.suffix)
     try:
-      with path.open(newline=None, encoding="utf-8", errors='surrogateescape') as raw_file: # will accept both \t\n and \n as line endings
-        text = raw_file.read()
-    except Exception as e:
-      print(f"WARNING: Error reading {path} (utf8/surrogateescape), {e}")
-      try:
-        with path.open(newline=None, encoding="utf-8", errors="ignore") as raw_file:
-          text = raw_file.read()
-      except Exception as e:
-        print(f"ERROR: Error reading {path} (utf8/ignore), {e}")
-        raise e
-
-    from tempfile import NamedTemporaryFile
-    with NamedTemporaryFile(mode='w+', delete=False, newline='\n') as normalized_file:
-      normalized_file_name = normalized_file.name + path.suffix
-    with open(normalized_file_name, 'w+', newline='\n', encoding="utf-8", errors='ignore') as normalized_file:
-      normalized_file.write(text)
-
-    normalized_file_info = file_info(normalized_file_name, normalize_eof=False, has_footer=has_footer)
-    Path(normalized_file_name).unlink()
-    return normalized_file_info
+      # close before hashing and deleting: windows can't delete files that are still open
+      with os.fdopen(fd, 'wb') as normalized_file:
+        normalized_file.write(data)
+      return _file_info(Path(normalized_file_name), compute_hashes=compute_hashes)
+    finally:
+      Path(normalized_file_name).unlink(missing_ok=True)
 
   return _file_info(path, compute_hashes=compute_hashes)
 
