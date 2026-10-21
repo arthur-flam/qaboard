@@ -25,6 +25,7 @@ QA-Board says how much space it frees and what it keeps (milestones, other peopl
 type a confirmation for big deletions, and shows the deletion's progress and errors.</li>
 <li class="">Find out why IT's quota says something else, with the commands that measure a folder and find your biggest files and exports.</li>
 <li class="">See who uses the most storage in a project, and their runs.</li>
+<li class=""><strong>Storage usage</strong> replaces the <em>Quota</em> links: <code>QABOARD_QUOTA_URL_TEMPLATE</code> is no longer used.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="comparing-images">Comparing images<a href="https://samsung.github.io/qaboard/release-notes/2026-10#comparing-images" class="hash-link" aria-label="Direct link to Comparing images" title="Direct link to Comparing images" translate="no">​</a></h3>
 <ul>
@@ -185,6 +186,12 @@ audit log and change settings in the new <strong>Admin</strong> panel, with a se
 <li class="">Sign in with your company's single sign-on, when your admins set it up: its button comes first on the new sign-in page.</li>
 <li class="">See where you're signed in in <strong>Settings → Sessions</strong>, and sign out of the browsers you don't use anymore, or of all of them but this one.</li>
 <li class="">Add another way to sign in to your account, or remove one, in <strong>Settings → Sign-in methods</strong>.</li>
+<li class="">See your role on a project in its new <strong>Access</strong> tab, and ask for access when you need more: owners get an email, and
+you get one when they decide (<a class="" href="https://samsung.github.io/qaboard/docs/user-guide/project-access">project access</a>).</li>
+<li class="">Choose who can see your project and act on its runs, as its owner: make it public, internal or private, and add
+users or groups as viewers, developers or owners, optionally until a date. Members of a group's projects are members
+of every project under it.</li>
+<li class="">Read why you can't see a project or act on its runs, with its owners and a <strong>Request access</strong> button.</li>
 <li class="">Ask for access: when your admins approve new accounts, you can sign in and say why you need QA-Board, and you get
 an email when they decide.</li>
 </ul>
@@ -265,6 +272,21 @@ lifetimes, how results are authenticated. Environment variables still win when t
 <li class="">Find sign-ins, failed sign-ins, token changes, CLI logins and admin changes in the audit log, with who and from which IP.</li>
 <li class="">Tokens are stored hashed, can have scopes, projects and an expiry date, and expire when unused for long if you want.</li>
 <li class="">Disabled accounts stop working at once: their sessions and tokens are refused at the next request.</li>
+</ul>
+</li>
+<li class=""><strong>Roles on projects</strong> (viewer, developer, owner), managed by projects' owners from the web app
+(<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/project-access">project access and roles</a>). Nothing changes on upgrade: projects are public and
+signed-in users developers, until you set <code>projects.default_visibility</code> and <code>projects.signed_in_role</code>.<!-- -->
+<ul>
+<li class="">Create groups in <strong>Admin → Groups</strong>, filled by hand or by sign-in claims: SSO groups, LDAP <code>memberOf</code>, email domains.</li>
+<li class="">Give users or groups a role on all projects, private ones included.</li>
+<li class="">Projects in <code>QABOARD_LOGIN_RESTRICTED_YAML</code> stay restricted: they're private, the users its rules match their developers.</li>
+<li class="">Files of private projects under <code>/s/</code> follow their roles, and tokens limited to other projects can't read them.</li>
+<li class="">Users' groups are updated every day, and as soon as you change a rule: LDAP accounts from the directory's
+<code>memberOf</code> (optionally with Active Directory's nested groups), single sign-on accounts with refresh tokens if you
+enable <strong>Refresh groups daily</strong> on the provider. <strong>Update now</strong> in <strong>Admin → Groups</strong> runs it at once.</li>
+<li class="">Rules can read nested claims, like Keycloak's <code>realm_access.roles</code>, and signing in with LDAP or single sign-on
+keeps the groups the other gave.</li>
 </ul>
 </li>
 <li class=""><strong>Clean the storage from the admin panel</strong> (<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/storage">cleaning the storage</a>).<!-- -->
@@ -376,9 +398,9 @@ anonymous users (any non-empty value used to block them), and an empty value let
 <li class="">Without a complete <code>/etc/passwd</code>, e.g. with LDAP or SSSD, <code>QABOARD_ACCOUNTS_COMMAND</code> (and <code>QABOARD_GROUPS_COMMAND</code>) gives the backend the users' accounts, refreshed daily: the file browser shows owners' names instead of their ids (see <a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/user-management#users-accounts">users' accounts</a>).</li>
 </ul>
 </li>
-<li class=""><strong>Settings</strong>: quota, support and login hints, simpler result uploads.<!-- -->
+<li class=""><strong>Settings</strong>: support and login hints, simpler result uploads.<!-- -->
 <ul>
-<li class="">Configure the quota dashboard and support links with <code>QABOARD_QUOTA_URL_TEMPLATE</code> and <code>QABOARD_SUPPORT_URL</code>.</li>
+<li class="">Configure the support link with <code>QABOARD_SUPPORT_URL</code>.</li>
 <li class="">Tell users which credentials to use when they can't log in, with <code>QABOARD_LOGIN_HINT</code>, and where to install WebCDE, which opens runs with a <code>cde.sh</code>, with <code>QABOARD_WEBCDE_INSTALLER</code> (<a class="" href="https://samsung.github.io/qaboard/docs/deploy#optional-environment-variables">environment variables</a>). The tuning form's feedback link goes to <code>QABOARD_SUPPORT_URL</code>.</li>
 <li class="">Email users when the batches they start end: set <code>QABOARD_SMTP_HOST</code>, and optionally the sender, reply-to address and email domain (<code>QABOARD_EMAIL_FROM</code>, <code>QABOARD_EMAIL_REPLY_TO</code>, <code>QABOARD_EMAIL_DOMAIN</code>). A migration adds a <code>batch_notifications</code> table and an index of the pending runs, built without blocking writes (<a class="" href="https://samsung.github.io/qaboard/docs/deploy#emails">emails</a>).</li>
 <li class="">Scripts can send results that describe their commit with only <code>commit_sha</code> and <code>commit_authored_datetime</code>: the other <code>commit_*</code> fields (branch, message, committer, parents) are optional, and the server doesn't need access to the git repository.</li>
@@ -620,6 +642,7 @@ anonymous users (any non-empty value used to block them), and an empty value let
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration-1">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration-1" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h3>
 <ul>
+<li class="">LDAP accounts get their email from <code>QABOARD_LDAP_ATTRIBUTE_EMAIL</code> when it isn't <code>mail</code>: only <code>mail</code> was read.</li>
 <li class="">Show the demo projects' latest commits in the quickstart's commit list: the demo data's dates, and its files' modification times, move to when QA-Board first starts, instead of keeping the day the demo data was made (<a class="" href="https://samsung.github.io/qaboard/docs/get-started/quickstart">quickstart</a>).</li>
 <li class="">The project's settings (metrics, visualizations, storage...) are no longer replaced by those of whichever branch got new results last: they come from the reference branch (<code>project.reference_branch</code> in <em>qaboard.yaml</em>), or from the project's first results.</li>
 <li class="">nginx starts on hosts without IPv6, instead of failing on its <code>listen [::]:80</code> line.</li>
