@@ -10,10 +10,8 @@ Site packages can also provide a base `qaboard.yaml` that all projects' configur
 by pointing QABOARD_SITE_CONFIG to it (see `site_qaboard_config`).
 
 Install a site package to auto-configure:
-    # for SIRC 
-    pip install --upgrade "qaboard-site-sirc @ git+ssh://git@gitlab-srv/common-infrastructure/qaboard#subdirectory=deployments/sirc/cli"    # SIRC defaults
-    # for DSK (replace the repo URL with one you can access)
-    pip install --upgrade "qaboard-site-dsk @ git+ssh://git@gitlab-srv/common-infrastructure/qaboard#subdirectory=deployments/dsk/cli"    # DSK defaults
+    # from your site's configuration repository (the one cloned into deployments/<site>/ on the server)
+    pip install --upgrade "qaboard-site-mysite @ git+ssh://git@git.example.com/infra/qaboard-mysite#subdirectory=cli"
 """
 import os
 import json

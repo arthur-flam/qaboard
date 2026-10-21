@@ -33,7 +33,7 @@ services:
     # - QABOARD_DB_ECHO=true
     - UWSGI_STATS=true
     - QABOARD_DATA_DIR=/qaboard/backend/data
-    # At SIRC, deployments/sirc/.envrc sets QABOARD_DEV_DB_HOST to connect to the production database
+    # A site's .envrc can set QABOARD_DEV_DB_HOST to connect to another database (e.g. production's)
     - QABOARD_DB_HOST=${QABOARD_DEV_DB_HOST:-db}
     - SSH_AUTH_SOCK=/ssh-agent
     working_dir: /qaboard/backend
@@ -47,7 +47,7 @@ services:
     # But non-root users don't gain capabilities...
     # uv add lxml xmlsec uwsgi --no-binary-package uwsgi --no-binary-package lxml --no-binary-package xmlsec --refresh-package lxml --refresh-package xmlsec --refresh-package uwsgi --no-cache --reinstall
     # flask run --with-threads --host 0.0.0.0 --port 5152
-    # We run as your user if it exists in the container (e.g. at SIRC, services/backend/passwd is mounted), else as root.
+    # We run as your user if it exists in the container (e.g. your site's overlay mounts a passwd file), else as root.
     # The proxy talks uwsgi to backend:3000: to check who can read files (500 errors without it), for the file browser
     # under /s/ (folder listings, /api/v1/... calls: 502 errors)... Next to flask, uwsgi serves them (as you, not $UWSGI_UID)
     command: >
@@ -107,14 +107,16 @@ services:
     # the repository files the docs show (<RepoFile>) and the shot list, see website/Dockerfile
     - ./charts:/charts:ro
     - ./examples:/examples:ro
+    # deployments/quickstart/compose.yml, and your site's docs: deployments/<site>/site-docs/
+    - ./deployments:/deployments:ro
     - ./docs-media/shots.yaml:/docs-media/shots.yaml:ro
     environment:
       # to access the server from outside the docker environment
       - HOST=0.0.0.0
       - DANGEROUSLY_DISABLE_HOST_CHECK=true
-      # with SIRC's filesystem that doesn't send update events
+      # with network filesystems that don't send update events
       - CHOKIDAR_USEPOLLING=true
-      # deployments/sirc/.envrc sets it to 0 to deal with broken proxies/certs
+      # a site's .envrc can set it to 0 to deal with broken proxies/certs
       - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-1}
     ports:
       - 6051:3000

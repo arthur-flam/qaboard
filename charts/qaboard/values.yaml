@@ -1,4 +1,4 @@
-# Default values for QA-Board. To try it on your laptop: quickstart.yaml. A site's values: deployments/sirc/values.yaml
+# Default values for QA-Board. To try it on your laptop: quickstart.yaml. A site's values: in its repository (deployments/<site>/values.yaml)
 # Docs: website/docs/backend-admin/kubernetes.mdx (https://samsung.github.io/qaboard/docs/backend-admin/kubernetes)
 
 image:

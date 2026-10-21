@@ -74,8 +74,7 @@ no-binary-package = ["uwsgi", "lxml", "xmlsec", "psycopg2"]
 
 [tool.uv.sources]
 qaboard = { path = "../" }
-# qaboard-site-sirc = { path = "../deployments/sirc/cli" }
-# qaboard-site-dsk = { path = "../deployments/dsk/cli" }
+# qaboard-site-mysite = { path = "../deployments/mysite/cli" }  # your site's repository, cloned in deployments/mysite
 
 # [tool.uv.pip]
 # no-binary = ["uwsgi", "lxml", "xmlsec"]

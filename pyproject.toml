@@ -90,8 +90,7 @@ packages = [
 
 # See above
 # [tool.uv.sources]
-# qaboard-site-sirc = { path = "deployments/sirc/cli" }
-# qaboard-site-dsk = { path = "deployments/dsk/cli" }
+# qaboard-site-mysite = { path = "deployments/mysite/cli" }  # your site's repository, cloned in deployments/mysite
 
 [tool.hatch.metadata]
 allow-direct-references = true

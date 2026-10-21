@@ -6,7 +6,7 @@ from unittest import mock
 import unittest
 
 
-# The SIRC mappings, same as in deployments/cli/sirc/qaboard_site_sirc/__init__.py
+# The SIRC mappings, same as in SIRC's site package (qaboard_site_sirc/__init__.py)
 SIRC_MAPPINGS = json.dumps([
     ["\\\\netapp\\algo_data", "/stage/algo_data"],
     ["\\\\netapp2\\algo_data", "/stage/algo_data"],

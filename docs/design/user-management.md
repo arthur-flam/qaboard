@@ -864,5 +864,5 @@ the sign-in audit event, never used for access (M3 decides with group rules).
   `QABOARD_TRUSTED_PROXY_HOPS` defaults to 0 (the address nginx sees). Set 1 behind an ingress.
 - **TLS to the IdP**: the backend image sets `REQUESTS_CA_BUNDLE` to the system bundle, which has the CA of
   `CA_CERT_URL`: certifi's doesn't.
-- **Docs**: [Sign-in and single sign-on](/docs/backend-admin/sign-in) on the website, `deployments/sirc/runbooks/sso.md`
-  for SIRC's Keycloak.
+- **Docs**: [Sign-in and single sign-on](/docs/backend-admin/sign-in) on the website, `runbooks/sso.md` in SIRC's
+  configuration repository for SIRC's Keycloak.

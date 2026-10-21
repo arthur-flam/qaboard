@@ -44,7 +44,7 @@ class TestSchemas(unittest.TestCase):
 
   def test_repository_files(self):
     files = {
-      'qaboard.schema.json': [*root_dir.glob('examples/*/qaboard.yaml'), *root_dir.glob('qaboard/sample_project/**/qaboard.yaml'), root_dir / 'docs-media/tests/fixture/qaboard.yaml', root_dir / 'deployments/sirc/cli/qaboard_site_sirc/qaboard.yaml'],
+      'qaboard.schema.json': [*root_dir.glob('examples/*/qaboard.yaml'), *root_dir.glob('qaboard/sample_project/**/qaboard.yaml'), root_dir / 'docs-media/tests/fixture/qaboard.yaml', *root_dir.glob('deployments/*/cli/*/qaboard.yaml')],  # the site repositories cloned there
       'batches.schema.json': [*root_dir.glob('examples/*/qa/batches.yaml'), root_dir / 'qaboard/sample_project/qa/batches.yaml', root_dir / 'docs-media/tests/fixture/qa/batches.yaml'],
       'metrics.schema.json': [*root_dir.glob('examples/*/qa/metrics.yaml'), root_dir / 'qaboard/sample_project/qa/metrics.yaml', root_dir / 'docs-media/tests/fixture/qa/metrics.yaml'],
     }

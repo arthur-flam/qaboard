@@ -38,9 +38,9 @@ deployments/deploy.py deployments/production.env up --build         # upgrades
 # or plain docker compose
 docker compose -f docker-compose.yml -f production.yml up -d
 
-# With site-specific config (e.g. SIRC, DSK)
-deployments/deploy.py deployments/sirc/production.env up
-docker compose -f docker-compose.yml -f production.yml -f deployments/dsk/dsk.yml up -d
+# With your site's config: its own repository, cloned into deployments/mysite/
+deployments/deploy.py deployments/mysite/production.env up
+docker compose -f docker-compose.yml -f production.yml -f deployments/mysite/mysite.yml up -d
 ```
 
 ## Getting Started

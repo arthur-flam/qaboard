@@ -2,7 +2,7 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Admonition from '@theme/Admonition';
 
-// Points to the instructions of the site whose web app bundles these docs: website/site-docs/<site>/,
+// Points to the instructions of the site whose web app bundles these docs: deployments/<site>/site-docs/,
 // built in only when QABOARD_SITE is set (see docusaurus.config.ts). Renders nothing in other builds.
 export default function SiteInstructions({page = 'installation', children}) {
   const {siteConfig} = useDocusaurusContext();

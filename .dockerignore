@@ -10,6 +10,8 @@ data/
 *.egg-info/
 */__pycache__/
 .git/
+# deployments/<site>/ are repositories of their own
+**/.git
 */node_modules/
 */.npm/
 */build/

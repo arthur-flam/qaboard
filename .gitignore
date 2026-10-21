@@ -524,6 +524,9 @@ paket-files/
 
 # End of https://www.gitignore.io/api/linux,python,windows,sublimetext,visualstudio
 .deploy-state.*.json
+# A site's configuration is its own repository, cloned into deployments/<site>/ (website/docs/backend-admin/deployment.mdx)
+/deployments/*/
+!/deployments/quickstart/
 users_restrict.yml
 
 # Docs media (docs-media/README.md): capture output and the docs build's download cache

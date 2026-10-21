@@ -34,7 +34,7 @@ chmod -R 777 /mnt/qaboard
 
 The base `docker-compose.yml` doesn't mount any results storage. Mount it in your site overlay (start from `deployments/example.yml`): the backend needs it at the same path as the clients, and nginx serves files under `/s/` from `/var/qaboard/` (`/s/mnt/qaboard/...` is read from `/var/qaboard/mnt/qaboard/...`):
 
-```yaml title="deployments/mysite.yml"
+```yaml title="deployments/mysite/mysite.yml"
 services:
   backend:
     volumes:
@@ -83,7 +83,7 @@ deployments/deploy.py deployments/production.env up --build
 
 If you prefer plain docker compose, `docker compose -f docker-compose.yml -f production.yml up -d` still works, without zero-downtime upgrades.
 
-A site overlay adds your site's services, volumes, environment variables and nginx configuration without modifying the base `docker-compose.yml`. Start from `deployments/example.yml` for the overlay, and from `deployments/production.env` for the env file.
+A site overlay adds your site's services, volumes, environment variables and nginx configuration without modifying the base `docker-compose.yml`. Start from `deployments/example.yml` for the overlay, and from `deployments/production.env` for the env file. Keep them in a repository of your own, cloned into `deployments/mysite/`: see [your site's repository](backend-admin/deployment#your-sites-repository).
 
 `deployments/deploy.py` runs several backend replicas and replaces them one version at a time, runs database migrations once, and keeps the previous images for rollbacks. Read [Deployments, rollbacks and high availability](backend-admin/deployment) for the details.
 
@@ -210,7 +210,7 @@ The `cron-backup-db` service in *production.yml* makes daily backups of the data
 ### Using SSL / hosting behind a reverse proxy
 What we do is use our own copy of *services/nginx/conf.d/qaboard.conf* in the site overlay (keep its `include snippets/...` lines: they serve the files and the file browser). Files mounted under `/tmp/deployment/nginx/conf.d/` in the `proxy` container are added to (or replace) *services/nginx/conf.d/*:
 
-```nginx title="deployments/nginx/qaboard.conf (copied from services/nginx/conf.d/qaboard.conf)"
+```nginx title="deployments/mysite/nginx/qaboard.conf (copied from services/nginx/conf.d/qaboard.conf)"
 server {
   # ...
   listen 443 ssl;
@@ -222,13 +222,13 @@ server {
 
 And mount keys with:
 
-```yaml title="deployments/mysite.yml"
+```yaml title="deployments/mysite/mysite.yml"
 services:
   proxy:
     ports:
     - "443:443"
     volumes:
-    - "./deployments/nginx/qaboard.conf:/tmp/deployment/nginx/conf.d/qaboard.conf:ro"
+    - "./deployments/mysite/nginx/qaboard.conf:/tmp/deployment/nginx/conf.d/qaboard.conf:ro"
     - "somewhere/cert.key:/ssl/cert.key"
     - "somewhere/cert.pem:/ssl/cert.pem"
 ```

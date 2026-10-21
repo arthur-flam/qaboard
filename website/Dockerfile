@@ -46,7 +46,8 @@ RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
     yarn install --frozen-lockfile --network-timeout 100000
 # The files outside website/ keep their place relative to it (/website/../charts/...)
 COPY charts/ /charts/
-COPY deployments/quickstart/compose.yml /deployments/quickstart/compose.yml
+# deployments/quickstart/compose.yml, and deployments/<site>/site-docs/ (see Dockerfile.dockerignore)
+COPY deployments/ /deployments/
 COPY examples/ /examples/
 COPY docs-media/shots.yaml /docs-media/shots.yaml
 COPY qaboard/schemas/ /qaboard/schemas/
@@ -58,7 +59,7 @@ COPY website/ ./
 ENV QABOARD_DOCS_FOR_WEBAPP true
 ARG QABOARD_URL
 ENV QABOARD_URL=$QABOARD_URL
-# Adds the docs for the users of your site, from site-docs/$QABOARD_SITE/ (e.g. sirc)
+# Adds the docs for the users of your site, from deployments/$QABOARD_SITE/site-docs/ (your site's repository)
 ARG QABOARD_SITE=""
 ENV QABOARD_SITE=$QABOARD_SITE
 # The build downloads the docs' screenshots and clips (docs-media/README.md): without network access, set

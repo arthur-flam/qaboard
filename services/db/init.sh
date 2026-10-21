@@ -1,5 +1,5 @@
 #!/bin/bash
-# Entrypoint of the db service (see deployments/sirc/sirc.yml): starts PostgreSQL with the official image's
+# Entrypoint of the db service, when a site's overlay sets `entrypoint: /opt/init.sh`: starts PostgreSQL with the official image's
 # entrypoint, with QA-Board's settings: $QABOARD_DB_CONFIG, by default qaboard.conf next to this script
 # (services/db/ is mounted at /opt in docker-compose.yml, so: `entrypoint: /opt/init.sh`).
 #

@@ -5,7 +5,7 @@
 #   minus what was deleted (commits/outputs with deleted=true), and the test_inputs those outputs use
 #
 # Usage (in the db container): /opt/seed postgresql://user:password@host:port/database [days]
-#   or with deployments/deploy.py deployments/sirc/staging.env seed-db
+#   or with deployments/deploy.py <env file> seed-db
 #
 # The source is only read, in a single read-only snapshot, with indexed queries: only recent rows are transferred.
 #   On the source, batches.ci_commit_id needs an index (outputs.batch_id has one), or batches are scanned in full.

@@ -7,9 +7,13 @@ const {createRequire} = require('module');
 const {pathToFileURL} = require('url');
 const {collectFromTree, collectFromJs} = require('./collect');
 
-// Content folders, relative to the website. site-docs/ holds every site's docs: they are scanned even when
-// QABOARD_SITE doesn't build them, so that a typo there fails too.
-const CONTENT_DIRS = ['docs', 'blog', 'release-notes', 'src/pages', 'site-docs'];
+// Content folders, relative to the website. The sites' docs, deployments/<site>/site-docs/ (in the sites' repositories,
+// cloned there), are scanned even when QABOARD_SITE doesn't build them, so that a typo there fails too.
+const DEPLOYMENTS_DIR = path.join(__dirname, '..', '..', '..', 'deployments');
+const SITE_DOCS_DIRS = !fs.existsSync(DEPLOYMENTS_DIR) ? [] : fs.readdirSync(DEPLOYMENTS_DIR, {withFileTypes: true})
+  .filter(dirent => dirent.isDirectory() && fs.existsSync(path.join(DEPLOYMENTS_DIR, dirent.name, 'site-docs')))
+  .map(dirent => path.join('..', 'deployments', dirent.name, 'site-docs'));
+const CONTENT_DIRS = ['docs', 'blog', 'release-notes', 'src/pages', ...SITE_DOCS_DIRS];
 const SOURCE_DIR = 'src';
 // The components themselves, and the theme's mapping, use ids as variables
 const SOURCE_EXCLUDES = /(^|\/)(components\/(Shot|Clip|Compare|StackPicker)(\.[jt]sx?|\/)|components\/media\/|theme\/MDXComponents\.[jt]sx?)/;

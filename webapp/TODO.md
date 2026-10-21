@@ -6,7 +6,7 @@ Check items off or delete them when done, add new ones with enough context for s
 ## Bugs / risks
 - [ ] **Check the viewers on staging after the state migration**: images (OpenSeadragon/IIIF, auto-ROIs, crops), ToF point clouds, SLAM, flame graphs, bit-accuracy trees, the tuning forms. They now fetch files with TanStack Query and `fetch` instead of axios, and most were rewritten as function components. Unit tests cover their logic, not their rendering.
 - [ ] **Old plotly figures**: plotly.js@3 dropped deprecated attributes. `src/components/PlotlyPlot.jsx` upgrades string titles and `titlefont`, but figures with other removed attributes (`bardir`, `annotation.ref`, `autotick`, `heatmapgl`/`pointcloud` traces...) may render differently. Extend `upgradeFigure` if users report it.
-- [ ] **Node on SIRC GitLab runners** is 22.14 (`deployments/sirc/.envrc`), close to the minimum the toolchain supports (22.12). Move them to Node 24 LTS like Docker and GitHub Actions.
+- [ ] **Node on SIRC GitLab runners** is 22.14 (set by SIRC's `.envrc`), close to the minimum the toolchain supports (22.12). Move them to Node 24 LTS like Docker and GitHub Actions.
 - [ ] Viewers not covered by automated tests with real data: images (OpenSeadragon/IIIF), ToF point clouds (three.js), SLAM, flame graphs, videos. Check them manually on staging after deploys that touch them.
 
 ## UX

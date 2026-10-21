@@ -32,6 +32,30 @@ deployments/deploy.py deployments/mysite/production.env compose logs -f backend
 
 Keep secrets out of the env files: put them in `.env` on the host.
 
+### Your site's repository
+Keep your site's files (overlay, env files, nginx configuration, [site package](../installation#with-your-organizations-site-package), CI) in a repository of your own, and clone it into `deployments/mysite/` of your QA-Board checkout. QA-Board's git ignores `deployments/<site>/`, and compose resolves the paths from the checkout's root, so the files keep their `deployments/mysite/...` paths:
+
+```bash
+git clone https://github.com/Samsung/qaboard.git
+git clone git@git.example.com:infra/qaboard-mysite.git qaboard/deployments/mysite
+cd qaboard
+deployments/deploy.py deployments/mysite/production.env up --build --init
+# upgrades: update both, then deploy
+git pull && (cd deployments/mysite && git pull)
+deployments/deploy.py deployments/mysite/production.env up --build
+```
+
+<details>
+<summary>What else can go there</summary>
+
+- `site-docs/`: pages for your users, built into your web app's docs when the env file sets `QABOARD_SITE=mysite` (`site-docs/_site.json` gives the site's name and navbar label, the pages are Docusaurus `.mdx`).
+- `cli/`: your site package, installed with `pip install 'qaboard-site-mysite @ git+ssh://...qaboard-mysite#subdirectory=cli'`. To bake it into the backend image, set the build arg `QABOARD_EXTRA=mysite` in your overlay.
+- `values.yaml`, if you deploy with [Helm](kubernetes).
+- Your CI: clone both repositories, the site's into `deployments/mysite/`, then run `deploy.py` on the host. `status` shows the commit of your site's repository each deploy used. `rollback` only changes the images: to roll back a configuration change, check out an older commit in `deployments/mysite/` first.
+
+It's a plain clone, not a git submodule: both repositories move independently and you always deploy their latest commits.
+</details>
+
 ## Deploying
 ```bash
 # The first time: --init allows deploying into a new compose project (with an empty database)

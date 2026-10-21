@@ -29,10 +29,8 @@ If you want to contribute to the project but do not know where to start, or what
 # see more into in docker-compose.yml and backend/README.md
 docker compose -f docker-compose.yml -f development.yml up -d
 
-# At SIRC: set proxies/dev settings, make sure important folders are mounted, then use the SIRC overlay
-source deployments/sirc/.envrc
-./at-sirc-before-up.py
-docker compose -f docker-compose.yml -f development.yml -f deployments/sirc/sirc.yml up -d
+# With your site's configuration: its own repository, cloned into deployments/<site>/ (see its README)
+docker compose -f docker-compose.yml -f development.yml -f deployments/mysite/mysite.yml up -d
 ```
 
 ## Openness

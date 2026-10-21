@@ -1,7 +1,8 @@
 # Example site overlay for QABoard
-# Copy this file and customize for your deployment.
+# Copy this file and customize for your deployment, e.g. as mysite.yml in your site's repository,
+# cloned into deployments/mysite/ (see website/docs/backend-admin/deployment.mdx).
 #
-# Usage: docker compose -f docker-compose.yml -f production.yml -f deployments/mysite.yml up
+# Usage: docker compose -f docker-compose.yml -f production.yml -f deployments/mysite/mysite.yml up
 
 services:
   backend:
@@ -38,7 +39,7 @@ services:
   # Add custom nginx config:
   # proxy:
   #   volumes:
-  #     - ./deployments/nginx/mysite.conf:/etc/nginx/conf.d/mysite.conf:ro
+  #     - ./deployments/mysite/nginx/mysite.conf:/etc/nginx/conf.d/mysite.conf:ro
 
   # Disable cantaloupe if using a different image server:
   # cantaloupe:

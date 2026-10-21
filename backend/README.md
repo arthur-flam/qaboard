@@ -10,15 +10,14 @@ cd qaboard
 
 2. If you want to run a frontend, [go to the README](../webapp/README.md) and without docker run `cd webapp; npm install`.
 
-3. Edit at the top-level of the repository _development.yml_, and replace `arthurf` with your user. Edit _services/backend/passwd_ and add a line with  your user, looking like `arthurf:*:11611:10:Arthur Flam:/home/arthurf:/bin/tcsh`. You can get  it  with `getent passwd | grep arthurf`.
+3. If your site's overlay mounts a passwd file in the backend (to run as your user and read shared folders), add a line with your user to it, from `getent passwd | grep $USER`.
 
 4. Start the server:
 
 ```bash
-# At SIRC we need to make sure important folders are mounted before starting containers...
-./at-sirc-before-up.py
-
-docker compose -f docker-compose.yml -f development.yml -f sirc.yml up  -d 
+docker compose -f docker-compose.yml -f development.yml up -d
+# with your site's overlay, from its repository cloned into deployments/mysite/ (see its README for its own steps)
+docker compose -f docker-compose.yml -f development.yml -f deployments/mysite/mysite.yml up -d
 
 # for more build logs
 export BUILDKIT_PROGRESS=plain
@@ -111,7 +110,7 @@ and point `QABOARD_DB_CONFIG` to your own file to size it for your host:
 ```
 It copies the file into `$PGDATA` and includes it at the end of `postgresql.conf`, at every start (and after `initdb` for a new
 database, where it also creates the `pg_stat_statements` extension). Changes need a restart: `docker compose restart db`.
-`ALTER SYSTEM` values (`postgresql.auto.conf`) win over the file. See `deployments/sirc/runbooks/database.md`.
+`ALTER SYSTEM` values (`postgresql.auto.conf`) win over the file.
 
 ### Tuning
 Queries:

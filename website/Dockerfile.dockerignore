@@ -4,6 +4,7 @@
 !website/
 !charts/qaboard/*.yaml
 !deployments/quickstart/compose.yml
+!deployments/*/site-docs/
 !examples/*/qaboard.yaml
 !examples/*/qa/*.yaml
 !examples/*/qa/*.py

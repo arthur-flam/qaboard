@@ -14,8 +14,9 @@ Usage (from the root of the repository):
     deployments/deploy.py ENV_FILE seed-db [--source URL] [--days N]   # recent data only, e.g. for staging
     deployments/deploy.py ENV_FILE compose ARGS...     # e.g. compose logs -f backend
 
-ENV_FILE describes an environment, e.g. deployments/sirc/production.env. It's a docker compose env file
-that sets at least COMPOSE_FILE and COMPOSE_PROJECT_NAME. Variables from the shell take precedence.
+ENV_FILE describes an environment, e.g. deployments/production.env, or deployments/mysite/production.env in your
+site's repository cloned into deployments/mysite/. It's a docker compose env file that sets at least COMPOSE_FILE
+and COMPOSE_PROJECT_NAME. Variables from the shell take precedence.
 
 `up` does:
 1. Pull the images for $QABOARD_VERSION (or build them with --build)
@@ -25,7 +26,8 @@ that sets at least COMPOSE_FILE and COMPOSE_PROJECT_NAME. Variables from the she
    point nginx at them, then stop the old ones gracefully. If the new replicas are not healthy, they are removed
    and the old ones keep serving.
 5. Update the frontend/docs bundles (old bundles are kept, so clients with an old version keep working)
-6. Record the version for `rollback`/`status`, remove old images to keep the disk from filling up.
+6. Record the version (and the commit of the env file's repository, if it's not this one) for `rollback`/`status`,
+   remove old images to keep the disk from filling up.
 
 No dependencies: runs with `python3` or `uv run`.
 """
@@ -135,6 +137,17 @@ class Deployment:
 
     def deployed_version(self) -> Optional[str]:
         return self.state.get("current")
+
+    def config_version(self) -> Optional[str]:
+        """The commit of the env file's repository when it's a site's own repository (in deployments/<site>/), else None"""
+        def git(*args: str) -> str:
+            return subprocess.run(["git", *args], cwd=self.env_file.parent, capture_output=True, text=True, check=True).stdout.strip()
+        try:
+            if Path(git("rev-parse", "--show-toplevel")).resolve() == ROOT:
+                return None
+            return git("rev-parse", "--short", "HEAD") + ("-dirty" if git("status", "--porcelain", "--untracked-files=no") else "")
+        except (OSError, subprocess.CalledProcessError):
+            return None
 
     def proxy_running(self, services: List[str]) -> bool:
         return "proxy" in services and bool(self.containers("proxy", all_states=False))
@@ -278,6 +291,7 @@ class Deployment:
             "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "by": os.environ.get("GITLAB_USER_LOGIN") or os.environ.get("USER"),
             "pipeline": os.environ.get("CI_PIPELINE_URL"),
+            "config": self.config_version(),
         }])[-50:]
         self.state_path.write_text(json.dumps(self.state, indent=2))
         self.cleanup_images(config, ours)
@@ -387,7 +401,8 @@ class Deployment:
         print(f"Current:  {self.state.get('current')}")
         print(f"Previous: {self.state.get('previous')}")
         for h in self.state.get("history", [])[-5:]:
-            print(f"  {h['date']}  {h['version']}  {h.get('by') or ''}  {h.get('pipeline') or ''}")
+            config = f"config {h['config']}" if h.get("config") else ""
+            print(f"  {h['date']}  {h['version']}  {config}  {h.get('by') or ''}  {h.get('pipeline') or ''}")
         self.compose("ps", "-a")
 
     def seed_db(self, source: Optional[str], days: Optional[int]) -> None:
@@ -422,7 +437,7 @@ class Deployment:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("env_file", help="e.g. deployments/sirc/production.env")
+    parser.add_argument("env_file", help="e.g. deployments/production.env")
     sub = parser.add_subparsers(dest="command", required=True)
     up = sub.add_parser("up", help="deploy a version")
     up.add_argument("--version", help="image version (default: $QABOARD_VERSION, else the deployed version)")

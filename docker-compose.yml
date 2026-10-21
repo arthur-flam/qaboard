@@ -9,7 +9,7 @@
 #   # Mounts the local code for easy debugging with reloading
 #   docker compose -f docker-compose.yml -f development.yml up
 # Site-specific overlay:
-#   docker compose -f docker-compose.yml -f production.yml -f deployments/mysite.yml up -d
+#   docker compose -f docker-compose.yml -f production.yml -f deployments/mysite/mysite.yml up -d
 
 # Container names will be prefixed with "qaboard-"
 
@@ -184,7 +184,7 @@ services:
       # by default we assume you run the QA-Board on localhost, but will want to change this
       args:
         - QABOARD_URL=${QABOARD_URL:-http://localhost:5151}
-        # Docs for your site's users, from website/site-docs/$QABOARD_SITE/ (set in your env file)
+        # Docs for your site's users, from deployments/$QABOARD_SITE/site-docs/ (set in your env file)
         - QABOARD_SITE=${QABOARD_SITE:-}
         # Without network access: QABOARD_MEDIA=placeholder, or a mirror of the docs' media (docs-media/README.md)
         - QABOARD_MEDIA=${QABOARD_MEDIA:-}

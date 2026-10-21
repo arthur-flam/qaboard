@@ -3,18 +3,6 @@
 Open-source, SIRC and DSK now share `master`. This lists what is still site-specific or rough,
 roughly by priority. None of it breaks the open-source version.
 
-## Deployment configs live in this repository
-`deployments/sirc` and `deployments/dsk` (compose overlays, nginx, CLI site packages, certificates, `.envrc`)
-are not sensitive, but they are internal. When it's worth it, move each to its own small private repo:
-- Keep `deployments/example.yml` here as the template.
-- Clone the site repo next to this one and point compose at it, e.g. `-f ../qaboard-deployments/sirc/sirc.yml`.
-  Relative paths in overlays are resolved from the first compose file's directory (this repo),
-  so `./deployments/sirc/...` paths become `../qaboard-deployments/sirc/...`.
-- The backend image only needs the site's CLI package at build time. The Dockerfile bind-mounts `deployments/`
-  during the build; with a separate repo, use a compose `additional_contexts: {deployments: ../qaboard-deployments}`
-  and `--mount=type=bind,from=deployments,...` in the Dockerfile.
-- `.gitlab-ci.yml` would clone the site repo before deploying.
-
 ## cde-python (was a git submodule)
 `third_party/cde-python` was unused: images and the SIRC site package install `cde` with pip
 (`CDE_PACKAGE` build arg, `qaboard-site-sirc` dependency). To hack on it locally:
@@ -39,8 +27,7 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
 - backend: DSK's SAML settings are in `backend/backend/api/saml/settings.json` (DSK must set `QABOARD_SAML_DIR`),
   HW_ALG cleanup commands (`clean.py`), one-off SIRC scripts in `backend/backend/scripts/`,
   `PYTHONWARNINGS` hides TLS warnings for everyone (`backend/Dockerfile`).
-- services: `services/backend/passwd`, `services/nginx/passwd` and `services/backend/ldap/` are SIRC data
-  (only mounted by `sirc.yml`); nginx runs with the `uucp` group.
+- services: nginx runs with the `uucp` group.
 
 ## Ops
 - The cantaloupe admin endpoint is enabled with `qaboard`/`qaboard`. It is only reachable inside the compose network.
@@ -51,19 +38,15 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
   Fix the baseline, then remove the fallback.
 - PostgreSQL 12 is EOL (Nov 2024). Upgrade with dump/restore, e.g. when moving to kubernetes (CloudNativePG uses 16).
 - Deploys need docker compose ≥ 2.24 on the hosts and on the GitLab runner (`${VAR:+...}` interpolation,
-  `pull --policy`). SIRC's hosts run Docker Engine 24 (API 1.43): fine, but not healthcheck `start_interval`.
+  `pull --policy`).
 - With docker compose, nginx is restarted (~1s of refused connections) when the *proxy image* changes.
   Config changes are reloaded without a restart, and new versions with the same image don't restart it.
-- SIRC staging uses the shared storage, the LSF bridge and `/home/ispq/qaboard/shared` like production.
-- The SIRC GitLab pipeline was written without access to SIRC's GitLab/runners: check on the first run that
-  the registry is enabled (else `QABOARD_BUILD_ON_HOST=1`), and the one-time host setup in
-  `deployments/sirc/runbooks/deployment.md`.
+- With `QABOARD_LOGIN_RESTRICTED`, a missing or unreadable `QABOARD_LOGIN_RESTRICTED_YAML` is silently ignored
+  (`backend/backend/api/auth.py`): restricted projects become visible to everyone. It should fail closed.
 - Publishing:
   - PyPI: create a GitHub release with a tag matching the version (`pypy.yml`). Needs trusted publishing
     configured on PyPI, or a `PYPI_API_TOKEN` secret.
-  - GitLab's manual `publish:PyPi` job (twine from planet31) is redundant with the GitHub release.
   - Docker images: `publish-docker-images` needs `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets.
 - CI tests the CLI on Python 3.11 only, but `requires-python` says `>=3.7`.
 - The website deploy workflow only runs on master pushes that touch `website/`.
 - The helm chart (`charts/qaboard`) is validated (lint, kubeconform) but was not run on a cluster yet.
-  `deployments/sirc/values.yaml` has `TODO(sirc)`s, see `website/docs/backend-admin/kubernetes.mdx`.

@@ -18,27 +18,28 @@ QA-Board is an experiment tracking framework with advanced viewers for algorithm
 ```bash
 # Start full development environment
 docker compose -f docker-compose.yml -f development.yml up -d
-
-# At SIRC, run this first to set proxies/dev settings and mount important folders
-source deployments/sirc/.envrc
-./at-sirc-before-up.py
-
-# With SIRC-specific config
-docker compose -f docker-compose.yml -f development.yml -f deployments/sirc/sirc.yml up -d
+# With a site's config (its own repository, cloned into deployments/<site>/, see below)
+docker compose -f docker-compose.yml -f development.yml -f deployments/mysite/mysite.yml up -d
 ```
 
 ### Deploying
 ```bash
 # Zero-downtime deploys, one env file per environment (compose files, project, replicas...)
-deployments/deploy.py deployments/sirc/production.env up|status|rollback|restore-db|compose ...
-docker compose --env-file deployments/sirc/production.env ps
+deployments/deploy.py deployments/production.env up|status|rollback|restore-db|compose ...
+docker compose --env-file deployments/production.env ps
 # Kubernetes: helm chart in charts/qaboard, laptop quickstart: charts/qaboard/quickstart.yaml + kind.yaml
-# (installed by the helm-e2e CI job, .github/scripts/helm_e2e.py). SIRC values in deployments/sirc/values.yaml
+# (installed by the helm-e2e CI job, .github/scripts/helm_e2e.py)
 ```
+**Sites' configuration is not in this repository.** Each site (e.g. SIRC) keeps its overlays, env files, nginx config,
+CLI site package, user docs (`site-docs/`), runbooks and CI in its own repository, cloned into `deployments/<site>/`
+(ignored here, a plain clone, not a submodule). When it's there, read its `CLAUDE.md`. Only the generic files stay here:
+`deploy.py`, `production.env`, `example.yml`, `quickstart/`. Nothing site-specific (hosts, paths, people, CI) goes in
+this repository: it's public.
 GitHub CI publishes the images to `ghcr.io/<owner>/qaboard` (`<service>-<sha8>` on master, `<service>` once every job passed,
 `<service>-<version>` for releases) and the chart to `oci://ghcr.io/<owner>/charts/qaboard`; compose and the chart default to
 `ghcr.io/samsung/qaboard`, `QABOARD_IMAGE` / `image.repository` override it.
-GitLab CI deploys master to staging then production automatically. SIRC runbooks: `deployments/sirc/runbooks/`; generic server docs: `website/docs/backend-admin/`.
+Sites' CI (e.g. SIRC's GitLab pipeline, which deploys master to staging then production) lives in their repositories.
+Generic server docs: `website/docs/backend-admin/`.
 
 ### Frontend Development (React)
 ```bash
@@ -119,7 +120,7 @@ affects how people use the web app, update the user guide page too: one page per
 with the task and keep details collapsed: see "Page structure" in `website/STYLE.md`.
 
 The website is public: keep internal hostnames, paths, emails and people out of `website/docs/`. Pages for one site's users go in
-`website/site-docs/<site>/`, built only into that site's web app (`QABOARD_SITE`); runbooks go in `deployments/<site>/runbooks/`.
+its repository, `deployments/<site>/site-docs/`, built only into that site's web app (`QABOARD_SITE`); so do its runbooks.
 `yarn build` fails on broken links: when you move or remove a page, add a redirect in `website/docusaurus.config.ts`.
 
 ## Testing
