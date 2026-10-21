@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.fbc42d74.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.030d941b.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.97cfa7b3.js" defer="defer"></script>
 </head>
 <body>
@@ -248,7 +248,7 @@ running them all again when you asked to skip, sync or post-process the existing
 <li class="">Set the frame rate of a video visualization with <code>fps</code> in <em>qaboard.yaml</em>, when the web app&#x27;s guess is wrong. See <a class="" href="/qaboard/docs/viewers#videos">the video viewer</a>.</li>
 <li class="">Warn users who start tuning on branches whose commits have no artifacts: list the branches your CI saves them for in <em>qaboard.yaml</em>&#x27;s <code>tuning.branches</code>. The tuning form offers the platforms listed in <code>inputs.platforms</code> (<a class="" href="/qaboard/docs/tuning-from-the-webapp">tuning from QA-Board</a>).</li>
 <li class="">Summarize metrics per tag of the inputs (their metadata&#x27;s <code>tags</code>) on the History page, with <code>dashboard_breakdown_by_tag: true</code> in your metrics file (<a class="" href="/qaboard/docs/computing-quantitative-metrics">metrics</a>).</li>
-<li class="">Add <code>recreate_artifacts</code> to <em>qaboard.yaml</em> to have QA-Board rebuild a commit&#x27;s deleted artifacts with a GitlabCI job, a Jenkins job or a webhook, when users redo runs or start tuning (<a class="" href="/qaboard/docs/storage/deleting-old-data#recreating-artifacts">docs</a>).</li>
+<li class="">Add <code>recreate_artifacts</code> to <em>qaboard.yaml</em> to have QA-Board rebuild a commit&#x27;s deleted artifacts with a GitlabCI job, a Jenkins job or a webhook, when users redo runs or start tuning. Pass who asked (<code>${user.email}</code>, <code>${user.full_name}</code>) and the commit (<code>${commit.short_id}</code>, <code>${commit.message}</code>...) to your CI (<a class="" href="/qaboard/docs/storage/deleting-old-data#recreating-artifacts">docs</a>).</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>
