@@ -256,6 +256,22 @@ lifetimes, how results are authenticated. Environment variables still win when t
 <li class="">Disabled accounts stop working at once: their sessions and tokens are refused at the next request.</li>
 </ul>
 </li>
+<li class=""><strong>Clean the storage from the admin panel</strong> (<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/storage">cleaning the storage</a>).<!-- -->
+<ul>
+<li class="">Delete for good the runs users deleted, in <strong>Admin → Storage</strong>: choose projects with patterns (<code>group/*</code>, with
+exceptions) and the runs' dates, count them, and start a dry run first. Milestones are never deleted.</li>
+<li class="">Purge the runs whose folder was deleted outside QA-Board (quota scripts, users...): only their metadata is deleted.
+Runs are never purged from a folder missing right under a storage root, in case the storage isn't mounted.</li>
+<li class="">Delete commits' artifacts: by project and by how long commits went without runs, keeping milestones' artifacts, the
+reference branch's, and what you list (groups, paths, globs).</li>
+<li class="">Follow each job's progress and log, and see every error with the file and its owner, grouped by kind, owner and
+project, or download them as CSV. Errors don't stop the job: the runs are kept and the next job tries again.</li>
+<li class="">Schedule jobs with cron expressions in your time zone, instead of cron jobs on the server: hard deletes, and
+<em>Delete old results</em> (like <code>qaboard_clean</code>), with a default age for the projects whose <em>qaboard.yaml</em> says nothing.</li>
+<li class="">Jobs run in a worker the backend starts next to the web server (<code>QABOARD_JOBS_WORKER=0</code> to run it elsewhere), and
+resume after a restart. From the backend's container: <code>qaboard-admin jobs list|start|worker</code>.</li>
+</ul>
+</li>
 <li class=""><strong>Single sign-on</strong> with OpenID Connect (Keycloak, Entra ID, Okta, Google...), next to LDAP, SAML and local accounts
 (<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/sign-in">sign-in and single sign-on</a>).<!-- -->
 <ul>
@@ -603,6 +619,7 @@ anonymous users (any non-empty value used to block them), and an empty value let
 <li class="">The cleanup also deletes commits that never had runs, and uses each project's own <code>storage.garbage</code> settings instead of the first project's.</li>
 <li class=""><code>storage.garbage.artifacts.keep</code> now works with artifact group names, and also accepts folders and globs.</li>
 <li class="">Commits whose artifacts were only partly restored are no longer marked as usable.</li>
+<li class=""><code>qaboard_clean --dryrun</code> no longer deletes the folders of runs without a manifest, or with a corrupted one.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="security-and-data-safety">Security and data safety<a href="https://samsung.github.io/qaboard/release-notes/2026-10#security-and-data-safety" class="hash-link" aria-label="Direct link to Security and data safety" title="Direct link to Security and data safety" translate="no">​</a></h3>
 <ul>
