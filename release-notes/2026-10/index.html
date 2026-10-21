@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.fba5cff9.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.aa58c1f1.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.856eb46c.js" defer="defer"></script>
 </head>
 <body>
@@ -91,26 +91,73 @@ type a confirmation for big deletions, and shows the deletion&#x27;s progress an
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="the-commit-page">The commit page<a href="#the-commit-page" class="hash-link" aria-label="Direct link to The commit page" title="Direct link to The commit page" translate="no">​</a></h3>
 <ul>
-<li class="">The commit page&#x27;s view options are now a panel docked on the right that makes room for the results instead of covering them. Collapsed, a rail shows a dot on the sections that differ from the project&#x27;s defaults, and hovering lists the changes. Press <code>o</code> to show or hide it, or drag its edge to resize it. See <a class="" href="/qaboard/docs/user-guide/commit-page#view-options">View options</a>.</li>
-<li class="">See and change what the commit page shows from <strong>Files to show</strong> (formerly Dynamic options): each option says which visualization it&#x27;s for and lists the values of all runs. Options are linked across runs: a run that doesn&#x27;t have the selected value shows the closest one and says so, and you can pick a value per run. See the <a class="" href="/qaboard/docs/user-guide/commit-page#view-options">user guide</a>.</li>
-<li class="">Open the export box from the new <strong>Export</strong> button next to the Visualizations and Output Files titles; press Enter to export, and find the last export&#x27;s paths when you reopen it.</li>
-<li class="">Run cards fit the window when <em>qaboard.yaml</em> doesn&#x27;t set their width (<code>outputs.style.width</code>): they used to be 1500 px wide, wider than a laptop&#x27;s screen.</li>
-<li class="">Metrics Diff colors small changes and shows them precisely (&quot;-0.37%&quot; instead of &quot;-0%&quot;). The Summary&#x27;s bars say how many runs met their metric&#x27;s target.</li>
-<li class="">Find more explanations on hover: run statuses, aggregated metrics, <code>new</code>/<code>ref</code>, targets in the metrics tables, and milestones. The reference&#x27;s bar says when it&#x27;s the same commit as the new one.</li>
-<li class="">Pages use the width next to the sidebar instead of jumping between fixed widths, and the commit page fits laptop screens: its header cuts long commit messages and branches with &quot;…&quot;.</li>
-<li class="">The Tuning Analysis view of a <code>qa optimize</code> experiment plots its convergence itself: each iteration&#x27;s objective and the best one so far, even when matplotlib isn&#x27;t installed where <code>qa optimize</code> ran.</li>
-<li class="">The commit page tells you when a commit&#x27;s artifacts were deleted (when, and by whom) or are incomplete, what&#x27;s missing, and lets you recreate them with your CI.</li>
-<li class="">Compare with several references, one at a time: hover the reference&#x27;s bar and <strong>Stack a reference</strong> (a commit, a branch, a milestone, or the same one with another batch or filter), then switch with their tabs or <code>r</code> / <code>Shift r</code>. Drag tabs to reorder them, right-click them or click their <strong>⋯</strong> to duplicate, rename or remove them. They are in the URL. See <a class="" href="/qaboard/docs/user-guide/comparing-results#several-references">several references</a>.</li>
-<li class="">See each stacked reference under one name, in its tab, the reference&#x27;s bar and the viewers: the first is &quot;ref&quot;, the ones you add &quot;ref 2&quot;, &quot;ref 3&quot;..., copies are <code>&lt;name&gt; copy</code>, and they keep their names when you reorder or remove references. Tabs say only what tells them apart: their batch or filter, their commit or branch, when the others&#x27; differ. Many tabs scroll sideways, with the mouse wheel too. See <a class="" href="/qaboard/docs/user-guide/comparing-results#several-references">several references</a>.</li>
-<li class="">Hover a reference&#x27;s tab to see its commit, message, author, branch, batch, filter, and how many runs it has and how many failed.</li>
-<li class="">See everything you compare in the tabs: the top bar&#x27;s results come first, then &quot;vs&quot; the references, and the two in the bars are lit. Swap the bars from their tabs&#x27; menus, or by dragging the first tab on a reference: the same comparison, reversed, and nothing is replaced. &quot;Switch new/reference&quot; is now <strong>Swap the bars</strong>.</li>
-<li class="">Name what you compare: click <strong>new</strong> or <strong>ref</strong> to call them <code>ISP v2</code> and <code>ISP v1</code>. The names are in the URL, and the page uses them: the images and videos&#x27; labels, the legends of plots, text diffs, flame graphs, HTML outputs, the Summary and the columns of Metrics Table and Metrics Diff. Milestones are called by their name, and you can rename them on the page too: the milestone&#x27;s name then shows next to its star.</li>
-<li class="">See which is which by color: new is blue, references purple, magenta, teal and violet, in their bars, tabs, the viewers&#x27; labels, and the plots (the Summary&#x27;s box plots, overlaid Plotly plots), in the light and dark themes. Results keep their color when you reorder, switch or remove references, or swap the bars, and a color freed by a removed reference goes to the next one you add. The history, the dashboard and the artifacts&#x27; files use the names and colors of what you compare too. The reference is no longer orange, a color that says &quot;warning&quot;.</li>
-<li class="">Errors from redo, delete and tuning actions show a readable message instead of the raw server response.</li>
-<li class="">When you are logged out, actions that need a login (redo, delete, rename, tuning, restoring artifacts...) are greyed out next to a <strong>Log in</strong> button, instead of failing with an error. If your session expires, one message asks you to log in again.</li>
+<li class="">
+<p>The commit page&#x27;s view options are now a panel docked on the right that makes room for the results instead of covering them. Collapsed, a rail shows a dot on the sections that differ from the project&#x27;s defaults, and hovering lists the changes. Press <code>o</code> to show or hide it, or drag its edge to resize it. See <a class="" href="/qaboard/docs/user-guide/commit-page#view-options">View options</a>.</p>
+</li>
+<li class="">
+<p>See and change what the commit page shows from <strong>Files to show</strong> (formerly Dynamic options): each option says which visualization it&#x27;s for and lists the values of all runs. Options are linked across runs: a run that doesn&#x27;t have the selected value shows the closest one and says so, and you can pick a value per run. See the <a class="" href="/qaboard/docs/user-guide/commit-page#view-options">user guide</a>.</p>
+</li>
+<li class="">
+<p>Open the export box from the new <strong>Export</strong> button next to the Visualizations and Output Files titles; press Enter to export, and find the last export&#x27;s paths when you reopen it.</p>
+</li>
+<li class="">
+<p>Run cards fit the window when <em>qaboard.yaml</em> doesn&#x27;t set their width (<code>outputs.style.width</code>): they used to be 1500 px wide, wider than a laptop&#x27;s screen.</p>
+</li>
+<li class="">
+<p>Metrics Diff colors small changes and shows them precisely (&quot;-0.37%&quot; instead of &quot;-0%&quot;). The Summary&#x27;s bars say how many runs met their metric&#x27;s target.</p>
+</li>
+<li class="">
+<p>Find more explanations on hover: run statuses, aggregated metrics, <code>new</code>/<code>ref</code>, targets in the metrics tables, and milestones. The reference&#x27;s bar says when it&#x27;s the same commit as the new one.</p>
+</li>
+<li class="">
+<p>Pages use the width next to the sidebar instead of jumping between fixed widths, and the commit page fits laptop screens: its header cuts long commit messages and branches with &quot;…&quot;.</p>
+</li>
+<li class="">
+<p>The Tuning Analysis view of a <code>qa optimize</code> experiment plots its convergence itself: each iteration&#x27;s objective and the best one so far, even when matplotlib isn&#x27;t installed where <code>qa optimize</code> ran.</p>
+</li>
+<li class="">
+<p>The commit page tells you when a commit&#x27;s artifacts were deleted (when, and by whom) or are incomplete, what&#x27;s missing, and lets you recreate them with your CI.</p>
+</li>
+<li class="">
+<p>Compare with several references, one at a time: hover the reference&#x27;s bar and <strong>Stack a reference</strong> (a commit, a branch, a milestone, or the same one with another batch or filter), then switch with their tabs or <code>r</code> / <code>Shift r</code>. Drag tabs to reorder them, right-click them or click their <strong>⋯</strong> to duplicate, rename or remove them. They are in the URL. See <a class="" href="/qaboard/docs/user-guide/comparing-results#several-references">several references</a>.</p>
+</li>
+<li class="">
+<p>See each stacked reference under one name, in its tab, the reference&#x27;s bar and the viewers: the first is &quot;ref&quot;, the ones you add &quot;ref 2&quot;, &quot;ref 3&quot;..., copies are <code>&lt;name&gt; copy</code>, and they keep their names when you reorder or remove references. Tabs say only what tells them apart: their batch or filter, their commit or branch, when the others&#x27; differ. Many tabs scroll sideways, with the mouse wheel too. See <a class="" href="/qaboard/docs/user-guide/comparing-results#several-references">several references</a>.</p>
+</li>
+<li class="">
+<p>Hover a reference&#x27;s tab to see its commit, message, author, branch, batch, filter, and how many runs it has and how many failed.</p>
+</li>
+<li class="">
+<p>See everything you compare in the tabs: the top bar&#x27;s results come first, then &quot;vs&quot; the references, and the two in the bars are lit. Swap the bars from their tabs&#x27; menus, or by dragging the first tab on a reference: the same comparison, reversed, and nothing is replaced. &quot;Switch new/reference&quot; is now <strong>Swap the bars</strong>.</p>
+</li>
+<li class="">
+<p>Name what you compare: click <strong>new</strong> or <strong>ref</strong> to call them <code>ISP v2</code> and <code>ISP v1</code>. The names are in the URL, and the page uses them: the images and videos&#x27; labels, the legends of plots, text diffs, flame graphs, HTML outputs, the Summary and the columns of Metrics Table and Metrics Diff. Milestones are called by their name, and you can rename them on the page too: the milestone&#x27;s name then shows next to its star.</p>
+</li>
+<li class="">
+<p>See which is which by color: new is blue, references purple, magenta, teal and violet, in their bars, tabs, the viewers&#x27; labels, and the plots (the Summary&#x27;s box plots, overlaid Plotly plots), in the light and dark themes. Results keep their color when you reorder, switch or remove references, or swap the bars, and a color freed by a removed reference goes to the next one you add. The history, the dashboard and the artifacts&#x27; files use the names and colors of what you compare too. The reference is no longer orange, a color that says &quot;warning&quot;.</p>
+</li>
+<li class="">
+<p>Errors from redo, delete and tuning actions show a readable message instead of the raw server response.</p>
+</li>
+<li class="">
+<p>When you are logged out, actions that need a login (redo, delete, rename, tuning, restoring artifacts...) are greyed out next to a <strong>Log in</strong> button, instead of failing with an error. If your session expires, one message asks you to log in again.</p>
+</li>
+<li class="">
+<p>Filter output files from one line above them: <strong>File options</strong> (show all files, expand all folders, color-blind friendly...) moved to the View options, and the button says which are on. See <a class="" href="/qaboard/docs/user-guide/commit-page#output-files">Output Files</a>.</p>
+</li>
+<li class="">
+<p>See where a dragged reference tab will go: a bar marks the gap between the two tabs, and the tabs&#x27; row says &quot;Move ref 3 between ref and ref 2&quot;.</p>
+</li>
+<li class="">
+<p>Open an input&#x27;s History from its run&#x27;s menu, or by hovering its name: the name is no longer a link you click by mistake.</p>
+</li>
+<li class="">
+<p>See tuning parameters in full in the run cards: they are never hidden behind &quot;N shared&quot; or cut short, and come first in the Logs view&#x27;s one-line summaries.</p>
+</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="logs-batches-and-redoing-runs">Logs, batches and redoing runs<a href="#logs-batches-and-redoing-runs" class="hash-link" aria-label="Direct link to Logs, batches and redoing runs" title="Direct link to Logs, batches and redoing runs" translate="no">​</a></h3>
 <ul>
+<li class="">See how long each run ran in the Logs view, and find what you know about it in its <strong>⋯</strong> menu: its input&#x27;s History, batch, input path, who ran it, its compute time, date and storage. See <a class="" href="/qaboard/docs/user-guide/logs">Logs</a>.</li>
 <li class="">The Logs view filters runs (all, failed, running) and tags failed runs with the reason (e.g. &quot;LSF: out of memory&quot;). The sidebar&#x27;s Logs entry shows how many runs failed, or are still running.</li>
 <li class="">Show only the runs that succeeded: with <strong>Successful</strong> in the Logs view, or with <code>status:success</code> in the commit page&#x27;s filter boxes. See the <a class="" href="/qaboard/docs/user-guide/finding-results#filter-syntax">filter syntax</a>.</li>
 <li class="">In the Logs view, each run fits on one line, with buttons to open its output directory, copy its Linux or Windows path, redo it, mark it as failed or delete it. Its full configuration shows when you open its logs.</li>
@@ -601,6 +648,7 @@ anonymous users (any non-empty value used to block them), and an empty value let
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="runs-batches-and-tuning">Runs, batches and tuning<a href="#runs-batches-and-tuning" class="hash-link" aria-label="Direct link to Runs, batches and tuning" title="Direct link to Runs, batches and tuning" translate="no">​</a></h3>
 <ul>
+<li class="">Compute times are right in run menus: 90 seconds said &quot;2min30s&quot;.</li>
 <li class="">Run <code>qa --share batch</code> with an edited <em>qaboard.yaml</em> to see its new visualizations and metrics on that batch, while the commit&#x27;s other batches, CI included, keep the commit&#x27;s. Each <code>qa batch</code> used to replace the commit&#x27;s <em>qaboard.yaml</em> for all its batches.</li>
 <li class="">The automated tuning form&#x27;s feedback link goes to your server&#x27;s support page, and is left out when the server has none.</li>
 <li class="">Redoing runs from QA-Board respects the batch&#x27;s concurrency, and uses the runner the runs were started with (e.g. Dask) and its settings. QA-Board used to start each run with its own <code>qa batch</code>, so they all ran at once, with the default runner.</li>

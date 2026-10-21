@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.fba5cff9.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.aa58c1f1.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.856eb46c.js" defer="defer"></script>
 </head>
 <body>
@@ -81,8 +81,10 @@ the search box;</li>
 <li class="">when a run has several logs, switch between them at the top left: <em>log.txt</em>, and <em>log.lsf.txt</em> or <em>log.dask.txt</em>
 when the run used LSF or Dask.</li>
 </ul>
-<p>Each run&#x27;s line also has buttons to copy the path of its output directory, open it in the
-<a class="" href="/qaboard/docs/user-guide/files">file browser</a>, and a <strong>⋯</strong> menu to redo, mark as failed or delete the run.</p>
+<p>Each run&#x27;s line says how long it ran, and has buttons to copy the path of its output directory, open it in the
+<a class="" href="/qaboard/docs/user-guide/files">file browser</a>, and a <strong>⋯</strong> menu: its input&#x27;s <strong>History</strong>, its batch, input path and database
+(click to copy), who ran it, its compute time, date and storage, and the actions to redo, mark as failed or delete
+the run.</p>
 <details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>Long logs, missing logs and other details</summary><div><div class="collapsibleContent_i85q"><ul>
 <li class=""><strong>Very long logs</strong> show their last 50,000 lines, to keep the page fast: <strong>Show 50,000 more</strong> (or <strong>Show them</strong>)
 shows the rest. If the hidden lines have errors, or matches for your search, the notice says how many.</li>
