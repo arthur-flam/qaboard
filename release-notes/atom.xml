@@ -493,6 +493,7 @@
 <li class=""><code>bit_accuracy.on_reference_failed_ci: compare-first-parent</code> goes back up to <code>bit_accuracy.max_parents_depth</code> parents, instead of two at most.</li>
 <li class=""><code>bit_accuracy.failed_ci_job_name</code> works again: <code>qa check-bit-accuracy</code> only looks at that job (<code>&lt;job&gt; &lt;subproject&gt;</code> in subprojects).</li>
 <li class=""><code>qa check-bit-accuracy</code> counts skipped CI jobs as successful, instead of waiting for them.</li>
+<li class="">Windows test vectors no longer fail bit-accuracy on hex outputs whose end-of-lines differ.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration-1">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration-1" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h3>
 <ul>
