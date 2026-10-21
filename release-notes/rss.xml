@@ -175,7 +175,7 @@ an email when they decide.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="help-whats-new-and-links">Help, What's new and links<a href="https://samsung.github.io/qaboard/release-notes/2026-10#help-whats-new-and-links" class="hash-link" aria-label="Direct link to Help, What's new and links" title="Direct link to Help, What's new and links" translate="no">​</a></h3>
 <ul>
-<li class="">Read the release notes in the new "What's new" panel, with a search box (<code>/#whats-new</code> opens it). It pops up once a month is over; the current month's notes show as a preview, tagged "In progress".</li>
+<li class="">Read the release notes in the new "What's new" panel (<code>/#whats-new</code> opens it). Its search box shows only the highlights and changes that match, under their section headings: search "video" to see what changed in the video viewer. It pops up once a month is over; the current month's notes show as a preview, tagged "In progress".</li>
 <li class="">The sidebar's help button opens the new <a class="" href="https://samsung.github.io/qaboard/docs/user-guide/overview">user guide</a>.</li>
 <li class="">Press <code>?</code> for a cheat sheet: keyboard shortcuts, QA-Board's words, the filter syntax and links to the docs. The sidebar's <strong>?</strong> button opens it too.</li>
 <li class="">The URL keeps everything you select (date range, metrics shown, highlighted commits, filters, view and plot options), but only what differs from the defaults, so links stay short. Share it, reload, or use the back button: you get the same view. Typing filters no longer adds entries to the browser's history.</li>
