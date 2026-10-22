@@ -22,6 +22,8 @@ users and queues (<a class="" href="https://samsung.github.io/qaboard/docs/user-
 <li class="">Group runs by batch, commit, project, user, <code>qa batch</code> command, runner, queue, platform, status or any job option,
 and open each group's runs with their job options, when they were queued, started and ended, and links to their
 results, log and files.</li>
+<li class="">See the runs from before the upgrade too: they count as started when they were created, and ended after the time
+<code>qa run</code> measured them computing.</li>
 <li class="">Spot runs pending for over a day, mark your stuck runs as failed (their jobs aren't stopped), or stop a batch, from
 Runs activity.</li>
 </ul>
