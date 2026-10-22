@@ -254,54 +254,206 @@ class TestQaCli(unittest.TestCase):
     assert len(json.loads(result.stdout)) == 3
     assert "can't see which runs are pending" in click.unstyle(result.output)
 
-  def test_check_bit_accuracy_reference_platform(self):
-    """--reference-platform compares with the reference's runs on another platform"""
+  # qa check-bit-accuracy: the reference is a CI run in the storage, saved by another user than us
+  REFERENCE = 'a' * 40
+  CI_USER = 'ci-bot'
+
+  def bit_accuracy_env(self, storage, **env):
+    """Outside of CI, as "me", with a {user} in the storage settings"""
     from unittest import mock
     from qaboard.config import ci_env_variables
-    # outside CI, so that runs are where the reference's are looked for: in CI, qa writes them in the commit's storage
     not_ci = {k: v for k, v in os.environ.items() if k not in ci_env_variables}
-    with mock.patch.dict(os.environ, not_ci, clear=True):
-      self._check_bit_accuracy_reference_platform()
+    return mock.patch.dict(os.environ, {**not_ci, 'QA_STORAGE': str(Path(storage) / '{user}'), 'QA_USER': 'me', **env}, clear=True)
 
-  def _check_bit_accuracy_reference_platform(self):
+  def list_output_dirs(self, *qa_args):
+    result = self.qa('--configuration', 'base', *qa_args, 'batch', '--batches-file', 'image.batches.yaml', 'images', '--list')
+    output_dirs = [Path(run['output_dir']) for run in json.loads(result.stdout)]
+    assert len(output_dirs) == 3
+    return output_dirs
+
+  def reference_dirs(self, storage, *qa_args):
+    """Where the reference commit's CI saved its runs"""
+    commit_dir = Path(storage) / self.CI_USER / 'user/sample_project' / self.REFERENCE[:2] / self.REFERENCE[2:16]
+    return [commit_dir / d.relative_to(Path().resolve()) for d in self.list_output_dirs(*qa_args)]
+
+  def write_runs(self, dirs, md5='same'):
+    for d in dirs:
+      d.mkdir(parents=True, exist_ok=True)
+      for manifest in ['manifest.outputs.json', 'manifest.inputs.json']:
+        (d / manifest).write_text(json.dumps({"out.txt": {"md5": md5}}))
+      self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+
+  def check_bit_accuracy(self, *qa_args, args=(), runs_known_by_qaboard=None, with_batch=True):
     import sys
-    import shutil
-    import tempfile
     from unittest import mock
-    result = self.qa('--configuration', 'base', 'batch', '--batches-file', 'image.batches.yaml', 'images', '--list')
-    runs = json.loads(result.stdout)
-    assert len(runs) == 3
-    with tempfile.TemporaryDirectory() as tmp:
-      # the reference's runs, on the hw platform
-      result = self.qa('--configuration', 'base', '--platform', 'hw', 'batch', '--batches-file', 'image.batches.yaml', 'images', '--list')
-      reference_runs = json.loads(result.stdout)
-      reference_root = Path(tmp) / 'reference'
-      output_dirs = [Path(run['output_dir']) for run in runs]
-      reference_dirs = [reference_root / Path(run['output_dir']).relative_to(Path().resolve()) for run in reference_runs]
-      assert output_dirs != [d.relative_to(reference_root).resolve() for d in reference_dirs] # the platform is part of the output directory
-      def write_runs(dirs, md5):
-        for d in dirs:
-          d.mkdir(parents=True, exist_ok=True)
-          for manifest in ['manifest.outputs.json', 'manifest.inputs.json']:
-            (d / manifest).write_text(json.dumps({"out.txt": {"md5": md5}}))
-      self.addCleanup(lambda: [shutil.rmtree(d, ignore_errors=True) for d in output_dirs])
-      write_runs(output_dirs, 'same')
-      write_runs(reference_dirs, 'same')
-      def check_bit_accuracy():
-        config = sys.modules['qaboard.config']
-        with mock.patch.object(config, 'is_in_git_repo', True), mock.patch.object(config, 'is_ci', False), \
-             mock.patch.object(config, 'outputs_project_root', reference_root), \
-             mock.patch('qaboard.git.latest_commit', return_value='a' * 40), \
-             mock.patch('qaboard.git_hosts.lastest_successful_ci_commit', side_effect=lambda commit: commit), \
-             mock.patch('qaboard.conventions.get_commit_dirs', return_value=Path()):
-          return self.qa('--configuration', 'base', 'check-bit-accuracy', '--batches-file', 'image.batches.yaml', '--batch', 'images', '--reference-platform', 'hw', reload_modules=False)
-      result = check_bit_accuracy()
+    reload(import_module('qaboard.config'))
+    reload(import_module('qaboard.qa'))
+    known_runs = {'return_value': runs_known_by_qaboard} if runs_known_by_qaboard is not None else {'side_effect': AssertionError('QA-Board was asked')}
+    with mock.patch.object(sys.modules['qaboard.config'], 'is_in_git_repo', True), \
+         mock.patch('qaboard.git.latest_commit', return_value=self.REFERENCE), \
+         mock.patch('qaboard.git_hosts.lastest_successful_ci_commit', side_effect=lambda commit: commit), \
+         mock.patch('qaboard.bit_accuracy.runs_known_by_qaboard', **known_runs):
+      batch = ['--batches-file', 'image.batches.yaml', '--batch', 'images'] if with_batch else []
+      result = self.qa('--configuration', 'base', *qa_args, 'check-bit-accuracy', *batch, *args, reload_modules=False)
+    result.unstyled_output = click.unstyle(result.output)
+    return result
+
+  def test_check_bit_accuracy(self):
+    """Local runs versus the reference's runs, saved by its CI in the storage under another {user}"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as storage, self.bit_accuracy_env(storage):
+      output_dirs, reference_dirs = self.list_output_dirs(), self.reference_dirs(storage)
+      self.write_runs(output_dirs)
+      self.write_runs(reference_dirs)
+      result = self.check_bit_accuracy()
       assert result.exit_code == 0, result.output
       assert result.output.count('✔️') == 6 # outputs and inputs of each run
-      write_runs(reference_dirs[1:2], 'other')
-      result = check_bit_accuracy()
+      self.write_runs(reference_dirs[1:2], 'other')
+      result = self.check_bit_accuracy()
       assert result.exit_code == 1
       assert 'Mismatch' in result.output
+      assert 'cli_tests/b.jpg  ["base"]  @manifest.outputs.json' in result.unstyled_output
+
+  def test_check_bit_accuracy_saved_runs(self):
+    """Without --batch, the runs saved with the label are compared"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as storage, self.bit_accuracy_env(storage):
+      # first: qa sets QA_LABEL for the wrapped code, and the next commands in this process would use it
+      other_label_dirs = self.list_output_dirs('--label', 'other')
+      os.environ.pop('QA_LABEL', None)
+      output_dirs, reference_dirs = self.list_output_dirs(), self.reference_dirs(storage)
+      self.write_runs(output_dirs + other_label_dirs)
+      self.write_runs(reference_dirs)
+      for d, input in zip(output_dirs + other_label_dirs, 2 * ['cli_tests/a.jpg', 'cli_tests/b.jpg', 'cli_tests/dir/c.jpg']):
+        (d / 'run.json').write_text(json.dumps({"database": ".", "input_path": input, "configurations": ["base"], "extra_parameters": {}, "platform": "linux"}))
+      # other tests leave runs in the project's output directory: we only look at ours
+      checked = lambda result: [f'✔️  {input}  ["base"]  @{manifest}' in result.unstyled_output for input in ['cli_tests/a.jpg', 'cli_tests/b.jpg', 'cli_tests/dir/c.jpg'] for manifest in ['manifest.outputs.json', 'manifest.inputs.json']]
+      result = self.check_bit_accuracy(with_batch=False)
+      assert all(checked(result)), result.output
+      assert result.unstyled_output.count('✔️  cli_tests/a.jpg  ["base"]  @manifest.outputs.json') == 1 # not the run with the other label
+      self.write_runs(reference_dirs[:1], 'other')
+      result = self.check_bit_accuracy(with_batch=False)
+      assert result.exit_code == 1
+      assert checked(result) == [False, False] + 4 * [True] # write_runs changes both manifests
+      assert 'Mismatch' in result.output
+
+  def test_check_bit_accuracy_reference_platform(self):
+    """--reference-platform compares with the reference's runs on another platform"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as storage, self.bit_accuracy_env(storage):
+      output_dirs, reference_dirs = self.list_output_dirs(), self.reference_dirs(storage, '--platform', 'hw')
+      # the platform is part of the output directory
+      assert [d.relative_to(Path().resolve()) for d in output_dirs] != [d.relative_to(reference_dirs[0].parents[3]) for d in reference_dirs]
+      self.write_runs(output_dirs)
+      self.write_runs(reference_dirs)
+      result = self.check_bit_accuracy()
+      assert result.exit_code == 1
+      assert result.unstyled_output.count('ERROR: No reference for') == 3
+      result = self.check_bit_accuracy(args=['--reference-platform', 'hw'])
+      assert result.exit_code == 0, result.output
+      assert result.output.count('✔️') == 6
+      self.write_runs(reference_dirs[1:2], 'other')
+      result = self.check_bit_accuracy(args=['--reference-platform', 'hw'])
+      assert result.exit_code == 1
+      assert 'Mismatch' in result.output
+
+  def test_check_bit_accuracy_share(self):
+    """With --share, our runs are in the storage, in our {user} folder and with our label prefixed by "@me|",
+    while the reference's CI runs have the label as-is"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as storage, self.bit_accuracy_env(storage):
+      output_dirs, reference_dirs = self.list_output_dirs('--share'), self.reference_dirs(storage)
+      assert all(Path(storage) / 'me' in d.parents for d in output_dirs)
+      self.write_runs(output_dirs)
+      self.write_runs(reference_dirs)
+      result = self.check_bit_accuracy('--share')
+      assert result.exit_code == 0, result.output
+      assert result.output.count('✔️') == 6
+      # --reference-label picks the reference's runs with another label
+      result = self.check_bit_accuracy('--share', args=['--reference-label', 'other'])
+      assert result.exit_code == 1
+      assert result.unstyled_output.count('ERROR: No reference for') == 3
+      assert f"nothing at {reference_dirs[0].parents[2] / 'output' / 'other'}" in result.unstyled_output
+      self.write_runs(reference_dirs[2:], 'other')
+      result = self.check_bit_accuracy('--share')
+      assert result.exit_code == 1
+      assert 'cli_tests/dir/c.jpg  ["base"]  @manifest.outputs.json' in result.unstyled_output
+
+  def test_check_bit_accuracy_missing_runs(self):
+    import tempfile
+    with tempfile.TemporaryDirectory() as storage, self.bit_accuracy_env(storage):
+      output_dirs, reference_dirs = self.list_output_dirs(), self.reference_dirs(storage)
+      self.write_runs(output_dirs[1:])
+      result = self.check_bit_accuracy()
+      assert result.exit_code == 1
+      assert result.unstyled_output.count('ERROR: No reference for') == 3
+      # it says where it looked, with {user} for any user
+      assert f"nothing at {Path(storage) / '{user}' / 'user/sample_project' / self.REFERENCE[:2]}" in result.unstyled_output
+      self.write_runs(reference_dirs)
+      result = self.check_bit_accuracy()
+      assert result.exit_code == 1
+      assert 'ERROR: Missing run for cli_tests/a.jpg  ["base"]' in result.unstyled_output
+      assert f'nothing at {output_dirs[0]}' in result.unstyled_output
+      assert result.output.count('✔️') == 4
+
+  def test_check_bit_accuracy_asks_qaboard(self):
+    """QA-Board knows where the reference's runs are: we don't guess"""
+    import tempfile
+    from qaboard.api import dir_to_url
+    with tempfile.TemporaryDirectory() as storage, self.bit_accuracy_env(storage, QA_OFFLINE=''):
+      del os.environ['QA_OFFLINE']
+      output_dirs = self.list_output_dirs()
+      self.write_runs(output_dirs)
+      # anywhere, not where conventions would save them
+      reference_dirs = [Path(storage) / 'anywhere' / str(i) for i in range(3)]
+      self.write_runs(reference_dirs)
+      inputs = ['cli_tests/a.jpg', 'cli_tests/b.jpg', 'cli_tests/dir/c.jpg']
+      runs = [{
+        'test_input_path': input, 'test_input_database': '.', 'platform': 'linux', 'configurations': ['base'],
+        'extra_parameters': {'forwarded_args': ['--verbose']}, # not part of what identifies runs
+        'output_dir_url': dir_to_url(d),
+      } for input, d in zip(inputs, reference_dirs)]
+      result = self.check_bit_accuracy(runs_known_by_qaboard=tuple(runs))
+      assert result.exit_code == 0, result.output
+      assert result.output.count('✔️') == 6
+      self.write_runs(reference_dirs[:1], 'other')
+      result = self.check_bit_accuracy(runs_known_by_qaboard=tuple(runs))
+      assert result.exit_code == 1
+      assert 'cli_tests/a.jpg  ["base"]  @manifest.outputs.json' in result.unstyled_output
+      # it doesn't know this run: we look in the storage
+      result = self.check_bit_accuracy(runs_known_by_qaboard=tuple(runs[1:]))
+      assert result.exit_code == 1
+      assert 'ERROR: No reference for cli_tests/a.jpg' in result.unstyled_output
+      self.write_runs(self.reference_dirs(storage)[:1])
+      result = self.check_bit_accuracy(runs_known_by_qaboard=tuple(runs[1:]))
+      assert result.exit_code == 0, result.output
+      assert result.output.count('✔️') == 6
+
+  def test_check_bit_accuracy_manifest(self):
+    """Versus the manifests saved next to the inputs, which are folders"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp, self.bit_accuracy_env(Path(tmp) / 'storage'):
+      database = Path(tmp) / 'database'
+      batches_file = Path(tmp) / 'tvs.batches.yaml'
+      batches_file.write_text(yaml.dump({'tvs': {'inputs': ['tv*'], 'globs': [], 'database': {'linux': str(database), 'windows': str(database)}}}))
+      for tv in ['tv1', 'tv2']:
+        (database / tv).mkdir(parents=True)
+      self.write_runs([database / 'tv1', database / 'tv2'])
+      qa = lambda *args, **kwargs: self.qa('--configuration', 'base', *args, '--batches-file', str(batches_file), **kwargs)
+      result = qa('batch', 'tvs', '--list')
+      output_dirs = [Path(run['output_dir']) for run in json.loads(result.stdout)]
+      assert len(output_dirs) == 2
+      result = qa('check-bit-accuracy-manifest', '--batch', 'tvs')
+      assert result.exit_code == 1
+      assert 'ERROR: 2 runs are missing!' in click.unstyle(result.output)
+      self.write_runs(output_dirs)
+      result = qa('check-bit-accuracy-manifest', '--batch', 'tvs')
+      assert result.exit_code == 0, result.output
+      assert result.output.count('✔️') == 4
+      self.write_runs(output_dirs[1:], 'other')
+      result = qa('check-bit-accuracy-manifest', '--batch', 'tvs')
+      assert result.exit_code == 1
+      assert 'tv2  ["base"]  @manifest.outputs.json' in click.unstyle(result.output)
 
   def test_optimize_without_checkpoint(self):
     """--checkpoint is optional"""
