@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.90bafb89.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.a339bb58.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.856eb46c.js" defer="defer"></script>
 </head>
 <body>
@@ -37,6 +37,16 @@ QA-Board says how much space it frees and what it keeps (milestones, other peopl
 type a confirmation for big deletions, and shows the deletion&#x27;s progress and errors.</li>
 <li class="">Find out why IT&#x27;s quota says something else, with the commands that measure a folder and find your biggest files and exports.</li>
 <li class="">See who uses the most storage in a project, and their runs.</li>
+<li class="">See how much space your deleted runs still take: deleting runs keeps their manifests, and the files written after
+they ended. QA-Board now measures what&#x27;s left when it deletes runs.</li>
+<li class="">See what QA-Board deletes automatically, when, and what it keeps, on <strong>Storage usage</strong> and on the project&#x27;s commit
+list (e.g. <em>Results deleted after 1 month</em>), with what the project&#x27;s <em>qaboard.yaml</em> says.</li>
+<li class="">Find your exports in <strong>Storage usage → Exports</strong>: their size, the runs they come from, and delete them without a
+terminal. Exports are links to the runs&#x27; files by default: QA-Board says how much space only frees once the runs are
+deleted too (<a class="" href="/qaboard/docs/user-guide/storage-usage#exports">exports</a>).</li>
+<li class="">See what you own on disk that QA-Board doesn&#x27;t track, from the latest storage scan, in <strong>Storage usage → Not
+tracked</strong>: old exports, runs QA-Board doesn&#x27;t know, what deleted runs left, other files. Delete the folders that are
+all yours (<a class="" href="/qaboard/docs/user-guide/storage-usage#files-qa-board-doesnt-track">files QA-Board doesn&#x27;t track</a>).</li>
 <li class=""><strong>Storage usage</strong> replaces the <em>Quota</em> links: <code>QABOARD_QUOTA_URL_TEMPLATE</code> is no longer used.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="comparing-images">Comparing images<a href="#comparing-images" class="hash-link" aria-label="Direct link to Comparing images" title="Direct link to Comparing images" translate="no">​</a></h3>
@@ -364,6 +374,16 @@ project, or download them as CSV. Errors don&#x27;t stop the job: the runs are k
 <li class="">Users&#x27; storage usage is kept up to date by the worker, and rebuilt nightly by a <em>Storage usage</em> schedule it creates
 (<code>QABOARD_STORAGE_USAGE_AUTO=0</code> to manage it yourself). A migration adds the <code>storage_usage</code> table, and an index on
 <code>ci_commits.latest_output_datetime</code>, built without blocking writes.</li>
+<li class=""><strong>Scan the storage</strong> to find what QA-Board doesn&#x27;t track, in the projects&#x27; folders or any other: untracked runs
+and exports, what deleted runs and artifacts left, other files, with their owners. Explore the results like <code>ncdu</code>:
+folders by size with what they&#x27;re made of, or the biggest untracked things anywhere, by owner or age. Delete them,
+track the exports so their owners see them, or add the runs back to QA-Board. What QA-Board uses can&#x27;t be deleted
+from there (<a class="" href="/qaboard/docs/backend-admin/storage#scanning-the-storage">scanning the storage</a>).</li>
+<li class="">Put the exports in one place with the <code>storage.exports_root</code> setting (<code>QABOARD_EXPORTS_ROOT</code>):
+<code>&lt;root&gt;/&lt;user&gt;/&lt;project&gt;/&lt;date&gt;-&lt;id&gt;</code>, instead of a <code>share/</code> folder next to the commit&#x27;s results. QA-Board now
+tracks exports made from the web app, and their size.</li>
+<li class="">Measure what runs deleted before this release left on disk with the <em>Measure what deleted runs left</em> job.
+A migration adds the <code>exports</code>, <code>storage_scans</code> and <code>storage_scan_entries</code> tables.</li>
 <li class="">Jobs run in a worker the backend starts next to the web server (<code>QABOARD_JOBS_WORKER=0</code> to run it elsewhere), and
 resume after a restart. From the backend&#x27;s container: <code>qaboard-admin jobs list|start|worker</code>.</li>
 </ul>
