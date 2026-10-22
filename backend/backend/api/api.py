@@ -9,10 +9,9 @@ import datetime
 import ujson
 from flask import request, jsonify, make_response
 
-from sqlalchemy import func, and_, asc, or_, text
+from sqlalchemy import func, asc, text
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import label
 
 # Like the CLI: ENV > secrets > site package (e.g. qaboard-site-sirc) > default
@@ -20,10 +19,10 @@ from qaboard.compat import mappings as _path_mappings
 from qaboard.sentry_utils import traces_sample_rate
 
 from backend import app, db_session
-from ..models import Project, CiCommit, Batch, Output, batches_stats
-from ..utils import profiled
-from ..config import git_server, skip_metrics_aggregation
+from ..models import Project, CiCommit, Batch, batches_stats
+from ..config import skip_metrics_aggregation
 from ..search import parse_query, commits_search_filter, escape_like
+from ..metrics_aggregation import parse_metrics_arg
 from .auth import is_authorized_user, get_current_user, forbidden_project
 from ..notifications.mail import email_enabled
 from ..settings import setting
@@ -136,6 +135,10 @@ def get_commits(branch=None):
     offset = int_arg('offset', default=0, max_value=10**12)
   except ValueError as e:
     return jsonify({"error": f"Invalid pagination: {e}"}), 400
+  try:
+    metrics_to_aggregate = parse_metrics_arg(request.args.get('metrics'))
+  except ValueError as e:
+    return jsonify({"error": f"{e}"}), 400
   search_terms = parse_query(request.args.get('q', ''))
 
   if branch:
@@ -151,16 +154,22 @@ def get_commits(branch=None):
 
   to_date_s = request.args.get('to', None)
   from_date_s = request.args.get('from', None)
-  now_localized = timezone.localize(datetime.datetime.now())
+  try:
+    from_date_arg = to_datetime(from_date_s) if from_date_s else None
+    to_date_arg = to_datetime(to_date_s) if to_date_s else None
+  except ValueError as e:
+    return jsonify({"error": f"Invalid date range, use e.g. 2026-09-01T00:00:00.000Z: {e}"}), 400
+  # in UTC, like the dates: the server's time zone doesn't matter
+  now = datetime.datetime.now(datetime.timezone.utc)
   # We only care about days, and this makes sure we smooth out TZ issues
   # It's likely unnecessary...
-  to_date = (to_datetime(to_date_s) if to_date_s else now_localized) + datetime.timedelta(hours=3)
+  to_date = (to_date_arg or now) + datetime.timedelta(hours=3)
   if search_terms:
     # Searches look at the whole history, unless asked otherwise
-    from_date = to_datetime(from_date_s) - datetime.timedelta(hours=3) if from_date_s else None
-    to_date = to_date if to_date_s else None
+    from_date = from_date_arg - datetime.timedelta(hours=3) if from_date_arg else None
+    to_date = to_date if to_date_arg else None
   else:
-    from_date = to_datetime(from_date_s) if from_date_s else (now_localized - datetime.timedelta(days=4))
+    from_date = from_date_arg or (now - datetime.timedelta(days=4))
     latest_authored_datetime = in_scope(db_session.query(func.max(CiCommit.authored_datetime))).scalar()
     if not latest_authored_datetime:
       return commits_response([], has_more=False if limit else None)
@@ -200,7 +209,6 @@ def get_commits(branch=None):
   # one more to know if there are more
   ci_commits = ci_commits.offset(offset).limit(limit + 1 if limit else max_commits)
 
-  metrics_to_aggregate = json.loads(request.args.get('metrics', '{}'))
   # QABOARD_SKIP_METRICS_AGGREGATION: projects with too many runs for it to be fast
   if project_id.startswith(skip_metrics_aggregation):
     metrics_to_aggregate = {}

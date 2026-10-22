@@ -113,7 +113,8 @@ else:
     if "include" in c:
       # paths will be relative to the root qaboard.yaml
       c_include_path = root_qatools / c["include"]
-      c_include = yaml.load(c_include_path.open(), Loader=yaml.SafeLoader)
+      with c_include_path.open() as f:
+        c_include = yaml.load(f, Loader=yaml.SafeLoader)
       c = merge(c_include, c)
     config = merge(c, config)
 
@@ -212,10 +213,10 @@ def mkdir(path: Path):
       config_has_error = True
       if not ignore_config_errors:
         click.secho(f'ERROR: The storage path does not exist: "{path}".', fg='red', err=True)
-        if "/algo/" in str(path) and not Path(*path.parts[:3]).exists():
-          click.secho(f'INFO: To create storage locations for new projects, go to:', fg='blue', bold=True, err=True)
-          click.secho(f'      http://jenmaster1:8080/job/ALGO/job/CreateProjectStorage/build?delay=0sec', fg='blue', err=True)
-          click.secho(f'Products (HP1, 2X5...) are "Technology" projects, while CIS/KITT_ISP.. are "Group" projects.', fg='blue', err=True)
+        # Sites can explain how to get storage for new projects
+        storage_help = site_config('QABOARD_STORAGE_HELP')
+        if storage_help:
+          click.secho(f'INFO: {storage_help}', fg='blue', err=True)
 
 outputs_root: Optional[Path]
 artifacts_root: Optional[Path]
@@ -466,7 +467,6 @@ if metrics_file:
       main_metrics = (_metrics or {}).get('main_metrics') or []
 
 # reexport for backward compat
-from .site_config import secrets
 
 # backward compat only for HW_ALG's tools/find_valid_build.py (removed 28/07/20)
 from .git import _Repo, _Commit
