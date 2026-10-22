@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.ddadca76.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.aa18652c.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.79336278.js" defer="defer"></script>
 </head>
 <body>
@@ -621,6 +621,10 @@ anonymous users (any non-empty value used to block them), and an empty value let
 <li class="">Long project names no longer overflow the <strong>Storage usage</strong> summary.</li>
 <li class="">Storage scans, exports and jobs name file owners from <code>QABOARD_ACCOUNTS_COMMAND</code>&#x27;s accounts, like the file browser,
 instead of <code>uid 2041</code>: users see their files in <strong>Storage usage → Not tracked</strong> and their exports, also from earlier scans.</li>
+<li class="">Storage scans no longer fail when the backend can&#x27;t update the users&#x27; accounts (e.g. their shared folder belongs to
+another user): they use the accounts they have.</li>
+<li class="">Storage scans read each folder once: the same folder under several roots (symlinks, bind mounts) and storage snapshots
+are no longer scanned again, even when you set your own excluded paths.</li>
 <li class="">The whole web app says <strong>Sign in</strong> and <strong>Sign out</strong>: the sidebar, the viewers and the file browser used different words.</li>
 <li class="">The cheat sheet (<code>?</code>) lists the viewers&#x27; real shortcuts: <code>h</code> starts a blind test, <code>&lt;</code> and <code>&gt;</code> change a video&#x27;s speed, and the run filter&#x27;s example <code>fail</code> keeps the failed runs. The image viewer&#x27;s own list includes full screen (<code>f</code>).</li>
 <li class="">The batch menu says <strong>Move the filtered runs to another batch</strong> when you filter runs, instead of the other way around.</li>
