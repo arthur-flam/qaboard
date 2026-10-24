@@ -200,6 +200,7 @@ all yours (<a class="" href="https://samsung.github.io/qaboard/docs/user-guide/s
 <ul>
 <li class="">Search all of a project's commits from the commit list's <strong>Filter...</strong> box, not only those in the date range: by message, committer, branch, batch or hash. Use <code>branch:</code>, <code>committer:</code>, <code>batch:</code>, <code>message:</code> or <code>id:</code> to look at one field, and <code>-word</code> to exclude (<a class="" href="https://samsung.github.io/qaboard/docs/user-guide/finding-results#searching-commits">searching commits</a>).</li>
 <li class="">Jump to a branch from the <strong>Filter...</strong> box: when your search can be a branch name (one word, or a <code>branch:</code> term), it suggests the most recently active branches that match, even in projects with thousands of branches.</li>
+<li class="">Find commits by where their batches come from or who started them: <code>origin:webapp</code>, <code>origin:local</code> or <code>origin:ci</code>, and <code>user:kaito</code> in the <strong>Filter...</strong> box (<a class="" href="https://samsung.github.io/qaboard/docs/user-guide/finding-results#searching-commits">searching commits</a>).</li>
 <li class="">Scroll through long commit lists: they show the 50 latest commits, then more as you scroll, so big projects open much faster, and <strong>Older commits</strong> at the end looks a week further back. Branch pages still get their whole date range at once (up to 1000 commits), for their metrics chart.</li>
 <li class="">Switch commit lists to <strong>Compact</strong> to see one commit per line, in aligned columns, with the full message, metrics and other batches on hover. The web app remembers your choice.</li>
 <li class="">Open the projects list much faster on sites with hundreds of projects: it downloads less, and shows more projects as you scroll.</li>
@@ -310,6 +311,7 @@ running them all again when you asked to skip, sync or post-process the existing
 <li class="">Site packages (company-specific plugins) are no longer ignored on Python 3.8 and 3.9, and the package includes the <code>qatools</code> compatibility package.</li>
 <li class=""><code>qa save-artifacts</code> saves the subprojects' <em>qaboard.yaml</em>: without it, runs redone from the artifacts used the parent project's configuration and were saved in the parent project.</li>
 <li class="">Get an email when the runs of <code>qa --share batch</code> end (<code>export QA_NOTIFY=none</code> to stop them). It's never sent in CI, and batches started by other batches, like pipeline steps, count as part of the first one. See the <a class="" href="https://samsung.github.io/qaboard/docs/using-the-qa-cli#email-when-the-runs-end">CLI tips</a>.</li>
+<li class=""><code>qa</code> tells QA-Board where it runs: from the web app, your terminal, or a CI pipeline (GitLab, GitHub Actions, Jenkins, Buildkite…, with links to the pipeline). QA-Board uses it to show you your own runs and leave out the CI's. Older versions of <code>qa</code> keep working: QA-Board guesses as before.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="runners-lsf-dask-and-windows">Runners: LSF, Dask and Windows<a href="https://samsung.github.io/qaboard/release-notes/2026-10#runners-lsf-dask-and-windows" class="hash-link" aria-label="Direct link to Runners: LSF, Dask and Windows" title="Direct link to Runners: LSF, Dask and Windows" translate="no">​</a></h3>
 <ul>
@@ -341,6 +343,7 @@ running them all again when you asked to skip, sync or post-process the existing
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h2>
 <ul>
+<li class="">Upgrading saves where batches come from and who started them, and who wrote commits (their email). The migration fills in existing batches a few thousand at a time, so results keep coming in meanwhile: expect a few minutes on big databases. Results sent with a service account's token always count as the CI's.</li>
 <li class=""><strong>Users, tokens and admins</strong>: an admin panel, settings in the database, and an audit log (<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/user-management">user management</a>).<!-- -->
 <ul>
 <li class="">Make admins with <code>QABOARD_ADMINS</code>, from the admin panel, or with <code>qaboard-admin create-admin</code> in the backend's container. Approve or disable accounts waiting for an admin.</li>
