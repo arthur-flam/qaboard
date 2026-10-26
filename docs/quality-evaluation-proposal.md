@@ -126,6 +126,32 @@ What people actually want from Elo is usually one of two things, and both have a
   the closest in score (like pairing chess players of similar level), and Bradley-Terry ranks all of them.
   The ranking means something because the inputs and question never change.
 
+### 5.1 Ratings inside a study: many versions, not every pair, four at a time
+A rating *is* useful inside a study or a benchmark, when people compare many versions (sets of parameters,
+releases) and can't judge every pair on every input:
+- **Not every pair is needed.** Bradley-Terry fits incomplete comparisons natively: each vote only links two
+  versions, and the model finds the scores that explain all the votes. The study picks the next trial where it
+  learns the most: versions whose scores are close, or still uncertain. That's how 10 versions can be ranked
+  with far fewer votes than the 45 pairs × all inputs.
+- **More than two images at a time.** Showing 3 or 4 versions and asking for the best (or a full ranking) fits
+  the same family of models (Plackett-Luce, Bradley-Terry for rankings): a "best of 4" vote counts as 3 wins.
+  So 2-up and 4-up screens are two layouts of the same study, not two features.
+- **Shown as a rating, scoped.** Scores can be displayed on an Elo-like scale ("1540 ± 30") if people find it
+  readable, always with the study or benchmark name next to it, never as a property of a commit.
+- **Parameter sets** are contenders like any other (one configuration each). Later, votes can be the objective
+  of QA-Board's tuning (`qaboard/optimize.py`): the optimizer proposes parameters, people vote, repeat. That's
+  ambitious and comes last.
+
+### 5.2 Quality of life
+- **Suggested voters:** people who ran, reviewed or committed on the project recently, and people who voted on
+  the same question before. The owner confirms.
+- **Random assignment:** each person gets a random subset of trials, balanced so every trial gets its votes.
+- **Reminders:** in the inbox, and by notification before the deadline, through the existing notifications.
+- **Merging studies:** two studies with the same question and display settings can be pooled for results, with
+  each vote still traceable to its study.
+- **The viewer already has a blind A/B mode** (`webapp/src/image-viewer/ImageViewer.jsx:187`, key <kbd>h</kbd>):
+  the voting page starts from it.
+
 ## 6. Versions that aren't QA-Board runs
 
 Application engineers often compare against **another device** or a **reference camera**. Those captures can be
@@ -175,7 +201,7 @@ place for votes, and results filter on `source`.
 | Phase | Scope | Size | Exit criterion |
 |---|---|---|---|
 | 1. Blind pairwise studies | Wizard for two contenders, inbox, voting page with the existing image viewer, evidence frozen at start, results per input and per slice with intervals, export | M-L | One team replaces a spreadsheet or tool-based evaluation with a study |
-| 2. Everyday use | Quick opinions in comparison views, 1-5 scores, several contenders with Bradley-Terry, attention checks and repeats, votes as run metrics | M | Quick opinions are used for triage on a release |
+| 2. Everyday use | Quick opinions in comparison views, 1-5 scores, several contenders with Bradley-Terry, 4-up screens, adaptive pairing, attention checks and repeats, reminders, votes as run metrics | M | Quick opinions are used for triage on a release |
 | 3. Benchmarks and beyond | Benchmarks that stay open, versions from external captures, Python API for votes (to train or validate quality metrics) | M | A benchmark tracks releases for a quarter |
 
 ## 10. Open questions
