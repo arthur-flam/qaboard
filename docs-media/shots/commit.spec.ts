@@ -706,6 +706,17 @@ async function openAnalysis(ui: Ui, scope: Locator, view: 'Histogram' | 'Row / c
   await ui.click(analysisPanel(scope).getByRole('radio', { name: view, exact: true }));
   await blur(ui);
 }
+// The images and the analysis panel under them, as a box: on the sides, the card's padding (the histogram's first label
+// is centered on its edge). The page must show the panel's bottom (panelInView): boxes aren't scrolled to.
+async function imagesAndPanel(scope: Locator) {
+  const stage = await stableBox(imageRow(scope));
+  const panel = await stableBox(analysisPanel(scope));
+  return { x: stage.x - 5, y: stage.y, width: stage.width + 10, height: panel.y + panel.height + 4 - stage.y };
+}
+async function panelInView(ui: Ui, scope: Locator) {
+  await analysisPanel(scope).evaluate(element => window.scrollBy(0, element.getBoundingClientRect().bottom - window.innerHeight + 8));
+  await ui.settle();
+}
 // No focus ring left on what was clicked
 async function blur(ui: Ui) {
   await ui.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -913,10 +924,9 @@ shot('commit/histogram-range', {
     await ui.drag(at(0), at(RANGE_MAX));
     await blur(ui);
     await mouseOff(ui);
+    await panelInView(ui, scope);
   },
-  target: page => [imageRow(viewer(page)), analysisPanel(viewer(page))],
-  // the axis' first label, centered on the plot's edge
-  padding: 10,
+  target: page => imagesAndPanel(viewer(page)),
 });
 
 // The slanted edge's left side, near vertical, halfway down: bright on the left, dark on the right
@@ -941,7 +951,10 @@ shot('commit/image-profiles', {
     // on the edge, halfway down the view (examples/image-quality/qa/make_charts.py), closer: about 70 pixels across
     const position = await hoverPixel(ui, scope, EDGE.x, EDGE.y);
     await zoomTo(ui, scope, position, 800);
-    await hoverPixel(ui, scope, EDGE.x, EDGE.y);
+    const at = await hoverPixel(ui, scope, EDGE.x, EDGE.y);
+    // the profiles' markers and the crosshairs follow the pointer: once more on the pixel, after the panel redrew
+    await ui.hover(newImage(scope), { position: { x: at.x + 1, y: at.y } });
+    await ui.hover(newImage(scope), { position: at });
     await ui.settle();
   },
   target: page => [pixelValues(viewer(page)), imageRow(viewer(page)), analysisPanel(viewer(page))],
@@ -963,9 +976,9 @@ shot('commit/image-stats', {
     await ui.click(scope.getByRole('button', { name: '1:1', exact: true }));
     await openAnalysis(ui, scope, 'Statistics');
     await mouseOff(ui);
+    await panelInView(ui, scope);
   },
-  target: page => [imageRow(viewer(page)), analysisPanel(viewer(page))],
-  padding: 4,
+  target: page => imagesAndPanel(viewer(page)),
 });
 
 shot('commit/image-raw-values', {
@@ -992,9 +1005,7 @@ shot('commit/image-raw-values', {
     await analysisPanel(scope).getByText('Gr/Gb').waitFor({ timeout: 30_000 });
     await blur(ui);
     await mouseOff(ui);
-    // the panel's bottom at the window's: the shot is a box, that the page isn't scrolled to
-    await analysisPanel(scope).evaluate(element => window.scrollBy(0, element.getBoundingClientRect().bottom - window.innerHeight + 8));
-    await ui.settle();
+    await panelInView(ui, scope);
   },
   // the bottom of the mosaic, and the panel under it
   target: async page => {
@@ -1254,6 +1265,7 @@ shot('commit/change-menu', {
     + 'batch, branch and commit.',
   caption: 'Change the reference from its commit bar: swap new and reference, or pick the reference branch or a milestone.',
   actions: async ui => {
+    await milestonesAsSaved(ui);
     await ui.click(ui.page.getByRole('button', { name: 'Change the reference commit' }));
     await ui.page.locator('.bp6-popover .bp6-menu', { hasText: 'Swap the bars' }).waitFor();
     await ui.settle();
@@ -1564,8 +1576,11 @@ shot('commit/pointcloud', {
     await mouseAway(ui);
     await ui.settle();
   },
-  target: page => page.locator('.pointcloud-viewer').first(),
-  padding: 8,
+  // the viewer, and 8 px around it but above: the run's metrics, tinted, end right above it
+  target: async page => {
+    const box = await stableBox(page.locator('.pointcloud-viewer').first());
+    return { x: box.x - 8, y: box.y, width: box.width + 16, height: box.height + 8 };
+  },
 });
 
 clip('commit/video-sync', {
@@ -1721,4 +1736,157 @@ shot('commit/deleted-tests', {
   },
   target: page => viewCard(page, 'Metrics Diff'),
   padding: 0,
+});
+
+
+// Milestones as the seed saved them. The snapshot's milestones predate the description of their runs: the backend
+// describes them the first time it lists them, and that write sets their updated_at to its clock (list_milestones'
+// backfill, backend/api/milestones.py), days after T0, the captures' clock: menus said "in 5 days". The seed sets
+// updated_at to created_at (docs-media/seed.py). In the API's answer only, the page loaded again.
+async function milestonesAsSaved(ui: Ui) {
+  const { page, demo: d } = ui;
+  await page.route('**/api/v1/milestones?*', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { milestones: Array<{ created_at: string; updated_at: string }> };
+    const milestones = body.milestones.map(m => new Date(m.updated_at) > d.t0 ? { ...m, updated_at: m.created_at } : m);
+    await route.fulfill({ response, json: { ...body, milestones } });
+  });
+  await page.reload();
+  await ui.settle();
+}
+
+
+// Configurations (webapp/src/configurations/): the detector's int8 release, kd-1.3, is a batch of every variant, the
+// models at 3 input sizes. Against the fp32 release's CI batch, kd-1.2 (fp32 at 320 px only), each run is compared with
+// the closest reference run: settings added (int8), removed (fp32), changed (the size), and the model, a tuning
+// parameter. Without the 512 px runs: 4 runs fit. Narrower than the default viewport, so that the tags read at the
+// docs' width.
+const CONFIG_VIEWPORT = { width: 1180, height: 900 };
+const releaseVariants = (d: Demo) => d.commitUrl(DE, 'kd-1-3', {
+  reference: 'kd-1-2', view: 'table-kpi', batch: 'release', filter: 'small-objects -512',
+});
+const configurations = (page: Page) => page.getByLabel('Configurations', { exact: true });
+// The Metrics Table's row of a run: its name cell, by the settings it shows
+const configTag = (page: Page, index: number) => viewCard(page, 'Metrics Table').locator('.bp6-tag', { hasText: /^Config$/ }).nth(index);
+
+shot('commit/config-diff', {
+  project: DE,
+  url: releaseVariants,
+  viewport: CONFIG_VIEWPORT,
+  alt: 'The int8 release\'s size variants against the fp32 release: above the Metrics Table, "vs. reference" lists the '
+    + 'changes: fp32 removed, int8 added, size-320 to 416, and the model. Each row shows its own: fp32 struck through in '
+    + 'red, int8 in green, "size-320 → 416" with only 320 → 416 marked.',
+  caption: 'Each run shows how its settings differ from its reference run\'s: added in green, removed struck through, '
+    + 'changed values with an arrow. The changes are summed up once, above the runs.',
+  actions: async ui => {
+    await configTag(ui.page, 3).waitFor();
+    await ui.cursor.moveTo({ x: 1170, y: 890 });
+    await ui.settle();
+  },
+  // the changes of all the runs, and the table of the 4 runs
+  target: page => [configurations(page), viewCard(page, 'Metrics Table')],
+  padding: 8,
+});
+
+shot('commit/config-tag-diff', {
+  project: DE,
+  url: releaseVariants,
+  viewport: CONFIG_VIEWPORT,
+  alt: 'The Config tag of the int8 run at 416 px, hovered: "2 changed, 1 added, 1 removed", then a diff, line by line: '
+    + 'minus fp32, plus int8, size 320 to 416, and the model from kd-1.2-fp32-320 to kd-1.3-int8-416; buttons to copy '
+    + 'the changes or the reference\'s qa options.',
+  caption: 'Hover the Config tag of a run for how its settings differ from its reference run\'s, line by line, like a '
+    + 'git diff.',
+  actions: async ui => {
+    // the int8 run at 416 px: every kind of change
+    await ui.hover(configTag(ui.page, 3));
+    await ui.page.locator('.bp6-popover', { hasText: 'Settings compared to the reference run' }).waitFor();
+    await ui.settle();
+  },
+  // the popover, and the run's settings under it
+  target: page => [
+    page.locator('.bp6-popover', { hasText: 'Settings compared to the reference run' }),
+    configTag(page, 3),
+  ],
+  padding: 12,
+});
+
+
+// Several references (webapp/src/components/ReferenceTabs.jsx): with one reference, hovering its bar shows "Stack a
+// reference" below it
+shot('commit/stack-reference', {
+  project: IQ,
+  url: d => d.commitUrl(IQ, 'merge-bilateral', { reference: 'isp-4-1', view: 'table-kpi' }),
+  alt: 'Under the reference bar, Stack a reference opened: a box for a commit or a branch, the reference branch main, '
+    + '"This reference again" to change its batch or filter, Manage milestones, then the milestones isp-4.2 and isp-4.1, '
+    + 'which is selected.',
+  caption: 'Hover the reference\'s bar, then Stack a reference to compare with another commit, branch or milestone: '
+    + 'the reference you look at stays in the list.',
+  actions: async ui => {
+    const { page } = ui;
+    await milestonesAsSaved(ui);
+    await ui.hover(page.getByRole('textbox', { name: 'The reference commit' }));
+    await ui.click(page.getByRole('button', { name: 'Stack a reference' }));
+    await page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }).waitFor();
+    await ui.cursor.moveTo({ x: 1430, y: 890 });
+    await ui.settle();
+  },
+  // the reference's bar, the handle under it, and the panel
+  target: page => [
+    page.getByRole('textbox', { name: 'The reference commit' }),
+    page.getByRole('button', { name: 'Change the reference commit' }),
+    page.locator('.bp6-popover', { has: page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }) }),
+  ],
+  padding: 12,
+});
+
+// Names (webapp/src/selection.js: label, label_ref): the merge, named "bilateral", against the release before it,
+// a milestone: named after it. The page uses the names, in the sides' colors: the bars, the images' labels
+shot('commit/named-comparison', {
+  project: IQ,
+  url: d => d.commitUrl(IQ, 'merge-bilateral', {
+    reference: 'isp-4-1', view: 'output-list', filter: 'photos/facade base linux', query: { label: 'bilateral' },
+  }),
+  alt: 'The new results named "bilateral", in blue, against the isp-4.1 milestone, in purple: the names in the two bars, '
+    + 'then in the facade\'s run card, the viewer\'s "vs isp-4.1" and the labels "bilateral" and "isp-4.1" on the two '
+    + 'images.',
+  caption: 'Click new or ref to name them: the bars, the images, the plots and the tables use the names, each in its '
+    + 'color. Milestones are called by their name.',
+  actions: async ui => {
+    await preset(ui, viewer(ui.page), 'Window frame (halos)');
+    await mouseAway(ui);
+    await ui.settle();
+  },
+  // a box: from the bars, fixed at the top, down to the top of the images
+  target: async page => {
+    const card = await stableBox(cards(page).first());
+    const stage = await stableBox(imageRow(viewer(page)));
+    return { x: card.x - 24, y: 0, width: card.width + 48, height: stage.y + 160 };
+  },
+});
+
+// A run's name: hovering it opens what QA-Board knows about the run (webapp/src/components/RunInfoMenu.jsx). The
+// facade at low light, the second card: its menu opens beside it, below the commit bars
+shot('commit/run-name-menu', {
+  project: IQ,
+  url: d => d.commitUrl(IQ, 'merge-bilateral', { reference: 'isp-4-1', view: 'output-list', filter: 'photos/facade linux' }),
+  alt: 'The menu of a run\'s name, photos/facade.png, hovered in its run card: History, this input over time; its batch, '
+    + 'ci; its database and input path; its metadata; and Run Info: sent by ci, 1 s of compute time, created 20 days '
+    + 'ago, and its storage.',
+  caption: 'Hover a run\'s name: History shows this input over time, and the menu says where the run comes from, who '
+    + 'sent it, and what it cost.',
+  actions: async ui => {
+    const card = cards(ui.page).nth(1);
+    await showCard(ui, 1, 470);
+    const name = card.getByText('photos/facade.png', { exact: true }).first();
+    await ui.hover(name);
+    await ui.page.locator('.bp6-popover', { hasText: 'this input over time' }).waitFor();
+    await ui.settle();
+  },
+  // the run's name and its metrics, and the menu
+  target: page => [
+    cards(page).nth(1).getByText('photos/facade.png', { exact: true }).first(),
+    page.locator('.bp6-popover', { hasText: 'this input over time' }),
+  ],
+  padding: 16,
 });
