@@ -31,6 +31,8 @@ services:
       - QABOARD_URL=http://localhost:${QABOARD_DEMO_PORT:-5151}
       # Runs started from the web app (Run Tests, tuning) run in the backend's container
       - QABOARD_TUNING_RUNNER=local
+      # The fleet platform's tech lead runs the server: the admin panel's shots (docs-media/shots/admin.spec.ts)
+      - QABOARD_ADMINS=adaeze
     volumes:
       - ${QABOARD_DEMO_RESULTS:-/mnt/qaboard}:${QABOARD_DEMO_RESULTS:-/mnt/qaboard}
 

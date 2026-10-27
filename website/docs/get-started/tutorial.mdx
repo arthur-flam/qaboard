@@ -265,7 +265,9 @@ other commit is compared with.
 ## 7. Compare and gate
 Open a commit from a feature branch: the commit page compares its runs with the latest results of the reference
 branch (`project.reference_branch` in *qaboard.yaml*). The **Metrics Diff** view shows how each metric changed, run
-by run: green when it got better, red when it got worse. The outputs show side by side. To compare with a release
+by run: green when it got better, red when it got worse, once you
+[declare which way is better](/docs/computing-quantitative-metrics#declaring-metrics) for each metric. Until then,
+changes are shaded in blue. The outputs show side by side. To compare with a release
 instead, make it a [milestone](/docs/references-and-milestones).
 
 <Shot id="commit/metrics-diff" />
@@ -276,8 +278,9 @@ release on PyPI yet: see [Installation](/docs/installation#install).
 :::
 
 To fail CI when quality regresses, add rules under `gate:` in *qaboard.yaml*, and run `qa gate` after `qa batch ci`.
-It compares the commit's metrics with the reference's, and fails the CI job when a rule fails. The camera ISP example
-allows PSNR to get at most 1% worse, and the halos 20%:
+It compares the commit's metrics with the reference's, and fails the CI job when a rule fails. Rules about
+regressions need declared metrics too. The camera ISP example, whose *qa/metrics.yaml* declares its metrics, allows
+PSNR to get at most 1% worse, and the halos 20%:
 
 <RepoFile path="examples/image-quality/qaboard.yaml" title="qaboard.yaml" section="gate" />
 
