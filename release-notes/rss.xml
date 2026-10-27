@@ -282,6 +282,9 @@ you get one when they decide (<a class="" href="https://samsung.github.io/qaboar
 users or groups as viewers, developers or owners, optionally until a date. Members of a group's projects are members
 of every project under it.</li>
 <li class="">Read why you can't see a project or act on its runs, with its owners and a <strong>Request access</strong> button.</li>
+<li class="">Give your CI a token that isn't yours, as a project's owner: create a <strong>service account</strong> in the project's <strong>Access</strong>
+tab, choose its role, and create its tokens. They only work on the project, keep working when you leave, and runs
+show they were sent by <code>group/repo/ci[bot]</code> (<a class="" href="https://samsung.github.io/qaboard/docs/user-guide/project-access#service-accounts">service accounts</a>).</li>
 <li class="">Ask for access: when your admins approve new accounts, you can sign in and say why you need QA-Board, and you get
 an email when they decide.</li>
 </ul>
@@ -371,6 +374,9 @@ lifetimes, how results are authenticated. Environment variables still win when t
 <li class="">Find sign-ins, failed sign-ins, token changes, CLI logins and admin changes in the audit log, with who and from which IP.</li>
 <li class="">Tokens are stored hashed, can have scopes, projects and an expiry date, and expire when unused for long if you want.</li>
 <li class="">Disabled accounts stop working at once: their sessions and tokens are refused at the next request.</li>
+<li class="">Create service accounts for the whole server in <strong>Admin → Service accounts</strong>: bots with their own <code>qab_svc_…</code>
+tokens, a role on all projects or none, that projects' owners add to their projects. Projects' owners create
+their own from the Access tab (<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/user-management#service-accounts">service accounts</a>). Upgrading adds two columns to <code>users</code>.</li>
 </ul>
 </li>
 <li class=""><strong>Roles on projects</strong> (viewer, developer, owner), managed by projects' owners from the web app

@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.4cd3289b.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.f86cdebb.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0459941.js" defer="defer"></script>
 </head>
 <body>
@@ -71,14 +71,19 @@ get their own status, like <code>QA | nightly</code>, and in a <a class="" href=
 server requires tokens to send results, or requires signing in (see
 <a class="" href="/qaboard/docs/backend-admin/user-management#results-sent-by-qa">Results sent by qa</a>):</p>
 <ol>
-<li class="">In the web app, open <strong>Settings → Access tokens</strong> and create a token with the <code>read</code> and <code>ingest</code> scopes,
-restricted to your project (e.g. <code>group/repo</code>). Long-lived tokens are fine for CI, stored as protected secrets.</li>
+<li class="">In the web app, open your project&#x27;s <strong>Access</strong> tab, create a <strong>service account</strong> (e.g. <code>ci</code>, as a developer),
+and create a token for it with the <code>read</code> and <code>ingest</code> scopes. Runs then say they were sent by
+<code>group/repo/ci[bot]</code>, and the token keeps working when you leave the team
+(<a class="" href="/qaboard/docs/user-guide/project-access#service-accounts">service accounts</a>). You need to be an owner of the project:
+else, ask its owners, or create a token as yourself in <strong>Settings → Access tokens</strong>, restricted to your project.
+Long-lived tokens are fine for CI, stored as protected secrets.</li>
 <li class="">Store it in your CI&#x27;s secrets as <code>QABOARD_TOKEN</code>: <code>qa</code> sends it. In GitHub Actions, add
 <code>QABOARD_TOKEN: ${{ secrets.QABOARD_TOKEN }}</code> to the job&#x27;s <code>env</code>. In GitLab CI, add a masked, protected CI/CD
 variable named <code>QABOARD_TOKEN</code>.</li>
 </ol>
-<p>Tokens tied to the CI itself (no stored secret) and tokens owned by an organization rather than a person are coming
-next.</p>
+<p>For CI jobs that send results to many projects, admins create service accounts for the whole server, in
+<strong>Admin → Service accounts</strong>, that projects&#x27; owners add as members. Tokens tied to the CI itself (no stored secret)
+are coming next.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="example-with-github-actions">GitHub Actions<a href="#example-with-github-actions" class="hash-link" aria-label="Direct link to GitHub Actions" title="Direct link to GitHub Actions" translate="no">​</a></h2>
 <p><code>qa</code> reads the commit from <code>GITHUB_SHA</code>, and the branch from <code>GITHUB_HEAD_REF</code> or <code>GITHUB_REF_NAME</code>. For tags, it
 records the tag. It calls the API at <code>GITHUB_API_URL</code> (else derived from <code>GITHUB_SERVER_URL</code>) for the repository
