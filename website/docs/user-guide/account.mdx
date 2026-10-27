@@ -48,6 +48,8 @@ Scripts and CI jobs use tokens to act as you. Create one in **Settings → Acces
 - **Projects** (optional): restrict it to some projects, e.g. `group/repo` (and its subprojects) or `group/*`.
 - **Expires**: in 30, 90 or 365 days, or never if your server allows it.
 
+<Shot id="account/create-token" />
+
 The token is shown **once**: copy it then, and store it like a password, e.g. in your CI's secrets as `QABOARD_TOKEN`.
 The list shows when and from where each token was last used. Revoke a token as soon as you don't need it, or if it
 may have leaked: it stops working at once.

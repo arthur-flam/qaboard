@@ -76,6 +76,8 @@ shot('commit/controls-panel', {
     const panel = controlsPanel(ui.page);
     // fold Files to show, so that Sort runs fits
     await ui.click(panel.getByRole('button', { name: 'Files to show', exact: true }));
+    // the click leaves a focus ring on the button, drawn in the dark theme
+    await ui.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await ui.hold(400);
     await ui.anchor('visualizations', panel.getByRole('button', { name: 'Visualizations', exact: true }));
     await ui.anchor('image-diff', panel.getByText('Compare images', { exact: true }));

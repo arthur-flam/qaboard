@@ -24,6 +24,10 @@ Admins see **Admin** in the user menu, at `/admin`:
   setting changes, with who did it and from which IP.
 - **Settings**: change the settings below without restarting the server.
 
+<Shot id="admin/overview" />
+
+<Shot id="admin/users" />
+
 **The first admins** come from the environment: `QABOARD_ADMINS` lists user names (exactly, case included), or the
 emails of LDAP, SAML or single sign-on accounts (local accounts' emails aren't verified), comma-separated. With docker
 compose, set it in your site overlay, not in `.env` (see [where each setting goes](/docs/deploy#4-write-the-env-file-and-the-secrets)). They're admins whatever the
@@ -41,6 +45,8 @@ docker compose exec backend qaboard-admin revoke-tokens bob   # e.g. after a lea
 ## Settings
 Settings are stored in the database and changed in **Admin → Settings**. An environment variable, when set, wins:
 the panel then shows the setting as "set by the environment", and you change it where you deploy.
+
+<Shot id="admin/settings" />
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|

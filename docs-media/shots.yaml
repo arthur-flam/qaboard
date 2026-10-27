@@ -425,6 +425,87 @@ shots:
     needs: merge-bilateral vs isp-4-1 (deep-zoom batch)
     phase: 1
     status: published
+  - id: commit/image-wipe
+    kind: still
+    project: image-quality
+    shows: 'The facade''s run, Wipe picked among the comparison modes of the image toolbar: one image as wide as the card, zoomed on the leaves over a window (the preset), new left of the divider and its handle, isp-4.1 right of it, each labelled in its corner; dark rims outline the leaves on the new side only.'
+    pages: [user-guide/image-viewer]
+    features: [image-modes]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
+  - id: commit/image-compare-modes
+    kind: clip
+    project: image-quality
+    shows: 'The facade''s leaves, captioned: side by side (1); Wipe (2), the divider dragged left then right; Single (3), t flipping the image between new and isp-4.1 in place, their labels changing; Difference (4) between the images, its maximum at 20%; 4 again, the difference alone and as large as the card, the leaves'' rims in orange and black. About 15 s.'
+    pages: [user-guide/image-viewer]
+    features: [image-modes, image-diff]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
+  - id: commit/image-vs-file
+    kind: still
+    project: image-quality
+    shows: 'The facade''s ISP stage 4 (sharpen, stages/4.jpg) compared with stages/3.jpg (denoise) of the same run instead of the reference: the toolbar''s button reads vs stages/3.jpg with the undo button next to it, the line above the images says new · stages/3.jpg, and its menu is open over the images: Find an image…, the reference isp-4.1 (The same file in the reference run), then This run''s other images with thumbnails (out.png, stages/1.jpg … stages/5.jpg), stages/3.jpg checked, Apply to: All runs | This run, and the keys.'
+    pages: [user-guide/image-viewer]
+    features: [image-compare-with]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
+  - id: commit/pixel-values
+    kind: still
+    project: image-quality
+    shows: 'The facade''s leaves zoomed in to about 5000% on a leaf''s rim, new and isp-4.1 side by side, each pixel with its R, G and B values written on it in black or white; the line above gives the hovered rim pixel (x 698 y 120): 37 0 0 in the new image, 100 65 25 in the reference, Δ image −63 −65 −25; the 123 menu is open: Image values (picked), Displayed values, Off, with what each is; the badge Values: image (RGB) under the images.'
+    pages: [user-guide/image-viewer]
+    features: [pixel-values, pixel-tooltip]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
+  - id: commit/histogram-range
+    kind: still
+    project: image-quality
+    shows: 'The facade''s leaves, zoomed in, side by side, and the analysis panel''s Histogram under them with only Y (luma) shown, the range 0–12 dragged on it: yellow and black stripes mark those pixels, along the leaves'' rims in the new image, hardly any in the reference; below the histogram, Highlighted: Y in 0–12 · 1.86% of new · 1.04% of isp-4.1.'
+    pages: [user-guide/image-viewer]
+    features: [image-analysis, roi-histograms]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
+  - id: commit/image-profiles
+    kind: still
+    project: image-quality
+    shows: 'The slanted edge chart at 800%, the pointer on the near-vertical edge (x 366, y 408), crosshairs on both images; the analysis panel''s Row / column on Row and column under the pointer: Row 408 crosses the edge, Column 366 runs along it, new solid and isp-4.1 dashed, the new image higher on the bright side and lower on the dark side (the overshoot), with markers at the pointer.'
+    pages: [user-guide/image-viewer]
+    features: [image-analysis]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
+  - id: commit/image-stats
+    kind: still
+    project: image-quality
+    shows: 'The flat gray chart in low light at 100%, new and isp-4.1 side by side, the reference visibly noisier; the analysis panel''s Statistics under them: per channel (R, G, B, Y), new, isp-4.1 and Δ for mean, std dev, SNR, min, P1, median, P99, max, at 0 and at 255; luma std dev 2.52 against 5.26, SNR +6.4 dB.'
+    pages: [user-guide/image-viewer]
+    features: [image-analysis]
+    needs: merge-bilateral vs isp-4-1 (low-light runs)
+    phase: 3
+    status: planned
+  - id: commit/image-raw-values
+    kind: still
+    project: image-quality
+    shows: 'The facade''s raw mosaic (ISP stage 1 of the hw-model platform, stages/1.png, the same in both commits) zoomed in until each pixel is a red, green or blue square; the analysis panel on Statistics with Image values picked: the card RGGB · Bayer (guessed) with its 2×2 diagram, 8-bit (RGB), white 255, black unknown, Read from the colors of the pixels; the ratios R/G, B/G, Gr/Gb; the statistics of R, Gr, Gb and B with their pixel counts.'
+    pages: [user-guide/image-viewer]
+    features: [raw-analysis]
+    needs: merge-bilateral vs isp-4-1 (hw-model platform)
+    phase: 3
+    status: planned
+  - id: commit/image-fullscreen
+    kind: still
+    project: image-quality
+    shows: 'The facade run''s image viewer in full screen (the whole 1440x900 window): its toolbar with the exit button, the presets, the leaves over a window side by side, new and isp-4.1, as wide as the screen, and the analysis panel''s Row / column profiles (the average of each column and row, ±1 std dev) under them.'
+    pages: [user-guide/image-viewer]
+    features: [image-fullscreen, image-analysis]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
   - id: commit/video-compare
     kind: clip
     project: image-quality
@@ -696,6 +777,15 @@ shots:
     needs: one-tile (lsf-memlimit)
     phase: 2
     status: captured
+  - id: logs/runs
+    kind: still
+    project: image-quality
+    shows: 'The Logs view of the one-tile commit''s CI batch, signed in as Tobias: the filters All · 19, Failed · 1, Running · 0, Successful · 18, Open failed runs, then the first 8 runs, one line each: the 113 MP test wall first, failed (red edge, ✕), tagged "LSF: out of memory", then charts and photos with their configuration (base, low-light), their run time and their copy, folder and ⋯ buttons.'
+    pages: [user-guide/logs]
+    features: [lsf-hints]
+    needs: one-tile (lsf-memlimit)
+    phase: 3
+    status: planned
   - id: logs/batch-commands
     kind: still
     project: serving-latency
@@ -921,3 +1011,107 @@ shots:
     needs: fxp-round-half-even and docs-tuning-guide vs isp-4-1, hw-model platform
     phase: 2
     status: captured
+  - id: activity/stuck-runs
+    kind: still
+    project: null
+    shows: 'Runs activity as an admin, everyone''s runs: the counts of waiting and running runs, many of them pending for over a day, and the warning that runs have been pending for over a week, with buttons to show them, mark them as failed, or do it every night.'
+    pages: [user-guide/runs-activity, backend-admin/storage]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: storage/batches
+    kind: still
+    project: null
+    shows: 'Storage usage of everyone''s runs in kitefin/camera-isp, as Ines (a developer of the project): its total in batches, mostly the CI''s; the Batches tab lists them biggest first, each with its commit, branch, folder and who ran it; the milestones have a lock.'
+    pages: [user-guide/storage-usage]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: storage/delete
+    kind: still
+    project: null
+    shows: 'The "Delete the runs'' files" dialog for everything in kitefin/camera-isp, as Ines: the space freed by deleting the files of her runs, and what''s kept: other people''s runs, run by ci, which they or an admin can delete.'
+    pages: [user-guide/storage-usage]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: storage/users
+    kind: still
+    project: null
+    shows: 'Storage usage, the Users tab of everyone''s runs, as the admin: the five people of the demo and their share, the CI first, each with their runs, batches and biggest project.'
+    pages: [backend-admin/storage]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: storage/folders
+    kind: still
+    project: null
+    shows: 'Storage usage, the Folders tab of Ines''s runs, with the camera ISP''s results folder pasted and opened: what QA-Board knows there, in one row (folders that only lead to one subfolder skipped), with buttons to show these runs or delete their files.'
+    pages: [user-guide/storage-usage]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: account/create-token
+    kind: still
+    project: null
+    shows: 'The New access token dialog, as Arjun: the name "detector CI", Read and Ingest checked but not Act, the project kitefin/detector, and an expiry of 90 days, with its date.'
+    pages: [user-guide/account]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: access/members
+    kind: still
+    project: detection-eval
+    shows: 'The Access tab of kitefin/detector, as its owner Arjun: the visibility (Public, the server''s default), Mira''s request for the owner role with her message and Approve and Deny, and the members: Arjun, owner, and Mira, developer.'
+    pages: [user-guide/project-access]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: access/request
+    kind: still
+    project: detection-eval
+    shows: 'The Access tab of kitefin/detector, as Kaito who isn''t a member: his role (Developer, like everyone signed in), the visibility, the owner (Arjun), and the Request access form with the Owner role and a message.'
+    pages: [user-guide/project-access]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: admin/overview
+    kind: still
+    project: null
+    shows: 'The admin panel''s security checklist on the demo stack: what to review (anonymous users can read every project, anyone who can reach the server can send results, cookies over plain HTTP), notes on the secret key and project roles, and what''s already fine.'
+    pages: [backend-admin/user-management]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: admin/settings
+    kind: still
+    project: null
+    shows: 'Admin → Settings: requiring sign-in and local sign-up as switches, ingest.auth "off", set by QABOARD_INGEST_AUTH in the environment, and the projects'' default visibility and the role of signed-in users as menus, each with its description.'
+    pages: [backend-admin/user-management]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: admin/users
+    kind: still
+    project: null
+    shows: 'Admin → Users: the people of the demo, from Adaeze to the Kitefin Coding Agent, their email, how they sign in, Adaeze tagged Admin (env), and how many active tokens each has.'
+    pages: [backend-admin/user-management]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: admin/storage
+    kind: still
+    project: null
+    shows: 'Admin → Storage: a card per job (hard-delete deleted runs, purge runs whose files are gone, delete artifacts, delete old results, scan the storage, measure what deleted runs left, fail stuck runs), each saying what it does and keeps.'
+    pages: [backend-admin/storage]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned
+  - id: admin/hard-delete
+    kind: still
+    project: null
+    shows: 'The Hard-delete deleted runs dialog: projects matching *, none excepted, the runs deleted by users created over a month ago, a button to count them, and Dry run on: Start the dry run.'
+    pages: [backend-admin/storage]
+    needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
+    phase: 3
+    status: planned

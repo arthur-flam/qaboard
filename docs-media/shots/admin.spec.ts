@@ -29,9 +29,9 @@ shot('admin/overview', {
     await ui.cursor.moveTo(away);
     await ui.settle();
   },
-  // its heading and its list, narrower than the section
+  // its title (the heading is as wide as the page: its tag) and its list, narrower than the section
   target: page => [
-    page.getByRole('region', { name: 'Security checklist' }).getByRole('heading'),
+    page.getByRole('region', { name: 'Security checklist' }).getByRole('heading').locator('.bp6-tag'),
     page.getByRole('region', { name: 'Security checklist' }).getByRole('list'),
   ],
 });
