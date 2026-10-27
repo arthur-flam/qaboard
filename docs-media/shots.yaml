@@ -46,6 +46,12 @@ features:
   tuning-analysis: Tuning analysis, efficient frontier, convergence
   milestones: Milestones, personal and shared, with groups, favorites and links
   blind-test: Blind tests, the images called A and B in a random order until revealed
+  image-modes: Images compared side by side, with a wipe, one at a time in place (Single) or as their difference
+  image-compare-with: An image compared with another file of the same run instead of the reference
+  pixel-values: Values written on the pixels when zoomed in, the image's own or the displayed ones
+  image-analysis: The analysis panel under the images, histogram range, row and column profiles, statistics
+  raw-analysis: A raw image's own values per channel of its color filter array, with the pattern found
+  image-fullscreen: The image viewer in full screen, with its tools and the analysis panel
   reference-tabs: Several references stacked as tabs, compared one at a time
   config-diff: Configurations shown as how they differ from the reference run's, the changes all runs share summed up once
   side-names: New and reference named by users (milestones by their name), each in its color, everywhere on the page

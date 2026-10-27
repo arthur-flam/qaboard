@@ -109,10 +109,10 @@ shot('storage/folders', {
   project: null,
   login: 'ines',
   url: d => `${d.baseUrl}/storage/folders`,
-  alt: 'Storage usage, the Folders tab of Ines\'s runs: it starts in the output folder of her commit, where her runs '
-    + 'split in two subfolders, 181 MB and 14.6 MB, with a box to paste a folder, her biggest folder, and a button to '
-    + 'delete the files of these runs.',
-  caption: 'Folders start where your runs split: paste the folder of a quota alert to see what QA-Board knows there.',
+  alt: 'Storage usage, the Folders tab of Ines\'s runs, with /mnt/qaboard/kitefin/camera-isp pasted and opened: 196 MB '
+    + 'known to QA-Board there, all in one row, 57/647d61d9314f3b/output, with 65 runs in 2 batches, and buttons to show '
+    + 'these runs or delete their files.',
+  caption: 'Paste the folder of a quota alert to see what QA-Board knows there: folders that only lead to one subfolder are skipped.',
   viewport: VIEWPORT,
   mask: updated,
   actions: async ui => {
@@ -120,6 +120,7 @@ shot('storage/folders', {
     await ui.type(ui.page.getByRole('textbox', { name: 'Folder' }), `${RESULTS}/${ISP}`);
     await ui.click(ui.page.getByRole('button', { name: 'Open', exact: true }));
     await rows(ui.page).first().waitFor();
+    await ui.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await ui.cursor.moveTo({ x: 1180, y: 1080 });
     await ui.settle();
   },
