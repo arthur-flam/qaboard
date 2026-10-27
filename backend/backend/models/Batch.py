@@ -3,13 +3,10 @@ Represents runs belonging to the same commit.
 It might by a CI job, or tuning experiments.
 """
 import os
-import json
-import hashlib
 import datetime
 from pathlib import Path
 
-import redis
-from sqlalchemy import ForeignKey, Integer, String, DateTime, Float, Numeric, Text, text, literal_column
+from sqlalchemy import ForeignKey, Integer, String, DateTime, Float, Numeric, text, literal_column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import UniqueConstraint, Column, Index
 from sqlalchemy.orm import relationship
@@ -23,7 +20,6 @@ from backend.models import Base, Output, serialize_outputs
 from backend.metrics_aggregation import metric_names
 from backend.shell_utils import shell_safe, safe_user_name
 from backend.storage import UnsafePathError
-from backend.hybrid_cache import redis_client
 
 
 
@@ -221,15 +217,6 @@ no_stats = {
 # keeps the query reasonable whatever clients ask for
 max_aggregated_metrics = 20
 
-# Aggregating is the slow part: postgres parses each run's metrics (JSON text) for each metric. The aggregates only depend
-# on the runs' metrics and statuses, so we keep them in redis, by a fingerprint of exactly that.
-# Any change to the runs changes the fingerprint: what we keep is never stale, it only expires.
-aggregates_cache_seconds = 24 * 3600
-# Batches with pending runs change while they run: we keep each state a short while (some runs never report back)
-pending_aggregates_cache_seconds = 10 * 60
-# change it when the aggregates change (what's computed, or how)
-aggregates_cache_version = 1
-
 
 def batches_stats(session, batch_ids, metrics_to_aggregate=None):
   """
@@ -242,63 +229,9 @@ def batches_stats(session, batch_ids, metrics_to_aggregate=None):
     return {}
   # e.g. {"loss": 0.1}, a list of names, or anything clients send
   metrics = metric_names(metrics_to_aggregate)[:max_aggregated_metrics]
-  if not metrics:
-    return query_batches_stats(session, batch_ids, [])
-  # The counts, and which batches' aggregates we already know
-  stats = query_batches_stats(session, batch_ids, [], with_fingerprints=True)
-  cached = cached_aggregates(stats, metrics)
-  missing = [batch_id for batch_id in stats if batch_id not in cached]
-  for batch_id, aggregated in cached.items():
-    stats[batch_id]['aggregated_metrics'] = aggregated
-  if missing:
-    try:
-      # e.g. numbers too big for floats: we'd rather show batches without metrics than an error
-      with session.begin_nested():
-        computed = query_batches_stats(session, missing, metrics, with_fingerprints=True)
-    except DataError as e:
-      print(f"WARNING: could not aggregate {metrics}: {e}")
-    else:
-      # the runs may have changed since we counted them
-      stats.update(computed)
-      cache_aggregates(computed, metrics)
-  for batch_stats in stats.values():
-    batch_stats.pop('fingerprint', None)
-  return stats
-
-
-def aggregates_key(batch_id, metrics, fingerprint):
-  metrics_hash = hashlib.sha1(json.dumps(metrics).encode()).hexdigest()[:16]
-  return f"qaboard:batch-aggregates:v{aggregates_cache_version}:{batch_id}:{metrics_hash}:{fingerprint}"
-
-
-def cached_aggregates(stats, metrics):
-  """{batch_id: aggregated_metrics} for the batches of `stats` (with fingerprints) whose aggregates are in redis"""
-  keys = {batch_id: aggregates_key(batch_id, metrics, s['fingerprint']) for batch_id, s in stats.items()}
-  try:
-    values = redis_client.mget(list(keys.values()))
-  except redis.RedisError:
-    return {}
-  return {batch_id: json.loads(value) for batch_id, value in zip(keys, values) if value is not None}
-
-
-def cache_aggregates(stats, metrics):
-  try:
-    pipeline = redis_client.pipeline(transaction=False)
-    for batch_id, s in stats.items():
-      seconds = pending_aggregates_cache_seconds if s['pending_outputs'] else aggregates_cache_seconds
-      pipeline.setex(aggregates_key(batch_id, metrics, s['fingerprint']), seconds, json.dumps(s['aggregated_metrics']))
-    pipeline.execute()
-  except redis.RedisError as e:
-    print(f"WARNING: could not save the aggregated metrics: {e}")
-
-
-def query_batches_stats(session, batch_ids, metrics, with_fingerprints=False):
-  """
-  batches_stats(), computed by postgres. `with_fingerprints`: each batch's stats also have a `fingerprint` of the
-  metrics and statuses of its runs: the number of runs, and the sum of hashes of each run's.
-  """
-  # Output.metrics is JSON, stored as text: reading a key means parsing it. We read each metric once per output
-  # (OFFSET 0 keeps postgres from inlining subqueries, it would read them again for each use).
+  # We read each metric once per output, as jsonb (OFFSET 0 keeps postgres from inlining subqueries, it would read them
+  # again for each use). Output.metrics is jsonb, reading a key is cheap. Until `qaboard-admin convert-metrics` runs on
+  # databases from before, it's json (text): reading a key parses the run's metrics, the cast only the key's value.
   outputs = (session
     .query(
       Output.batch_id,
@@ -306,8 +239,8 @@ def query_batches_stats(session, batch_ids, metrics, with_fingerprints=False):
       # The metrics of runs from old clients, with NULL statuses, count. Deleted runs' don't.
       and_(Output.is_failed.isnot(True), Output.is_pending.isnot(True), Output.deleted.isnot(True)).label('is_aggregated'),
       Output.is_pending, Output.is_running, Output.is_failed, Output.deleted,
-      *([func.hashtextextended(func.concat(cast(Output.metrics, Text), '|', Output.is_failed, '|', Output.is_pending, '|', Output.deleted), 0).label('run_hash')] if with_fingerprints else []),
-      *[Output.metrics[metric].label(f'metric_{index}') for index, metric in enumerate(metrics)],
+      # -> works with json and jsonb (SQLAlchemy writes metrics[...] for jsonb on postgres 14+)
+      *[cast(Output.metrics.op('->')(metric), JSONB).label(f'metric_{index}') for index, metric in enumerate(metrics)],
     )
     .filter(Output.batch_id.in_(batch_ids))
     .offset(0)
@@ -316,9 +249,9 @@ def query_batches_stats(session, batch_ids, metrics, with_fingerprints=False):
   # We only aggregate numbers (not strings, booleans...), from valid outputs (not failed, pending or deleted),
   # that fit in floats. Aggregates ignore NULLs. Like backend/metrics_aggregation.py, in the same query as the counts.
   def as_float(value):
-    number = cast(cast(value, Text), Numeric)
+    number = cast(value, Numeric)
     # nested CASEs: postgres evaluates them in order, but not the terms of AND
-    return case((func.json_typeof(value) == 'number', case((func.abs(number) < literal_column('1e308::numeric'), cast(number, Float)))))
+    return case((func.jsonb_typeof(value) == 'number', case((func.abs(number) < literal_column('1e308::numeric'), cast(number, Float)))))
   values = (session
     .query(
       outputs,
@@ -335,18 +268,25 @@ def query_batches_stats(session, batch_ids, metrics, with_fingerprints=False):
     func.sum(case((values.c.is_failed, 1), else_=0)),
     func.sum(case((values.c.deleted, 1), else_=0)),
   ]
-  if with_fingerprints:
-    columns.append(func.concat(func.count(), ':', func.sum(values.c.run_hash)))
   for index in range(len(metrics)):
     value = values.c[f'value_{index}']
     columns.append(func.percentile_cont(0.5).within_group(value))
     columns.append(func.avg(value))
     columns.append(func.sum(value))
-  rows = session.query(*columns).group_by(values.c.batch_id).all()
+  query = session.query(*columns).group_by(values.c.batch_id)
+  if metrics:
+    try:
+      # e.g. numbers too big for floats: we'd rather show batches without metrics than an error
+      with session.begin_nested():
+        rows = query.all()
+    except DataError as e:
+      print(f"WARNING: could not aggregate {metrics}: {e}")
+      return batches_stats(session, batch_ids)
+  else:
+    rows = query.all()
 
   stats = {}
   for batch_id, valid, pending, running, failed, deleted, *aggregates in rows:
-    fingerprint = aggregates.pop(0) if with_fingerprints else None
     aggregated = {}
     for index, metric in enumerate(metrics):
       median, average, total = aggregates[3 * index:3 * index + 3]
@@ -364,6 +304,4 @@ def query_batches_stats(session, batch_ids, metrics, with_fingerprints=False):
       'failed_outputs': failed or 0,
       'deleted_outputs': deleted or 0,
     }
-    if with_fingerprints:
-      stats[batch_id]['fingerprint'] = fingerprint
   return stats

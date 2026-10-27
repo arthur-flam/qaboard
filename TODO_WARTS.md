@@ -39,9 +39,13 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
 - **History page with outputs** is still ~1.3 s and ~20 MB for 25k outputs (backend/benchmarks/bench_api.py), now that
   outputs are serialized from rows: psycopg2 parses 5 JSON columns per output, and we dump them again. Let postgres build
   the JSON, or paginate/stream outputs. [M]
-- **Aggregated metrics** of batches are slow to compute the first time (~2 s for the 1000 batches of 3 days of a big
-  project, more with more metrics): `outputs.metrics` is `json` (text), parsed once per metric. They are kept in redis
-  (backend/models/Batch.py), but a `jsonb` column, or numeric metrics saved apart, would make them fast. [L, migration]
+- **Aggregated metrics** of batches are computed at each request (backend/models/Batch.py): with `jsonb` metrics
+  (`qaboard-admin convert-metrics`), ~0.7 s for the 1000 batches of 3 days of a big project with 4 metrics (~200k runs),
+  ~1.5 s with 12. Converting each value to numeric and the medians are most of it. Numeric metrics saved apart (a
+  float column per metric, or a table) would make them fast; so would paginating the default list of commits (the web
+  app has pages: 50 commits take ~0.15 s). [M]
+- Servers where `qaboard-admin convert-metrics` didn't run have `json` metrics: lists with metrics are ~10% slower than
+  before the code read them as `jsonb`. Once every site converted, drop the casts. [S]
 - With `jit = on` (postgres' default), the aggregations with many metrics are ~10% slower: JIT compiles them, it doesn't
   pay off. Consider `jit = off` in services/db/qaboard.conf. [S, ops]
 - `GET .../manifest` writes manifests (api/outputs.py): make the refresh a POST, with OutputCard.jsx's `?refresh=true`. [S, API]

@@ -93,16 +93,6 @@ class TestNotifyQaDatabaseRuns(unittest.TestCase):
       self.assertEqual(notify_qa_database_runs(self.runs, **self.shared), [{"id": run["rel_input_path"]} for run in self.runs])
     self.assertEqual([len(call["runs"]) for call in self.sent(post)], [2, 2, 1])
 
-  def test_older_servers(self):
-    """They don't know /api/v1/outputs/: one call per run"""
-    from qaboard.api import notify_qa_database_runs
-    def answer(url, data, **kwargs):
-      return self.response(404, {"error": "Not Found"}) if url.endswith("/outputs/") else self.response(200, {"id": 1})
-    with mock.patch("requests.post", side_effect=answer) as post:
-      self.assertEqual(notify_qa_database_runs(self.runs, **self.shared), [{"id": 1}] * 5)
-    self.assertEqual(len(post.call_args_list), 1 + 5)
-    self.assertEqual(self.sent(post)[1]["rel_input_path"], "a/0.raw")
-
   def test_offline(self):
     from qaboard.api import notify_qa_database_runs
     with mock.patch("requests.post") as post:

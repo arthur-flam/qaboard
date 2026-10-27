@@ -53,6 +53,7 @@ const action_labels = {
   'user.update': 'Updated a user',
   'setting.update': 'Changed a setting',
   'audit.purge': 'Deleted old audit events',
+  'runs.convert_metrics': "Converted the runs' metrics",
   'batch.delete': 'Deleted a batch',
   'jenkins.build': 'Started a Jenkins build',
 };

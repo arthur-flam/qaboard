@@ -215,10 +215,7 @@ def notify_qa_database_runs(runs, **kwargs):
   answers = []
   for start in range(0, len(runs), runs_per_call):
     chunk = runs[start:start + runs_per_call]
-    response = post_to_qa_database(f"{api_prefix}/outputs/", {**shared, 'runs': [own(run) for run in chunk]}, unsupported=(404, 405))
-    if response is UNSUPPORTED:
-      # servers from before /api/v1/outputs/
-      return [*answers, *[notify_qa_database(**{**kwargs, **run}) for run in runs[len(answers):]]]
+    response = post_to_qa_database(f"{api_prefix}/outputs/", {**shared, 'runs': [own(run) for run in chunk]})
     if not isinstance(response, list) or len(response) != len(chunk):
       answers.extend([None] * len(chunk))
       continue
@@ -259,11 +256,8 @@ def qa_database_payload(**kwargs):
   return data
 
 
-# post_to_qa_database's answer when the server doesn't know the endpoint
-UNSUPPORTED = object()
-
-def post_to_qa_database(url, data, unsupported=()):
-  """POSTs to QA-Board, warns if it fails. Returns the server's answer, or None. `unsupported`: the statuses that return UNSUPPORTED"""
+def post_to_qa_database(url, data):
+  """POSTs to QA-Board, warns if it fails. Returns the server's answer, or None"""
   import requests
   if 'QA_VERBOSE' in os.environ:
     click.secho(url, fg='cyan', err=True)
@@ -275,8 +269,6 @@ def post_to_qa_database(url, data, unsupported=()):
     r = requests.post(url, data=payload, headers=headers, verify=api_verify, timeout=api_timeout)
     if 'QA_VERBOSE' in os.environ:
       click.secho(r.text, fg='cyan', dim=True, err=True)
-    if r.status_code in unsupported:
-      return UNSUPPORTED
     print_server_warning(r)
     if print_auth_error(r, "QA-Board refused the results", ingest=True):
       return None

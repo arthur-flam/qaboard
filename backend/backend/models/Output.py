@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from sqlalchemy import Column, ForeignKey, Index
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from sqlalchemy import text, and_, select, Integer, String, Boolean, DateTime, JSON
@@ -28,6 +28,17 @@ from backend.storage import check_storage_path, check_inside
 
 def iso_utc(date):
   return f"{date.isoformat()}Z" if date else None
+
+
+def without_nul(value):
+  """The value, without the character \\u0000 in texts: jsonb refuses it"""
+  if isinstance(value, str):
+    return value.replace('\x00', '\ufffd')
+  if isinstance(value, dict):
+    return {without_nul(k): without_nul(v) for k, v in value.items()}
+  if isinstance(value, list):
+    return [without_nul(v) for v in value]
+  return value
 
 
 def run_dir_url(path):
@@ -161,7 +172,12 @@ class Output(Base):
   started_at = Column(DateTime, nullable=True)
   finished_at = Column(DateTime, nullable=True)
 
-  metrics = Column(JSON(), nullable=False, default=dict, server_default='{}')
+  # jsonb: lists of commits aggregate them (models/Batch.py). Databases from before have json until `qaboard-admin convert-metrics`
+  metrics = Column(JSONB(), nullable=False, default=dict, server_default='{}')
+
+  @validates('metrics')
+  def validate_metrics(self, key, metrics):
+    return without_nul(metrics)
   data = Column(JSON(), nullable=False, default=dict, server_default='{}')
 
 

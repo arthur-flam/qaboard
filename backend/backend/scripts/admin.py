@@ -136,6 +136,43 @@ def purge_audit(days):
   click.echo(f"Deleted {count} events older than {days} days.")
 
 
+# The runs' metrics as jsonb. jsonb doesn't accept the character \u0000 in texts: we replace it.
+METRICS_TYPES = {
+  'jsonb': r"""jsonb USING CASE WHEN strpos(metrics::text, '\u0000') > 0 THEN replace(metrics::text, '\u0000', '�')::jsonb ELSE metrics::jsonb END""",
+  'json': "json USING metrics::json",
+}
+
+@cli.command('convert-metrics')
+@click.option('--revert', is_flag=True, help="Back to json: before rolling back to a version from before this command, they can't read jsonb metrics.")
+@click.option('--yes', is_flag=True, help="Don't ask for a confirmation.")
+def convert_metrics(revert, yes):
+  """
+  Stores the runs' metrics as jsonb instead of json (text): lists of commits aggregate them 2x faster.
+  It rewrites the table of runs: meanwhile QA-Board can't read or save runs (~30-40 s per GB), and it needs as much free disk.
+  Run it in a maintenance window soon after deploying a version that has it: until then those lists are ~10% slower.
+  """
+  import time
+  from sqlalchemy import text
+  to = 'json' if revert else 'jsonb'
+  current = db_session.execute(text("SELECT data_type FROM information_schema.columns WHERE table_name = 'outputs' AND column_name = 'metrics'")).scalar()
+  if current == to:
+    click.echo(f"The runs' metrics are already {to}.")
+    return
+  size = db_session.execute(text("SELECT pg_total_relation_size('outputs')")).scalar()
+  click.echo(f"The runs and their indexes take {size / 2**30:.1f} GB: QA-Board can't read or save runs for about {max(1, round(size / 2**30 * 32 / 60))} min.")
+  if not yes:
+    click.confirm(f"Convert the runs' metrics from {current} to {to} now?", abort=True)
+  start = time.time()
+  # Other requests wait for the conversion: it doesn't wait for them, or they'd wait for both
+  db_session.execute(text("SET LOCAL lock_timeout = '10s'"))
+  db_session.execute(text(f"ALTER TABLE outputs ALTER COLUMN metrics TYPE {METRICS_TYPES[to]}"))
+  # the rewritten table's statistics, for the query planner
+  db_session.execute(text("ANALYZE outputs"))
+  system_audit('runs.convert_metrics', meta={"from": current, "to": to, "bytes": size, "seconds": round(time.time() - start)})
+  db_session.commit()
+  click.echo(f"Converted the runs' metrics to {to} in {time.time() - start:.0f} s.")
+
+
 @cli.group()
 def jobs():
   """Server jobs, e.g. hard-deleting deleted runs. Admins start and schedule them in the web app (Admin > Storage)."""

@@ -370,7 +370,7 @@ def run(args):
 
   client = app.test_client()
   results = []
-  # first: the first request, with cold caches (e.g. the aggregated metrics in redis: flush it before)
+  # first: the first request, with cold caches
   print(f"{'case':<34} {'first':>9} {'median':>9} {'min':>9} {'queries':>8} {'items':>6} {'size':>9}  has-more", file=sys.stderr)
   for name, url, params, *body in cases(engine):
     if args.only and args.only not in name:
