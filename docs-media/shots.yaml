@@ -133,7 +133,7 @@ shots:
     pages: [get-started/quickstart, user-guide/finding-results, user-guide/first-review]
     features: [home-page]
     phase: 3
-    status: planned
+    status: published
   - id: projects/command-palette
     kind: still
     project: detection-eval
@@ -141,7 +141,7 @@ shots:
     pages: [user-guide/finding-results]
     features: [command-palette]
     phase: 3
-    status: planned
+    status: published
   - id: commits/yours
     kind: still
     project: image-quality
@@ -149,7 +149,7 @@ shots:
     pages: [user-guide/finding-results]
     needs: bilateral-denoise (tune-denoise, ines-halo); chroma-low-light (running)
     phase: 3
-    status: planned
+    status: published
   - id: commits/compact
     kind: still
     project: serving-latency
@@ -157,7 +157,7 @@ shots:
     pages: [user-guide/finding-results]
     needs: batch-overflow (crashed)
     phase: 3
-    status: planned
+    status: published
   - id: commits/feed
     kind: still
     project: serving-latency
@@ -270,7 +270,7 @@ shots:
     features: [reference-tabs]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/named-comparison
     kind: still
     project: image-quality
@@ -279,7 +279,7 @@ shots:
     features: [side-names]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/batch-picker
     kind: still
     project: image-quality
@@ -311,7 +311,7 @@ shots:
     features: [config-diff]
     needs: kd-1-3 (release batch) vs kd-1-2
     phase: 3
-    status: planned
+    status: published
   - id: commit/config-tag-diff
     kind: still
     project: detection-eval
@@ -320,7 +320,7 @@ shots:
     features: [config-diff]
     needs: kd-1-3 (release batch) vs kd-1-2
     phase: 3
-    status: planned
+    status: published
 
   # Commit page: outputs
   - id: commit/visualizations
@@ -429,11 +429,11 @@ shots:
     kind: still
     project: image-quality
     shows: 'The facade''s run, Wipe picked among the comparison modes of the image toolbar: one image as wide as the card, zoomed on the leaves over a window (the preset), new left of the divider and its handle, isp-4.1 right of it, each labelled in its corner; dark rims outline the leaves on the new side only.'
-    pages: [user-guide/image-viewer]
+    pages: [user-guide/comparing-results]
     features: [image-modes]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/image-compare-modes
     kind: clip
     project: image-quality
@@ -442,7 +442,7 @@ shots:
     features: [image-modes, image-diff]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/image-vs-file
     kind: still
     project: image-quality
@@ -451,7 +451,7 @@ shots:
     features: [image-compare-with]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/pixel-values
     kind: still
     project: image-quality
@@ -460,7 +460,7 @@ shots:
     features: [pixel-values, pixel-tooltip]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/histogram-range
     kind: still
     project: image-quality
@@ -469,7 +469,7 @@ shots:
     features: [image-analysis, roi-histograms]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/image-profiles
     kind: still
     project: image-quality
@@ -478,7 +478,7 @@ shots:
     features: [image-analysis]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/image-stats
     kind: still
     project: image-quality
@@ -487,7 +487,7 @@ shots:
     features: [image-analysis]
     needs: merge-bilateral vs isp-4-1 (low-light runs)
     phase: 3
-    status: planned
+    status: published
   - id: commit/image-raw-values
     kind: still
     project: image-quality
@@ -496,7 +496,7 @@ shots:
     features: [raw-analysis]
     needs: merge-bilateral vs isp-4-1 (hw-model platform)
     phase: 3
-    status: planned
+    status: published
   - id: commit/image-fullscreen
     kind: still
     project: image-quality
@@ -505,7 +505,7 @@ shots:
     features: [image-fullscreen, image-analysis]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/video-compare
     kind: clip
     project: image-quality
@@ -670,7 +670,7 @@ shots:
     pages: [user-guide/commit-page, user-guide/history-and-dashboards, user-guide/first-review]
     needs: merge-bilateral vs isp-4-1
     phase: 3
-    status: planned
+    status: published
   - id: commit/artifacts-configs
     kind: still
     project: detection-eval
@@ -723,7 +723,7 @@ shots:
     features: [junit-viewer]
     needs: green-ci vs closest-robot
     phase: 3
-    status: planned
+    status: published
   - id: commit/tests-diff
     kind: still
     project: software-quality
@@ -732,7 +732,7 @@ shots:
     features: [text-diff]
     needs: varint-fast-path vs grid-docs
     phase: 3
-    status: planned
+    status: published
   - id: commit/deleted-tests
     kind: still
     project: software-quality
@@ -740,7 +740,7 @@ shots:
     pages: [use-cases/software-quality]
     needs: green-ci vs closest-robot
     phase: 3
-    status: planned
+    status: published
   - id: commit/agent-report
     kind: still
     project: agent-evals
@@ -785,7 +785,7 @@ shots:
     features: [lsf-hints]
     needs: one-tile (lsf-memlimit)
     phase: 3
-    status: planned
+    status: published
   - id: logs/batch-commands
     kind: still
     project: serving-latency
@@ -826,7 +826,7 @@ shots:
     pages: [use-cases/software-quality]
     needs: sdk-tests to cold-batteries
     phase: 3
-    status: planned
+    status: published
   - id: history/image-diff
     kind: still
     project: image-quality
@@ -1018,7 +1018,7 @@ shots:
     pages: [user-guide/runs-activity, backend-admin/storage]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: storage/batches
     kind: still
     project: null
@@ -1026,7 +1026,7 @@ shots:
     pages: [user-guide/storage-usage]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: storage/delete
     kind: still
     project: null
@@ -1034,7 +1034,7 @@ shots:
     pages: [user-guide/storage-usage]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: storage/users
     kind: still
     project: null
@@ -1042,7 +1042,7 @@ shots:
     pages: [backend-admin/storage]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: storage/folders
     kind: still
     project: null
@@ -1050,7 +1050,7 @@ shots:
     pages: [user-guide/storage-usage]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: account/create-token
     kind: still
     project: null
@@ -1058,7 +1058,7 @@ shots:
     pages: [user-guide/account]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: access/members
     kind: still
     project: detection-eval
@@ -1066,7 +1066,7 @@ shots:
     pages: [user-guide/project-access]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: access/request
     kind: still
     project: detection-eval
@@ -1074,7 +1074,7 @@ shots:
     pages: [user-guide/project-access]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: admin/overview
     kind: still
     project: null
@@ -1082,7 +1082,7 @@ shots:
     pages: [backend-admin/user-management]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: admin/settings
     kind: still
     project: null
@@ -1090,7 +1090,7 @@ shots:
     pages: [backend-admin/user-management]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: admin/users
     kind: still
     project: null
@@ -1098,7 +1098,7 @@ shots:
     pages: [backend-admin/user-management]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: admin/storage
     kind: still
     project: null
@@ -1106,7 +1106,7 @@ shots:
     pages: [backend-admin/storage]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
   - id: admin/hard-delete
     kind: still
     project: null
@@ -1114,4 +1114,4 @@ shots:
     pages: [backend-admin/storage]
     needs: the demo stack's admin (QABOARD_ADMINS in docs-media/compose.demo.yml); the specs set and undo the state they need (shots/demoState.ts)
     phase: 3
-    status: planned
+    status: published
