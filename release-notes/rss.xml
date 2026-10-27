@@ -802,6 +802,7 @@ are no longer scanned again, even when you set your own excluded paths.</li>
 <li class=""><code>storage.garbage.artifacts.keep</code> now works with artifact group names, and also accepts folders and globs.</li>
 <li class="">Commits whose artifacts were only partly restored are no longer marked as usable.</li>
 <li class=""><code>qaboard_clean --dryrun</code> no longer deletes the folders of runs without a manifest, or with a corrupted one.</li>
+<li class="">Zero-downtime deploys (<code>deploy.py up</code>) no longer fail a few requests with a 502 when the old backend replicas are busy: they are stopped once they answered every request they received (waiting up to a minute), instead of 5 seconds after nginx switched to the new ones (<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/deployment">deployments</a>).</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="security-and-data-safety">Security and data safety<a href="https://samsung.github.io/qaboard/release-notes/2026-10#security-and-data-safety" class="hash-link" aria-label="Direct link to Security and data safety" title="Direct link to Security and data safety" translate="no">​</a></h3>
 <ul>
