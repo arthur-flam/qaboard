@@ -449,7 +449,7 @@ UNAUTHENTICATED_ENDPOINTS = {
   # users waiting for an admin say why they need access: it checks their pending session itself
   ("sign_in.py", "my_access_request"),
   # the CLI sends results, checked by ingest_access: anonymous unless ingest.auth is "token" (see "Known issues" in SECURITY.md)
-  ("outputs.py", "new_output_webhook"), ("batch.py", "update_batch"), ("commit.py", "api_ci_commit"),
+  ("outputs.py", "new_output_webhook"), ("outputs.py", "new_outputs_webhook"), ("batch.py", "update_batch"), ("commit.py", "api_ci_commit"),
   # the CLI's Jenkins runner triggers builds (anonymous unless sign-in is required). With a project (the web app): developers
   # and checks their status, the same way (jenkins_trigger_access)
   ("integrations.py", "jenkins_build_trigger"), ("integrations.py", "jenkins_build"),
@@ -1425,7 +1425,7 @@ def test_auth_module_defines_each_name_once():
 
 # Routes that mention projects without calling one of PROJECT_CHECKS, and why
 PROJECT_CHECKS = {
-  "is_authorized_user", "require_project_access", "forbidden_project", "ingest_access", "can", "authorize", "may_manage",
+  "is_authorized_user", "require_project_access", "forbidden_project", "ingest_access", "check_ingest", "can", "authorize", "may_manage",
   "get_milestone", "managed_account", "check_read_access", "readable_file", "_video_path", "github_workflow", "gitlab_project", "jenkins_trigger_access",
 }
 UNCHECKED_PROJECT_ROUTES = {

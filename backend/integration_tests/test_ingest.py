@@ -34,10 +34,16 @@ def output_payload(**extra):
   })
 
 
+def outputs_payload(**extra):
+  """Runs sent together (`qa batch`): here a single run, what it sends is what they share"""
+  return {**output_payload(**extra), "runs": [{}]}
+
+
 INGEST = {
   'commit': ('/api/v1/commit/', commit_payload),
   'batch': ('/api/v1/batch/', batch_payload),
   'output': ('/api/v1/output/', output_payload),
+  'outputs': ('/api/v1/outputs/', outputs_payload),
 }
 
 
@@ -240,6 +246,7 @@ def test_ingest_with_sign_in_required(logged_in, make_client, monkeypatch):
   """Requiring sign-in leaves ingest open, unless ingest.auth=token"""
   monkeypatch.setenv('QABOARD_LOGIN_REQUIRED', '1')
   assert send(make_client(), 'output').status_code == 200
+  assert send(make_client(), 'outputs').status_code == 200
   token = new_token(logged_in('alice'), scopes=["ingest"])
   monkeypatch.setenv('QABOARD_INGEST_AUTH', 'token')
   response = send(make_client(), 'batch')
@@ -287,3 +294,39 @@ def test_batch_deletions_are_audited(logged_in, make_client):
   assert alice.delete(f'/api/v1/batch/{batch_id}/').status_code == 200
   event = AuditEvent.query.filter_by(action='batch.delete').one()
   assert (event.actor_label, event.target_id, event.project_id, event.meta["commit"]) == ("alice", str(batch_id), PROJECT, SHA)
+
+
+def test_runs_sent_together(client, monkeypatch, tmp_path):
+  """`qa batch` sends the runs it starts in one call: each is saved as if it was sent on its own"""
+  import backend.storage
+  from backend.models import Output
+  monkeypatch.setattr(backend.storage, 'storage_roots', [tmp_path])
+  runs = [
+    {"rel_input_path": "inputs/a.txt", "output_directory": str(tmp_path / "a"), "input_metadata": {"lux": 1}},
+    {"rel_input_path": "inputs/b.txt", "output_directory": str(tmp_path / "b")},
+    # refused, the others are saved
+    {"rel_input_path": "inputs/c.txt", "output_directory": "/etc/c"},
+    # sent twice: it's the same run
+    {"rel_input_path": "inputs/a.txt", "output_directory": str(tmp_path / "a"), "data": {"storage": 1}},
+    # another commit
+    {"rel_input_path": "inputs/d.txt", "commit_sha": "c" * 40},
+  ]
+  shared = {k: v for k, v in output_payload(is_pending=True).items() if k not in ('rel_input_path', 'metrics')}
+  response = client.post('/api/v1/outputs/', json={**shared, "runs": runs})
+  assert response.status_code == 200, response.get_data(as_text=True)
+  a, b, c, a_again, d = response.get_json()
+  assert c['status'] == 400 and 'storage' in c['error']
+  assert d == {"error": "The runs sent together share their project and commit", "status": 400}
+  assert a_again['id'] == a['id'] and a['id'] != b['id']
+  assert a['is_pending'] and a_again['data']['storage'] == 1 and a['test_input_metadata'] == {"lux": 1}
+  from backend.database import db_session
+  db_session.remove()
+  assert sorted(o.test_input.path for o in Output.query.all()) == ['inputs/a.txt', 'inputs/b.txt']
+  # what the run alone would have saved
+  alone = client.post('/api/v1/output/', json={**shared, **runs[1]}).get_json()
+  assert alone == {**b, 'queued_at': alone['queued_at'], 'created_date': b['created_date']}
+
+
+def test_runs_sent_together_need_a_list(client):
+  assert client.post('/api/v1/outputs/', json=output_payload()).status_code == 400
+  assert client.post('/api/v1/outputs/', json={**output_payload(), "runs": [{}] * 1001}).status_code == 400

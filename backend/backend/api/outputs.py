@@ -133,11 +133,80 @@ def get_output_manifest(output_id):
 def new_output_webhook():
   """Updates the database when we get new results."""
   data = request.get_json()
-  # git_commit_sha for backward-compatibility
-  hexsha = data.get('commit_sha') or data.get('git_commit_sha')
-  if not hexsha:
-    return jsonify({"error": "the commit (commit_sha) was not provided"}), 400
+  output, ci_commit, error = save_output(data)
+  if error:
+    return error
+  db_session.commit()
+  after_output_saved(output, ci_commit, data)
+  return jsonify(output.to_dict())
 
+
+# `qa batch` sends more in several calls
+max_runs_per_call = 1000
+
+@app.route('/api/v1/outputs', methods=['POST'])
+@app.route('/api/v1/outputs/', methods=['POST'])
+def new_outputs_webhook():
+  """
+  Many runs at once, e.g. the runs `qa batch` is about to start: {...what the runs share, "runs": [{...}, ...]}.
+  Each run, with what they share, is what POST /api/v1/output/ gets. They share their project and commit.
+  Answers with what /api/v1/output/ answers for each run, in order: the run, or {"error", "status", ...}.
+  One request and one transaction instead of one per run: several times faster.
+  """
+  body = request.get_json(silent=True)
+  if not isinstance(body, dict) or not isinstance(body.get('runs'), list) or not all(isinstance(run, dict) for run in body['runs']):
+    return jsonify({"error": "Send {...what the runs share, \"runs\": [{...each run}]}"}), 400
+  if len(body['runs']) > max_runs_per_call:
+    return jsonify({"error": f"Send at most {max_runs_per_call} runs per call"}), 400
+  shared = {k: v for k, v in body.items() if k != 'runs'}
+  commit_of = lambda data: (data.get('project'), data.get('commit_sha') or data.get('git_commit_sha'))
+  if error := check_ingest(shared)[1]:
+    return error
+  runs = [{**shared, **run} for run in body['runs']]
+  cache = {}
+  # New inputs are committed when they're created: if another request creates one at the same time, we roll back.
+  # Before we save the runs, we wouldn't lose them.
+  for data in runs:
+    path = data.get('rel_input_path', data.get('input_path'))
+    if path and data.get('database') and commit_of(data) == commit_of(shared) and not run_paths(data, cache)[2]:
+      input_key = ('input', str(data['database']), str(path))
+      if input_key not in cache:
+        cache[input_key] = TestInput.get_or_create(db_session, path=path, database=data['database'], autocommit=True)
+  saved, answers = [], []
+  for data in runs:
+    if commit_of(data) != commit_of(shared):
+      answers.append({"error": "The runs sent together share their project and commit", "status": 400})
+      continue
+    output, ci_commit, error = save_output(data, cache)
+    if error:
+      response, status = error
+      answers.append({**response.get_json(), "status": status})
+      continue
+    # the next runs see it, e.g. the same run sent twice
+    db_session.flush()
+    # after the commit, reading the runs would read them again: e.g. `qa batch` sends runs that are only pending
+    if not output.is_pending or data.get('metrics_definitions'):
+      saved.append((output, ci_commit, data))
+    answers.append(output.to_dict())
+  db_session.commit()
+  for output, ci_commit, data in saved:
+    after_output_saved(output, ci_commit, data)
+  return jsonify(answers)
+
+
+def check_ingest(data):
+  """(who sent the run, None) or (None, an error response)"""
+  # git_commit_sha for backward-compatibility
+  if not (data.get('commit_sha') or data.get('git_commit_sha')):
+    return None, (jsonify({"error": "the commit (commit_sha) was not provided"}), 400)
+  if error := invalid_project(data.get('project')):
+    return None, error
+  return ingest_access(data.get('project'))
+
+
+def run_paths(data, cache=None):
+  """(output_directory, artifacts_commit, None) or (None, None, an error response). `cache`: see save_output"""
+  cache = {} if cache is None else cache
   # The server will write, delete and run code in those folders
   output_directory = data.get('output_directory')
   # prefix_output_dir for backward-compatibility
@@ -145,29 +214,45 @@ def new_output_webhook():
   if not artifacts_commit or not artifacts_commit.startswith('/'): # or "some-protocol://"
     artifacts_commit = None # just ignore...
   try:
-    if output_directory:
-      check_storage_path(output_directory)
-    if artifacts_commit:
-      check_storage_path(artifacts_commit)
+    for path in (output_directory, artifacts_commit):
+      if path and ('path', path) not in cache:
+        check_storage_path(path)
+        cache[('path', path)] = True
   except UnsafePathError as e:
-    return jsonify({"error": f"{e}"}), 400
+    return None, None, (jsonify({"error": f"{e}"}), 400)
+  return output_directory, artifacts_commit, None
 
-  if error := invalid_project(data.get('project')):
-    return error
-  submitted_by, error = ingest_access(data.get('project'))
+
+def save_output(data, cache=None):
+  """
+  Saves a run `qa` sent in the database session, without committing: (output, commit, None), or (None, None, an error response).
+  `cache`: a dict to share when saving many runs of the same commit.
+  """
+  cache = {} if cache is None else cache
+  hexsha = data.get('commit_sha') or data.get('git_commit_sha')
+  if not hexsha:
+    return None, None, (jsonify({"error": "the commit (commit_sha) was not provided"}), 400)
+  output_directory, artifacts_commit, error = run_paths(data, cache)
   if error:
-    return error
+    return None, None, error
+  submitted_by, error = check_ingest(data)
+  if error:
+    return None, None, error
 
   # We get a handle on the Commit object related to our new output
-  try:
-    ci_commit = CiCommit.get_or_create(
-      session=db_session,
-      hexsha=hexsha,
-      project_id=data['project'],
-      data=data,
-    )
-  except Exception as e:
-    return jsonify({"error": f"Could not find your commit ({hexsha}). {e}"}), 404
+  commit_key = ('commit', data['project'], hexsha)
+  ci_commit = cache.get(commit_key)
+  if ci_commit is None:
+    try:
+      ci_commit = CiCommit.get_or_create(
+        session=db_session,
+        hexsha=hexsha,
+        project_id=data['project'],
+        data=data,
+      )
+    except Exception as e:
+      return None, None, (jsonify({"error": f"Could not find your commit ({hexsha}). {e}"}), 404)
+    cache[commit_key] = ci_commit
 
   # update the last_output times, with a crude debouncing to avoid
   # keeping locks on the tables too long
@@ -187,8 +272,8 @@ def new_output_webhook():
   # We make sure the Test on which we ran exists in the database 
   test_input_path = data.get('rel_input_path', data.get('input_path'))
   if not test_input_path:
-    return jsonify({"error": "the input path was not provided"}), 400
-  test_input = TestInput.get_or_create(
+    return None, None, (jsonify({"error": "the input path was not provided"}), 400)
+  test_input = cache.get(('input', str(data['database']), str(test_input_path))) or TestInput.get_or_create(
     db_session,
     path=test_input_path,
     database=data['database'],
@@ -272,7 +357,11 @@ def new_output_webhook():
 
   db_session.add(ci_commit)
   db_session.add(output)
-  db_session.commit()
+  return output, ci_commit, None
+
+
+def after_output_saved(output, ci_commit, data):
+  """Once the run is committed"""
   if not output.is_pending:
     # maybe the batch's last run: users may want to know
     on_run_ended(db_session, output.data.get('root_command_id'))
@@ -282,8 +371,7 @@ def new_output_webhook():
       save_metrics_definitions(db_session, ci_commit, data)
     except Exception as e:
       db_session.rollback()
-      print(f"WARNING: could not save the metrics definitions of a run of {hexsha}: {e}")
-  return jsonify(output.to_dict())
+      print(f"WARNING: could not save the metrics definitions of a run of {ci_commit.hexsha}: {e}")
 
 
 
