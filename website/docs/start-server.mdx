@@ -53,6 +53,8 @@ You deploy from this checkout: it has the compose files, nginx's and PostgreSQL'
 (`git checkout v<version>`), so that both match.
 
 ## 2. Create the results storage {#2-create-the-results-storage}
+<Anchor id="create-a-directory-to-store-results" />
+
 To start on a single host, a local folder works. Share it later:
 
 ```bash
@@ -142,6 +144,8 @@ QABOARD_WEBHOOK_SECRET=...
 :::
 
 ## 5. Deploy {#5-deploy}
+<Anchor id="starting-the-server" /><Anchor id="deployment" />
+
 ```bash
 # The first time: --init allows a new compose project, with an empty database
 deployments/deploy.py deployments/mysite/production.env up --version <version> --init
@@ -178,6 +182,8 @@ Admins see **Admin** in the user menu: users, sign-in, settings, and the jobs th
 checklist of what to look at next. More in [User management](/docs/backend-admin/user-management).
 
 ## 7. Choose how users sign in {#7-choose-how-users-sign-in}
+<Anchor id="managing-access-rights-and-users" />
+
 By default, users have local accounts, and anyone can create one from the sign-in page (**Create one**). Instead:
 - **Single sign-on** with OpenID Connect (Keycloak, Entra ID, Okta, Google...): see
   [Sign-in and single sign-on](/docs/backend-admin/sign-in).
@@ -299,6 +305,8 @@ Behind your proxy, a load balancer or an ingress, set `QABOARD_TRUSTED_PROXY_HOP
 users' IPs (see [rate limits and proxies](/docs/backend-admin/sign-in#rate-limits-and-proxies)).
 
 ## Run it day to day
+<Anchor id="optional-for-production" />
+
 - **Upgrade**: read the [release notes](/release-notes) ("Before you upgrade"), check out the new release, then
   `deploy.py <env file> up --version <version>`. If it goes wrong, `rollback`: see
   [Upgrades and rollbacks](/docs/backend-admin/deployment).
