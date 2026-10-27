@@ -704,7 +704,17 @@ async function showToolbar(ui: Ui, scope: Locator) {
 async function openAnalysis(ui: Ui, scope: Locator, view: 'Histogram' | 'Row / column' | 'Statistics') {
   await ui.click(scope.getByRole('button', { name: /the analysis of the view/ }));
   await ui.click(analysisPanel(scope).getByRole('radio', { name: view, exact: true }));
+  await blur(ui);
+}
+// No focus ring left on what was clicked
+async function blur(ui: Ui) {
+  await ui.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await ui.settle();
+}
+// The mouse on an empty part of the sidebar: over the commit bars, it would show the reference's Stack a reference tab
+async function mouseOff(ui: Ui) {
+  await ui.cursor.moveTo({ x: 100, y: 790 });
+  await ui.hold(300);
 }
 // The pixel of the new image the line above the images gives, for the last pixel hovered
 async function hoveredPixel(scope: Locator) {
@@ -754,7 +764,7 @@ shot('commit/image-wipe', {
     await showToolbar(ui, scope);
     await preset(ui, scope, 'Leaves over a window');
     await showToolbar(ui, scope);
-    await mouseAway(ui);
+    await mouseOff(ui);
   },
   target: page => [toolbar(viewer(page)), imageRow(viewer(page))],
   padding: 4,
@@ -774,7 +784,7 @@ clip('commit/image-compare-modes', {
     await showToolbar(ui, scope);
     await preset(ui, scope, 'Leaves over a window');
     await showToolbar(ui, scope);
-    await mouseAway(ui);
+    await mouseOff(ui);
   },
   // the toolbar, and the images at their largest: one image, as wide as the card
   region: async page => {
@@ -879,32 +889,43 @@ shot('commit/pixel-values', {
   padding: 4,
 });
 
+// The darkest values: the rims the new image clips to black
+const RANGE_MAX = 12;
+
 shot('commit/histogram-range', {
   project: IQ,
   url: d => halos(d, 'photos/facade base', { show: { [ISP_STAGE]: false } }),
   alt: 'The facade\'s leaves side by side, stripes over their darkest pixels; under them the histogram of the luma (Y), '
-    + 'new solid and reference dashed, the range 0 to 24 highlighted, and how much of each image is in it.',
+    + 'new solid and reference dashed, the range 0 to 12 highlighted, and how much of each image is in it.',
   caption: 'Drag on the histogram: stripes mark the pixels in the range, here the darkest, and the share of each image '
     + 'in it shows below.',
   actions: async ui => {
     const scope = viewer(ui.page);
     await showToolbar(ui, scope);
     await preset(ui, scope, 'Leaves over a window');
+    // closer on the leaves at the top right of the region, where the rims are darkest (like commit/image-sbs)
+    await zoom(ui, scope, { x: 82, y: 42 }, 4);
     await openAnalysis(ui, scope, 'Histogram');
     await ui.click(analysisPanel(scope).getByRole('button', { name: 'Y', exact: true }));
-    const plot = await stableBox(analysisPanel(scope).getByRole('slider', { name: /^Histograms of the displayed images/ }));
-    const at = (value: number) => ({ x: plot.x + plot.width * (value + 0.5) / 256, y: plot.y + plot.height * 0.6 });
-    await ui.drag(at(0), at(24));
-    await mouseAway(ui);
-    await ui.settle();
+    const plot = analysisPanel(scope).getByRole('slider', { name: /^Histograms of the displayed images/ });
+    const box = await stableBox(plot);
+    const at = (value: number) => ({ x: box.x + box.width * (value + 0.5) / 256, y: box.y + box.height * 0.6 });
+    await ui.drag(at(0), at(RANGE_MAX));
+    await blur(ui);
+    await mouseOff(ui);
   },
   target: page => [imageRow(viewer(page)), analysisPanel(viewer(page))],
-  padding: 4,
+  // the axis' first label, centered on the plot's edge
+  padding: 10,
 });
+
+// The slanted edge's left side, near vertical, halfway down: bright on the left, dark on the right
+const EDGE = { x: 366, y: 408 };
 
 shot('commit/image-profiles', {
   project: IQ,
-  url: d => halos(d, 'charts/slanted-edge base', { show: { [ISP_STAGE]: false } }),
+  // without the edge's plots: they make the card wider than the page (under the View options' rail)
+  url: d => halos(d, 'charts/slanted-edge base', { show: { [ISP_STAGE]: false, 'Edge profile': false, MTF: false } }),
   alt: 'The slanted edge zoomed in, new and reference side by side, a crosshair on the edge; under them, the profiles of '
     + 'the row and column under the pointer: across the edge, the new image (solid) dips lower on the dark side and '
     + 'rises higher on the bright side than the reference (dashed).',
@@ -916,9 +937,11 @@ shot('commit/image-profiles', {
     await preset(ui, scope, 'Measured edge');
     await openAnalysis(ui, scope, 'Row / column');
     await analysisPanel(scope).getByLabel('Profiles of').selectOption('pointer');
-    await ui.settle();
-    // on the edge, halfway down the view
-    await hoverPixel(ui, scope, 366, 408);
+    await blur(ui);
+    // on the edge, halfway down the view (examples/image-quality/qa/make_charts.py), closer: about 70 pixels across
+    const position = await hoverPixel(ui, scope, EDGE.x, EDGE.y);
+    await zoomTo(ui, scope, position, 800);
+    await hoverPixel(ui, scope, EDGE.x, EDGE.y);
     await ui.settle();
   },
   target: page => [pixelValues(viewer(page)), imageRow(viewer(page)), analysisPanel(viewer(page))],
@@ -928,7 +951,6 @@ shot('commit/image-profiles', {
 shot('commit/image-stats', {
   project: IQ,
   url: d => halos(d, 'charts/flat-gray low-light', { show: { [ISP_STAGE]: false } }),
-  viewport: { width: 1440, height: 1000 },
   alt: 'The flat gray chart in low light at 100%, new and reference side by side, the reference visibly noisier; under '
     + 'them the statistics per channel: the new image\'s standard deviation is about half the reference\'s, its SNR '
     + 'about 6 dB higher in luma.',
@@ -940,9 +962,9 @@ shot('commit/image-stats', {
     // every pixel: zoomed out, a screen pixel averages several and hides some noise
     await ui.click(scope.getByRole('button', { name: '1:1', exact: true }));
     await openAnalysis(ui, scope, 'Statistics');
-    await mouseAway(ui);
+    await mouseOff(ui);
   },
-  target: page => [toolbar(viewer(page)), imageRow(viewer(page)), analysisPanel(viewer(page))],
+  target: page => [imageRow(viewer(page)), analysisPanel(viewer(page))],
   padding: 4,
 });
 
@@ -962,17 +984,23 @@ shot('commit/image-raw-values', {
   actions: async ui => {
     const scope = viewer(ui.page, 2);
     await showToolbar(ui, scope);
+    // closer, until each pixel of the mosaic is a square of its color: about 10 screen pixels
+    const box = await stableBox(newImage(scope));
+    await zoomTo(ui, scope, { x: box.width / 2, y: box.height / 2 }, 1000);
     await openAnalysis(ui, scope, 'Statistics');
     await ui.click(analysisPanel(scope).getByRole('radio', { name: 'Image values', exact: true }));
     await analysisPanel(scope).getByText('Gr/Gb').waitFor({ timeout: 30_000 });
-    await mouseAway(ui);
+    await blur(ui);
+    await mouseOff(ui);
+    // the panel's bottom at the window's: the shot is a box, that the page isn't scrolled to
+    await analysisPanel(scope).evaluate(element => window.scrollBy(0, element.getBoundingClientRect().bottom - window.innerHeight + 8));
     await ui.settle();
   },
   // the bottom of the mosaic, and the panel under it
   target: async page => {
     const stage = await stableBox(imageRow(viewer(page, 2)));
     const panel = await stableBox(analysisPanel(viewer(page, 2)));
-    const top = stage.y + stage.height - 180;
+    const top = stage.y + stage.height - 200;
     return { x: panel.x - 4, y: top, width: panel.width + 8, height: panel.y + panel.height + 4 - top };
   },
 });
