@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.c2c03eb6.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.f59bb278.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0459941.js" defer="defer"></script>
 </head>
 <body>
@@ -34,9 +34,10 @@ with the Python code that runs yours. This page creates them, says what to fill 
 <div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">qa init</span><br></div></code></pre></div></div>
 <p>It creates these files, next to yours:</p>
 <div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">your-repository/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── qaboard.yaml       # your project: its name, where the inputs are, what to show, where results go</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">└── qa/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    ├── main.py        # runs your code: its run() function is what you edit</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    ├── batches.yaml   # batches: lists of inputs and configurations to run together</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    └── metrics.yaml   # optional: how to show your metrics</span><br></div></code></pre></div></div>
-<p>In a git repository, <code>qa init</code> fills in the project&#x27;s name, URL and reference branch from your git remote, when it
-can reach it. Otherwise it says <em>Please edit qaboard.yaml with your project name and url</em>: set them yourself, see
-<a href="#qaboard-yaml" class="">below</a>.</p>
+<p>In a git repository, <code>qa init</code> fills in the project&#x27;s name and URL from your git remote, and the reference branch
+from the remote&#x27;s default branch. When it can&#x27;t reach the remote (no network or credentials), the reference branch
+stays <code>master</code>, and it says so. Without a remote, it says <em>Please edit qaboard.yaml with your project name and
+url</em>: set them yourself, see <a href="#qaboard-yaml" class="">below</a>.</p>
 </li>
 <li class="">
 <p>Check that it works. Until you edit it, <code>qa/main.py</code> prints what it gets, then runs the command you give after the
@@ -44,9 +45,10 @@ input:</p>
 <div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">qa run </span><span class="token parameter variable" style="color:#36acaa">--input</span><span class="token plain"> /etc/hostname </span><span class="token string" style="color:#e3116c">&#x27;echo &quot;{input_path} =&gt; {output_dir}&quot;&#x27;</span><br></div></code></pre></div></div>
 <div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Outputs: &lt;your-repository&gt;/output/linux/etc-hostname</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Edit qa/main.py to run *your* code using the context</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  .output_dir:  &lt;your-repository&gt;/output/linux/etc-hostname</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  .input_path:  /etc/hostname</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">[...]</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">/etc/hostname =&gt; &lt;your-repository&gt;/output/linux/etc-hostname</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">{&#x27;is_failed&#x27;: False, &#x27;compute_time&#x27;: 0.017203330993652344}</span><br></div></code></pre></div></div>
 <p><code>&lt;your-repository&gt;</code> is where you ran <code>qa init</code>. The last line is what the run returned: its metrics.</p>
-<p>If <code>qa</code> stops with <em>The storage path does not exist</em>, it couldn&#x27;t create the folder for shared results, <code>storage</code>
-in <em>qaboard.yaml</em> (<code>/mnt/qaboard</code>). Set it to your server&#x27;s results folder, or for the
-<a class="" href="/qaboard/docs/get-started/quickstart">quickstart</a>&#x27;s server, <code>export QA_STORAGE=/tmp/qaboard</code>.</p>
+<p>If <code>qa</code> warns that <em>The storage path does not exist</em>, it couldn&#x27;t create the folder for shared results, <code>storage</code>
+in <em>qaboard.yaml</em> (<code>/mnt/qaboard</code>). Local runs like this one don&#x27;t need it. To share results, set it to your
+server&#x27;s results folder, or for the <a class="" href="/qaboard/docs/get-started/quickstart">quickstart</a>&#x27;s server,
+<code>export QA_STORAGE=/tmp/qaboard</code>.</p>
 </li>
 <li class="">
 <p>Commit <em>qaboard.yaml</em> and <code>qa/</code> with your code: every commit runs with its own.</p>

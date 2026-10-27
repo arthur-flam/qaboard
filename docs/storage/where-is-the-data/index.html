@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.c2c03eb6.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.f59bb278.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0459941.js" defer="defer"></script>
 </head>
 <body>
@@ -41,8 +41,10 @@ machine running <code>qa</code> mount at the same path, often an NFS share.</li>
 <p>The <code>QA_STORAGE</code> environment variable wins over it, e.g. <code>export QA_STORAGE=/tmp/qaboard</code> for the
 <a class="" href="/qaboard/docs/get-started/quickstart">quickstart</a>&#x27;s server, which reads results there. If your organization&#x27;s site package
 <a class="" href="/qaboard/docs/project-init#site-defaults">sets a <code>storage</code></a>, you don&#x27;t need one.</p>
-<p><code>qa</code> creates the folder if it doesn&#x27;t exist, and stops with <em>The storage path does not exist</em> when it can&#x27;t. The
-server must mount it too, at the same path: see <a class="" href="/qaboard/docs/deploy#create-a-directory-to-store-results">Starting a server</a>.</p>
+<p><code>qa</code> creates the folder if it doesn&#x27;t exist. When it can&#x27;t, the commands that use it stop with <em>The storage path
+does not exist</em>: <code>qa --share</code>, CI runs, <code>qa save-artifacts</code>, <code>qa check-bit-accuracy</code> and <code>qa optimize</code>. The others
+only warn: local runs save their results in your project&#x27;s <code>output/</code> folder. The server must mount the storage too,
+at the same path: see <a class="" href="/qaboard/docs/deploy#create-a-directory-to-store-results">Starting a server</a>.</p>
 <p>Under the storage, each commit&#x27;s results are in <code>&lt;project&gt;/&lt;first 2 characters of the commit&gt;/&lt;next 14&gt;/</code>, e.g.
 <code>/mnt/qaboard/kitefin/camera-isp/3f/a91c02d4e7b815/</code>.</p>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="split-storage-for-output-and-artifacts">Separate folders for outputs and artifacts<a href="#split-storage-for-output-and-artifacts" class="hash-link" aria-label="Direct link to Separate folders for outputs and artifacts" title="Direct link to Separate folders for outputs and artifacts" translate="no">​</a></h3>
