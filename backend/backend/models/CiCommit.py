@@ -19,7 +19,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from qaboard.conventions import get_commit_dirs
 from qaboard.api import dir_to_url
 
-from backend.models import Base, Batch, Output, batches_stats, no_stats
+from backend.models import Base, Batch, Output, batches_stats, no_stats, serialize_outputs
 from ..git_hosts import committer_avatar_url, committers
 from ..fs_utils import rm_empty_parents, rmtree
 from ..storage import check_storage_path, check_inside, UnsafePathError
@@ -382,12 +382,22 @@ class CiCommit(Base):
     return summary
 
   @staticmethod
+  def hexsha_matches(hexsha):
+    """
+    The commits whose id is `hexsha`, or starts with it. Full ids use the index: prefixes (LIKE) read all the
+    commits of the project, it adds up on every run we receive.
+    """
+    if isinstance(hexsha, str) and len(hexsha) >= 40:
+      return CiCommit.hexsha == hexsha
+    return CiCommit.hexsha.startswith(hexsha)
+
+  @staticmethod
   def get_or_create(session, hexsha, project_id, data=None):
     try:
       ci_commit =(session.query(CiCommit)
                          .filter(
                            CiCommit.project_id==project_id,
-                           CiCommit.hexsha.startswith(hexsha),
+                           CiCommit.hexsha_matches(hexsha),
                          )
                          .one())
     except NoResultFound:
@@ -470,7 +480,7 @@ class CiCommit(Base):
             session.query(CiCommit)
             .filter(
               CiCommit.project_id==project_id,
-              CiCommit.hexsha.startswith(hexsha),
+              CiCommit.hexsha_matches(hexsha),
             )
             .one()
           )
@@ -502,14 +512,17 @@ class CiCommit(Base):
     project_url = (project_data.get('qatools_config') or {}).get('project', {}).get('url')
     return committer_avatar_url(self.committer_name, project_data.get('git'), project_url)
 
-  def to_dict(self, db_session, with_aggregation=None, with_batches=None, with_outputs=False, batch_stats=None, cache=None):
+  def to_dict(self, db_session, with_aggregation=None, with_batches=None, with_outputs=False, batch_stats=None, cache=None, outputs=None):
     """
     `batch_stats`: the batches' counts of outputs and aggregated metrics, from batches_stats(). Queried if not given.
+    `outputs`: with_outputs, the batches' outputs, from serialize_outputs(). Queried if not given.
     `cache`: a dict to share when serializing many commits of a project, for what doesn't change between them.
     """
     batches = [b for b in self.batches if not with_batches or b.label in with_batches]
     if batch_stats is None:
       batch_stats = batches_stats(db_session, [b.id for b in batches], with_aggregation)
+    if with_outputs and outputs is None:
+      outputs = serialize_outputs(db_session, batches)
     if cache is None:
       cache = {}
     # e.g. GitHub avatars need an API call
@@ -539,7 +552,7 @@ class CiCommit(Base):
         'commit_dir_url': artifacts_url,           # backward compat for a while if projects using QA-Board rely on the API...
         'repo_commit_dir_url': repo_artifacts_url, # idem
         'batches': {
-          b.label: b.to_dict(db_session, with_outputs=with_outputs, with_aggregation=with_aggregation, stats=batch_stats.get(b.id, no_stats))
+          b.label: b.to_dict(db_session, with_outputs=with_outputs, with_aggregation=with_aggregation, stats=batch_stats.get(b.id, no_stats), outputs=outputs.get(b.id, {}) if with_outputs else None)
           for b in batches
         },
     }
@@ -553,7 +566,7 @@ class CiCommit(Base):
 def latest_successful_commit(session, project_id, branch, batch_label=None, within_last=20):
   """
   Returns the latest commit on a given branch where we got valid outputs (in the batch `batch_label` if given),
-  with its batches and outputs loaded. Only the latest within_last commits are checked...
+  with its batches loaded. Only the latest within_last commits are checked...
   """
   latest_commits = (session
                     .query(CiCommit.id)
@@ -577,7 +590,7 @@ def latest_successful_commit(session, project_id, branch, batch_label=None, with
     valid_outputs = valid_outputs.filter(Batch.label==batch_label)
   return (session
           .query(CiCommit)
-          .options(selectinload(CiCommit.batches).selectinload(Batch.outputs))
+          .options(selectinload(CiCommit.batches))
           .filter(
             CiCommit.id.in_(latest_commits.subquery().select()),
             valid_outputs.exists(),

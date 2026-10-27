@@ -36,8 +36,14 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
 
 ## Backend
 
-- **History page with outputs** is still ~2 s and ~19 MB for 25k outputs (backend/benchmarks/bench_api.py): building ORM
-  objects and `Output.to_dict`. Serialize from SQL rows (no ORM), or paginate/stream outputs. [M]
+- **History page with outputs** is still ~1.3 s and ~20 MB for 25k outputs (backend/benchmarks/bench_api.py), now that
+  outputs are serialized from rows: psycopg2 parses 5 JSON columns per output, and we dump them again. Let postgres build
+  the JSON, or paginate/stream outputs. [M]
+- **Aggregated metrics** of batches are slow to compute the first time (~2 s for the 1000 batches of 3 days of a big
+  project, more with more metrics): `outputs.metrics` is `json` (text), parsed once per metric. They are kept in redis
+  (backend/models/Batch.py), but a `jsonb` column, or numeric metrics saved apart, would make them fast. [L, migration]
+- With `jit = on` (postgres' default), the aggregations with many metrics are ~10% slower: JIT compiles them, it doesn't
+  pay off. Consider `jit = off` in services/db/qaboard.conf. [S, ops]
 - `GET .../manifest` writes manifests (api/outputs.py): make the refresh a POST, with OutputCard.jsx's `?refresh=true`. [S, API]
 - `/api/v1/tests/group` (api/tuning.py) creates projects on a GET. [S, API]
 - `trigger_jenkins_build` holds a uwsgi worker for 5-30 s (sleeps, then polls Jenkins' queue), and `jenkins_build` retries

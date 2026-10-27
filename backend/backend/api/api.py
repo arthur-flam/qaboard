@@ -20,7 +20,7 @@ from qaboard.compat import mappings as _path_mappings
 from qaboard.sentry_utils import traces_sample_rate
 
 from backend import app, db_session
-from ..models import Project, CiCommit, Batch, Output, ProjectView, batches_stats
+from ..models import Project, CiCommit, Batch, Output, ProjectView, batches_stats, serialize_outputs
 from ..config import skip_metrics_aggregation
 from ..search import parse_query, commits_search_filter, escape_like
 from ..metrics_aggregation import parse_metrics_arg
@@ -204,14 +204,11 @@ def get_commits(branch=None):
 
   with_outputs = False if request.args.get('with_outputs', 'false')=='false' else True
   ci_commits = db_session.query(CiCommit)
-  # We only load the batches we show
+  # We only load the batches we show (their outputs: below)
   batches = CiCommit.batches.and_(Batch.label.in_(with_batches)) if with_batches else CiCommit.batches
   if origins:
     batches = batches.and_(batch_origin_in(origins))
-  if with_outputs:
-    ci_commits = ci_commits.options(selectinload(batches).selectinload(Batch.outputs))
-  else:
-    ci_commits = ci_commits.options(selectinload(batches))
+  ci_commits = ci_commits.options(selectinload(batches))
   ci_commits = (in_scope(ci_commits)
     # only commits with results
     .filter(CiCommit.batches.any())
@@ -235,8 +232,9 @@ def get_commits(branch=None):
   has_more = len(commits) > limit if limit else None
   commits = commits[:limit] if limit else commits
   batch_ids = [b.id for c in commits for b in c.batches]
-  # One query for the counts of outputs and aggregated metrics of all batches
+  # One query for the counts of outputs and aggregated metrics of all batches, one for their outputs
   stats = batches_stats(db_session, batch_ids, metrics_to_aggregate)
+  outputs = serialize_outputs(db_session, [b for c in commits for b in c.batches]) if with_outputs else None
   cache = {}
   serializable_commits = [c.to_dict(
       db_session,
@@ -245,6 +243,7 @@ def get_commits(branch=None):
       with_outputs=with_outputs,
       batch_stats=stats,
       cache=cache,
+      outputs=outputs,
     )
     for c in commits
   ]
@@ -597,21 +596,29 @@ def get_projects():
              .group_by(CiCommit.project_id)
              .subquery()
             )
-  if summary:
-    data_columns = [Project.data['git'], Project.data['qatools_config']['project'], Project.data['legacy'], Project.data['latest_output_datetime']]
-  else:
-    data_columns = [Project.data]
   projects = (db_session
               .query(
                 Project.id,
                 Project.latest_output_datetime,
                 commits.c.latest_commit_datetime,
                 commits.c.total_commits,
-                *data_columns,
               )
               .join(commits, commits.c.project_id == Project.id)
               .order_by(asc(func.lower(Project.id)))
              )
+  if summary:
+    # Project.data is big (qaboard.yaml, the metrics...) and compressed: each -> would decompress all of it again.
+    # `|| {}` gives it decompressed, once (OFFSET 0 keeps postgres from inlining the subquery).
+    decompressed = (db_session
+                    .query(Project.id, Project.data.op('||', return_type=Project.data.type)(func.jsonb_build_object()).label('data'))
+                    .offset(0)
+                    .subquery())
+    data = decompressed.c.data
+    projects = (projects
+                .join(decompressed, decompressed.c.id == Project.id)
+                .add_columns(data['git'], data['qatools_config']['project'], data['legacy'], data['latest_output_datetime']))
+  else:
+    projects = projects.add_columns(Project.data)
   user_info = get_current_user(to_jsonify=False)
   signed_in = user_info.get('is_authenticated')
   usage = projects_usage(user_info.get('user_id') if signed_in else None, identity_of(g.actor.user) if signed_in else None)

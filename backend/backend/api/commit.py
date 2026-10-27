@@ -10,7 +10,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from backend import app, db_session
 from ..access import invalid_project
 from .auth import is_authorized_user, login_required, require_project_access, ingest_access, forbidden_project
-from ..models import Project, CiCommit, latest_successful_commit, Batch
+from ..models import Project, CiCommit, latest_successful_commit
 from ..storage import UnsafePathError
 from .. import recreate_artifacts
 from ..metrics_aggregation import parse_metrics_arg
@@ -82,11 +82,9 @@ def api_ci_commit(commit_id=None):
     return forbidden_project(project_id)
 
   # ?with_outputs=false: only the commit and its batches' counts and metrics, e.g. for the references users
-  # stacked but don't look at (a commit can have thousands of outputs)
+  # stacked but don't look at (a commit can have thousands of outputs). CiCommit.to_dict reads the outputs.
   with_outputs = request.args.get('with_outputs', 'true') != 'false'
   batches_loader = selectinload(CiCommit.batches)
-  if with_outputs:
-    batches_loader = batches_loader.selectinload(Batch.outputs)
 
   if not commit_id:
     commit_id = request.args.get('commit', None)
@@ -108,7 +106,7 @@ def api_ci_commit(commit_id=None):
               .order_by(CiCommit.authored_datetime.desc())
               .first())
     # fixme: some commits appear twice, one with a short hash...
-    ci_commit = find(CiCommit.hexsha.startswith(commit_id))
+    ci_commit = find(CiCommit.hexsha_matches(commit_id))
     if not ci_commit:
       # Check if the user provided a branch name instead of a commit ID
       ci_commit = find(CiCommit.branch==commit_id)

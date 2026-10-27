@@ -46,7 +46,7 @@ def find_commit(project_id: str, hexsha: str):
   """The commit with this sha (or the start of its sha) in the project, or None"""
   return (db_session
           .query(CiCommit)
-          .filter(CiCommit.project_id == project_id, CiCommit.hexsha.startswith(hexsha))
+          .filter(CiCommit.project_id == project_id, CiCommit.hexsha_matches(hexsha))
           .order_by(CiCommit.authored_datetime.desc())
           .first())
 
