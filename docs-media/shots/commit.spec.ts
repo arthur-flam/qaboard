@@ -1009,13 +1009,13 @@ shot('commit/image-fullscreen', {
   project: IQ,
   url: d => halos(d, 'photos/facade base', { show: { [ISP_STAGE]: false } }),
   alt: 'The image viewer in full screen: its toolbar, the facade\'s leaves side by side, new and reference, as large as '
-    + 'the screen allows, and the histogram of the view under them.',
+    + 'the screen allows, and the profiles of the view\'s columns and rows under them.',
   caption: 'Full screen gives the screen to the images, with the toolbar, and the analysis panel under them.',
   actions: async ui => {
     const scope = viewer(ui.page);
     await showCard(ui);
     await preset(ui, scope, 'Leaves over a window');
-    await openAnalysis(ui, scope, 'Histogram');
+    await openAnalysis(ui, scope, 'Row / column');
     await ui.click(scope.getByRole('button', { name: 'Full screen (f)' }));
     await ui.page.waitForFunction(() => !!document.fullscreenElement);
     await preset(ui, scope, 'Leaves over a window');
