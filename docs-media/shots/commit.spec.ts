@@ -688,6 +688,314 @@ clip('commit/dynamic-outputs', {
   },
 });
 
+// The image viewer's comparison tools (user-guide/image-viewer): the modes, another file of the run, the values written
+// on the pixels, the analysis panel under the images (histogram, profiles, statistics, a raw image's own values), full
+// screen. In Wipe and Single, one image takes the width of the card: 1094x729 px, which takes a 1020 px high window
+// (the viewer is at most its height − 260 px), else it's narrower.
+const TALL = { width: 1440, height: 1020 };
+const ISP_STAGE = 'ISP stage (1 raw, 2 demosaic, 3 denoise, 4 sharpen, 5 tone map)';
+const analysisPanel = (scope: Page | Locator) => scope.locator('.qiv-analysis').first();
+// The viewer's toolbar right below the commit bars, out of the mouse's way
+async function showToolbar(ui: Ui, scope: Locator) {
+  await toolbar(scope).evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top - 158));
+  await ui.settle();
+}
+// Opens the analysis panel under the images on one of its views
+async function openAnalysis(ui: Ui, scope: Locator, view: 'Histogram' | 'Row / column' | 'Statistics') {
+  await ui.click(scope.getByRole('button', { name: /the analysis of the view/ }));
+  await ui.click(analysisPanel(scope).getByRole('radio', { name: view, exact: true }));
+  await ui.settle();
+}
+// The pixel of the new image the line above the images gives, for the last pixel hovered
+async function hoveredPixel(scope: Locator) {
+  const text = await pixelValues(scope).innerText();
+  const match = /x (\d+)\s+y (\d+)/.exec(text);
+  if (!match) throw new Error(`[commit] no hovered pixel in "${text}"`);
+  return { x: Number(match[1]), y: Number(match[2]) };
+}
+// Hovers the pixel (x, y) of the new image: two hovers measure where the image is and how large its pixels are, then
+// the pointer goes to the pixel, closer each time. Returns its position in the new image's box.
+async function hoverPixel(ui: Ui, scope: Locator, x: number, y: number) {
+  const box = await stableBox(newImage(scope));
+  let position = { x: box.width * 0.25, y: box.height * 0.25 };
+  await ui.hover(newImage(scope), { position });
+  const first = await hoveredPixel(scope);
+  await ui.hover(newImage(scope), { position: { x: box.width * 0.75, y: box.height * 0.75 } });
+  const second = await hoveredPixel(scope);
+  // screen px per image px
+  const scale = (box.width * 0.5) / (second.x - first.x);
+  let at = first;
+  for (let i = 0; i < 4 && (at.x !== x || at.y !== y); i++) {
+    position = { x: position.x + (x - at.x) * scale, y: position.y + (y - at.y) * scale };
+    await ui.hover(newImage(scope), { position });
+    at = await hoveredPixel(scope);
+  }
+  if (at.x !== x || at.y !== y) throw new Error(`[commit] hovered ${at.x},${at.y} instead of ${x},${y}`);
+  return position;
+}
+// Zooms the viewers with the mouse wheel at a point of the new image (in its box), until about `percent`
+async function zoomTo(ui: Ui, scope: Locator, position: { x: number; y: number }, percent: number) {
+  const zoom = Number((await scope.locator('.qiv-zoom').first().innerText()).replace('%', ''));
+  // OpenSeadragon zooms by 1.2 per wheel step
+  const steps = Math.round(Math.log(percent / zoom) / Math.log(1.2));
+  await ui.wheel(newImage(scope), -100 * steps, { steps, position });
+  await ui.settle();
+}
+
+shot('commit/image-wipe', {
+  project: IQ,
+  url: d => halos(d, 'photos/facade base', { image_mode: 'wipe', show: { [ISP_STAGE]: false } }),
+  viewport: TALL,
+  alt: 'The comparison modes above the facade\'s leaves, Wipe selected: one image, new on the left of a divider, the '
+    + 'reference on its right; dark rims outline the leaves left of the divider only.',
+  caption: 'Wipe shows new and reference in one image, on each side of a divider you drag.',
+  actions: async ui => {
+    const scope = viewer(ui.page);
+    await showToolbar(ui, scope);
+    await preset(ui, scope, 'Leaves over a window');
+    await showToolbar(ui, scope);
+    await mouseAway(ui);
+  },
+  target: page => [toolbar(viewer(page)), imageRow(viewer(page))],
+  padding: 4,
+});
+
+clip('commit/image-compare-modes', {
+  project: IQ,
+  // the difference's maximum at 20%: the noise fades out, the halos stay
+  url: d => halos(d, 'photos/facade base', { show: { [ISP_STAGE]: false }, image_diff: { method: 'perceptual', max: 0.2 } }),
+  viewport: TALL,
+  alt: 'The facade\'s leaves, new and reference side by side; then Wipe, its divider dragged left and right; Single, the '
+    + 'image flipping between new and reference in place; Difference between them, then the difference alone, larger: '
+    + 'only the rims of the leaves stand out.',
+  caption: 'The four ways to compare: side by side, wipe, single (t flips the images), and their difference.',
+  actions: async ui => {
+    const scope = viewer(ui.page);
+    await showToolbar(ui, scope);
+    await preset(ui, scope, 'Leaves over a window');
+    await showToolbar(ui, scope);
+    await mouseAway(ui);
+  },
+  // the toolbar, and the images at their largest: one image, as wide as the card
+  region: async page => {
+    const bar = await stableBox(toolbar(viewer(page)));
+    const stage = await stableBox(imageRow(viewer(page)));
+    const height = stage.y - bar.y + Math.round(stage.width / 1.5) + 12;
+    return { x: stage.x - 8, y: bar.y - 6, width: stage.width + 16, height };
+  },
+  poster: 3500,
+  script: async ui => {
+    const scope = viewer(ui.page);
+    const mode = (name: string) => scope.getByRole('radio', { name, exact: true });
+    await ui.caption('Side by side (1): new and reference');
+    await ui.cursor.moveTo(newImage(scope));
+    await ui.hold(1300);
+
+    await ui.caption('Wipe (2): drag the divider across them');
+    await ui.click(mode('Wipe'));
+    await ui.settle();
+    const divider = scope.getByRole('separator', { name: 'Wipe' });
+    const stage = await stableBox(imageRow(scope));
+    const from = (await divider.boundingBox())!;
+    const y = from.y + from.height / 2;
+    await ui.drag(divider, { x: stage.x + stage.width * 0.28, y });
+    await ui.drag(divider, { x: stage.x + stage.width * 0.72, y });
+    await ui.drag(divider, { x: stage.x + stage.width * 0.5, y });
+    await ui.hold(500);
+
+    await ui.caption('Single (3): t flips them in place');
+    await ui.click(mode('Single'));
+    await ui.settle();
+    await ui.cursor.moveTo({ x: stage.x + stage.width * 0.6, y: stage.y + stage.width / 1.5 * 0.45 });
+    await ui.hold(500);
+    for (let i = 0; i < 4; i++) {
+      await ui.press('t');
+      await ui.hold(650);
+    }
+
+    await ui.caption('Difference (4): where they differ');
+    await ui.click(mode('Difference'));
+    await ui.settle();
+    await ui.hold(1500);
+    await ui.caption('4 again: the difference alone, larger');
+    await ui.cursor.moveTo({ x: stage.x + stage.width * 0.6, y: stage.y + stage.width / 1.5 * 0.45 });
+    await ui.press('4');
+    await ui.settle();
+    await ui.hold(2200);
+  },
+});
+
+shot('commit/image-vs-file', {
+  project: IQ,
+  // the ISP's sharpening stage: stages/4.jpg
+  url: d => stages(d, 'photos/facade base linux', 4),
+  alt: 'The sharpened stage of the facade, stages/4.jpg, compared with the denoised one of the same run, stages/3.jpg, on '
+    + 'a teal label; the vs stages/3.jpg menu open lists the reference, isp-4.1, then the run\'s other images with '
+    + 'thumbnails, stages/3.jpg checked, and Apply to: All runs or This run.',
+  caption: 'vs ▾ compares an image with another file of the run, here the sharpened stage with the denoised one, '
+    + 'instead of the reference.',
+  actions: async ui => {
+    const scope = viewer(ui.page, 1);
+    await showToolbar(ui, scope);
+    await preset(ui, scope, 'Leaves over a window');
+    const vs = scope.getByRole('button', { name: /^vs / });
+    await ui.click(vs);
+    await ui.click(scope.locator('.qiv-popover').getByText('stages/3.jpg', { exact: true }));
+    await ui.settle();
+    // the menu again, on the image picked
+    await ui.click(vs);
+    await ui.settle();
+  },
+  target: page => [toolbar(viewer(page, 1)), imageRow(viewer(page, 1)), viewer(page, 1).locator('.qiv-popover').first()],
+  padding: 4,
+});
+
+// On the facade, where the leaves cross the window: a dark rim, near black in the new image (12), dark gray in the
+// reference (63)
+const RIM = { x: 698, y: 120 };
+
+shot('commit/pixel-values', {
+  project: IQ,
+  url: d => halos(d, 'photos/facade base', { show: { [ISP_STAGE]: false } }),
+  alt: 'The leaves\' rim zoomed in to 5000%, new and reference side by side, each pixel with its red, green and blue '
+    + 'values written on it; above, the hovered pixel\'s values in both images; the 123 menu open: Image values, '
+    + 'Displayed values or Off.',
+  caption: 'Zoomed in, the values are written on the pixels: here the dark rim along a leaf, near black in the new image. '
+    + 'The 123 button picks the image\'s own values or the displayed ones.',
+  actions: async ui => {
+    const scope = viewer(ui.page);
+    await showCard(ui);
+    await preset(ui, scope, 'Leaves over a window');
+    const position = await hoverPixel(ui, scope, RIM.x, RIM.y);
+    await zoomTo(ui, scope, position, 5000);
+    await hoverPixel(ui, scope, RIM.x, RIM.y);
+    // the values arrive by tiles of 64x64 pixels
+    await scope.locator('.qiv-values-badge').filter({ hasText: /^Values: image/ }).waitFor();
+    await ui.page.waitForFunction(() => !document.querySelector('.qiv-values-badge .qiv-spinner'));
+    await ui.click(scope.getByRole('button', { name: 'Pixel values' }));
+    await ui.settle();
+  },
+  target: page => [toolbar(viewer(page)), imageRow(viewer(page)), viewer(page).locator('.qiv-popover').first()],
+  padding: 4,
+});
+
+shot('commit/histogram-range', {
+  project: IQ,
+  url: d => halos(d, 'photos/facade base', { show: { [ISP_STAGE]: false } }),
+  alt: 'The facade\'s leaves side by side, stripes over their darkest pixels; under them the histogram of the luma (Y), '
+    + 'new solid and reference dashed, the range 0 to 24 highlighted, and how much of each image is in it.',
+  caption: 'Drag on the histogram: stripes mark the pixels in the range, here the darkest, and the share of each image '
+    + 'in it shows below.',
+  actions: async ui => {
+    const scope = viewer(ui.page);
+    await showToolbar(ui, scope);
+    await preset(ui, scope, 'Leaves over a window');
+    await openAnalysis(ui, scope, 'Histogram');
+    await ui.click(analysisPanel(scope).getByRole('button', { name: 'Y', exact: true }));
+    const plot = await stableBox(analysisPanel(scope).getByRole('slider', { name: /^Histograms of the displayed images/ }));
+    const at = (value: number) => ({ x: plot.x + plot.width * (value + 0.5) / 256, y: plot.y + plot.height * 0.6 });
+    await ui.drag(at(0), at(24));
+    await mouseAway(ui);
+    await ui.settle();
+  },
+  target: page => [imageRow(viewer(page)), analysisPanel(viewer(page))],
+  padding: 4,
+});
+
+shot('commit/image-profiles', {
+  project: IQ,
+  url: d => halos(d, 'charts/slanted-edge base', { show: { [ISP_STAGE]: false } }),
+  alt: 'The slanted edge zoomed in, new and reference side by side, a crosshair on the edge; under them, the profiles of '
+    + 'the row and column under the pointer: across the edge, the new image (solid) dips lower on the dark side and '
+    + 'rises higher on the bright side than the reference (dashed).',
+  caption: 'Profiles of the row and column under the pointer: across the edge, the new image overshoots on both sides, '
+    + 'the halos the sharpening adds.',
+  actions: async ui => {
+    const scope = viewer(ui.page);
+    await showToolbar(ui, scope);
+    await preset(ui, scope, 'Measured edge');
+    await openAnalysis(ui, scope, 'Row / column');
+    await analysisPanel(scope).getByLabel('Profiles of').selectOption('pointer');
+    await ui.settle();
+    // on the edge, halfway down the view
+    await hoverPixel(ui, scope, 366, 408);
+    await ui.settle();
+  },
+  target: page => [pixelValues(viewer(page)), imageRow(viewer(page)), analysisPanel(viewer(page))],
+  padding: 4,
+});
+
+shot('commit/image-stats', {
+  project: IQ,
+  url: d => halos(d, 'charts/flat-gray low-light', { show: { [ISP_STAGE]: false } }),
+  viewport: { width: 1440, height: 1000 },
+  alt: 'The flat gray chart in low light at 100%, new and reference side by side, the reference visibly noisier; under '
+    + 'them the statistics per channel: the new image\'s standard deviation is about half the reference\'s, its SNR '
+    + 'about 6 dB higher in luma.',
+  caption: 'Statistics of the view, per channel: on a flat gray in low light, the new denoiser halves the standard '
+    + 'deviation, a 6 dB better SNR.',
+  actions: async ui => {
+    const scope = viewer(ui.page);
+    await showToolbar(ui, scope);
+    // every pixel: zoomed out, a screen pixel averages several and hides some noise
+    await ui.click(scope.getByRole('button', { name: '1:1', exact: true }));
+    await openAnalysis(ui, scope, 'Statistics');
+    await mouseAway(ui);
+  },
+  target: page => [toolbar(viewer(page)), imageRow(viewer(page)), analysisPanel(viewer(page))],
+  padding: 4,
+});
+
+shot('commit/image-raw-values', {
+  project: IQ,
+  // the raw sensor data, as the fixed-point model saves it: a PNG where each pixel has one of R, G and B. It's the same in
+  // both commits: one image
+  url: d => d.commitUrl(IQ, 'merge-bilateral', {
+    reference: 'isp-4-1', view: 'output-list', filter: 'photos/facade hw-model',
+    controls: { show: { Output: false, [ISP_STAGE]: false }, dynamic_options: { stage: ['1'] } },
+  }),
+  alt: 'The raw mosaic of the facade\'s window, red, green and blue pixels; under it, Image values picked in the analysis '
+    + 'panel: a card shows RGGB Bayer with a diagram, 8-bit, guessed from the pixels, and the statistics of R, Gr, Gb '
+    + 'and B with the ratios R/G, B/G and Gr/Gb.',
+  caption: 'Image values analyzes a raw image per channel of its color filter array: the card shows the pattern it '
+    + 'found, the table each channel\'s statistics.',
+  actions: async ui => {
+    const scope = viewer(ui.page, 2);
+    await showToolbar(ui, scope);
+    await openAnalysis(ui, scope, 'Statistics');
+    await ui.click(analysisPanel(scope).getByRole('radio', { name: 'Image values', exact: true }));
+    await analysisPanel(scope).getByText('Gr/Gb').waitFor({ timeout: 30_000 });
+    await mouseAway(ui);
+    await ui.settle();
+  },
+  // the bottom of the mosaic, and the panel under it
+  target: async page => {
+    const stage = await stableBox(imageRow(viewer(page, 2)));
+    const panel = await stableBox(analysisPanel(viewer(page, 2)));
+    const top = stage.y + stage.height - 180;
+    return { x: panel.x - 4, y: top, width: panel.width + 8, height: panel.y + panel.height + 4 - top };
+  },
+});
+
+shot('commit/image-fullscreen', {
+  project: IQ,
+  url: d => halos(d, 'photos/facade base', { show: { [ISP_STAGE]: false } }),
+  alt: 'The image viewer in full screen: its toolbar, the facade\'s leaves side by side, new and reference, as large as '
+    + 'the screen allows, and the histogram of the view under them.',
+  caption: 'Full screen gives the screen to the images, with the toolbar, and the analysis panel under them.',
+  actions: async ui => {
+    const scope = viewer(ui.page);
+    await showCard(ui);
+    await preset(ui, scope, 'Leaves over a window');
+    await openAnalysis(ui, scope, 'Histogram');
+    await ui.click(scope.getByRole('button', { name: 'Full screen (f)' }));
+    await ui.page.waitForFunction(() => !!document.fullscreenElement);
+    await preset(ui, scope, 'Leaves over a window');
+    await ui.cursor.moveTo({ x: 1000, y: 12 });
+    await ui.settle();
+  },
+});
+
 // Output Files: the tree of a run's files, only those that differ from the reference's by default. A folder opens with
 // its caret (a click on its name does nothing), a file shows its diff below the tree.
 const treeCaret = (scope: Locator, folder: string) => scope.locator('.bp6-tree-node-content')

@@ -95,6 +95,13 @@ shot('commits/filter', {
 
 const DE = 'detection-eval';
 
+// When milestones were last updated, as the seed saved them. The snapshot's milestones predate the description of
+// their runs (datasets, qa batches): the backend describes them the first time it lists them, and that write sets
+// their updated_at to the server's clock (backend/api/milestones.py: list_milestones' backfill), days after T0, the
+// captures' clock: menus said "in 5 days". The seed sets updated_at to created_at (docs-media/seed.py).
+const asSaved = (milestone: any, t0: Date) =>
+  new Date(milestone.updated_at) > t0 ? { ...milestone, updated_at: milestone.created_at } : milestone;
+
 // A personal milestone in a group, and a favorite, without changing the demo's database: in the API's answer only, the
 // page loaded again. entropy-try is the entropy calibration commit's CI batch, as commit/milestone saves it (its runs
 // are the release's: the same CI batch), kd-1.3 a favorite
@@ -102,7 +109,8 @@ async function withEntropyTry(ui: Ui) {
   const { page, demo: d } = ui;
   await page.route('**/api/v1/milestones?*', async route => {
     const response = await route.fetch();
-    const { milestones } = await response.json() as { milestones: any[] };
+    const body = await response.json() as { milestones: any[] };
+    const milestones = body.milestones.map(m => asSaved(m, d.t0));
     const release = milestones.find((m: any) => m.label === 'kd-1.3') ?? milestones[0];
     // story.yaml: entropy-calib, -10d 15:00, saved after its CI batch
     const saved = at(d, -10, '17:00');
@@ -112,7 +120,7 @@ async function withEntropyTry(ui: Ui) {
       message: 'feat(quant): try entropy calibration', created_at: saved, updated_at: saved,
     };
     const marked = milestones.map((m: any) => m.id === release?.id ? { ...m, is_favorite: true } : m);
-    await route.fulfill({ response, json: { milestones: [...marked, entropy] } });
+    await route.fulfill({ response, json: { ...body, milestones: [...marked, entropy] } });
   });
   await page.reload();
   await ui.settle();
