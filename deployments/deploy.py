@@ -15,7 +15,8 @@ Usage (from the root of the repository):
     deployments/deploy.py ENV_FILE compose ARGS...     # e.g. compose logs -f backend
 
 ENV_FILE describes an environment, e.g. deployments/sirc/production.env. It's a docker compose env file
-that sets at least COMPOSE_FILE and COMPOSE_PROJECT_NAME. Variables from the shell take precedence.
+that sets at least COMPOSE_FILE and COMPOSE_PROJECT_NAME. docker compose also gets .env, at the root of the checkout,
+if it exists, like plain `docker compose` reads it: ENV_FILE wins over it, and the shell's variables over both.
 
 `up` does:
 1. Pull the images for $QABOARD_VERSION (or build them with --build)
@@ -79,11 +80,18 @@ def read_env_file(path: Path) -> Dict[str, str]:
 
 class Deployment:
     def __init__(self, env_file: str, version: Optional[str] = None):
+        self.env_file_arg = env_file  # as the user wrote it, for the commands we print
         self.env_file = Path(env_file).resolve()
         if not self.env_file.exists():
             die(f"{env_file} does not exist")
-        file_env = read_env_file(self.env_file)
-        # Like docker compose: the shell's environment takes precedence over the env file
+        # docker compose reads .env by default, but not with --env-file: without it, a setting in .env would reach the
+        # backend (its env_file) only when docker-compose.yml doesn't set it from ${...}, e.g. QABOARD_LOGIN_TYPE.
+        # The environment's env file comes last, so that it wins (COMPOSE_PROJECT_NAME!)
+        dotenv = ROOT / ".env"
+        self.env_files = [dotenv] if dotenv.is_file() and dotenv.resolve() != self.env_file else []
+        self.env_files.append(self.env_file)
+        file_env = {k: v for path in self.env_files for k, v in read_env_file(path).items()}
+        # Like docker compose: the shell's environment takes precedence over the env files
         self.settings = {**file_env, **{k: os.environ[k] for k in file_env if k in os.environ}}
         self.project = self.settings.get("COMPOSE_PROJECT_NAME") or die(f"Set COMPOSE_PROJECT_NAME in {env_file}")
         self.state_path = ROOT / f".deploy-state.{self.project}.json"
@@ -97,7 +105,8 @@ class Deployment:
 
     # --- helpers ---
     def compose_cmd(self, *args: str) -> List[str]:
-        return ["docker", "compose", "--project-directory", str(ROOT), "--env-file", str(self.env_file), *args]
+        env_files = [arg for path in self.env_files for arg in ("--env-file", str(path))]
+        return ["docker", "compose", "--project-directory", str(ROOT), *env_files, *args]
 
     def compose(self, *args: str, check=True, capture=False) -> subprocess.CompletedProcess:
         cmd = self.compose_cmd(*args)
@@ -217,7 +226,7 @@ class Deployment:
 
     # --- deploy ---
     def up(self, build: bool = False, pull: bool = True, init: bool = False) -> None:
-        log(f"Deploying {self.project} version={self.version or '(untagged)'} with {self.env_file}")
+        log(f"Deploying {self.project} version={self.version or '(untagged)'} with {' and '.join(map(str, self.env_files))}")
         config = self.config()
         existing = self.docker("ps", "-aq", "--filter", f"label=com.docker.compose.project={self.project}") or \
                    self.docker("volume", "ls", "-q", "--filter", f"label=com.docker.compose.project={self.project}")
@@ -257,6 +266,7 @@ class Deployment:
         infra = [s for s in services if s not in ("backend", "proxy", *STATIC_SERVICES)]
         if infra:
             self.up_services(infra, config, "--remove-orphans")
+        self.warn_stopped_services(services)
 
         # 4. Backend
         self.rolling_update("backend", replicas, services)
@@ -282,6 +292,18 @@ class Deployment:
         self.state_path.write_text(json.dumps(self.state, indent=2))
         self.cleanup_images(config, ours)
         log(f"✅ Deployed {self.project} {self.version or ''}")
+
+    def warn_stopped_services(self, services: List[str]) -> None:
+        """
+        --remove-orphans keeps the containers of services whose profile isn't enabled any more, e.g. pgadmin and flower
+        since they need the "tools" profile: they would keep running, with their old configuration.
+        """
+        running = self.docker("ps", "--filter", f"label=com.docker.compose.project={self.project}",
+                              "--format", '{{.Label "com.docker.compose.service"}}', check=False).split()
+        stale = sorted(set(running) - set(services))
+        if stale:
+            log(f"WARNING: {' '.join(stale)} still run, but the configuration doesn't start them any more (their profile "
+                f"isn't in COMPOSE_PROFILES?). To stop them: {sys.argv[0]} {self.env_file_arg} compose rm -sf {' '.join(stale)}")
 
     def rolling_update(self, service: str, replicas: int, services: List[str]) -> None:
         for c in self.containers(service):

@@ -193,3 +193,10 @@ services:
   # Shares the backend image (which installs flower>=2.1.0), so only backend needs building
   flower:
     image: "gitlab-srv:4567/common-infrastructure/qaboard:backend${QABOARD_VERSION:+-$QABOARD_VERSION}"
+    # Always started, as before docker-compose.yml put it behind the "tools" profile. Its port, pgadmin's and RabbitMQ's
+    # are on all the host's interfaces as before: QABOARD_TOOLS_HOST_IP and QABOARD_RABBITMQ_HOST_IP in the env files
+    profiles: !reset []
+
+  # nginx proxies /pgadmin4/ to it (nginx/qaboard.conf): nginx doesn't start without it
+  pgadmin:
+    profiles: !reset []

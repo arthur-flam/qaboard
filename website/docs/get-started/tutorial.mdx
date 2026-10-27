@@ -337,7 +337,8 @@ See [Dask integration](/docs/dask-integration).
 </TabItem>
 <TabItem value="celery" label="Celery">
 
-Send runs to Celery workers through a message broker, e.g. the RabbitMQ that QA-Board's Docker Compose stack starts:
+Send runs to Celery workers through a message broker, e.g. the RabbitMQ that QA-Board's Docker Compose stack starts
+(once your admin publishes its port):
 
 ```yaml title="qaboard.yaml"
 runners:

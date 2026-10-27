@@ -27,7 +27,7 @@ deployments/deploy.py deployments/sirc/production.env compose exec backend bash
 deployments/deploy.py deployments/sirc/production.env compose exec backend wget -qO- localhost:3001/api/v1/health
 ```
 
-`deploy.py ... compose` is `docker compose --env-file ...` with the images of the deployed version. Plain `docker compose --env-file deployments/sirc/production.env ...` works for anything that doesn't (re)create containers.
+`deploy.py ... compose` is `docker compose --env-file .env --env-file ...` with the images of the deployed version. Plain `docker compose --env-file deployments/sirc/production.env ...` works for anything that doesn't (re)create containers.
 
 > **Tip**: the backend runs several replicas. `compose exec`/`logs` pick one; add `--index N` for another. With old docker compose versions, `exec` can complain that "container #1" is not running after a deploy: use `--index` with the numbers from `docker compose ps`.
 

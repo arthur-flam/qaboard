@@ -40,6 +40,11 @@ services:
   #   volumes:
   #     - ./deployments/nginx/mysite.conf:/etc/nginx/conf.d/mysite.conf:ro
 
+  # The image server reads /iiif/2/<path> from /repository/<path>: mount your storage there, read-only
+  # cantaloupe:
+  #   volumes:
+  #     - /mnt/qaboard:/repository/mnt/qaboard:ro
+
   # Disable cantaloupe if using a different image server:
   # cantaloupe:
   #   profiles: [disabled]

@@ -32,9 +32,10 @@ deployments/deploy.py deployments/mysite/production.env compose logs -f backend
 ```
 
 Keep secrets out of the env files: put them in `.env` on the host, which the backend reads. `deploy.py` gives docker
-compose your env file instead of `.env`, so the settings docker compose reads itself, and those that
-*docker-compose.yml* sets from them (`QABOARD_LOGIN_*`, `QABOARD_ADMINS`, `QABOARD_INGEST_AUTH`), go in the env file
-or the overlay: see [where each setting goes](/docs/deploy#4-write-the-env-file-and-the-secrets).
+compose both files, `.env` first, so the env file wins over it: see
+[where each setting goes](/docs/deploy#4-write-the-env-file-and-the-secrets). Plain `docker compose` with an
+`--env-file` doesn't read `.env`: pass it first, `--env-file .env --env-file deployments/mysite/production.env`, to
+(re)create containers.
 
 ## Deploying
 ```bash
@@ -196,6 +197,8 @@ In the env file, or the shell's environment (which takes precedence):
 | `QABOARD_VERSION` | the deployed version | Image version (tag suffix), e.g. the commit. `up --version` sets it. |
 | `QABOARD_IMAGE` | `ghcr.io/samsung/qaboard` | Where the images are pulled from: a mirror, a fork's `ghcr.io/<owner>/qaboard`, your CI's registry |
 | `QABOARD_PORT_HTTP` | 5151 | The host's port of the web app (nginx) |
+| `COMPOSE_PROFILES` | _none_ | `tools` starts pgAdmin and Flower (see [pgAdmin and Flower](/docs/deploy#admin-tools)) |
+| `QABOARD_RABBITMQ_HOST_IP`, `QABOARD_TOOLS_HOST_IP` | 127.0.0.1 | The IP that RabbitMQ's ports, and pgAdmin's and Flower's, listen on. Empty: all the host's interfaces |
 | `QABOARD_BACKEND_REPLICAS` | 1 | Backend replicas. 2+ for zero-downtime deploys. |
 | `QABOARD_UWSGI_PROCESSES`, `QABOARD_UWSGI_CHEAPER`, `QABOARD_UWSGI_CHEAPER_INITIAL` | 16, 8, 16 | uwsgi processes *per replica* (max, min, initial) |
 | `QABOARD_DEPLOY_PRE_HOOK` | _none_ | A command run before deploying, e.g. to mount network volumes |

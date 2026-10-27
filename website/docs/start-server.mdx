@@ -32,13 +32,8 @@ projects to look at.
 - **A hostname** that your users, CI runners and git hosts reach, e.g. `qaboard.example.com`, and a TLS certificate
   for HTTPS.
 - **One port**: the web app, the API and the webhooks answer on port 5151 (`QABOARD_PORT_HTTP`), or 443 with HTTPS.
-
-:::danger Close the other ports
-*docker-compose.yml* also publishes, on all the host's interfaces: pgAdmin on 5050, with a default login that opens
-the database; RabbitMQ on 5672 and 15672, with `guest:guest` (anyone who reaches it can run commands on Celery
-workers); and Flower on 8888, without a login. Firewall them, or remove them in your overlay ([step 3](#3-describe-your-site)).
-See the [known issues](https://github.com/Samsung/qaboard/blob/master/SECURITY.md#known-issues) in *SECURITY.md*.
-:::
+  The other services don't answer on the network: RabbitMQ only listens on `127.0.0.1`, and the admin tools only
+  start if you ask ([pgAdmin and Flower](#admin-tools)).
 
 ## 1. Get QA-Board {#1-get-qa-board}
 On the host:
@@ -94,17 +89,16 @@ services:
     volumes:
     # nginx serves /s/<path> from /var/qaboard/<path>
     - /mnt/qaboard:/var/qaboard/mnt/qaboard:ro
-  # The ports to close (see above)
-  pgadmin:
-    profiles: [disabled]
-  rabbitmq:
-    ports: !reset []  # keep them if Celery workers on other hosts use it
-  flower:
-    ports: !reset []
+  cantaloupe:
+    volumes:
+    # The image server reads /iiif/2/<path> from /repository/<path>
+    - /mnt/qaboard:/repository/mnt/qaboard:ro
 ```
 
 - **The storage** is mounted at the same path in the backend, and under `/var/qaboard/` in nginx, which serves it at
-  `/s/`: browsers that open a folder there get QA-Board's [file browser](/docs/user-guide/files).
+  `/s/`: browsers that open a folder there get QA-Board's [file browser](/docs/user-guide/files). The image server,
+  Cantaloupe, makes the image viewers' tiles from `/repository/`. It doesn't check who can read images: mount only the
+  storage there, read-only.
 - **`QABOARD_URL`**: use `https://` only once HTTPS works ([below](#using-ssl--hosting-behind-a-reverse-proxy)):
   session cookies are then only sent over HTTPS.
 - **Other settings** go in `services.backend.environment` too: see [environment variables](#optional-environment-variables).
@@ -133,14 +127,13 @@ QABOARD_WEBHOOK_SECRET=...
 # SECRET_KEY=...
 ```
 
-:::caution Where each setting goes
-- **`.env`**: secrets. The backend gets all its variables.
-- **The env file**: what docker compose reads itself: `COMPOSE_*`, `QABOARD_PORT_HTTP`, `QABOARD_BACKEND_REPLICAS`,
-  `QABOARD_IMAGE`... `deploy.py` gives it to docker compose, which then doesn't read `.env` for those.
-- **The overlay's `services.backend.environment`**: the other settings. *docker-compose.yml* sets
-  `QABOARD_LOGIN_TYPE`, `QABOARD_LOGIN_REQUIRED`, `QABOARD_LOGIN_RESTRICTED`, `QABOARD_LOGIN_RESTRICTED_YAML`,
-  `QABOARD_ADMINS` and `QABOARD_INGEST_AUTH` from the env file, which wins over `.env`: set them in the overlay or in
-  the env file, never in `.env`.
+:::note Where each setting goes
+- **`.env`**: the secrets, and the settings of this host. The backend gets all its variables, and `deploy.py` gives
+  it to docker compose too.
+- **The env file**: the environment's settings, like `COMPOSE_*`, `QABOARD_PORT_HTTP` or `QABOARD_BACKEND_REPLICAS`.
+  It wins over `.env`.
+- **The overlay's `services.backend.environment`**: the backend's other settings, kept in git with the overlay. It
+  wins over both.
 :::
 
 ## 5. Deploy {#5-deploy}
@@ -155,7 +148,8 @@ deployments/deploy.py deployments/mysite/production.env up --version <version> -
 (`ghcr.io/samsung/qaboard:<service>-<version>`), runs the database migrations, starts the services, and records the
 version, so that `rollback` can come back to it. Without `--version`, it deploys the latest images of `master`;
 with `--build`, it builds the images from your checkout. Plain
-`docker compose --env-file deployments/mysite/production.env up -d` works too, without zero-downtime upgrades.
+`docker compose --env-file .env --env-file deployments/mysite/production.env up -d` works too, without zero-downtime
+upgrades.
 
 **Check it worked:**
 
@@ -232,19 +226,8 @@ Before you open it to your team:
   webhooks: without it, anyone can send fake push events.
 - **Turn off local sign-up** (`auth.local_signup`) if only admins create accounts, and require signing in if
   anonymous users shouldn't see results.
-- **Close the other ports** ([above](#prerequisites)), and only expose QA-Board to networks you trust.
-- **Show only the storage to the image server**: *docker-compose.yml* mounts the whole host in Cantaloupe, which
-  doesn't check who can read images. In your overlay:
-
-  ```yaml title="deployments/mysite/mysite.yml"
-  services:
-    cantaloupe:
-      volumes: !override
-      - cache_cantaloupe:/var/cache/cantaloupe
-      - /srv/cantaloupe
-      # Each storage root, read-only: Cantaloupe reads /iiif/2/<path> from /repository/<path>
-      - /mnt/qaboard:/repository/mnt/qaboard:ro
-  ```
+- **Only expose QA-Board to networks you trust**, and keep the [admin tools](#admin-tools) off when you don't use
+  them.
 
 The security checklist in **Admin → Overview** checks the sign-in, token and HTTPS settings. *SECURITY.md* lists the
 [known issues](https://github.com/Samsung/qaboard/blob/master/SECURITY.md#known-issues) and their mitigations.
@@ -349,6 +332,37 @@ Or use cron jobs on the host:
 ```
 
 `qaboard_clean --help` lists the command's options.
+
+### pgAdmin and Flower {#admin-tools}
+*docker-compose.yml* comes with two admin tools: [pgAdmin](https://www.pgadmin.org/), to browse the database, and
+[Flower](https://flower.readthedocs.io/), to follow the Celery workers. They only start with its `tools` profile: add
+`COMPOSE_PROFILES=tools` to the env file, and deploy again.
+
+- **pgAdmin** answers on the host only, at `http://localhost:5050`: from your computer, open an SSH tunnel first,
+  `ssh -L 5050:localhost:5050 <host>`. Set your own `PGADMIN_DEFAULT_EMAIL` and `PGADMIN_DEFAULT_PASSWORD` in `.env`.
+- **Flower** has no login: nginx serves it at `/flower/` to anyone who can open QA-Board, and it can stop workers and
+  cancel tasks. Turn it on only if you trust everyone who can reach the server.
+
+To stop them, remove the profile, deploy, and remove their containers:
+`deployments/deploy.py <env file> compose rm -sf pgadmin flower` (`deploy.py` warns while they still run).
+
+<details>
+<summary>Publish pgAdmin, Flower or RabbitMQ on the network</summary>
+
+Their ports answer on `127.0.0.1` only, RabbitMQ's too. To open them to other hosts, e.g. RabbitMQ for
+[Celery workers](/docs/celery-integration), set the IP they listen on in the env file, or leave it empty for all the
+host's interfaces, and firewall them:
+
+```bash title="deployments/mysite/production.env"
+# RabbitMQ: 5672, and its management UI on 15672
+QABOARD_RABBITMQ_HOST_IP=
+# pgAdmin: 5050, Flower: 8888
+QABOARD_TOOLS_HOST_IP=10.0.0.5
+```
+
+RabbitMQ's login is `guest:guest`: anyone who can reach it can run commands on the Celery workers.
+
+</details>
 
 <Cards>
   <Card title="Upgrades and rollbacks" to="/docs/backend-admin/deployment">

@@ -19,7 +19,6 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 5. **Every `POST /api/v1/batch` overwrites the commit's qaboard.yaml with the client's** (api/batch.py:50-58, and models/CiCommit.py:272 for projects). [S, behaviour]
 6. **`qa get` is broken on Python ≥ 3.13, and CI only tests 3.11 while the backend image runs 3.13** (qaboard/qa.py:170-179, .github/workflows/ci.yaml). [S, behaviour]
 7. **The server process runs with `umask 0` after the first manifest refresh** (models/Output.py:370), and other `os.umask(000)` windows race between threads. [S, behaviour]
-8. **docker-compose.yml publishes RabbitMQ (guest/guest), Flower and pgadmin on all host interfaces** (docker-compose.yml:131-132,147,226). [S, behaviour]
 
 ## Security
 
@@ -129,12 +128,8 @@ Found while surveying the code base (October 2026), after the cleanups that chan
 
 ## Deployments, services, charts
 
-- **Exposed services** (docker-compose.yml): RabbitMQ (131-132) with `guest:guest`, whose workers run shell commands; Flower (147),
-  which can revoke tasks and shut workers down; pgadmin (226) with a default password and a passfile for the database. Use `expose`
-  or bind to `127.0.0.1` by default, and let overlays publish them. [S, behaviour]
 - **nginx forwards no `X-Forwarded-*` headers to uwsgi** (services/nginx/conf.d/qaboard.conf:34-46): `proxy_set_header` doesn't apply to
   `uwsgi_pass`, so SAML's `prepare_flask_request` (api/auth.py:530) sees none. Use `uwsgi_param HTTP_X_FORWARDED_PROTO $scheme;` etc. [S, behaviour]
-- Cantaloupe mounts `/` (docker-compose.yml:201, already flagged INSECURE): mount only the storage roots. [S, behaviour]
 - The default database password is `password` (docker-compose.yml:59, database.py:16): read it from the env file like `SECRET_KEY`. [S, behaviour]
 - Default celery broker URL with credentials in code (api/tuning.py:299). [S, no change]
 

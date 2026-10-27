@@ -23,6 +23,10 @@
 # Usage:
 # - The application is served on port 5151 by default
 # - Your responsibility to setup another reverse proxy on top for SSL
+# - Only that port is published on all the host's interfaces. RabbitMQ and the admin tools answer on 127.0.0.1, unless
+#   QABOARD_RABBITMQ_HOST_IP and QABOARD_TOOLS_HOST_IP (in your env file) give another IP, or are empty: all interfaces.
+# - The admin tools, pgAdmin and Flower, only start with the "tools" profile: COMPOSE_PROFILES=tools in your env file
+#   (or `docker compose --profile tools ...`)
 
 # General docker compose usage:
 #   docker compose up                    # start the whole stack
@@ -107,7 +111,8 @@ services:
     # Set in .env, not here (see above): single sign-on with OpenID Connect (QABOARD_OIDC_ISSUER, QABOARD_OIDC_CLIENT_ID,
     # QABOARD_OIDC_CLIENT_SECRET, see website/docs/backend-admin/sign-in.mdx), and QABOARD_ENCRYPTION_KEY, that encrypts
     # the secrets of the sign-in providers added in the admin panel (long random text, e.g. `openssl rand -base64 32`)
-    - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:${QABOARD_PORT_RABBITMQ:-5672}//
+    # RabbitMQ's port in the Docker network (QABOARD_PORT_RABBITMQ is the one on the host)
+    - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//
     - QABOARD_RUN_MIGRATIONS
     # 0: don't run the server's jobs (Admin > Storage) next to uwsgi, if you run `qaboard-admin jobs worker` elsewhere
     - QABOARD_JOBS_WORKER
@@ -151,15 +156,21 @@ services:
     hostname: rabbitmq-qaboard
     volumes:
     - rabbitmq-data:/var/lib/rabbitmq
+    # On this host only by default: its login is guest:guest, and Celery workers run the commands of the tasks they get.
+    # For workers or `qa` on other hosts, set QABOARD_RABBITMQ_HOST_IP in your env file: the IP to listen on, or empty
+    # for all the host's interfaces (website/docs/celery-integration.mdx): `-`, not `:-`, so that empty isn't the default
     ports:
-    - ${QABOARD_PORT_RABBITMQ:-5672}:5672
-    - ${QABOARD_PORT_RABBITMQ_MNGT:-15672}:15672
+    - ${QABOARD_RABBITMQ_HOST_IP-127.0.0.1}:${QABOARD_PORT_RABBITMQ:-5672}:5672
+    - ${QABOARD_RABBITMQ_HOST_IP-127.0.0.1}:${QABOARD_PORT_RABBITMQ_MNGT:-15672}:15672
 
 
   # https://flower.readthedocs.io/en/latest/config.html#options
   # Note: flower 2.x registers via the `celery.commands` entry point, so it is launched through celery. It shares the backend
   # image (which installs flower>=2.1.0), so only backend needs building.
+  # Only with the "tools" profile: it has no login, and can stop workers and cancel tasks. nginx serves it at /flower/
+  # (to anyone who can open QA-Board), and the host at 127.0.0.1:8888/flower/ (QABOARD_TOOLS_HOST_IP, like pgadmin)
   flower:
+    profiles: [tools]
     image: "${QABOARD_IMAGE:-ghcr.io/samsung/qaboard}:backend${QABOARD_VERSION:+-$QABOARD_VERSION}"
     environment:
       - CELERY_BROKER_URL=pyamqp://guest@rabbitmq//
@@ -168,7 +179,7 @@ services:
       - FLOWER_URL_PREFIX=flower
     command: celery -A qaboard.runners.celery_app flower
     ports:
-      - "${QABOARD_PORT_FLOWER:-8888}:8888"
+      - "${QABOARD_TOOLS_HOST_IP-127.0.0.1}:${QABOARD_PORT_FLOWER:-8888}:8888"
     depends_on:
         - backend
         - rabbitmq
@@ -215,12 +226,17 @@ services:
     - ./services/nginx:/tmp/etc/nginx
     - frontend_builds:/builds:ro
     - website_builds:/docs:ro
+    # Not flower: it's optional, nginx finds it when it runs (see services/nginx/conf.d/qaboard.conf)
     depends_on:
     - backend
     - cantaloupe
-    - flower
 
   # IIIF image server to serve images as tiles
+  # It reads /iiif/2/<path> from /repository/<path>, and doesn't check who can read the images: mount each storage
+  # root there in your site overlay, read-only, like nginx's /var/qaboard/, e.g.
+  #   cantaloupe:
+  #     volumes:
+  #     - /mnt/qaboard:/repository/mnt/qaboard:ro
   cantaloupe:
     image: "${QABOARD_IMAGE:-ghcr.io/samsung/qaboard}:cantaloupe${QABOARD_VERSION:+-$QABOARD_VERSION}"
     build:
@@ -230,20 +246,21 @@ services:
     volumes:
     - cache_cantaloupe:/var/cache/cantaloupe
     - /srv/cantaloupe
-    # INSECURE/FIXME: obviously it's not a great default, but not clear how to do better
-    - /:/repository
     environment:
       CANTALOUPE_MEM_START: 1g
       CANTALOUPE_MEM_MAX: 2g
     command: sh -c 'java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xms$${CANTALOUPE_MEM_START} -Xmx$${CANTALOUPE_MEM_MAX} -jar /usr/local/cantaloupe/cantaloupe-$${VERSION}.jar'
 
 
-  # For convenience, we also bundle pgadmin
-  # Login at localhost:5050, and use "password" as password
+  # For convenience, we also bundle pgadmin, with the "tools" profile (COMPOSE_PROFILES=tools in your env file)
+  # Login at localhost:5050 on the host (from elsewhere: `ssh -L 5050:localhost:5050 <host>`, or set QABOARD_TOOLS_HOST_IP
+  # like QABOARD_RABBITMQ_HOST_IP) with PGADMIN_DEFAULT_EMAIL and PGADMIN_DEFAULT_PASSWORD (set your own in .env),
+  # and use "password" as the database's password
   # Note: pgadmin ships with utilities at e.g. /usr/local/pgsql-12
   # More configuration options, e.g. reverse proxying with nginx:
   # https://www.pgadmin.org/docs/pgadmin4/development/container_deployment.html
   pgadmin:
+    profiles: [tools]
     image: dpage/pgadmin4
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-user@domain.com}
@@ -256,7 +273,7 @@ services:
       - ./services/pgadmin/servers.json:/pgadmin4/servers.json
       - ./services/pgadmin/passfile:/pgadmin4/passfile
     ports:
-    - "${PGADMIN_PORT:-5050}:80"
+    - "${QABOARD_TOOLS_HOST_IP-127.0.0.1}:${PGADMIN_PORT:-5050}:80"
 
 
   redis:

@@ -71,12 +71,12 @@ Code that runs as the server's user can read its credentials (database, GitLab t
 *Planned*: per-project ingest policies (signed-in senders already need the developer role), and running the tests listing without access to the server's credentials.
 
 ### Insecure defaults in `docker-compose.yml`
-- RabbitMQ is published on ports 5672/15672 with the `guest:guest` account. Celery workers run the shell commands given in the tasks they receive, so **anyone who can reach RabbitMQ can run commands on the workers**.
-- Flower is published on port 8888 without authentication.
+- RabbitMQ uses the `guest:guest` account. Celery workers run the shell commands given in the tasks they receive, so **anyone who can reach RabbitMQ can run commands on the workers**. `docker-compose.yml` publishes it on `127.0.0.1` only, but sites whose workers run on other hosts publish it on the network.
+- Flower has no authentication. It only runs with the `tools` profile of `docker-compose.yml`, and nginx then serves it at `/flower/` to anyone who can reach QA-Board.
 - Postgres uses the password `password`, and some deployment files publish its port.
-- pgAdmin uses a default password.
+- pgAdmin uses a default password. It only runs with the `tools` profile, on `127.0.0.1`.
 
-*Mitigations*: don't publish these ports outside the Docker network (or firewall them), and change all the default credentials.
+*Mitigations*: keep these ports on the Docker network or the host (or firewall them), only enable the `tools` profile when you need it, and change all the default credentials.
 
 ### Webhooks
 Without `QABOARD_WEBHOOK_SECRET`, anyone who can reach the server can send fake push events to `/webhook/gitlab` and `/webhook/github`: they make the server fetch repositories, and change the projects' git metadata.
@@ -91,7 +91,7 @@ Without `QABOARD_WEBHOOK_SECRET`, anyone who can reach the server can send fake 
 
 ### Other
 - `POST /api/v1/webhook/proxy` lets logged-in users send any HTTP request to any URL from the server (SSRF), e.g. to internal services. It is used for the webhook integrations configured in `qaboard.yaml`.
-- Anyone who can reach the server can read the files it serves under `/s/`, unless you restrict them (see [user management](https://samsung.github.io/qaboard/docs/backend-admin/user-management#restricting-who-can-read-files)). Even then, the image server (IIIF, `/iiif/`) doesn't check permissions, and `docker-compose.yml` mounts the whole host filesystem in it (`/:/repository`): anyone who can reach it can read the images it can decode, anywhere on the host.
+- Anyone who can reach the server can read the files it serves under `/s/`, unless you restrict them (see [user management](https://samsung.github.io/qaboard/docs/backend-admin/user-management#restricting-who-can-read-files)). Even then, the image server (IIIF, `/iiif/`) doesn't check permissions: anyone who can reach it can read the images it can decode in the folders mounted in its container. Before October 2026, `docker-compose.yml` mounted the whole host filesystem there (`/:/repository`); now sites mount their storage.
   *Mitigations*: mount only the storage folders in the image server's container, and don't expose `/iiif/` to untrusted networks.
 - The example WebDAV configuration (`services/nginx/webdav.conf`) lets anyone who can reach the server read, write and delete files, without QA-Board's checks. It is only enabled where a deployment includes it.
 - `GET /api/v1/export` lets logged-in users create links or copies of output files in most folders the server can write to.

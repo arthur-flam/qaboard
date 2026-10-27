@@ -11,8 +11,11 @@ environment variables (except those whose names contain `TOKEN`, `ACCESS`, `AUTH
 that folder, your inputs and the results storage at the same paths, e.g. on shared drives.
 
 ## Start workers and send them runs {#starting-celery-workers}
-1. **Get a broker.** QA-Board's Docker Compose deployment starts RabbitMQ on port `5672` (not the quickstart's). To
-   start another one:
+1. **Get a broker.** QA-Board's Docker Compose deployment starts RabbitMQ on port `5672` (not the quickstart's), on
+   the server only (`127.0.0.1`). For workers and `qa` on other hosts, the server's admin publishes it on the network
+   with `QABOARD_RABBITMQ_HOST_IP=` (empty: all the host's interfaces) in the env file, and firewalls it: its login is
+   `guest:guest`, and anyone who reaches it can run commands on the workers
+   ([publishing RabbitMQ](/docs/deploy#admin-tools)). Or start another one:
 
    ```bash
    docker run --detach -p 5672:5672 rabbitmq
@@ -48,7 +51,8 @@ Without `--share` (or a CI), runs write their files in `output/`, in the folder 
 
 ## Monitor the workers {#monitoring}
 QA-Board's Docker Compose deployment includes [Flower](https://flower.readthedocs.io/en/latest/), at
-`http://<your-qaboard>/flower`, where `<your-qaboard>` is your server's address. See also Celery's [monitoring guide](https://docs.celeryq.dev/en/stable/userguide/monitoring.html).
+`http://<your-qaboard>/flower/`, where `<your-qaboard>` is your server's address, once an admin starts it (its `tools`
+profile, see [pgAdmin and Flower](/docs/deploy#admin-tools)). See also Celery's [monitoring guide](https://docs.celeryq.dev/en/stable/userguide/monitoring.html).
 
 ## Celery settings {#advanced-celery-configuration}
 Settings under `runners.celery` are given to Celery:
