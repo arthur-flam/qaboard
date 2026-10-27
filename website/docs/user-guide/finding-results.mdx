@@ -7,9 +7,11 @@ description: Find a project, a commit, a branch or a batch of runs, and filter w
 Find the results you came for: your commit, the right batch of runs, then only the runs that matter.
 
 ## Find your commit {#find-your-commit}
-Open your project from the home page. Once signed in, you land on **your batches**: what you ran in the project, from
-the web app or your terminal (see [Yours or everyone's](#yours-or-everyones)). Click **Everyone** for the **commit list**,
-the latest commits with results on all branches, newest first. From there, find a commit in one of three ways:
+Open your project from your home page, or from [Explore](#projects-list), which lists every project. You can also
+press <kbd>Ctrl</kbd> <kbd>K</kbd> and type its name (see [Search from anywhere](#command-palette)). Once signed in,
+you land on **your batches**: what you ran in the project, from the web app or your terminal (see
+[Yours or everyone's](#yours-or-everyones)). Click **Everyone** for the **commit list**, the latest commits with
+results on all branches, newest first. From there, find a commit in one of three ways:
 
 - **Scroll the list.** Commits are grouped by day. On the right of each row, the **N runs** button (e.g. **5 runs**)
   opens the commit page.
@@ -30,8 +32,8 @@ The list shows the last 3 days. If your commit isn't there, search for it, or pi
 
 ## Yours or everyone's {#yours-or-everyones}
 Signed in, a project's page starts with your work: **Yours** lists the batches you started, the latest first, with their
-progress while they run. On top, **Latest on master** (the project's reference branch) shows where the reference is,
-whoever committed it.
+progress while they run. On top, **Latest on** the project's reference branch (e.g. **Latest on main**) shows where
+the reference is, whoever committed it.
 
 - **See everyone's**: click **Everyone**, or the *N commits by everyone* count. The page remembers your choice for the
   project, and the link you copy says which you see.
@@ -144,7 +146,7 @@ CI batch went:
 CI batch: check its CI pipeline, or open one of its other batches.
 
 The list refreshes every minute. The 50 latest commits show up first, more come as you scroll down (or click
-**More commits**).
+**More commits**). To see more commits at once, pick **Compact** above the list: one line per commit (see below).
 
 <details>
 <summary>Everything you can click in a commit row</summary>
@@ -170,7 +172,7 @@ The list refreshes every minute. The 50 latest commits show up first, more come 
 To see more commits at once, pick **Compact** above the list (**Comfortable** brings back the rows above). Each
 commit then takes one line, in columns that line up like a table: an icon for the CI batch's status (finished, failed,
 running, waiting), the short hash, the message, the branch, the committer, the date, then the batch's results and the
-☰ menu. The web app remembers your choice in this browser.
+☰ menu. The web app remembers your choice: signed in, on every computer. **Settings → Preferences** sets it too.
 
 Hover to see what doesn't fit:
 - the **message** shows the whole commit message, the **date** the exact time;
