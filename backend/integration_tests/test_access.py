@@ -96,6 +96,7 @@ def endpoints(batch_id, output_id):
     "save groups": (("POST", f'/api/v1/tests/groups?project={PROJECT}&name=extra-batches', {"groups": {}}), (403, 403, "ok")),
     "export": (("GET", f'/api/v1/export?project={PROJECT}&new_commit_id={SHA}', None), (403, 403, "ok")),
     "milestone": (("POST", '/api/v1/milestones', {"project": PROJECT, "label": "m", "commit_hexsha": SHA, "commit_project_id": PROJECT, "batch": "default"}), (403, 403, "ok")),
+    "viewer settings": (("POST", '/api/v1/project/settings', {"project": PROJECT, "sensor": {"black_level": 64}}), (403, 403, "ok")),
     "visibility": (("POST", '/api/v1/project/access/visibility', {"project": PROJECT, "visibility": "private"}), (403, 403, 403)),
   }
 
@@ -326,6 +327,33 @@ def test_the_yaml_restrictions_still_apply(client, logged_in, monkeypatch):
   access = bob.get(f'/api/v1/project/access?project={PROJECT}').get_json()
   assert (access["my_role"], access["via"]) == ("developer", "yaml")
   assert access["visibility"]["effective"] == "private" and access["visibility"]["inherited_from"] == "QABOARD_LOGIN_RESTRICTED_YAML"
+
+
+def test_viewer_settings_are_for_everyone(team, client, monkeypatch):
+  """Developers save the sensor of the project's raw images for everyone who can see the project"""
+  sensor = {"kind": "mosaic", "pattern": "GRBG", "block": 2, "offset": {"x": 0, "y": 0}, "black_level": 64}
+  assert team['bob'].get(f'/api/v1/project/access?project={PROJECT}').get_json()["can_save_viewer_settings"] is True
+  carol = team['carol'].get(f'/api/v1/project/access?project={PROJECT}').get_json()
+  assert carol["can_save_viewer_settings"] is False
+  response = team['carol'].post('/api/v1/project/settings', json={"project": PROJECT, "sensor": sensor})
+  assert response.status_code == 403
+  assert response.get_json()["error"] == f"You need the developer role to save the viewers' settings of {PROJECT}: you're a viewer."
+
+  response = team['bob'].post('/api/v1/project/settings', json={"project": PROJECT, "sensor": sensor})
+  assert response.status_code == 200, response.get_json()
+  saved = response.get_json()["settings"]["sensor"]
+  assert {k: v for k, v in saved.items() if k not in ("updated_by", "updated_at")} == sensor
+  assert saved["updated_by"] == {"user_name": "bob", "full_name": "Bob"}
+  # everyone who can see the project reads it with the project
+  assert team['carol'].get(f'/api/v1/project?project={PROJECT}').get_json()["settings"]["sensor"] == saved
+  # results sent afterwards don't lose it, even when they update the project's configuration
+  assert ingest(client, commit_sha="d" * 40, qaboard_config={"project": {"name": PROJECT, "reference_branch": "master"}}).status_code == 200
+  data = team['carol'].get(f'/api/v1/project?project={PROJECT}').get_json()
+  assert data["settings"]["sensor"] == saved and data["qatools_config"]["project"]["name"] == PROJECT
+
+  assert team['alice'].post('/api/v1/project/settings', json={"project": PROJECT, "sensor": None}).get_json() == {"settings": {}}
+  assert "settings" not in team['carol'].get(f'/api/v1/project?project={PROJECT}').get_json()
+  assert team['bob'].post('/api/v1/project/settings', json={"project": PROJECT, "sensor": {"block": 12}}).status_code == 400
 
 
 def test_changes_are_audited(team):

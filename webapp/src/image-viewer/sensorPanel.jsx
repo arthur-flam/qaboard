@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
 import { BLOCKS, CFA_PATTERNS, CHANNEL_COLORS as CFA_COLORS, GROUPINGS, blockName, cellAt, cellNames, channelRatios, describeCfa, normalizeCfa } from './cfa';
-import { analyzeImage, forgetGuess } from './imageAnalysis';
+import { analyzeImage, forgetGuess, normalizeSensorSetting, setsSensor, withOwnSetting } from './imageAnalysis';
 import { niceTicks } from './analysis';
 import { isLight } from './panels';
 import { MARGIN, ProfilePlot } from './profilePlot';
@@ -46,8 +46,9 @@ export const watchStillRegion = (controller, onRegion, { still = 400, every = 10
   };
 };
 
-// The analysis of the images' values over the view, once it stops moving: { status, progress, results: { a, b }, error }
-export const useImageAnalysis = ({ controller, images, comparing, sizes, getPixels, setting, active }) => {
+// The analysis of the images' values over the view, once it stops moving: { status, progress, results: { a, b }, error }.
+// `saved`: what's saved for everyone, after the images' metadata
+export const useImageAnalysis = ({ controller, images, comparing, sizes, getPixels, setting, saved = null, active }) => {
   const [region, setRegion] = useState(null);
   useEffect(() => {
     if (!active) return;
@@ -58,7 +59,7 @@ export const useImageAnalysis = ({ controller, images, comparing, sizes, getPixe
   const [version, setVersion] = useState(0);
   const key_a = images.a ? imageKey(images.a) : '';
   const key_b = comparing && images.b ? imageKey(images.b) : '';
-  const key = JSON.stringify([region, setting, key_a, key_b, version]);
+  const key = JSON.stringify([region, setting, saved, key_a, key_b, version]);
   const run = useEffectEvent(signal => {
     const names = comparing && images.b ? ['a', 'b'] : ['a'];
     const progress = Object.fromEntries(names.map(name => [name, [0, 1]]));
@@ -72,6 +73,7 @@ export const useImageAnalysis = ({ controller, images, comparing, sizes, getPixe
     };
     Promise.all(names.map(name => analyzeImage(getPixels, images[name], regionOf(name), sizes[name], setting, {
       signal,
+      saved,
       onProgress: (done, total) => {
         progress[name] = [done, total];
         const [d, t] = Object.values(progress).reduce(([d, t], [a, b]) => [d + a, t + b], [0, 0]);
@@ -105,12 +107,19 @@ export const useImageAnalysis = ({ controller, images, comparing, sizes, getPixe
 const SOURCES = {
   user: { label: 'yours', title: 'You set it' },
   metadata: { label: 'metadata', title: "From the image's metadata" },
+  saved: { label: 'saved', title: 'Saved for everyone' },
   pixels: { label: 'guessed', title: 'Guessed from the pixels' },
   mode: { label: 'type', title: "From the type of the image's values" },
   values: { label: 'values', title: 'From the values' },
   default: { label: 'default', title: "Unknown: a default, set it if it's wrong" },
 };
-const SourceTag = ({ source, detail }) => source ? <span className={`qiv-source qiv-source-${source}`} title={`${SOURCES[source]?.title ?? source}${detail ? `: ${detail}` : ''}`}>{SOURCES[source]?.label ?? source}</span> : null;
+// Where users' settings are remembered (e.g. "in this browser"), and what's saved for everyone is for (e.g. "project")
+const sourcesFor = ({ remembered, savedFor, savedNote } = {}) => ({
+  ...SOURCES,
+  user: { label: 'yours', title: `You set it${remembered ? `, remembered ${remembered}` : ''}` },
+  saved: { label: savedFor ?? 'saved', title: `Saved for ${savedFor ? `the ${savedFor}` : 'everyone'}${savedNote ? ` ${savedNote}` : ''}` },
+});
+const SourceTag = ({ source, detail, sources = SOURCES }) => source ? <span className={`qiv-source qiv-source-${source}`} title={`${sources[source]?.title ?? source}${detail ? `: ${detail}` : ''}`}>{sources[source]?.label ?? source}</span> : null;
 
 const formatInteger = n => Math.round(n).toLocaleString('en-US');
 
@@ -219,18 +228,91 @@ const NumberField = ({ label, value, placeholder, onChange, min = 0, max, step =
   </label>;
 };
 
-const SensorEditor = ({ analysis, setting, onChange, onGuessAgain }) => {
+// What a setting says, e.g. "GRBG · Tetra 2×2, black 64"
+export const describeSetting = setting => {
+  const { kind, pattern, block, offset, blackLevel } = normalizeSensorSetting(setting);
+  const parts = [];
+  if (kind === 'mono') parts.push('one channel');
+  else if (pattern && block) parts.push(describeCfa({ pattern, block }));
+  else if (pattern) parts.push(pattern);
+  else if (block) parts.push(`${blockName(block)}${block > 1 ? ` ${block}×${block}` : ''}`);
+  else if (kind === 'mosaic') parts.push('a mosaic');
+  if (kind !== 'mono' && (offset?.x || offset?.y)) parts.push(`from (${offset.x}, ${offset.y})`);
+  if (blackLevel !== null) parts.push(`black ${blackLevel}`);
+  return parts.join(', ');
+};
+
+// What's saved for everyone (e.g. for the project), and saving what users set for everyone. `storage` has the
+// viewer's props: { remembered, saved, savedFor, savedNote, onSave, saveUnavailable }
+const SavedSetting = ({ setting, onChange, storage }) => {
+  const { saved, savedFor, savedNote, onSave, saveUnavailable } = storage;
+  const [status, setStatus] = useState(null);
+  const the = savedFor ? `the ${savedFor}` : 'everyone';
+  const whose = savedFor ? `the ${savedFor}'s` : 'these';
+  const own = setsSensor(setting);
+  const next = withOwnSetting(saved, setting);
+  const save = async value => {
+    setStatus({ saving: true });
+    try {
+      await onSave(value);
+      // it's saved: what users set doesn't override it anymore
+      if (value) onChange({ grouping: setting.grouping });
+      setStatus({ done: value ? `Saved for ${the}.` : `Forgotten for ${the}.` });
+    } catch (error) {
+      setStatus({ error: error?.message || String(error) });
+    }
+  };
+  return <div className="qiv-sensor-saved">
+    <div className="qiv-field">
+      <span className="qiv-field-label">{savedFor ? `For the ${savedFor}` : 'For everyone'}</span>
+      {saved ? <strong className="qiv-sensor-saved-value">{describeSetting(saved)}</strong> : <span className="qiv-muted">nothing saved</span>}
+      {saved && savedNote && <span className="qiv-muted">{savedNote}</span>}
+    </div>
+    {onSave && (own || saved) && <div className="qiv-sensor-saved-actions">
+      {own && <Button
+        icon="people"
+        text={`Save for ${the}`}
+        className="qiv-small qiv-intent"
+        title={`Save ${describeSetting(next)} for everyone who opens ${whose} images`}
+        disabled={!!status?.saving}
+        onClick={() => save(next)}
+      />}
+      {saved && <Button
+        icon="reset"
+        text={savedFor ? `Forget the ${savedFor}'s` : 'Forget it'}
+        className="qiv-small"
+        title={`Forget what's saved for ${the}: automatic again, for everyone`}
+        disabled={!!status?.saving}
+        onClick={() => save(null)}
+      />}
+      {status?.saving && <Spinner size={12} label="Saving" />}
+    </div>}
+    {status?.done && <output className="qiv-hint qiv-sensor-saved-done">{status.done}</output>}
+    {status?.error && <div className="qiv-danger-text" role="alert">{status.error}</div>}
+    {!onSave && saveUnavailable && <div className="qiv-hint">{saveUnavailable}</div>}
+    {saved && <div className="qiv-hint">Everyone who opens {whose} images gets it, unless their metadata says otherwise. What you set wins over it, for you.</div>}
+    {!saved && onSave && <div className="qiv-hint">Set what you know of the sensor, then save it for everyone who opens {whose} images. Their metadata still comes first.</div>}
+  </div>;
+};
+
+const SensorEditor = ({ analysis, setting, onChange, onGuessAgain, storage = {} }) => {
   const { sensor } = analysis;
   const change = patch => onChange({ ...setting, ...patch });
   const cfa = sensor.cfa ?? normalizeCfa({ pattern: 'GRBG', block: 1 });
   const rgb = sensor.kind === 'rgb';
   const metadata_black = sensor.meta?.blackLevel;
+  const saved = storage.saved ? normalizeSensorSetting(storage.saved) : null;
+  const saved_black = saved?.blackLevel ?? null;
+  const the_saved = storage.savedFor ? `the ${storage.savedFor}'s` : 'the saved one';
+  const automatic = `the metadata, else ${saved ? `${the_saved}, else ` : ''}the pixels`;
+  const sharing = !!(storage.saved || storage.onSave || storage.saveUnavailable);
+  const kinds = KINDS.map(kind => kind.value === 'auto' ? { ...kind, title: `From ${automatic}` } : kind);
   return <div className="qiv-sensor-editor">
     <div className="qiv-panel-title">The sensor</div>
     {rgb ? <div className="qiv-hint">The image has color values (RGB): no color filter array to set.</div> : <>
       <div className="qiv-field">
         <span className="qiv-field-label">Values</span>
-        <Segmented label="What the values are" options={KINDS} value={setting.kind} onChange={kind => change({ kind })} />
+        <Segmented label="What the values are" options={kinds} value={setting.kind} onChange={kind => change({ kind })} />
       </div>
       {sensor.kind === 'mosaic' && <>
         <div className="qiv-field">
@@ -281,19 +363,20 @@ const SensorEditor = ({ analysis, setting, onChange, onGuessAgain }) => {
         label=""
         name="Black level"
         value={setting.blackLevel}
-        placeholder={metadata_black ? String(metadata_black) : 'none'}
+        placeholder={metadata_black ? String(metadata_black) : saved_black !== null ? String(saved_black) : 'none'}
         width={88}
         step="any"
         title="The value of black: the statistics subtract it (signal, SNR, ratios) and count the values at or under it"
         onChange={blackLevel => change({ blackLevel })}
       />
-      <span className="qiv-muted">{setting.blackLevel !== null ? 'yours' : metadata_black ? 'from the metadata' : 'unknown: the statistics use 0'}</span>
+      <span className="qiv-muted">{setting.blackLevel !== null ? 'yours' : metadata_black ? 'from the metadata' : saved_black !== null ? the_saved : 'unknown: the statistics use 0'}</span>
     </div>
     <div className="qiv-sensor-editor-actions">
       <Button icon="refresh" text="Guess again from the view" className="qiv-small" title="Guess the CFA again, from the center of the view: zoom on a detailed, not saturated area" onClick={onGuessAgain} />
-      <Button icon="reset" text="Back to automatic" className="qiv-small" title="Forget what you set: the metadata, else the pixels" onClick={() => onChange({ grouping: setting.grouping })} />
+      <Button icon="reset" text="Back to automatic" className="qiv-small" title={`Forget what you set: ${automatic}`} onClick={() => onChange({ grouping: setting.grouping })} />
     </div>
-    <div className="qiv-hint">It applies to both images{analysis.remembered ? `, and is remembered ${analysis.remembered}` : ''}.</div>
+    <div className="qiv-hint">It applies to both images{storage.remembered ? `, and what you set is remembered ${storage.remembered}` : ''}.</div>
+    {sharing && <SavedSetting setting={setting} onChange={onChange} storage={storage} />}
   </div>;
 };
 
@@ -322,13 +405,15 @@ const MetadataFields = ({ meta }) => {
   </table>;
 };
 
-export const SensorCard = ({ state, setting, onSettingChange, names, comparing, remembered = null }) => {
+// `storage`: where what users set is remembered, and what's saved for everyone, see SavedSetting
+export const SensorCard = ({ state, setting, onSettingChange, names, comparing, storage = {} }) => {
   const analysis = state.results?.a;
   if (!analysis) return <div className="qiv-sensor qiv-sensor-empty">
     {state.status === 'error' ? <span className="qiv-danger-text">{state.error}</span> : <><Spinner size={12} label="Reading the image's values" /> <span className="qiv-muted">Reading the image's values…</span></>}
   </div>;
   const { sensor } = analysis;
   const { guess, meta, check, levels, cfa, kind, sources } = sensor;
+  const tags = sourcesFor(storage);
   const other = comparing ? state.results?.b?.sensor : null;
   const differs = other && (other.kind !== kind || describeCfa(other.cfa ?? { pattern: '', block: 0 }) !== describeCfa(cfa ?? { pattern: '', block: 0 }));
   const meta_source = meta?.source;
@@ -348,13 +433,13 @@ export const SensorCard = ({ state, setting, onSettingChange, names, comparing, 
       <div className="qiv-sensor-main">
         <div className="qiv-sensor-title">
           <strong>{title}</strong>
-          <SourceTag source={kind === 'mosaic' ? sources.cfa : sources.kind} detail={(kind === 'mosaic' ? sources.cfa : sources.kind) === 'metadata' ? meta_source : undefined} />
+          <SourceTag sources={tags} source={kind === 'mosaic' ? sources.cfa : sources.kind} detail={(kind === 'mosaic' ? sources.cfa : sources.kind) === 'metadata' ? meta_source : undefined} />
           {check && <span className={`qiv-check ${check.agree === true ? 'qiv-check-ok' : check.agree === false ? 'qiv-check-warn' : ''}`}>{check.agree === true ? '✓ ' : check.agree === false ? '⚠ ' : ''}{check.text}</span>}
         </div>
         <div className="qiv-sensor-facts">
-          <span>{sensor.bits ? `${sensor.bits}-bit` : 'Bit depth unknown'}{sensor.mode ? <span className="qiv-muted"> ({sensor.mode})</span> : null} <SourceTag source={sources.bits} detail={sources.bits === 'metadata' ? meta_source : sources.bits === 'pixels' ? `the largest value near the center of the view, ${sensor.max}, fits in ${sensor.bits} bits` : undefined} /></span>
+          <span>{sensor.bits ? `${sensor.bits}-bit` : 'Bit depth unknown'}{sensor.mode ? <span className="qiv-muted"> ({sensor.mode})</span> : null} <SourceTag sources={tags} source={sources.bits} detail={sources.bits === 'metadata' ? meta_source : sources.bits === 'pixels' ? `the largest value near the center of the view, ${sensor.max}, fits in ${sensor.bits} bits` : undefined} /></span>
           {sensor.white !== null && <span>white <span className="qiv-mono">{sensor.white}</span></span>}
-          <span>black <span className="qiv-mono">{sensor.black ?? '–'}</span> {sensor.black !== null ? <SourceTag source={sources.black} detail={sources.black === 'metadata' ? meta_source : undefined} /> : <span className="qiv-muted">(unknown: set it)</span>}</span>
+          <span>black <span className="qiv-mono">{sensor.black ?? '–'}</span> {sensor.black !== null ? <SourceTag sources={tags} source={sources.black} detail={sources.black === 'metadata' ? meta_source : undefined} /> : <span className="qiv-muted">(unknown: set it)</span>}</span>
           {meta?.crop && <span className="qiv-muted" title={`The file was cut from a ${meta.crop.fullWidth}×${meta.crop.fullHeight} image, at (${meta.crop.x}, ${meta.crop.y}). The pattern is the file's.`}>crop of {meta.crop.fullWidth}×{meta.crop.fullHeight} at ({meta.crop.x}, {meta.crop.y})</span>}
         </div>
         <div className="qiv-sensor-notes">
@@ -366,9 +451,9 @@ export const SensorCard = ({ state, setting, onSettingChange, names, comparing, 
           {levels?.bright?.length > 0 && <span className="qiv-levels-note">Sub-pixels {levels.bright.map(s => s + 1).join(', ')} are ×{levels.ratio.toFixed(1)} brighter than the others: other exposures (long, short)? Group by sub-pixels to compare them.</span>}
           {other && <span className="qiv-sensor-other">
             <span className={differs ? 'qiv-warning-text' : ''}>{names.b}: {other.kind === 'mosaic' ? describeCfa(other.cfa) : other.kind === 'rgb' ? 'color values' : 'one channel'}</span>
-            <SourceTag source={other.kind === 'mosaic' ? other.sources.cfa : other.sources.kind} detail={other.meta?.source} />
-            {other.bits && <span>· {other.bits}-bit <SourceTag source={other.sources.bits} detail={other.meta?.source} /></span>}
-            <span>· black {other.black ?? '–'} {other.black !== null && <SourceTag source={other.sources.black} detail={other.meta?.source} />}</span>
+            <SourceTag sources={tags} source={other.kind === 'mosaic' ? other.sources.cfa : other.sources.kind} detail={other.meta?.source} />
+            {other.bits && <span>· {other.bits}-bit <SourceTag sources={tags} source={other.sources.bits} detail={other.meta?.source} /></span>}
+            <span>· black {other.black ?? '–'} {other.black !== null && <SourceTag sources={tags} source={other.sources.black} detail={other.meta?.source} />}</span>
             {other.check?.agree === false && <span className="qiv-check qiv-check-warn">⚠ {other.check.text}</span>}
             {differs && !adopt && <span className="qiv-muted">: analyzed as such</span>}
             {adopt && <button type="button" className="qiv-link" onClick={adopt}>use its {[adopt_cfa && other.cfa.pattern, adopt_black && `black level ${other.black}`].filter(Boolean).join(' and ')}</button>}
@@ -376,7 +461,7 @@ export const SensorCard = ({ state, setting, onSettingChange, names, comparing, 
         </div>
       </div>
       <Popover align="end" button={props => <Button {...props} icon="properties" text="Sensor" title="Set the CFA, cell size, offset and black level" />}>
-        {() => <SensorEditor analysis={{ ...analysis, remembered }} setting={setting} onChange={onSettingChange} onGuessAgain={state.guessAgain} />}
+        {() => <SensorEditor analysis={analysis} setting={setting} onChange={onSettingChange} onGuessAgain={state.guessAgain} storage={storage} />}
       </Popover>
     </div>
     {(guess?.scores?.length > 0 || meta?.fields) && <details className="qiv-sensor-details">

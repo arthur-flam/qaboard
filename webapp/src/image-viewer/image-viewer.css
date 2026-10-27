@@ -1208,15 +1208,22 @@
   color: var(--qiv-accent);
   background: var(--qiv-pressed);
 }
+/* saved for everyone, e.g. for the project */
+.qiv-source-saved {
+  color: #5c3fbf;
+  background: rgba(124, 92, 230, 0.16);
+}
 .qiv-source-default {
   color: var(--qiv-danger);
   background: rgba(205, 66, 70, 0.14);
 }
 :where(.qiv[data-theme="dark"]) .qiv-source-metadata { color: #72ca9b; }
 :where(.qiv[data-theme="dark"]) .qiv-source-pixels { color: #fbb360; }
+:where(.qiv[data-theme="dark"]) .qiv-source-saved { color: #b9a6f5; }
 @media (prefers-color-scheme: dark) {
   :where(.qiv:not([data-theme="light"])) .qiv-source-metadata { color: #72ca9b; }
   :where(.qiv:not([data-theme="light"])) .qiv-source-pixels { color: #fbb360; }
+  :where(.qiv:not([data-theme="light"])) .qiv-source-saved { color: #b9a6f5; }
 }
 .qiv-check {
   font-size: 12px;
@@ -1364,6 +1371,26 @@
 .qiv-sensor-editor .qiv-segmented .qiv-button {
   height: 24px;
   font-size: 12px;
+}
+/* what's saved for everyone, e.g. for the project */
+.qiv-sensor-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--qiv-border);
+}
+.qiv-sensor-saved-value {
+  font-size: 12px;
+}
+.qiv-sensor-saved-done {
+  display: block;
+}
+.qiv-sensor-saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }
 
 /* How we know */

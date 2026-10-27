@@ -881,6 +881,7 @@ One table in code, `backend/access/policy.py`:
 | `runs.ingest` | | ✓ | ✓ | ingest |
 | `runs.act` (redo, stop, rename, move, delete batches and runs, tuning, exports, save artifacts) | | ✓ | ✓ | act |
 | `milestones.write` | | ✓ | ✓ | act |
+| `viewer_settings.write` (what the viewers use for everyone, e.g. the image sensor) | | ✓ | ✓ | act |
 | `project.access` (visibility, members, requests) | | | ✓ | act |
 
 Instance admins are owners everywhere (the API says `"via": "admin"`). Roles are ordered levels: `maintainer` can be

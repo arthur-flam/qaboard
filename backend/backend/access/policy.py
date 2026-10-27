@@ -16,6 +16,8 @@ PERMISSIONS = {
   # redo, stop, rename, move or delete batches and runs, start tuning, export, save artifacts
   'runs.act': ('developer', 'act'),
   'milestones.write': ('developer', 'act'),
+  # what the viewers use for everyone who looks at the project's results, e.g. the sensor of its raw images (viewer_settings.py)
+  'viewer_settings.write': ('developer', 'act'),
   # visibility, members, access requests
   'project.access': ('owner', 'act'),
 }

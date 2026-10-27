@@ -56,6 +56,8 @@ def project_access():
     "my_role": role,
     "via": via,
     "can_manage": can_manage,
+    # e.g. the image viewer's "Save for the project"
+    "can_save_viewer_settings": can('viewer_settings.write', project_id),
     "visibility": effective_visibility(project_id),
     # whom to ask: for signed-in users
     "owners": owners(project_id) if user is not None else [],

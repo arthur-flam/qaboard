@@ -28,7 +28,7 @@ The defaults keep how QA-Board worked before roles:
 | Role | Can |
 |---|---|
 | Viewer | see the project, its runs, metrics and files |
-| Developer | also send results (`qa run`, `qa batch`), redo, stop, rename or delete runs, start tuning, export, save milestones |
+| Developer | also send results (`qa run`, `qa batch`), redo, stop, rename or delete runs, start tuning, export, save milestones, save the image viewer's sensor settings for the project |
 | Owner | also choose the visibility, add and remove members, and decide access requests |
 
 Admins are owners of every project.
@@ -122,6 +122,8 @@ and approve or deny in the project's Access tab; the requester gets an email.
   read files ([restricting who can read files](/docs/backend-admin/user-management#restricting-who-can-read-files)).
   Sub-projects share their repository's folders: reading them needs access to every non-public project stored there.
 - **Milestones**: saving or editing shared ones needs the developer role; favorites only need to see the project.
+- **The image viewer's sensor settings** (CFA, black level of raw images): saving them for a project needs the
+  developer role; everyone who can see the project gets them. They're kept with the project in the database.
 
 ## The YAML file
 `QABOARD_LOGIN_RESTRICTED_YAML` keeps working. Its `projects:` become private projects whose matching users are

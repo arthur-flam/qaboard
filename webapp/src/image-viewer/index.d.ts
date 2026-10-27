@@ -234,8 +234,24 @@ export interface ImageViewerProps {
   sensor?: SensorSetting;
   defaultSensor?: SensorSetting;
   onSensorChange?: (sensor: SensorSetting) => void;
-  /** Where what users set of the sensor is remembered, shown to them, e.g. "for the project" */
+  /** Where what users set of the sensor is remembered, shown to them, e.g. "in this browser" */
   sensorRemembered?: string;
+  /**
+   * What's saved of the sensor for everyone, e.g. for the project: it comes after the image's metadata, before the
+   * guess. What users set (`sensor`) wins over it. `grouping` is ignored.
+   */
+  savedSensor?: SensorSetting | null;
+  /** Who it's saved for, a noun shown to users: "project" for "Save for the project". Default: everyone */
+  savedSensorFor?: string;
+  /** Shown next to what's saved, e.g. "by Bob, on 27 Oct 2026" */
+  savedSensorNote?: string;
+  /**
+   * Saves what's saved, with what users set over it (`null` forgets it): the Sensor dialog offers it when given, e.g.
+   * to users who may. Once it resolves, the viewer forgets what users set: it's saved. A rejection's message is shown.
+   */
+  onSaveSensor?: (sensor: SensorSetting | null) => Promise<unknown> | void;
+  /** Without onSaveSensor, why users can't save it, e.g. "Developers of the project can save it for everyone" */
+  saveSensorUnavailable?: string;
 
   /** Viewers with the same key, showing images of the same aspect ratio, zoom and pan together */
   syncKey?: string | null;

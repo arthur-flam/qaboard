@@ -13,7 +13,7 @@ import { PixelTiles } from './pixelTiles';
 import { ALL_CHANNELS } from './histogram';
 import { ANALYSES, normalizeAnalysis } from './analysis';
 import { AnalysisPanel } from './analysisPanel';
-import { normalizeSensorSetting } from './imageAnalysis';
+import { normalizeSensorSetting, setsSensor } from './imageAnalysis';
 import { Crosshair, DiffLayer, GuideLine, HighlightLayer, Minimap, PixelValues } from './overlays';
 import { AdjustmentsPanel, DiffLegend, DiffSettings, Readout, RegionsMenu, RegionsStrip, Shortcuts, ValuesBadge, ValuesPanel } from './panels';
 import { Button, FilterPrimitive, Icon, MenuDivider, MenuItem, Popover, Segmented, Spinner } from './ui';
@@ -124,6 +124,11 @@ export const ImageViewer = ({
   defaultSensor,
   onSensorChange,
   sensorRemembered,
+  savedSensor = null,
+  savedSensorFor,
+  savedSensorNote,
+  onSaveSensor,
+  saveSensorUnavailable,
   syncKey = null,
   regionSets = [],
   regionSet: region_set_prop,
@@ -228,6 +233,15 @@ export const ImageViewer = ({
   const [analysis_values, setAnalysisValues] = useControllable(analysis_values_prop, defaultAnalysisValues, onAnalysisValuesChange);
   const [sensor_setting, setSensorSetting] = useControllable(sensor_prop, defaultSensor, onSensorChange);
   const sensor = normalizeSensorSetting(sensor_setting);
+  // ...and what's saved for everyone, e.g. for the project: after the images' metadata. Users who may save get onSaveSensor.
+  const sensor_storage = {
+    remembered: sensorRemembered,
+    saved: setsSensor(savedSensor) ? savedSensor : null,
+    savedFor: savedSensorFor,
+    savedNote: savedSensorNote,
+    onSave: onSaveSensor,
+    saveUnavailable: saveSensorUnavailable,
+  };
   // The row or column hovered on its profile, shown on the images: { axis: 'x' | 'y', value }
   const [guide, setGuide] = useState(null);
   const [diff_error, setDiffError] = useState(null);
@@ -852,7 +866,7 @@ export const ImageViewer = ({
       imageValuesUnavailable={imageValuesUnavailable}
       sensor={sensor}
       onSensorChange={setSensorSetting}
-      sensorRemembered={sensorRemembered}
+      sensorStorage={sensor_storage}
     /></div>}
   </div>;
 };

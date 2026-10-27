@@ -25,7 +25,7 @@ from ..models import Project, CiCommit, Batch, Output, ProjectView, batches_stat
 from ..utils import profiled
 from ..config import git_server, skip_metrics_aggregation
 from ..search import parse_query, commits_search_filter, escape_like
-from .auth import is_authorized_user, get_current_user, forbidden_project
+from .auth import is_authorized_user, get_current_user, forbidden_project, login_required, require_project_access
 from ..mine import identity_of, commit_is_mine, batch_is_mine, batch_is_not_mine, batch_origin_in, parse_origins, SCOPES, BATCH_SCOPES
 from ..notifications.mail import email_enabled
 from ..settings import setting
@@ -651,6 +651,36 @@ def get_project():
 
   # Milestones from older versions, kept for rollbacks: they are in their own table, see /api/v1/milestones
   return jsonify({k: v for k, v in project.data.items() if k != 'milestones'})
+
+
+@app.route("/api/v1/project/settings", methods=['POST'])
+@app.route("/api/v1/project/settings/", methods=['POST'])
+@login_required
+def post_project_settings():
+  """
+  Saves what the viewers use for everyone who looks at the project's results (backend/viewer_settings.py):
+    {"project": "group/repo", "sensor": {"pattern": "GRBG", "block": 2, "black_level": 64}}, or "sensor": null to forget it.
+  Developers and owners only. Answers with the project's settings, also in /api/v1/project's `settings`.
+  """
+  from ..viewer_settings import clean_sensor, save_setting
+  body = request.get_json(silent=True)
+  if not isinstance(body, dict):
+    return jsonify({"error": "Expected a JSON object: {\"project\": <id>, \"sensor\": {...}}"}), 400
+  project_id = body.get('project')
+  if not isinstance(project_id, str) or not project_id:
+    return jsonify({"error": "Which project? Send {\"project\": <id>}."}), 400
+  if forbidden := require_project_access(None, project_id, 'viewer_settings.write'):
+    return forbidden
+  if 'sensor' not in body:
+    return jsonify({"error": "Nothing to save: send {\"sensor\": {...}}, or null to forget it."}), 400
+  sensor, error = clean_sensor(body['sensor'])
+  if error:
+    return jsonify({"error": error}), 400
+  project = Project.query.filter(Project.id == project_id).one_or_none()
+  if project is None:
+    return jsonify({"error": f"There is no project {project_id}."}), 404
+  settings = save_setting(db_session, project, 'sensor', sensor, get_current_user(to_jsonify=False))
+  return jsonify({"settings": settings})
 
 
 # Views are counted at most once an hour per user and project: enough to tell projects people look at

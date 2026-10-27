@@ -43,9 +43,10 @@ const VALUES = [
   { value: 'image', label: 'Image values', title: "The image's own values (raw, 10-bit, 16-bit…), at full resolution, per channel of the sensor: R, Gr, Gb, B" },
 ];
 
-export const AnalysisPanel = ({ controller, comparing, names, view, onViewChange, channels, onChannelsChange, range, onRangeChange, onGuideChange, values, onValuesChange, images, sizes, getPixels, imageValuesUnavailable, sensor, onSensorChange, sensorRemembered }) => {
+// `sensorStorage`: where what users set of the sensor is remembered, and what's saved for everyone (SensorCard)
+export const AnalysisPanel = ({ controller, comparing, names, view, onViewChange, channels, onChannelsChange, range, onRangeChange, onGuideChange, values, onValuesChange, images, sizes, getPixels, imageValuesUnavailable, sensor, onSensorChange, sensorStorage }) => {
   const image_values = values === 'image' && !!getPixels;
-  const state = useImageAnalysis({ controller, images, comparing, sizes, getPixels, setting: sensor, active: image_values });
+  const state = useImageAnalysis({ controller, images, comparing, sizes, getPixels, setting: sensor, saved: sensorStorage?.saved ?? null, active: image_values });
   const [hidden, setHidden] = useState(() => new Set());
   const pointer = useSyncExternalStore(controller.subscribePointer, controller.getPointer);
   const pixel = image_values && pointer ? controller.imagePixel('a', pointer.point) : null;
@@ -75,7 +76,7 @@ export const AnalysisPanel = ({ controller, comparing, names, view, onViewChange
       </span>
     </div>
     {image_values ? <>
-      <SensorCard state={state} setting={sensor} onSettingChange={onSensorChange} names={names} comparing={comparing} remembered={sensorRemembered} />
+      <SensorCard state={state} setting={sensor} onSettingChange={onSensorChange} names={names} comparing={comparing} storage={sensorStorage} />
       <ImageValuesView view={view} state={state} names={names} comparing={comparing} hidden={hidden} marker={marker} onGuideChange={onGuideChange} />
     </> : <>
       {view === 'histogram' && <Histogram controller={controller} comparing={comparing} names={names} channels={channels} range={range} onRangeChange={onRangeChange} />}

@@ -182,7 +182,10 @@ A card says what the sensor is, with a diagram of the CFA, and where each value 
 1. what users set (the **Sensor** button: pattern, cell size, offset, black level), in the `sensor` prop
    (`{ kind, pattern, block, offset, blackLevel, grouping }`): control it to remember it, e.g. per project,
 2. the image's metadata: return it from `getPixels` as `sensor`,
-3. the pixels: the CFA guessed from a 256×256 patch at the center of the view, the bit depth from the largest value.
+3. what's saved for everyone, e.g. for the project, in the `savedSensor` prop. With `onSaveSensor`, the **Sensor**
+   dialog offers to save what users set over it (**Save for the project** with `savedSensorFor="project"`), then
+   forgets what they set,
+4. the pixels: the CFA guessed from a 256×256 patch at the center of the view, the bit depth from the largest value.
 
 ```jsx
 const getPixels = async (image, region, { signal }) => {
@@ -286,7 +289,11 @@ resolution), and show a cross where the pointer is on the others. Viewers off-sc
 | `analysis`, `defaultAnalysis`, `onAnalysisChange` | `'histogram' \| 'profiles' \| 'stats'` | the one picked last on the page | The view of the analysis panel under the images (<kbd>a</kbd> shows it) |
 | `analysisValues`, `defaultAnalysisValues`, `onAnalysisValuesChange` | `'display' \| 'image'` | `'display'` | What the analysis measures: the displayed values, or the [image's own](#raw-images-analysis-by-channel-of-the-sensor) (needs `getPixels`) |
 | `sensor`, `defaultSensor`, `onSensorChange` | `{ kind?, pattern?, block?, offset?, blackLevel?, grouping? }` | automatic | What users set about the sensor of raw images |
-| `sensorRemembered` | `string` | | Where it's remembered, shown to users, e.g. "for the project" |
+| `sensorRemembered` | `string` | | Where it's remembered, shown to users, e.g. "in this browser" |
+| `savedSensor` | `{ kind?, pattern?, block?, offset?, blackLevel? } \| null` | | What's [saved for everyone](#raw-images-analysis-by-channel-of-the-sensor), e.g. for the project: after the image's metadata |
+| `savedSensorFor`, `savedSensorNote` | `string` | everyone | Who it's saved for, a noun ("project": **Save for the project**), and a note shown next to it, e.g. who saved it |
+| `onSaveSensor` | `(sensor \| null) => Promise` | | Saves what users set over what's saved (`null` forgets it): the **Sensor** dialog offers it when given |
+| `saveSensorUnavailable` | `string` | | Without `onSaveSensor`, why users can't save it |
 | `syncKey` | `string` | | Viewers with the same key are synced |
 | `regionSets` | `[{ id, label, regions?, loading?, error?, load?, empty? }]` | `[]` | Regions of interest |
 | `regionSet`, `defaultRegionSet`, `onRegionSetChange` | `string \| null` | | The set shown (`null`: the full image) |

@@ -2,10 +2,11 @@
 // is (CFA, bit depth, black level), and the statistics, profiles and histograms of each of its channels.
 //
 // What we know about the sensor comes, in this order, from:
-// 1. users: the `sensor` prop, e.g. saved for the project,
+// 1. users: the `sensor` prop, e.g. remembered in their browser,
 // 2. the image's metadata: what getPixels returns as `sensor`, e.g. from the image's reader on the server,
-// 3. the pixels: the CFA guessed from a patch of the view (cfa.js), the bit depth from the largest value.
-// Each value says where it comes from, for the panel to tell.
+// 3. what's saved for everyone: the `savedSensor` prop, e.g. the project's, for the images without metadata,
+// 4. the pixels: the CFA guessed from a patch of the view (cfa.js), the bit depth from the largest value.
+// Each value says where it comes from ('user', 'metadata', 'saved', 'pixels'...), for the panel to tell.
 import { bitDepthOf, cfaChannels, ChannelValues, guessCfaChecked, histogramOfSorted, normalizeCfa, planeOf, subPixelLevels } from './cfa';
 import { readAll, readPlan, readRegion } from './regionValues';
 import { imageKey } from './sources';
@@ -24,6 +25,28 @@ export const normalizeSensorSetting = setting => ({
   grouping: ['rgb', 'cfa', 'sub'].includes(setting?.grouping) ? setting.grouping : 'cfa',
 });
 
+// What a setting says of the sensor, without how the channels are grouped (a way to look, not the sensor)
+export const sensorFields = setting => {
+  const { kind, pattern, block, offset, blackLevel } = normalizeSensorSetting(setting);
+  return {
+    ...(kind !== 'auto' ? { kind } : {}),
+    ...(pattern ? { pattern } : {}),
+    ...(block ? { block } : {}),
+    ...(offset ? { offset } : {}),
+    ...(blackLevel !== null ? { blackLevel } : {}),
+  };
+};
+export const setsSensor = setting => Object.keys(sensorFields(setting)).length > 0;
+// What's saved, with what users set over it: what "Save for…" saves
+export const withOwnSetting = (saved, own) => ({ ...sensorFields(saved), ...sensorFields(own) });
+
+// A CFA set by users (or saved), its missing fields from `base` (e.g. the metadata's), else the guess
+const settingCfa = (setting, base, guess) => setting.pattern || setting.block ? normalizeCfa({
+  pattern: setting.pattern ?? base?.pattern ?? guess?.cfa?.pattern ?? 'GRBG',
+  block: setting.block ?? base?.block ?? guess?.cfa?.block ?? 1,
+  offset: setting.offset ?? base?.offset ?? (setting.block ? { x: 0, y: 0 } : guess?.cfa?.offset),
+}) : null;
+
 // The guesses of the CFA, by image: they don't change as users pan, until they guess again
 const guesses = new Map();
 export const forgetGuess = image => guesses.delete(imageKey(image));
@@ -38,8 +61,8 @@ const guessRegion = (region, size) => {
   return { x, y, w, h };
 };
 
-// The sensor of an image, from what users set, its metadata and its pixels
-const sensorOf = async (getPixels, image, region, size, setting, signal) => {
+// The sensor of an image, from what users set, its metadata, what's saved and its pixels
+const sensorOf = async (getPixels, image, region, size, setting, saved, signal) => {
   const key = imageKey(image);
   if (!guesses.has(key)) {
     const patch_region = guessRegion(region, size);
@@ -58,11 +81,8 @@ const sensorOf = async (getPixels, image, region, size, setting, signal) => {
   const sources = {};
   // what the values are: a mosaic (one channel, through a CFA), one channel (no CFA), or color (RGB)
   const meta_cfa = normalizeCfa(meta?.cfa);
-  const user_cfa = setting.pattern || setting.block ? normalizeCfa({
-    pattern: setting.pattern ?? meta_cfa?.pattern ?? guess?.cfa?.pattern ?? 'GRBG',
-    block: setting.block ?? meta_cfa?.block ?? guess?.cfa?.block ?? 1,
-    offset: setting.offset ?? meta_cfa?.offset ?? (setting.block ? { x: 0, y: 0 } : guess?.cfa?.offset),
-  }) : null;
+  const saved_cfa = settingCfa(saved, null, guess);
+  const user_cfa = settingCfa(setting, meta_cfa ?? saved_cfa, guess);
   let kind;
   if (values_kind === 'rgb') {
     kind = 'rgb';
@@ -73,17 +93,23 @@ const sensorOf = async (getPixels, image, region, size, setting, signal) => {
   } else if (meta?.mono) {
     kind = 'mono';
     sources.kind = 'metadata';
-  } else if (user_cfa || meta_cfa || guess?.mosaic) {
+  } else if (user_cfa || meta_cfa) {
     kind = 'mosaic';
-    sources.kind = user_cfa ? 'user' : meta_cfa ? 'metadata' : 'pixels';
+    sources.kind = user_cfa ? 'user' : 'metadata';
+  } else if (saved.kind !== 'auto') {
+    kind = saved.kind;
+    sources.kind = 'saved';
+  } else if (saved_cfa || guess?.mosaic) {
+    kind = 'mosaic';
+    sources.kind = saved_cfa ? 'saved' : 'pixels';
   } else {
     kind = 'mono';
     sources.kind = 'pixels';
   }
   let cfa = null;
   if (kind === 'mosaic') {
-    cfa = user_cfa ?? meta_cfa ?? guess?.cfa ?? normalizeCfa({ pattern: 'GRBG', block: 1 });
-    sources.cfa = user_cfa ? 'user' : meta_cfa ? 'metadata' : guess?.mosaic ? 'pixels' : 'default';
+    cfa = user_cfa ?? meta_cfa ?? saved_cfa ?? guess?.cfa ?? normalizeCfa({ pattern: 'GRBG', block: 1 });
+    sources.cfa = user_cfa ? 'user' : meta_cfa ? 'metadata' : saved_cfa ? 'saved' : guess?.mosaic ? 'pixels' : 'default';
   }
   // the bit depth, and the levels
   let bits = null;
@@ -112,6 +138,9 @@ const sensorOf = async (getPixels, image, region, size, setting, signal) => {
   } else if (meta?.blackLevel) {
     black = meta.blackLevel;
     sources.black = 'metadata';
+  } else if (saved.blackLevel !== null) {
+    black = saved.blackLevel;
+    sources.black = 'saved';
   }
   // do the pixels agree with the metadata, or what users set?
   let check = null;
@@ -141,9 +170,9 @@ const channelsOf = (sensor, grouping) => {
   return { channels: [{ key: 'V', name: 'Values', color: null }], period: 1, channelAt: () => 0 };
 };
 
-// The statistics, profiles and histograms of an image's values over a region
-export const analyzeImage = async (getPixels, image, region, size, setting, { signal, onProgress } = {}) => {
-  const sensor = await sensorOf(getPixels, image, region, size, setting, signal);
+// The statistics, profiles and histograms of an image's values over a region. `saved`: what's saved for everyone
+export const analyzeImage = async (getPixels, image, region, size, setting, { signal, onProgress, saved } = {}) => {
+  const sensor = await sensorOf(getPixels, image, region, size, setting, normalizeSensorSetting(saved), signal);
   const grouping = sensor.kind === 'mosaic' ? setting.grouping : null;
   const { channels, period, channelAt, perChannel } = channelsOf(sensor, grouping);
   const plan = readPlan(region);

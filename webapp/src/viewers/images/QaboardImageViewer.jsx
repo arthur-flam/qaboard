@@ -16,6 +16,7 @@ import { build_image_name, iiif_url } from './utils';
 import { COMPARE_SCOPES, comparedFor, compareCandidates, pickCompared } from './compareWith';
 import { regionProviders } from './regionProviders';
 import { regionsQuery } from './regionSearch';
+import { useProjectSensor } from './projectSensor';
 import { differenceProviders, RegionsTriage, usePagePairs } from './RegionsTriage';
 import './image-viewer-theme.css';
 
@@ -216,7 +217,7 @@ const ImageViewerForRuns = ({
   const setAnalysis = usePrefsStore(state => state.setImageAnalysis);
   const analysis_values = usePrefsStore(state => state.imageAnalysisValues);
   const setAnalysisValues = usePrefsStore(state => state.setImageAnalysisValues);
-  // what users said of the sensor of the project's raw images
+  // what users said of the sensor of the project's raw images, in this browser...
   const { project } = useSelected();
   const sensor = usePrefsStore(state => state.imageSensor[project]);
   const setSensor = usePrefsStore(state => state.setImageSensor);
@@ -246,6 +247,8 @@ const ImageViewerForRuns = ({
   const other = compare_with.some(candidate => candidate.id === compared) ? compared : null;
   const same_as_other = !!other && is_same_data(path, manifests?.new?.[path], manifests?.new?.[other]);
   const signed_in = useUser().is_logged;
+  // ...and what the project's developers saved for everyone, after the images' metadata
+  const saved_sensor = useProjectSensor(project, signed_in);
   // the regions where the images differ: of the image and the other image of the run, or its reference
   const region_context = other
     ? { output_new, output_ref: output_new, path, path_ref: other }
@@ -316,7 +319,12 @@ const ImageViewerForRuns = ({
     onAnalysisValuesChange={setAnalysisValues}
     sensor={sensor}
     onSensorChange={value => setSensor(project, value)}
-    sensorRemembered="for the project, in this browser"
+    sensorRemembered="in this browser, for the project"
+    savedSensor={saved_sensor.savedSensor}
+    savedSensorFor={saved_sensor.savedSensorFor}
+    savedSensorNote={saved_sensor.savedSensorNote}
+    onSaveSensor={saved_sensor.onSaveSensor}
+    saveSensorUnavailable={saved_sensor.saveSensorUnavailable}
     // the same input's images are synced, e.g. the other runs', or the other visualizations of a run
     syncKey={output_new.test_input_path ?? null}
     regionSets={region_sets}

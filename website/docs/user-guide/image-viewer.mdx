@@ -341,11 +341,19 @@ A card above the views says what the sensor is, with a diagram of its pattern fr
 *GRBG · Tetra 2×2*, *10-bit*, *black 64*. A tag next to each value says where it comes from:
 
 - **metadata**: the image's reader on the server, e.g. a raw file's header or its JSON sidecar,
+- **project**: what the project's developers saved for everyone who opens its images, used when the image's metadata
+  doesn't say,
 - **guessed**: the pixels. QA-Board finds the cell size (Bayer 1×1, Tetra 2×2, Nona 3×3, 4×4… up to 9×9) and where the
   greens are from a patch at the center of the view. It can't tell red from blue in a single channel: **Swap R and B** if
   they're the other way. Images where each pixel has only one of R, G and B set are read exactly,
 - **yours**: what you set with the **Sensor** button: the pattern, the cell size, the offset, the black level. It
-  applies to both images, and your browser remembers it for the project.
+  applies to both images, wins over the others, and only for you: your browser remembers it for the project.
+
+Set the sensor once for your team: set the pattern or the black level with the **Sensor** button, then **Save for the
+project**: what you set becomes the project's, and everyone who opens the project's images gets it. The dialog says
+what the project has, who saved it and when; **Forget the project's** goes back to automatic for everyone. Saving
+needs the developer or owner role on the project ([roles](/docs/user-guide/project-access)): others see what's saved,
+and what they set stays theirs, in their browser.
 
 When the metadata and the pixels disagree, the card says so. When the reference's metadata knows what you only guessed
 for the new image, **use its…** copies it.
@@ -365,8 +373,10 @@ for the new image, **use its…** copies it.
 
 - Views of up to 2 million pixels are read whole. Larger ones are read in strips across them, evenly spaced, and the
   views say how many rows and columns: zoom in to read every pixel.
-- Without a black level, the statistics use 0. Set it with the **Sensor** button: your browser remembers it for the
-  project.
+- Without a black level, the statistics use 0. Set it with the **Sensor** button, then **Save for the project** for
+  everyone, or keep it for you: your browser remembers it for the project.
+- The image's metadata comes before what's saved for the project: the project's values are for the images whose
+  metadata doesn't say. What you set wins over both.
 - Without metadata, the bit depth comes from the largest value: 10-bit values in a 16-bit file read as 10-bit.
 
 </details>

@@ -127,6 +127,12 @@ const App = () => {
   const [images, setImages] = useState(null);
   const [mode, setMode] = useState('side-by-side');
   const [theme, setTheme] = useState('light');
+  // what's saved of the raw images' sensor for everyone, like a project's (until the page reloads)
+  const [saved_sensor, setSavedSensor] = useState(null);
+  const saveSensor = async sensor => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    setSavedSensor(sensor);
+  };
   useEffect(() => {
     Promise.all([
       makeImage(960, 640, false),
@@ -189,6 +195,10 @@ const App = () => {
       reference={{ url: images.raw_b, label: 'reference' }}
       getPixels={getRawPixels}
       defaultAnalysisValues="image"
+      savedSensor={saved_sensor}
+      savedSensorFor="project"
+      savedSensorNote={saved_sensor ? '(until the page reloads)' : undefined}
+      onSaveSensor={saveSensor}
       theme={theme}
       style={{ maxWidth: 1200 }}
     />
