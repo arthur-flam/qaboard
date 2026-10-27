@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.392ad409.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.4cd3289b.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0459941.js" defer="defer"></script>
 </head>
 <body>
@@ -83,7 +83,9 @@ directory attributes, which the rules of <code>QABOARD_LOGIN_RESTRICTED_YAML</co
 <p><code>auth.access_policy</code>, in <strong>Admin → Settings</strong>:</p>
 <ul>
 <li class=""><code>open</code> (the default): anyone a sign-in method accepts gets an account.</li>
-<li class=""><code>domains</code>: users whose email is in <code>auth.allowed_email_domains</code> (e.g. <code>example.com</code>) get one. The others wait for an admin.</li>
+<li class=""><code>domains</code>: users whose verified email is in <code>auth.allowed_email_domains</code> (e.g. <code>example.com</code>) get one. The others
+wait for an admin. Verified emails are those of LDAP and SAML, and those single sign-on says are verified
+(<code>email_verified</code>): not the emails of local sign-up.</li>
 <li class=""><code>approval</code>: everyone waits for an admin.</li>
 </ul>
 <p>Users who wait can sign in, and see a page saying so, where they write why they need access. Admins get an email
@@ -99,7 +101,9 @@ its host, since its URL is a credential). Admins approve or deny them in
 <li class="">Users see theirs in <strong>Settings → Sessions</strong> and can end any of them. Signing out ends the session.</li>
 <li class="">Admins end all of a user&#x27;s sessions from the user&#x27;s page. Disabling a user ends them too.</li>
 </ul>
-<p>Users signed in before the upgrade stay signed in.</p>
+<p>Users signed in before the upgrade stay signed in: their browser&#x27;s older cookie becomes a stored session at its next
+request. Not when the user&#x27;s sessions ended since (they signed out, they or an admin ended their sessions, or they
+were disabled), since the cookie could be a copy, nor <code>sessions.max_days</code> after the upgrade: they sign in again.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="only-single-sign-on">Only single sign-on<a href="#only-single-sign-on" class="hash-link" aria-label="Direct link to Only single sign-on" title="Direct link to Only single sign-on" translate="no">​</a></h2>
 <p>The sign-in page shows the password form for LDAP and local accounts. To send users straight to your IdP, require
 signing in (<code>auth.require_sign_in</code>), and turn on <code>auth.sso_auto_redirect</code>: with a single SSO provider, the sign-in
@@ -107,8 +111,10 @@ page redirects to it. <code>/login?local=1</code> still shows the password form,
 (<code>qaboard-admin create-admin admin --password</code>), in case the IdP is down.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="ldap-over-tls">LDAP over TLS<a href="#ldap-over-tls" class="hash-link" aria-label="Direct link to LDAP over TLS" title="Direct link to LDAP over TLS" translate="no">​</a></h2>
 <p>Use <code>ldaps://ldap.example.com:636</code> in <code>QABOARD_LDAP_HOST</code>, or set <code>QABOARD_LDAP_START_TLS=true</code> to upgrade a plain
-connection. <code>qaboard-admin check-sign-in --provider ldap --user alice</code> checks the service account, and looks a user
-up.</p>
+connection. If your directory&#x27;s certificate comes from an internal CA, give it to OpenLDAP with
+<code>LDAPTLS_CACERT=/path/to/ca.pem</code> in the backend&#x27;s environment. <code>qaboard-admin check-sign-in --provider ldap --user alice</code>
+checks the service account, and looks a user up. Empty passwords are refused before they reach the directory: LDAP
+servers often accept them as anonymous binds.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="rate-limits-and-proxies">Rate limits and proxies<a href="#rate-limits-and-proxies" class="hash-link" aria-label="Direct link to Rate limits and proxies" title="Direct link to Rate limits and proxies" translate="no">​</a></h2>
 <p>QA-Board&#x27;s nginx allows 30 sign-in attempts per minute per client, with bursts: sign-in, sign-up, <code>qa auth login</code>
 codes and SSO redirects. Beyond, it answers 429. It counts by the address it sees: behind a load balancer or an

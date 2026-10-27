@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.392ad409.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.4cd3289b.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0459941.js" defer="defer"></script>
 </head>
 <body>
@@ -60,7 +60,7 @@ project can be more private than its group, never more public. Without any, <cod
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="groups">Groups<a href="#groups" class="hash-link" aria-label="Direct link to Groups" title="Direct link to Groups" translate="no">​</a></h2>
 <p>Create groups in <strong>Admin → Groups</strong>, then grant them roles on projects. Add members by hand, or with <strong>rules</strong> that
 add users from their groups in your directory or identity provider:</p>
-<table><thead><tr><th>Claim</th><th>Signs in with</th><th>Example values</th></tr></thead><tbody><tr><td><code>groups</code></td><td>single sign-on (OpenID Connect), if your IdP sends it</td><td><code>camera-team</code></td></tr><tr><td><code>realm_access.roles</code></td><td>Keycloak&#x27;s realm roles (nested claims are written with dots)</td><td><code>camera</code></td></tr><tr><td><code>memberOf</code></td><td>LDAP (or the attributes in <code>QABOARD_LDAP_GROUP_ATTRIBUTES</code>), SAML attributes</td><td><code>CN=camera-algo,OU=Groups,DC=example,DC=com</code>, or just <code>camera-algo</code></td></tr><tr><td><code>email_domain</code></td><td>any</td><td><code>example.com</code></td></tr></tbody></table>
+<table><thead><tr><th>Claim</th><th>Signs in with</th><th>Example values</th></tr></thead><tbody><tr><td><code>groups</code></td><td>single sign-on (OpenID Connect), if your IdP sends it</td><td><code>camera-team</code></td></tr><tr><td><code>realm_access.roles</code></td><td>Keycloak&#x27;s realm roles (nested claims are written with dots)</td><td><code>camera</code></td></tr><tr><td><code>memberOf</code></td><td>LDAP (or the attributes in <code>QABOARD_LDAP_GROUP_ATTRIBUTES</code>), SAML attributes</td><td><code>CN=camera-algo,OU=Groups,DC=example,DC=com</code>, or just <code>camera-algo</code></td></tr><tr><td><code>email_domain</code></td><td>LDAP, SAML, single sign-on if your IdP says the email is verified (<code>email_verified</code>); not local accounts</td><td><code>example.com</code></td></tr></tbody></table>
 <p>Values match case-insensitively; an LDAP group matches by its full DN or its name. Members you add by hand stay.
 To write rules, look at <strong>Admin → Audit</strong>: <code>auth.login</code> events list the groups each sign-in put users in, and for
 single sign-on the groups the identity provider sent.</p>
