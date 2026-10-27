@@ -23,8 +23,12 @@ shot('activity/stuck-runs', {
     // the runs the stories leave running must be pending for over a week by the server's clock
     test.skip(Date.now() - demo().t0.getTime() < 8 * DAY, 'the demo\'s running batches are pending for less than a week');
     await ui.page.getByTestId('stuck').waitFor();
-    await ui.cursor.moveTo({ x: 1300, y: 880 });
+    await ui.cursor.moveTo({ x: 1080, y: 880 });
     await ui.settle();
   },
+  // narrower than the default, to stay readable once scaled down in a page or an email
+  viewport: { width: 1100, height: 900 },
   target: page => [page.getByRole('heading', { name: 'Runs activity' }), page.getByTestId('stuck')],
+  // the timeline is 16 px under the warning
+  padding: 12,
 });

@@ -56,6 +56,8 @@ shot('access/members', {
     await ui.settle();
   },
   target: page => [page.getByRole('heading', { name: 'Access', exact: true }), page.getByRole('table', { name: 'Members' })],
+  // not the top bar's border, 16 px above the title
+  padding: 12,
 });
 
 shot('access/request', {
@@ -72,5 +74,6 @@ shot('access/request', {
     await ui.cursor.moveTo({ x: 1420, y: 880 });
     await ui.settle();
   },
-  target: page => [page.getByRole('heading', { name: 'Access', exact: true }), page.getByRole('form', { name: 'Request access' })],
+  target: page => [page.getByRole('heading', { name: 'Access', exact: true }), page.getByRole('region', { name: 'Request access' })],
+  padding: 12,
 });

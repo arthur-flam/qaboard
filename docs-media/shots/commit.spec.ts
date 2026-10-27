@@ -792,6 +792,13 @@ clip('commit/image-compare-modes', {
   caption: 'The four ways to compare: side by side, wipe, single (t flips the images), and their difference.',
   actions: async ui => {
     const scope = viewer(ui.page);
+    // The viewer stays where it is whatever the mode: side by side and between the images, the stage is half as high,
+    // and the page too short to scroll it to the top. Blank space above the footer, and no scroll anchoring
+    await ui.page.evaluate(() => {
+      const footer = document.querySelector('footer');
+      if (footer) footer.style.marginTop = '1000px';
+      document.documentElement.style.overflowAnchor = 'none';
+    });
     await showToolbar(ui, scope);
     await preset(ui, scope, 'Leaves over a window');
     await showToolbar(ui, scope);
@@ -810,7 +817,7 @@ clip('commit/image-compare-modes', {
     const mode = (name: string) => scope.getByRole('radio', { name, exact: true });
     await ui.caption('Side by side (1): new and reference');
     await ui.cursor.moveTo(newImage(scope));
-    await ui.hold(1300);
+    await ui.hold(1000);
 
     await ui.caption('Wipe (2): drag the divider across them');
     await ui.click(mode('Wipe'));
@@ -819,30 +826,29 @@ clip('commit/image-compare-modes', {
     const stage = await stableBox(imageRow(scope));
     const from = (await divider.boundingBox())!;
     const y = from.y + from.height / 2;
-    await ui.drag(divider, { x: stage.x + stage.width * 0.28, y });
-    await ui.drag(divider, { x: stage.x + stage.width * 0.72, y });
-    await ui.drag(divider, { x: stage.x + stage.width * 0.5, y });
-    await ui.hold(500);
+    await ui.drag(divider, { x: stage.x + stage.width * 0.3, y });
+    await ui.drag(divider, { x: stage.x + stage.width * 0.62, y });
+    await ui.hold(400);
 
     await ui.caption('Single (3): t flips them in place');
     await ui.click(mode('Single'));
     await ui.settle();
     await ui.cursor.moveTo({ x: stage.x + stage.width * 0.6, y: stage.y + stage.width / 1.5 * 0.45 });
-    await ui.hold(500);
+    await ui.hold(300);
     for (let i = 0; i < 4; i++) {
       await ui.press('t');
-      await ui.hold(650);
+      await ui.hold(500);
     }
 
     await ui.caption('Difference (4): where they differ');
     await ui.click(mode('Difference'));
     await ui.settle();
-    await ui.hold(1500);
+    await ui.hold(1300);
     await ui.caption('4 again: the difference alone, larger');
     await ui.cursor.moveTo({ x: stage.x + stage.width * 0.6, y: stage.y + stage.width / 1.5 * 0.45 });
     await ui.press('4');
     await ui.settle();
-    await ui.hold(2200);
+    await ui.hold(2000);
   },
 });
 
@@ -951,10 +957,10 @@ shot('commit/image-profiles', {
     // on the edge, halfway down the view (examples/image-quality/qa/make_charts.py), closer: about 70 pixels across
     const position = await hoverPixel(ui, scope, EDGE.x, EDGE.y);
     await zoomTo(ui, scope, position, 800);
-    const at = await hoverPixel(ui, scope, EDGE.x, EDGE.y);
-    // the profiles' markers and the crosshairs follow the pointer: once more on the pixel, after the panel redrew
-    await ui.hover(newImage(scope), { position: { x: at.x + 1, y: at.y } });
-    await ui.hover(newImage(scope), { position: at });
+    // the page won't scroll to the shot anymore: that would move the image from under the pointer, and the crosshairs
+    // and the profiles' markers with it
+    await panelInView(ui, scope);
+    await hoverPixel(ui, scope, EDGE.x, EDGE.y);
     await ui.settle();
   },
   target: page => [pixelValues(viewer(page)), imageRow(viewer(page)), analysisPanel(viewer(page))],
@@ -1267,7 +1273,10 @@ shot('commit/change-menu', {
   actions: async ui => {
     await milestonesAsSaved(ui);
     await ui.click(ui.page.getByRole('button', { name: 'Change the reference commit' }));
-    await ui.page.locator('.bp6-popover .bp6-menu', { hasText: 'Swap the bars' }).waitFor();
+    const menu = ui.page.locator('.bp6-popover .bp6-menu', { hasText: 'Swap the bars' });
+    await menu.waitFor();
+    // off the reference's bar: hovering it shows "Stack a reference" under it
+    await ui.hover(menu.getByText('Quick actions', { exact: true }));
     await ui.settle();
   },
   // the reference's hash and Change, and the menu under them
@@ -1573,6 +1582,8 @@ shot('commit/pointcloud', {
     await cloud.waitFor({ timeout: 60_000 });
     // the new map against the ground truth: the reference's map would hide them
     await ui.click(cloud.locator('label.pointcloud-layer-reference'));
+    // no focus ring left on the checkbox
+    await ui.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await mouseAway(ui);
     await ui.settle();
   },
@@ -1803,12 +1814,9 @@ shot('commit/config-tag-diff', {
     await ui.page.locator('.bp6-popover', { hasText: 'Settings compared to the reference run' }).waitFor();
     await ui.settle();
   },
-  // the popover, and the run's settings under it
-  target: page => [
-    page.locator('.bp6-popover', { hasText: 'Settings compared to the reference run' }),
-    configTag(page, 3),
-  ],
-  padding: 12,
+  // the popover alone: it opens over the sidebar, next to the run's name
+  target: page => page.locator('.bp6-popover', { hasText: 'Settings compared to the reference run' }),
+  padding: 0,
 });
 
 
@@ -1831,13 +1839,18 @@ shot('commit/stack-reference', {
     await ui.cursor.moveTo({ x: 1430, y: 890 });
     await ui.settle();
   },
-  // the reference's bar, the handle under it, and the panel
-  target: page => [
-    page.getByRole('textbox', { name: 'The reference commit' }),
-    page.getByRole('button', { name: 'Change the reference commit' }),
-    page.locator('.bp6-popover', { has: page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }) }),
-  ],
-  padding: 12,
+  // a box: the reference's bar, fixed at the top, from its start to its author, the handle under it, and the panel
+  target: async page => {
+    const refBar = page.locator('.bp6-navbar', { has: page.locator('input#filter-ref-input') }).first();
+    const bar = await stableBox(refBar);
+    // the bars start under the sidebar
+    const sidebar = await stableBox(page.getByRole('navigation', { name: 'Navigation' }));
+    const left = sidebar.x + sidebar.width;
+    const author = await stableBox(refBar.getByText('by Ines Marchetti').first());
+    const panel = await stableBox(page.locator('.bp6-popover', { has: page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }) }));
+    const right = Math.max(panel.x + panel.width, author.x + author.width) + 12;
+    return { x: left, y: bar.y, width: right - left, height: panel.y + panel.height + 12 - bar.y };
+  },
 });
 
 // Names (webapp/src/selection.js: label, label_ref): the merge, named "bilateral", against the release before it,
@@ -1854,14 +1867,21 @@ shot('commit/named-comparison', {
     + 'color. Milestones are called by their name.',
   actions: async ui => {
     await preset(ui, viewer(ui.page), 'Window frame (halos)');
-    await mouseAway(ui);
+    // not over the reference's bar: hovering it shows "Stack a reference" under it
+    await ui.cursor.moveTo({ x: 1430, y: 890 });
+    await ui.hold(500);
     await ui.settle();
   },
-  // a box: from the bars, fixed at the top, down to the top of the images
+  // a box: from the bars, fixed at the top, with their colored edge, down to the top of the images
   target: async page => {
     const card = await stableBox(cards(page).first());
     const stage = await stableBox(imageRow(viewer(page)));
-    return { x: card.x - 24, y: 0, width: card.width + 48, height: stage.y + 160 };
+    // the bars start under the sidebar
+    const sidebar = await stableBox(page.getByRole('navigation', { name: 'Navigation' }));
+    const left = sidebar.x + sidebar.width;
+    // to the View options' rail, on the right: the bars' buttons end there
+    const rail = await stableBox(controlsPanel(page));
+    return { x: left, y: 0, width: rail.x - left, height: stage.y + 160 };
   },
 });
 

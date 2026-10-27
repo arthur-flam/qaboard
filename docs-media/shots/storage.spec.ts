@@ -7,7 +7,7 @@
 // - "Updated <when>" says when the server last computed the usage, by the server's clock (the time of the capture), while
 //   the page's clock is at T0: it's masked.
 import { test } from '@playwright/test';
-import { shot, type Page } from './lib';
+import { shot, type Locator, type Page } from './lib';
 import { demo } from './lib/demo';
 import { ADMIN, apiAs, removeMembers, setMembers, storageUsageReady } from './demoState';
 
@@ -38,6 +38,14 @@ const VIEWPORT = { width: 1200, height: 1100 };
 const updated = (page: Page) => [page.getByText(/^Updated /)];
 const rows = (page: Page) => page.getByRole('table').last().locator('tbody > tr');
 
+// From the top of `top` to the bottom of `bottom`, the page's width: a table's rows are too close for a padding
+async function between(page: Page, top: Locator, bottom: Locator, padding = 16) {
+  const [a, b] = [await top.boundingBox(), await bottom.boundingBox()];
+  const width = page.viewportSize()?.width ?? 1440;
+  if (!a || !b) throw new Error('[storage.spec] an element of the shot has no box');
+  return { x: a.x - padding, y: a.y - padding, width: width - 2 * (a.x - padding), height: b.y + b.height - a.y + padding + 2 };
+}
+
 shot('storage/batches', {
   project: null,
   login: 'ines',
@@ -45,24 +53,26 @@ shot('storage/batches', {
   alt: 'Storage usage of everyone\'s runs in kitefin/camera-isp: 2.2 GB in 42 batches, mostly the CI\'s. The Batches '
     + 'tab lists them biggest first, each with its commit, branch, folder and who ran it; the two milestones have a lock.',
   caption: 'The biggest batches first: milestones are locked, the others can be checked and their files deleted.',
-  viewport: VIEWPORT,
+  // the batches' table needs the width
+  viewport: { width: 1440, height: 1100 },
   mask: updated,
   actions: async ui => {
     await rows(ui.page).nth(6).waitFor();
-    await ui.cursor.moveTo({ x: 1180, y: 1080 });
+    await ui.cursor.moveTo({ x: 1420, y: 1080 });
     await ui.settle();
   },
-  target: page => [page.getByRole('heading', { name: 'Storage usage' }), rows(page).nth(5)],
+  // down to the second milestone
+  target: page => between(page, page.getByRole('heading', { name: 'Storage usage' }), rows(page).nth(5)),
 });
 
 shot('storage/delete', {
   project: null,
   login: 'ines',
   url: d => `${d.baseUrl}/storage/batches?scope=all&project=${encodeURIComponent(ISP)}`,
-  alt: 'The "Delete the runs\' files" dialog for every run of kitefin/camera-isp: it frees the files of Ines\'s runs, '
-    + 'keeps the milestones and the runs other people ran, and asks to type a sentence to confirm.',
-  caption: 'Before deleting, QA-Board says how much space it frees, and what it keeps.',
-  viewport: VIEWPORT,
+  alt: 'The "Delete the runs\' files" dialog for everything in kitefin/camera-isp, as Ines: 196 MB freed, the files of '
+    + 'her 65 runs in 2 batches. Kept: other people\'s runs, 800 runs (2.0 GB) run by ci, which they or an admin can delete.',
+  caption: 'Before deleting, QA-Board says how much space it frees, and what it keeps: here, the runs other people ran.',
+  viewport: { width: 1440, height: 1100 },
   mask: updated,
   actions: async ui => {
     await ui.click(ui.page.getByRole('button', { name: /^Delete all runs that match/ }));
@@ -71,8 +81,9 @@ shot('storage/delete', {
     await ui.cursor.moveTo({ x: 1180, y: 1080 });
     await ui.settle();
   },
+  // the dialog alone: the page's text behind the backdrop would be cut
   target: page => page.getByRole('dialog', { name: 'Delete the runs\' files' }),
-  padding: 24,
+  padding: 0,
 });
 
 shot('storage/users', {
@@ -103,7 +114,10 @@ shot('storage/folders', {
   viewport: VIEWPORT,
   mask: updated,
   actions: async ui => {
-    await rows(ui.page).nth(1).waitFor();
+    // the project's folder, like a quota alert would name it
+    await ui.type(ui.page.getByRole('textbox', { name: 'Folder' }), `${ui.demo.storage}/${ISP}`);
+    await ui.click(ui.page.getByRole('button', { name: 'Open', exact: true }));
+    await rows(ui.page).first().waitFor();
     await ui.cursor.moveTo({ x: 1180, y: 1080 });
     await ui.settle();
   },

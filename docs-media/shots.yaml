@@ -47,6 +47,10 @@ features:
   milestones: Milestones, personal and shared, with groups, favorites and links
   blind-test: Blind tests, the images called A and B in a random order until revealed
   reference-tabs: Several references stacked as tabs, compared one at a time
+  config-diff: Configurations shown as how they differ from the reference run's, the changes all runs share summed up once
+  side-names: New and reference named by users (milestones by their name), each in its color, everywhere on the page
+  command-palette: Ctrl+K search from any page, for projects, branches, commits, your batches, pages and actions
+  home-page: A home page about you, your projects and batches; Explore, projects grouped by their path, quiet ones faded
   whats-new: What's new dialog and panel
 
 shots:
@@ -107,13 +111,47 @@ shots:
     experimental: true
 
   # Projects and commits
+  # The home page was the projects list until October 2026; signed in, it's now about you (Explore is projects/explore)
   - id: projects/home
     kind: still
     project: null
-    shows: The projects list with the Kitefin projects, their avatars and descriptions, one pinned as a favorite, the filter box.
-    pages: [get-started/quickstart, user-guide/finding-results, user-guide/first-review]
+    shows: 'The home page signed in as Arjun: Your projects (the detector and the fleet assistant, each with when he last used it and its runs over 30 days, Explore all projects), Recent (his tune-prompts and tune-int8 tuning experiments and his local arjun-sizes sweep, each with its project, branch, commit message, runs and main metric), From your projects (folded), and on the right What''s new, Your storage and Learn.'
+    pages: [user-guide/finding-results]
+    features: [home-page]
     phase: 2
     status: captured
+  - id: projects/explore
+    kind: still
+    project: null
+    shows: 'Explore at /projects, signed in as Ines: the filter box, the kitefin group (last run, runs over 30 days, 6 projects), its projects with their avatar, name, path, description, last used, sparkline, star and source link, camera-isp pinned on top (its star, in the API''s answer only), and "1 quiet subproject" (the fleet SDK, only the CI ran it) at the bottom.'
+    pages: [get-started/quickstart, user-guide/finding-results, user-guide/first-review]
+    features: [home-page]
+    phase: 3
+    status: planned
+  - id: projects/command-palette
+    kind: still
+    project: detection-eval
+    shows: 'The search opened with Ctrl+K over the detector''s page, "det" typed: Projects (kitefin/detector, highlighted), Branches in kitefin/detector (det/confusions), Your recent batches (tune-int8 and arjun-sizes, with their runs and dates), and the keys to navigate, open, open in a new tab; a margin of the dimmed page around it.'
+    pages: [user-guide/finding-results]
+    features: [command-palette]
+    phase: 3
+    status: planned
+  - id: commits/yours
+    kind: still
+    project: image-quality
+    shows: 'The camera ISP''s page signed in as Ines, Yours selected (Everyone, Hide the CI, Batches / Commits next to it): Latest on main (chroma-low-light, its CI batch still running: 6 pending, 3 running), then her tune-denoise (web app) and ines-halo (local) batches, both ticked, and "Compare tune-denoise with ines-halo (the reference)" with Clear and Compare.'
+    pages: [user-guide/finding-results]
+    needs: bilateral-denoise (tune-denoise, ines-halo); chroma-low-light (running)
+    phase: 3
+    status: planned
+  - id: commits/compact
+    kind: still
+    project: serving-latency
+    shows: 'Everyone''s commits of the inference gateway in the Compact list, from the Comfortable / Compact switch: five days, one line per commit in aligned columns (status icon, hash, message, branch, committer, date, the CI batch''s average p99, runs, menu); the batcher change that crashed with a red icon and "1 failed". The preference comes from the API''s answer only.'
+    pages: [user-guide/finding-results]
+    needs: batch-overflow (crashed)
+    phase: 3
+    status: planned
   - id: commits/feed
     kind: still
     project: serving-latency
@@ -139,7 +177,7 @@ shots:
   - id: commits/milestones-menu
     kind: still
     project: detection-eval
-    shows: 'The sidebar''s Milestones menu: the favorite kd-1.3, then my milestones with the kd-1.3 and kd-1.2 releases and, in a group, entropy-try on the entropy-calib commit (added by the spec in the API''s answer only).'
+    shows: 'The sidebar''s Milestones menu: Manage milestones… first, the favorite kd-1.3, then my milestones with, in a group, entropy-try on the entropy-calib commit (added by the spec in the API''s answer only), and the kd-1.3 and kd-1.2 releases, each with when it was last updated (as the seed saved it, see commits.spec.ts asSaved).'
     pages: [references-and-milestones, user-guide/milestones, landing]
     features: [milestones]
     phase: 2
@@ -152,7 +190,7 @@ shots:
     features: [milestones]
     needs: kd-1-3, kd-1-2 (milestones); entropy-calib
     phase: 3
-    status: planned
+    status: captured
   - id: integrations/menu
     kind: still
     project: image-quality
@@ -204,7 +242,7 @@ shots:
   - id: commit/change-menu
     kind: still
     project: detection-eval
-    shows: The reference bar's Change menu, with switch new/reference, the reference branch and the milestones.
+    shows: 'The reference bar''s Change menu: Change project, Quick actions (Swap the bars, Also show in the top bar, Stack another reference…, Remove from comparison, the reference branch main), Manage milestones…, then My milestones kd-1.3 and kd-1.2 (selected), each with when it was last updated (as the seed saved it), and Learn about milestones.'
     pages: [references-and-milestones, user-guide/comparing-results, user-guide/milestones]
     features: [milestones]
     phase: 2
@@ -218,6 +256,24 @@ shots:
     needs: merge-bilateral vs isp-4-1 and chroma-low-light
     phase: 3
     status: captured
+  - id: commit/stack-reference
+    kind: still
+    project: image-quality
+    shows: 'merge-bilateral against the isp-4.1 milestone, one reference: the reference bar (isp-4.1, its crown, hash, Change, main, author), the "Stack a reference" handle that hovering it shows, and its panel open: the explanation (switch with tabs or r), the "Commit or branch" box, main (reference branch), This reference again, Manage milestones…, My milestones isp-4.2 and isp-4.1 (selected) with when they were saved.'
+    pages: [user-guide/comparing-results]
+    features: [reference-tabs]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
+  - id: commit/named-comparison
+    kind: still
+    project: image-quality
+    shows: 'merge-bilateral named "bilateral" (label in the URL) against the isp-4.1 milestone, named after it: the two bars with their names, blue and purple, then the facade''s run card (base, linux) zoomed on the window preset, its viewer saying "vs isp-4.1", the line "bilateral 1224×816 · isp-4.1 1224×816" and the images'' labels "bilateral" in blue and "isp-4.1" in purple.'
+    pages: [user-guide/comparing-results]
+    features: [side-names]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
   - id: commit/batch-picker
     kind: still
     project: image-quality
@@ -241,6 +297,24 @@ shots:
     pages: [computing-quantitative-metrics, deep-learning, user-guide/comparing-results]
     phase: 2
     status: captured
+  - id: commit/config-diff
+    kind: still
+    project: detection-eval
+    shows: 'kd-1.3''s release batch (every model at every size), filter "small-objects -512", against kd-1.2''s CI batch (fp32 at 320 px), in a 1180 px wide window: the "vs. reference" row (All 4 runs…: − fp32 in 2, + int8 in 2, size-320 → 416 in 2, a model change, 3 other changes), then the Metrics Table''s 4 runs, each with its own changes: fp32 size-320 (only the model changes), − fp32 + int8, size-[320 → 416] with only the number marked, and all of them; the model, a tuning parameter with a wrench, and the orange Config tag.'
+    pages: [user-guide/comparing-results]
+    features: [config-diff]
+    needs: kd-1-3 (release batch) vs kd-1-2
+    phase: 3
+    status: planned
+  - id: commit/config-tag-diff
+    kind: still
+    project: detection-eval
+    shows: 'The same page, the Config tag of the int8 run at 416 px hovered: its popover alone, "Settings compared to the reference run: 2 changed, 1 added, 1 removed", the diff (− fp32 in red, + int8 in green, ~ size-320 → 416 and ~ model "kd-1.2-fp32-320" → "kd-1.3-int8-416" in orange), the legend, Copy the changes and Copy the reference''s qa options.'
+    pages: [user-guide/comparing-results]
+    features: [config-diff]
+    needs: kd-1-3 (release batch) vs kd-1-2
+    phase: 3
+    status: planned
 
   # Commit page: outputs
   - id: commit/visualizations
@@ -502,6 +576,14 @@ shots:
     pages: [user-guide/running-from-the-webapp]
     phase: 2
     status: captured
+  - id: commit/run-name-menu
+    kind: still
+    project: image-quality
+    shows: 'merge-bilateral against isp-4.1, Visualizations filtered on "photos/facade linux": the second card''s name, photos/facade.png, hovered: its menu beside it with History (this input over time), Batch ci, Database inputs, Input path, Properties (Metadata), Run Info (ci sent by, 1s compute time, 20 days ago created, its storage), over the first card''s images.'
+    pages: [user-guide/commit-page, user-guide/history-and-dashboards, user-guide/first-review]
+    needs: merge-bilateral vs isp-4-1
+    phase: 3
+    status: planned
   - id: commit/artifacts-configs
     kind: still
     project: detection-eval

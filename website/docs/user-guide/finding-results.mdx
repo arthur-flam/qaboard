@@ -42,6 +42,11 @@ the reference is, whoever committed it.
 - **Batches or commits**: **Batches** lists runs as you started them, **Commits** groups them by commit, as before.
 - **Compare two batches**: tick them in **Batches**, then **Compare**. The first is compared with the second, the reference.
 
+<Shot
+  id="commits/yours"
+  caption="Ines's page on the camera ISP: the latest commit on main, still running, then her tuning experiment and her local runs, ticked to compare them."
+/>
+
 <details>
 <summary>What counts as yours</summary>
 
@@ -67,6 +72,11 @@ Signed in, the home page is about you. Signed out, it's [Explore](#projects-list
 
 On the right, what's new in QA-Board, how much storage your runs take, and guides for what you haven't tried yet.
 
+<Shot
+  id="projects/home"
+  caption="Arjun's home page: the two projects he works on, then his latest batches with their runs and main metric, one click from their results."
+/>
+
 <details>
 <summary>Nothing of yours shows up</summary>
 
@@ -91,6 +101,11 @@ sidebar opens it too.
 Use <kbd>↑</kbd> <kbd>↓</kbd> to pick a result and <kbd>Enter</kbd> to open it, or <kbd>Ctrl</kbd> <kbd>Enter</kbd>
 to open it in a new tab. <kbd>Esc</kbd> closes the search.
 
+<Shot
+  id="projects/command-palette"
+  caption="On the detector's page, “det” finds the project, a branch of the project, and your recent batches in it."
+/>
+
 ## Pick a project {#projects-list}
 **Explore** (at `/projects`, and the home page when you're signed out) lists every project with results, grouped by
 their path: those you pinned first, then the ones people used most recently.
@@ -105,8 +120,8 @@ their path: those you pinned first, then the ones people used most recently.
 Click a project to open its commit list.
 
 <Shot
-  id="projects/home"
-  caption="Each card says when the project was last used and how it ran over 30 days. Starred projects stay on top."
+  id="projects/explore"
+  caption="Each card says when the project was last used and how it ran over 30 days. The pinned camera ISP stays on top; a project only the CI ran waits under “1 quiet subproject”."
 />
 
 ### Groups, subprojects and quiet projects {#quiet-projects}
@@ -173,6 +188,11 @@ To see more commits at once, pick **Compact** above the list (**Comfortable** br
 commit then takes one line, in columns that line up like a table: an icon for the CI batch's status (finished, failed,
 running, waiting), the short hash, the message, the branch, the committer, the date, then the batch's results and the
 ☰ menu. The web app remembers your choice: signed in, on every computer. **Settings → Preferences** sets it too.
+
+<Shot
+  id="commits/compact"
+  caption="Two weeks of the inference gateway in the compact list: the columns line up from one day to the next, and the commit that crashed a run stands out."
+/>
 
 Hover to see what doesn't fit:
 - the **message** shows the whole commit message, the **date** the exact time;

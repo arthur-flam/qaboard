@@ -19,6 +19,7 @@ shot('account/create-token', {
     await ui.cursor.moveTo({ x: 1300, y: 860 });
     await ui.settle();
   },
+  // the dialog alone: the page's text behind the backdrop would be cut
   target: page => page.getByRole('dialog', { name: 'New access token' }),
-  padding: 24,
+  padding: 0,
 });
