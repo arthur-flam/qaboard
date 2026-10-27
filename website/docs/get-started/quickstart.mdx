@@ -119,10 +119,10 @@ upgrades the release (the `helm-e2e` job).
 </Tabs>
 
 :::danger Keep QA-Board on your computer, or behind a firewall
-The API that `qa` uses to save results doesn't require a login yet: anyone who can reach the server can add or delete
-results. The quickstarts only answer on your computer (the Compose file publishes the port on `127.0.0.1`, kind
-through the port-forward). Never expose a QA-Board server to the internet: keep it on a network you trust. Token
-authentication for saving results is on the [roadmap](/docs/roadmap#token-authenticated-ingest).
+By default, the API that `qa` uses to save results doesn't require a login: anyone who can reach the server can add
+or delete results. The quickstarts only answer on your computer (the Compose file publishes the port on `127.0.0.1`,
+kind through the port-forward). Never expose a QA-Board server to the internet: keep it on a network you trust. A
+server for your team can require tokens to save results: see [results sent by qa](/docs/backend-admin/user-management#results-sent-by-qa).
 :::
 
 ## Look at the demo projects
