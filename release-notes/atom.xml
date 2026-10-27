@@ -642,6 +642,15 @@ anonymous users (any non-empty value used to block them), and an empty value let
 <li class="">Commit pages load in 0.6 s instead of 1 s.</li>
 <li class="">Switch between references twice as fast, without the page freezing: the Summary shows the new reference's numbers at once, then updates its plots one after the other. Pages with many plots no longer freeze while they draw.</li>
 <li class="">Open tuning batches faster: runs that have an exact match in the reference no longer go through a name-similarity search.</li>
+<li class="">Load a commit's Summary without the page freezing while it draws its box plots: with 1000 runs, it takes a sixth of the work it did.</li>
+<li class="">Switch references or filter runs with the Summary updating at once, also with 5000 runs.</li>
+<li class="">Open the Visualizations and Output Files of big batches faster: with 1000 runs, the Visualizations take half the work.</li>
+<li class="">Resize the View options panel smoothly on big commit pages: the results make room for it when you let go of its edge.</li>
+<li class="">Keep a commit page open while its runs are stuck in a queue: it checks for updates less and less often while nothing changes (up to every 5 minutes), and big commits less often. It checks often again as soon as something changes.</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="lists-of-commits">Lists of commits<a href="https://samsung.github.io/qaboard/release-notes/2026-10#lists-of-commits" class="hash-link" aria-label="Direct link to Lists of commits" title="Direct link to Lists of commits" translate="no">​</a></h3>
+<ul>
+<li class="">Scroll through long lists of commits (a branch's, a committer's) without the page freezing, with under a third of the memory: each commit's tooltips and menu are created when you reach them, and the commits already shown don't render again when more load.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="everywhere-in-the-web-app">Everywhere in the web app<a href="https://samsung.github.io/qaboard/release-notes/2026-10#everywhere-in-the-web-app" class="hash-link" aria-label="Direct link to Everywhere in the web app" title="Direct link to Everywhere in the web app" translate="no">​</a></h3>
 <ul>
@@ -649,6 +658,8 @@ anonymous users (any non-empty value used to block them), and an empty value let
 <li class="">Come back to a page you already visited, or reload, and it shows up at once from your browser's cache, then refreshes in the background. Commits with running outputs keep updating.</li>
 <li class="">Open commits sooner: hovering a commit in a list starts loading its page, and a project's commits no longer wait for its configuration.</li>
 <li class="">Hover the History plot and image-heavy pages more smoothly: the page updates once you pause on a commit, and image viewers you've left no longer keep redrawing in the background.</li>
+<li class="">Load pages with less code: the log viewer's colors come with the logs, and the release notes' details when you open <strong>What's new</strong>.</li>
+<li class="">Keep time-of-flight point clouds open without the page redrawing them all the time: they're drawn when they change, and free their memory when you close them or change frames.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="logs">Logs<a href="https://samsung.github.io/qaboard/release-notes/2026-10#logs" class="hash-link" aria-label="Direct link to Logs" title="Direct link to Logs" translate="no">​</a></h3>
 <ul>
@@ -705,6 +716,8 @@ are no longer scanned again, even when you set your own excluded paths.</li>
 <li class="">In the Metrics Table, the New and Ref headers stay over their columns when a filter leaves out every run that has some metric, and metrics without a target show just their unit, like <code>[s]</code>.</li>
 <li class="">Removing a metric from a table's metric picker no longer also drops the selected metrics that the current batch doesn't have.</li>
 <li class="">The Summary's box plots on a log scale show a few round ticks, instead of labels that overlapped.</li>
+<li class="">The Summary's box plots shade the target's zones right for metrics where higher is better: green above the target, red below.</li>
+<li class="">The Summary's box plots use a linear scale when some values are 0 or negative, instead of squashing the plot.</li>
 <li class="">Output Files tags runs <strong>Bit-accurate</strong> when their output files match the reference's: like <code>qa check-bit-accuracy</code>, it only checks the files that match <code>bit_accuracy.patterns</code> in <em>qaboard.yaml</em> (all files by default, except logs, <code>run.json</code> and <code>metrics.json</code>). The other files are still listed when they differ, greyed and tagged "not checked". See <a class="" href="https://samsung.github.io/qaboard/docs/bit-accuracy#what-files-are-checked">bit-accuracy tests</a>.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="image-viewer">Image viewer<a href="https://samsung.github.io/qaboard/release-notes/2026-10#image-viewer" class="hash-link" aria-label="Direct link to Image viewer" title="Direct link to Image viewer" translate="no">​</a></h3>
