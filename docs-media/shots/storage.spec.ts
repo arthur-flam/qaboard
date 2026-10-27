@@ -12,6 +12,8 @@ import { demo } from './lib/demo';
 import { ADMIN, apiAs, removeMembers, setMembers, storageUsageReady } from './demoState';
 
 const ISP = 'kitefin/camera-isp';
+// where the demo's results are, as the server sees them (docs-media/compose.demo.yml)
+const RESULTS = (process.env.QABOARD_DEMO_RESULTS || '/mnt/qaboard').replace(/\/+$/, '');
 const MEMBERS = { ines: 'developer' } as const;
 
 test.beforeAll(async () => {
@@ -115,7 +117,7 @@ shot('storage/folders', {
   mask: updated,
   actions: async ui => {
     // the project's folder, like a quota alert would name it
-    await ui.type(ui.page.getByRole('textbox', { name: 'Folder' }), `${ui.demo.storage}/${ISP}`);
+    await ui.type(ui.page.getByRole('textbox', { name: 'Folder' }), `${RESULTS}/${ISP}`);
     await ui.click(ui.page.getByRole('button', { name: 'Open', exact: true }));
     await rows(ui.page).first().waitFor();
     await ui.cursor.moveTo({ x: 1180, y: 1080 });
