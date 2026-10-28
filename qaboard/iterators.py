@@ -203,7 +203,9 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
         # but some projects rely on metadata() to limit the amount of tests they run based on the git diff
         # for those, we don't want to QA_BATCH_FAIL_IF_EMPTY check to fail
         seen_inputs.add(i)
-        if only or exclude:
+        # QA_BATCH_ALWAYS_GET_METADATA: call metadata() for every input, even without only/exclude filters,
+        # for projects whose metadata() has useful side effects (semi-undocumented).
+        if only or exclude or 'QA_BATCH_ALWAYS_GET_METADATA' in os.environ:
           metadata = input_metadata(replace(run_context, input_path=i, database=database), qatools_config)
           if only and not match(metadata, only): continue
           if exclude and match(metadata, exclude): continue

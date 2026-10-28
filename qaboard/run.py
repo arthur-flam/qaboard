@@ -155,6 +155,9 @@ class RunContext():
             type=ctx.obj['input_type'],
             click_context=ctx,
         )
+        # FIXME: SIRC-specific workaround, inputs with /tv/ in their path skip metadata() and get no input_metadata.
+        #        It's an easy fix on SIRC's side, then we remove this special case.
+        #        Nothing else in qaboard depends on it. Note that `qa batch` still calls metadata() for those inputs when filtering.
         if "/tv/" not in str(input_path):
             metadata = input_metadata(run_context, config)
             for k in list(metadata.keys()):

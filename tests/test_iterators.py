@@ -296,6 +296,27 @@ class TestIterators(unittest.TestCase):
         # callers of the old input_metadata(absolute_input_path, database, input_path, config)
         self.assertEqual(input_metadata(database / 'a.txt', database, Path('a.txt'), config)["name"], "a")
 
+  def test_always_get_metadata(self):
+    """QA_BATCH_ALWAYS_GET_METADATA calls metadata() for every input, even without only/exclude"""
+    import os
+    import tempfile
+    from unittest import mock
+    from qaboard.iterators import iter_inputs_at_path
+    with tempfile.TemporaryDirectory() as tmp:
+      database = Path(tmp)
+      for name in ['a.txt', 'b.txt']:
+        (database / name).write_text('')
+      calls = database / 'calls.log'
+      (database / 'side_effects.py').write_text(f'def metadata(context):\n  open({str(calls)!r}, "a").write(context.input_path.name + "\\n")\n')
+      config = {"project": {"entrypoint": str(database / 'side_effects.py')}}
+      with mock.patch.dict(os.environ):
+        os.environ.pop('QA_BATCH_ALWAYS_GET_METADATA', None)
+        self.assertEqual(len(list(iter_inputs_at_path('*.txt', database, ['*.txt'], False, config))), 2)
+        self.assertFalse(calls.exists())
+        os.environ['QA_BATCH_ALWAYS_GET_METADATA'] = '1'
+        self.assertEqual(len(list(iter_inputs_at_path('*.txt', database, ['*.txt'], False, config))), 2)
+        self.assertEqual(calls.read_text().split(), ['a.txt', 'b.txt'])
+
   def test_metadata_signatures(self):
     from qaboard.utils import _metadata_takes_context
     self.assertTrue(_metadata_takes_context(lambda context: None))
