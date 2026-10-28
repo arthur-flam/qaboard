@@ -380,6 +380,37 @@ class TestQaCli(unittest.TestCase):
       assert checked(result) == [False, False] + 4 * [True] # write_runs changes both manifests
       assert 'Mismatch' in result.output
 
+  def test_check_bit_accuracy_closest_reference(self):
+    """--reference-match closest compares with the reference's closest run on each input, like the web app"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as storage, self.bit_accuracy_env(storage):
+      ours = ['--configuration', 'delta-v1']
+      output_dirs = self.list_output_dirs(*ours)
+      inputs = ['cli_tests/a.jpg', 'cli_tests/b.jpg', 'cli_tests/dir/c.jpg']
+      # the reference's CI only ran with other configurations
+      references = {configuration: self.reference_dirs(storage, '--configuration', configuration) for configuration in ['delta-v2', 'other']}
+      for configuration, dirs in references.items():
+        self.write_runs(dirs, md5='same' if configuration == 'delta-v2' else 'other')
+        for d, input in zip(dirs, inputs):
+          (d / 'run.json').write_text(json.dumps({"database": ".", "input_path": input, "configurations": ["base", configuration], "extra_parameters": {}, "platform": "linux"}))
+      self.write_runs(output_dirs)
+      result = self.check_bit_accuracy(*ours)
+      assert result.exit_code == 1
+      assert result.unstyled_output.count('ERROR: No reference for') == 3
+      result = self.check_bit_accuracy(*ours, args=['--reference-match', 'closest'])
+      assert result.exit_code == 0, result.output
+      assert result.output.count('✔️') == 6
+      assert '≈  cli_tests/a.jpg  ["base", "delta-v1"]  versus the closest run, with configurations: ["base", "delta-v2"]' in result.unstyled_output
+      self.write_runs(references['delta-v2'][:1], md5='other')
+      result = self.check_bit_accuracy(*ours, args=['--reference-match', 'closest'])
+      assert result.exit_code == 1
+      assert 'cli_tests/a.jpg  ["base", "delta-v1"]  @manifest.outputs.json' in result.unstyled_output
+      # the same run when there is one
+      self.write_runs(self.reference_dirs(storage, *ours)[:1])
+      result = self.check_bit_accuracy(*ours, args=['--reference-match', 'closest'])
+      assert result.exit_code == 0, result.output
+      assert '≈  cli_tests/a.jpg' not in result.unstyled_output
+
   def test_check_bit_accuracy_reference_platform(self):
     """--reference-platform compares with the reference's runs on another platform"""
     import tempfile

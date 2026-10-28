@@ -29,7 +29,6 @@ dependencies = [
     "celery",
     "sentry-sdk[flask]",
     "python3-saml",
-    "polyleven",
     "rich",
     "simplejson",
     "redis",
