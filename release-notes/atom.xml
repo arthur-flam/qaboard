@@ -783,6 +783,7 @@ are no longer scanned again, even when you set your own excluded paths.</li>
 <li class="">Runs that start again (redo, <code>qa batch</code>...) no longer show as failed, and count as failed, until they finish: their status is reset when they are pending or running.</li>
 <li class="">Finished runs whose metrics don't include <code>is_failed</code> count as successful, instead of neither successful nor failed.</li>
 <li class="">A stuck run's "Mark as Finished" action is now labelled "Mark as Failed", which is what it does.</li>
+<li class="">Runs killed while they run show as failed right away, instead of running until their batch ends, or forever: when you <code>bkill</code> their LSF job, when LSF kills it for using too much memory, or when you press Ctrl+C. Stopping <code>qa batch</code> also marks the runs it stopped as failed.</li>
 <li class="">Moving runs to another batch closes the dialog, and saving a milestone no longer risks losing it.</li>
 <li class="">The tuning form shows a readable error instead of the server's raw response.</li>
 <li class="">The tuning form remembers the "Overwrite" option, and setting the number of iterations no longer crashes.</li>
