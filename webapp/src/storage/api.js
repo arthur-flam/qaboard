@@ -1,6 +1,8 @@
 // Storage usage, for users (api/storage.py): usage by project, batch, commit, branch and folder, deleting runs' files.
 import { queryOptions, keepPreviousData } from "@tanstack/react-query";
 
+import { keepIfSameWhose } from "../activity/api";
+
 import { http } from "../api/http";
 
 
@@ -17,7 +19,7 @@ export const filterParams = ({ project, folder, branch, older, search }) => ({
 export const overviewQuery = filters => queryOptions({
   queryKey: ['storage', 'overview', whoseParams(filters), filters.project ?? ''],
   queryFn: async ({ signal }) => (await http.get('/api/v1/storage/overview', { params: { ...whoseParams(filters), project: filters.project || undefined }, signal })).data,
-  placeholderData: keepPreviousData,
+  placeholderData: keepIfSameWhose(whoseParams(filters)),
   staleTime: 30 * 1000,
   // while the usage is being computed
   refetchInterval: query => query.state.data?.building ? 10 * 1000 : false,
@@ -30,7 +32,7 @@ export const itemsQuery = (group, filters, { sort = 'size', offset = 0 } = {}) =
   queryFn: async ({ signal }) => (await http.get('/api/v1/storage/items', {
     params: { group, ...whoseParams(filters), ...filterParams(filters), sort, offset, limit: items_page_size }, signal,
   })).data,
-  placeholderData: keepPreviousData,
+  placeholderData: keepIfSameWhose(whoseParams(filters)),
   staleTime: 30 * 1000,
 });
 
@@ -48,7 +50,7 @@ export const foldersQuery = (path, filters) => queryOptions({
   queryFn: async ({ signal }) => (await http.get('/api/v1/storage/folders', {
     params: { path: path || undefined, ...whoseParams(filters), ...filterParams({ ...filters, folder: null }) }, signal,
   })).data,
-  placeholderData: keepPreviousData,
+  placeholderData: keepIfSameWhose(whoseParams(filters)),
   staleTime: 30 * 1000,
 });
 
@@ -100,7 +102,7 @@ export const exportsQuery = (filters, sort = 'size') => queryOptions({
   queryFn: async ({ signal }) => (await http.get('/api/v1/storage/exports', {
     params: { ...whoseParams(filters), project: filters.project || undefined, sort }, signal,
   })).data,
-  placeholderData: keepPreviousData,
+  placeholderData: keepIfSameWhose(whoseParams(filters)),
   staleTime: 30 * 1000,
 });
 
