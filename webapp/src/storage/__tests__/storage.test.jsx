@@ -7,7 +7,7 @@ import { unstable_HistoryRouter as HistoryRouter } from 'react-router';
 
 import { history, RouteMatch } from '../../router';
 import { matchAppRoute } from '../../routes';
-import { StoragePage, readFilters, storageUrl } from '../StoragePage';
+import { StoragePage, readFilters, storageUrl, views } from '../StoragePage';
 import { formatBytes } from '../format';
 import { renderWithProviders } from '../../test-utils';
 
@@ -57,7 +57,8 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('Storage usage', () => {
   it('has its route, and keeps what it shows in the URL', () => {
-    expect(matchAppRoute('/storage/folders').match.params.view).toBe('folders');
+    for (const { id } of views)
+      expect(matchAppRoute(`/storage/${id}`)?.match.params.view).toBe(id);
     expect(storageUrl('batches', { scope: 'me', project: 'proj/a', page: '' })).toBe('/storage/batches?project=proj%2Fa');
     expect(readFilters('?scope=all&folder=/x').folder).toBe('/x');
     expect(formatBytes(1234567890)).toBe('1.2 GB');
