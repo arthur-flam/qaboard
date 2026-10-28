@@ -95,8 +95,9 @@ def setup_environment(args):
     'REDIS_HOST': os.environ.get('REDIS_HOST', '127.0.0.1'),
   })
   # Not needed for those endpoints, and they need system libraries to build
-  for name in ['ldap', 'onelogin', 'onelogin.saml2', 'onelogin.saml2.auth', 'onelogin.saml2.utils']:
+  for name in ['ldap', 'ldap.filter', 'onelogin', 'onelogin.saml2', 'onelogin.saml2.auth', 'onelogin.saml2.utils']:
     sys.modules[name] = types.ModuleType(name)
+  sys.modules['ldap'].filter = sys.modules['ldap.filter']
   sys.modules['onelogin.saml2.auth'].OneLogin_Saml2_Auth = None
   sys.modules['onelogin.saml2.utils'].OneLogin_Saml2_Utils = None
   # The backend imports qaboard (the CLI package) from the repository
@@ -308,7 +309,14 @@ def sync_indexes(engine, metadata):
 # ---------------------------------------------------------------------------
 # Timing
 # ---------------------------------------------------------------------------
-def cases():
+def cases(engine):
+  from sqlalchemy import text
+  with engine.connect() as conn:
+    # the commit page: a recent commit on master, with all its batches
+    hexsha = conn.execute(text("""
+      SELECT hexsha FROM ci_commits c WHERE project_id = :project AND branch = 'master'
+      AND EXISTS (SELECT 1 FROM batches b WHERE b.ci_commit_id = c.id) ORDER BY authored_datetime DESC LIMIT 1
+    """), {"project": BIG_PROJECT}).scalar()
   now = datetime.datetime.now(datetime.timezone.utc)
   iso = lambda d: d.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + '000Z'
   # what the webapp sends: the last 3 days, and the main metrics
@@ -329,8 +337,20 @@ def cases():
     ('commits: branch master', '/api/v1/commits/master', {**project, **default_range, 'metrics': metrics}),
     ('commits: history (outputs)', '/api/v1/commits/master', {**project, **default_range, 'metrics': json.dumps({m: 0 for m in METRICS[:6]}), 'with_outputs': 'true', 'only_ci_batches': 'true'}),
     ('commit: latest on master', '/api/v1/commit/', {**project, 'branch': 'master'}),
+    ('commit page', f'/api/v1/commit/{hexsha}', project),
+    ('commit: summary (no outputs)', f'/api/v1/commit/{hexsha}', {**project, 'with_outputs': 'false'}),
+    ('commit: compare (qa gate)', f'/api/v1/commit/{hexsha}/compare', {**project, 'reference': 'master'}),
+    ('commit-counts', '/api/v1/commit-counts', {**project, **default_range}),
+    ('batches: project', '/api/v1/batches', {**project, 'metrics': metrics}),
+    ('batches: failed', '/api/v1/batches', {**project, 'status': 'failed'}),
     ('branches', '/api/v1/project/branches', project),
     ('branches?q&limit', '/api/v1/project/branches', {**project, 'q': 'speed', 'limit': 50}),
+    # what `qa run` sends when a run ends: the same run each time, updated
+    ('ingest: a run ends', '/api/v1/output/', {}, {
+      'project': BIG_PROJECT, 'commit_sha': hexsha, 'batch_label': 'default', 'job_type': 'ci', 'user': 'ci',
+      'rel_input_path': 'scenes/scene_0001.raw', 'database': '/data/raw', 'platform': 'linux', 'input_type': 'slam/6dof',
+      'configurations': ['base'], 'extra_parameters': {}, 'is_pending': False, 'metrics': {m: 1.0 for m in METRICS},
+    }),
   ]
 
 
@@ -350,8 +370,9 @@ def run(args):
 
   client = app.test_client()
   results = []
-  print(f"{'case':<34} {'median':>9} {'min':>9} {'queries':>8} {'items':>6} {'size':>9}  has-more", file=sys.stderr)
-  for name, url, params in cases():
+  # first: the first request, with cold caches
+  print(f"{'case':<34} {'first':>9} {'median':>9} {'min':>9} {'queries':>8} {'items':>6} {'size':>9}  has-more", file=sys.stderr)
+  for name, url, params, *body in cases(engine):
     if args.only and args.only not in name:
       continue
     full_url = f"{url}?{urlencode(params)}" if params else url
@@ -359,21 +380,23 @@ def run(args):
     for i in range(args.repeat + 1): # the first run warms caches
       nb_queries = 0
       start = time.perf_counter()
-      response = client.get(full_url)
+      response = client.post(full_url, json=body[0]) if body else client.get(full_url)
       elapsed = time.perf_counter() - start
       if response.status_code != 200:
         raise RuntimeError(f"{name}: {response.status_code} {response.data[:500]}")
       if i:
         timings.append(elapsed)
+      else:
+        first = elapsed
     body = response.get_json()
     result = {
       'case': name, 'url': full_url,
-      'median_ms': round(1000 * statistics.median(timings), 1), 'min_ms': round(1000 * min(timings), 1),
+      'first_ms': round(1000 * first, 1), 'median_ms': round(1000 * statistics.median(timings), 1), 'min_ms': round(1000 * min(timings), 1),
       'queries': nb_queries, 'items': len(body), 'bytes': len(response.data),
       'has_more': response.headers.get('X-Has-More'),
     }
     results.append(result)
-    print(f"{name:<34} {result['median_ms']:>7.1f}ms {result['min_ms']:>7.1f}ms {nb_queries:>8} {len(body):>6} {len(response.data) / 1e6:>7.2f}MB  {result['has_more'] or ''}", file=sys.stderr)
+    print(f"{name:<34} {result['first_ms']:>7.1f}ms {result['median_ms']:>7.1f}ms {result['min_ms']:>7.1f}ms {nb_queries:>8} {len(body):>6} {len(response.data) / 1e6:>7.2f}MB  {result['has_more'] or ''}", file=sys.stderr)
   if args.json:
     args.json.write_text(json.dumps(results, indent=2))
 

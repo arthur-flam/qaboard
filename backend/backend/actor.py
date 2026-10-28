@@ -38,7 +38,7 @@ PUBLIC_ENDPOINTS = {
 }
 # The `qa` CLI sends results there: open unless ingest.auth is "token"
 INGEST_ENDPOINTS = {
-  ('new_output_webhook', 'POST'), ('update_batch', 'POST'), ('api_ci_commit', 'POST'),
+  ('new_output_webhook', 'POST'), ('new_outputs_webhook', 'POST'), ('update_batch', 'POST'), ('api_ci_commit', 'POST'),
 }
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 

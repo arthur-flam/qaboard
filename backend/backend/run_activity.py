@@ -76,8 +76,9 @@ GROUPS = {
 }
 INTEGER_GROUPS = ('commit', 'batch')
 
-# How long `qa run` says the run computed: a number of seconds in its metrics (JSON), within reason
-COMPUTE_TIME = """CASE WHEN json_typeof(metrics->'compute_time') = 'number'
+# How long `qa run` says the run computed: a number of seconds in its metrics, within reason.
+# metrics is jsonb, or json on databases where `qaboard-admin convert-metrics` didn't run yet.
+COMPUTE_TIME = """CASE WHEN jsonb_typeof((metrics->'compute_time')::jsonb) = 'number'
   THEN least(greatest((metrics->>'compute_time')::numeric, 0), 31536000)::float END"""
 
 RUNS = """

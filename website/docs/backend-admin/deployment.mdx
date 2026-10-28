@@ -78,6 +78,17 @@ Build and push the images in CI, tagged with the commit, then run `deploy.py <en
 4. **Check it worked:** `status` shows the new version, all the containers running and the backends healthy, and the
    web app opens. If not, [roll back](#rollbacks).
 
+### Converting the runs' metrics
+Servers from before October 2026 store the runs' metrics as `json` (text). Stored as `jsonb`, lists of commits and
+batches aggregate them twice as fast (until then, about 10% slower than before). Converting rewrites the table of runs:
+meanwhile QA-Board can't read or save runs (30 to 40 s per GB), and the database needs as much free disk. Once, in a
+maintenance window, soon after upgrading:
+```bash
+deployments/deploy.py deployments/mysite/production.env compose exec backend qaboard-admin convert-metrics
+```
+It says how big the table is and asks before converting. Versions from before it can't read `jsonb` metrics: to
+[roll back](#rollbacks) to them, first run `qaboard-admin convert-metrics --revert`.
+
 ## Rollbacks
 ```bash
 deployments/deploy.py deployments/mysite/production.env status     # deployed version, history

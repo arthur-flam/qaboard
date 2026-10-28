@@ -220,6 +220,20 @@ connections from the backends, 196 during a deploy: don't deploy while rolled ba
 `max_connections` must cover the pools: `(QABOARD_DB_POOL_SIZE + QABOARD_DB_MAX_OVERFLOW) * QABOARD_UWSGI_PROCESSES *
 QABOARD_BACKEND_REPLICAS`, twice during deploys. Update the arithmetic in `qaboard.conf` when you change one of them.
 
+## Converting the runs' metrics to jsonb (once)
+The runs' metrics (`outputs.metrics`) were `json` (text): lists of commits and batches parsed every run's metrics once
+per metric they aggregate. As `jsonb` they're twice as fast. Converting rewrites `outputs` with an exclusive lock:
+QA-Board can't read or save runs meanwhile, 30 to 40 s per GB of `pg_total_relation_size('outputs')`, and the database
+needs about as much free disk. The code works with both, but lists with metrics are ~10% slower on `json`: convert soon
+after the deploy that has `qaboard-admin convert-metrics`, at a quiet time, and announce it.
+```bash
+psql_qa -c "SELECT pg_size_pretty(pg_total_relation_size('outputs'))"  # the size, and free disk: df -h on the volume
+dc exec backend qaboard-admin convert-metrics   # says how long, asks before converting
+```
+It gives up after 10 s if other transactions hold `outputs` (e.g. a long cleanup): try again later. To [roll back the
+code](deployment.md#rollbacks) to a version from before it, first `dc exec backend qaboard-admin convert-metrics --revert`
+(as long again).
+
 ## Idle in transaction
 A session is `idle in transaction` while a request holds a transaction open and does something else: reading files on
 NFS, git, SSH to LSF, HTTP calls. It holds locks and keeps vacuum from cleaning up. Requests end within uwsgi's

@@ -6,7 +6,7 @@ import os
 import datetime
 from pathlib import Path
 
-from sqlalchemy import ForeignKey, Integer, String, DateTime, Float, Numeric, Text, text, literal_column
+from sqlalchemy import ForeignKey, Integer, String, DateTime, Float, Numeric, text, literal_column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import UniqueConstraint, Column, Index
 from sqlalchemy.orm import relationship
@@ -16,7 +16,7 @@ from sqlalchemy.exc import DataError
 from qaboard.conventions import batch_folder_name
 from qaboard.api import dir_to_url
 
-from backend.models import Base, Output
+from backend.models import Base, Output, serialize_outputs
 from backend.metrics_aggregation import metric_names
 from backend.shell_utils import shell_safe, safe_user_name
 from backend.storage import UnsafePathError
@@ -88,14 +88,16 @@ class Batch(Base):
       return self.ci_commit.outputs_dir / batch_folder_name(self.label)
 
 
-  def to_dict(self, session, with_outputs=False, with_aggregation=None, stats=None):
+  def to_dict(self, session, with_outputs=False, with_aggregation=None, stats=None, outputs=None):
     """
     `stats` are the batch's counts of outputs and aggregated metrics, from batches_stats().
-    When serializing many batches, compute them all at once and pass them here.
+    When serializing many batches, compute them all at once and pass them here. Same for `outputs`, from serialize_outputs()
     """
     batch_dir = self.batch_dir
     if with_outputs:
-      outputs = {'outputs': {o.id: o.to_dict(batch_dir=batch_dir) for o in self.outputs}}
+      if outputs is None:
+        outputs = serialize_outputs(session, [self])[self.id]
+      outputs = {'outputs': outputs}
     else:
       outputs = {}
     if stats is None:
@@ -227,8 +229,9 @@ def batches_stats(session, batch_ids, metrics_to_aggregate=None):
     return {}
   # e.g. {"loss": 0.1}, a list of names, or anything clients send
   metrics = metric_names(metrics_to_aggregate)[:max_aggregated_metrics]
-  # Output.metrics is JSON, stored as text: reading a key means parsing it. We read each metric once per output
-  # (OFFSET 0 keeps postgres from inlining subqueries, it would read them again for each use).
+  # We read each metric once per output, as jsonb (OFFSET 0 keeps postgres from inlining subqueries, it would read them
+  # again for each use). Output.metrics is jsonb, reading a key is cheap. Until `qaboard-admin convert-metrics` runs on
+  # databases from before, it's json (text): reading a key parses the run's metrics, the cast only the key's value.
   outputs = (session
     .query(
       Output.batch_id,
@@ -236,7 +239,8 @@ def batches_stats(session, batch_ids, metrics_to_aggregate=None):
       # The metrics of runs from old clients, with NULL statuses, count. Deleted runs' don't.
       and_(Output.is_failed.isnot(True), Output.is_pending.isnot(True), Output.deleted.isnot(True)).label('is_aggregated'),
       Output.is_pending, Output.is_running, Output.is_failed, Output.deleted,
-      *[Output.metrics[metric].label(f'metric_{index}') for index, metric in enumerate(metrics)],
+      # -> works with json and jsonb (SQLAlchemy writes metrics[...] for jsonb on postgres 14+)
+      *[cast(Output.metrics.op('->')(metric), JSONB).label(f'metric_{index}') for index, metric in enumerate(metrics)],
     )
     .filter(Output.batch_id.in_(batch_ids))
     .offset(0)
@@ -245,9 +249,9 @@ def batches_stats(session, batch_ids, metrics_to_aggregate=None):
   # We only aggregate numbers (not strings, booleans...), from valid outputs (not failed, pending or deleted),
   # that fit in floats. Aggregates ignore NULLs. Like backend/metrics_aggregation.py, in the same query as the counts.
   def as_float(value):
-    number = cast(cast(value, Text), Numeric)
+    number = cast(value, Numeric)
     # nested CASEs: postgres evaluates them in order, but not the terms of AND
-    return case((func.json_typeof(value) == 'number', case((func.abs(number) < literal_column('1e308::numeric'), cast(number, Float)))))
+    return case((func.jsonb_typeof(value) == 'number', case((func.abs(number) < literal_column('1e308::numeric'), cast(number, Float)))))
   values = (session
     .query(
       outputs,

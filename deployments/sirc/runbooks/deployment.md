@@ -60,6 +60,9 @@ deployments/deploy.py deployments/sirc/production.env rollback   # back to the p
 > (`QABOARD_ADMINS` in `sirc.yml` and `values.yaml`); without access to the web app,
 > `deployments/deploy.py deployments/sirc/production.env compose exec backend qaboard-admin create-admin <user>`.
 
+> **Runs' metrics (October 2026)**: once converted to `jsonb` ([database.md](database.md#converting-the-runs-metrics-to-jsonb-once)),
+> versions from before can't aggregate them: run `qaboard-admin convert-metrics --revert` before rolling back past it.
+
 > **Database migrations**: rolling back the code does not roll back database migrations. Write migrations that the previous version can live with (add columns, don't drop/rename them in the same release), since the old and the new backends also run side by side during a deploy.
 
 ## Deploying by hand

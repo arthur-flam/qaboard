@@ -55,6 +55,51 @@ class TestNotifyQaDatabase(unittest.TestCase):
     self.assertIn("not-json", stderr.getvalue())
 
 
+class TestNotifyQaDatabaseRuns(unittest.TestCase):
+  """`qa batch` sends the runs it's about to start in a few calls (POST /api/v1/outputs/), not one per run"""
+  shared = dict(share=True, batch_label="default", database="/data", platform="linux", user="ci")
+  runs = [{"rel_input_path": f"a/{i}.raw", "database": "/data", "is_pending": True} for i in range(5)]
+
+  def response(self, status, body):
+    response = mock.Mock(status_code=status, headers={})
+    response.json.return_value = body
+    return response
+
+  def sent(self, post):
+    import json
+    return [json.loads(c.kwargs["data"]) for c in post.call_args_list]
+
+  def test_one_call(self):
+    from qaboard.api import notify_qa_database_runs, notify_qa_database
+    answers = [{"id": i} for i in range(4)] + [{"error": "the input path was not provided", "status": 400}]
+    with mock.patch("requests.post", return_value=self.response(200, answers)) as post:
+      self.assertEqual(notify_qa_database_runs(self.runs, **self.shared), [{"id": i} for i in range(4)] + [None])
+    [bulk] = self.sent(post)
+    self.assertTrue(post.call_args.args[0].endswith("/api/v1/outputs/"))
+    # runs only send what they don't share: with it, each is what it would send on its own
+    self.assertEqual(bulk["runs"][0], {"rel_input_path": "a/0.raw", "is_pending": True})
+    shared = {k: v for k, v in bulk.items() if k != "runs"}
+    with mock.patch("requests.post", return_value=self.response(200, {"id": 0})) as post:
+      for run in self.runs:
+        notify_qa_database(**{**self.shared, **run})
+    self.assertEqual([{**shared, **run} for run in bulk["runs"]], self.sent(post))
+
+  def test_many_runs(self):
+    from qaboard.api import notify_qa_database_runs
+    def answer(url, data, **kwargs):
+      import json
+      return self.response(200, [{"id": run["rel_input_path"]} for run in json.loads(data)["runs"]])
+    with mock.patch("qaboard.api.runs_per_call", 2), mock.patch("requests.post", side_effect=answer) as post:
+      self.assertEqual(notify_qa_database_runs(self.runs, **self.shared), [{"id": run["rel_input_path"]} for run in self.runs])
+    self.assertEqual([len(call["runs"]) for call in self.sent(post)], [2, 2, 1])
+
+  def test_offline(self):
+    from qaboard.api import notify_qa_database_runs
+    with mock.patch("requests.post") as post:
+      self.assertEqual(notify_qa_database_runs(self.runs, **{**self.shared, "offline": True}), [None] * 5)
+    post.assert_not_called()
+
+
 class TestServerUrl(unittest.TestCase):
   def stderr_of_import(self, **env):
     import os

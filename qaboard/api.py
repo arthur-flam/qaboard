@@ -190,18 +190,46 @@ def notify_qa_database(object_type='output', **kwargs):
   """
   Updating the QA database.
   """
-  import requests
-  from .config import is_ci, config, _metrics, run_context
-  from .config import commit_id, commit_branch, commit_tag, commit_committer_name, commit_committer_email, commit_author_email, commit_authored_datetime, commit_parents, commit_message
-
-  if kwargs.get('offline'):
-    return
-
+  from .config import is_ci
   # we only update QA-Board if we're in a CI run, or if the user used `qa --ci`
-  if not (is_ci or kwargs['share']):
+  if kwargs.get('offline') or not (is_ci or kwargs['share']):
     return
+  return post_to_qa_database(f"{api_prefix}/{object_type}/", qa_database_payload(**kwargs))
 
-  url = f"{api_prefix}/{object_type}/"
+
+# Runs per call to /api/v1/outputs/
+runs_per_call = 500
+
+def notify_qa_database_runs(runs, **kwargs):
+  """
+  Like notify_qa_database(**{**kwargs, **run}) for each run, in a few calls instead of one per run.
+  Returns what the server answered for each run: the run, or None (it warned why).
+  """
+  from .config import is_ci
+  if kwargs.get('offline') or not (is_ci or kwargs['share']) or not runs:
+    return [None] * len(runs)
+  # The server adds what the runs share to each run: they only send what differs
+  shared = qa_database_payload(**kwargs)
+  def own(run):
+    return {k: v for k, v in qa_database_payload(**{**kwargs, **run}).items() if k not in shared or shared[k] != v}
+  answers = []
+  for start in range(0, len(runs), runs_per_call):
+    chunk = runs[start:start + runs_per_call]
+    response = post_to_qa_database(f"{api_prefix}/outputs/", {**shared, 'runs': [own(run) for run in chunk]})
+    if not isinstance(response, list) or len(response) != len(chunk):
+      answers.extend([None] * len(chunk))
+      continue
+    for answer in response:
+      if 'error' in answer:
+        click.secho(f"WARNING: QA-Board refused a run ({answer.get('status')}): {answer['error']}", fg='yellow', err=True)
+      answers.append(None if 'error' in answer else answer)
+  return answers
+
+
+def qa_database_payload(**kwargs):
+  """What we send QA-Board, with `kwargs`: about the commit, the project's configuration..."""
+  from .config import is_ci, commit_id, config, _metrics, run_context
+  from .config import commit_branch, commit_tag, commit_committer_name, commit_committer_email, commit_author_email, commit_authored_datetime, commit_parents, commit_message
   data = {
     'job_type': 'ci' if is_ci else 'local',
     # where it runs, more precisely: older servers ignore it
@@ -225,6 +253,12 @@ def notify_qa_database(object_type='output', **kwargs):
     "qaboard_config": serialize_paths(deepcopy(config)),
     "qaboard_metrics": _metrics,
   })
+  return data
+
+
+def post_to_qa_database(url, data):
+  """POSTs to QA-Board, warns if it fails. Returns the server's answer, or None"""
+  import requests
   if 'QA_VERBOSE' in os.environ:
     click.secho(url, fg='cyan', err=True)
     click.secho(str(data), fg='cyan', dim=True, err=True)
@@ -247,7 +281,7 @@ def notify_qa_database(object_type='output', **kwargs):
     click.secho(f'WARNING: [{e}] Failed to update QA-Board.', fg='yellow', bold=True, err=True)
     click.secho(url, fg='yellow', err=True)
     # what we sent (or failed to serialize), without the big fields
-    data = {k: v for k, v in data.items() if k not in ['qaboard_config', 'qaboard_metrics', 'inputs_settings']}
+    data = {k: v for k, v in data.items() if k not in ['qaboard_config', 'qaboard_metrics', 'inputs_settings', 'runs']}
     click.secho(str(data), fg='yellow', err=True)
     try:
       request_headers = {k: '<redacted>' if k.lower() == 'authorization' else v for k, v in r.request.headers.items()}

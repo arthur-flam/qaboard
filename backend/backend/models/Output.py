@@ -6,12 +6,13 @@ import json
 import fnmatch
 import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from sqlalchemy import Column, ForeignKey, Index
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
-from sqlalchemy import text, and_, Integer, String, Boolean, DateTime, JSON
+from sqlalchemy import text, and_, select, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 
 from qaboard.conventions import slugify_hash, serialize_config
@@ -27,6 +28,74 @@ from backend.storage import check_storage_path, check_inside
 
 def iso_utc(date):
   return f"{date.isoformat()}Z" if date else None
+
+
+def without_nul(value):
+  """The value, without the character \\u0000 in texts: jsonb refuses it"""
+  if isinstance(value, str):
+    return value.replace('\x00', '\ufffd')
+  if isinstance(value, dict):
+    return {without_nul(k): without_nul(v) for k, v in value.items()}
+  if isinstance(value, list):
+    return [without_nul(v) for v in value]
+  return value
+
+
+def run_dir_url(path):
+  """dir_to_url(), faster for runs' folders: they are saved normalized, then Path() would change nothing"""
+  if isinstance(path, str) and path.startswith('/') and '//' not in path and '/./' not in path and not path.endswith(('/', '/.')):
+    return quote(f"/s{path}")
+  return dir_to_url(Path(path))
+
+
+# Output.to_dict() copies them as they are
+dict_columns = ['id', 'output_type', 'platform', 'configurations', 'extra_parameters', 'metrics', 'is_failed', 'is_pending', 'is_running', 'data', 'deleted']
+
+
+def output_dict(output, output_dir, input_database, input_path, input_data):
+  """Output.to_dict(), of an Output or of a row with its columns (serialize_outputs)"""
+  return {
+      **{c: getattr(output, c) for c in dict_columns},
+      'created_date': output.created_date.isoformat(),
+      **{c: iso_utc(getattr(output, c)) for c in ('queued_at', 'started_at', 'finished_at')},
+      'output_dir_url': run_dir_url(output_dir),
+      'test_input_database': str(input_database),
+      'test_input_path': str(input_path),
+      'test_input_metadata': input_data['metadata'] if (input_data and 'metadata' in input_data) else {},
+  }
+
+
+def serialize_outputs(session, batches):
+  """
+  {batch_id: {output_id: output.to_dict()}} for all the outputs of the batches, in one query. From rows: building ORM
+  objects for the thousands of runs of commits took most of the time of the requests that list them.
+  """
+  from backend.models import TestInput
+  batches = {b.id: b for b in batches}
+  outputs = {batch_id: {} for batch_id in batches}
+  if not batches:
+    return outputs
+  rows = session.execute(
+    select(
+      Output.batch_id, Output.output_dir_override, Output.created_date, Output.queued_at, Output.started_at, Output.finished_at,
+      *[getattr(Output, c) for c in dict_columns],
+      TestInput.database.label('input_database'), TestInput.path.label('input_path'), TestInput.data.label('input_data'),
+    )
+    .outerjoin(TestInput, Output.test_input_id == TestInput.id)
+    .where(Output.batch_id.in_(list(batches)))
+  )
+  legacy = []
+  for row in rows:
+    if row.output_dir_override is None:
+      # runs from before we saved their folder: it follows conventions, see Output.get_output_dir
+      legacy.append(row.id)
+      outputs[row.batch_id][row.id] = None
+    else:
+      outputs[row.batch_id][row.id] = output_dict(row, row.output_dir_override, row.input_database, row.input_path, row.input_data)
+  if legacy:
+    for output in session.query(Output).filter(Output.id.in_(legacy)):
+      outputs[output.batch_id][output.id] = output.to_dict(batch_dir=batches[output.batch_id].batch_dir)
+  return outputs
 
 
 class Output(Base):
@@ -103,7 +172,12 @@ class Output(Base):
   started_at = Column(DateTime, nullable=True)
   finished_at = Column(DateTime, nullable=True)
 
-  metrics = Column(JSON(), nullable=False, default=dict, server_default='{}')
+  # jsonb: lists of commits aggregate them (models/Batch.py). Databases from before have json until `qaboard-admin convert-metrics`
+  metrics = Column(JSONB(), nullable=False, default=dict, server_default='{}')
+
+  @validates('metrics')
+  def validate_metrics(self, key, metrics):
+    return without_nul(metrics)
   data = Column(JSON(), nullable=False, default=dict, server_default='{}')
 
 
@@ -162,30 +236,8 @@ class Output(Base):
            f"filename='{self.test_input.filename}' /]")
 
   def to_dict(self, batch_dir=None):
-    """`batch_dir`: the batch's, when serializing many of its outputs"""
-    cols = [
-     'id',
-     'output_type',
-     'platform',
-     'configurations',
-     'extra_parameters',
-     'metrics',
-     'is_failed',
-     'is_pending',
-     'is_running',
-     'data',
-     'deleted',
-    ]
-    as_dict = {c: getattr(self, c) for c in cols}
-    return {
-        **as_dict,
-        'created_date': self.created_date.isoformat(),
-        **{c: iso_utc(getattr(self, c)) for c in ('queued_at', 'started_at', 'finished_at')},
-        'output_dir_url': dir_to_url(self.get_output_dir(batch_dir)),
-        'test_input_database': str(self.test_input.database),
-        'test_input_path': str(self.test_input.path),
-        'test_input_metadata': self.test_input.data['metadata'] if (self.test_input.data and 'metadata' in self.test_input.data) else {},
-    }
+    """`batch_dir`: the batch's, when serializing many of its outputs. For many outputs, see serialize_outputs()"""
+    return output_dict(self, self.get_output_dir(batch_dir), self.test_input.database, self.test_input.path, self.test_input.data)
 
   @staticmethod
   def get_or_create(session, **kwargs):

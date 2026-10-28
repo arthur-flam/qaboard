@@ -27,7 +27,7 @@ from .utils import save_outputs_manifest, total_storage
 from .utils import redirect_std_streams, clean_output_dir
 from .utils import getenvs
 from .api import url_to_dir, print_url
-from .api import get_outputs, notify_qa_database, serialize_paths, exit_if_results_refused, ResultsUnreadable, print_auth_error
+from .api import get_outputs, notify_qa_database, notify_qa_database_runs, serialize_paths, exit_if_results_refused, ResultsUnreadable, print_auth_error
 from .iterators import iter_inputs, iter_parameters, load_runs_file, iter_runs, rerun_job_options, local_job_options
 from .batch_logs import saves_logs, batch_log
 
@@ -772,6 +772,8 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
     jobs = JobGroup(job_options=rerun_job_options(runs_job_options, default_runner_options, explicit_runner_overrides), split_by_job_options=False)
 
   total_runs = 0
+  # the runs QA-Board will show as pending, sent in a few calls once we know them all: [(job, what it sends)]
+  pending_runs = []
   for run_context in inputs_iter:
     input_configuration_str = serialize_config(run_context.configurations)
     extra_parameters, input_forwarded_args = ctx.obj['extra_parameters'], forwarded_args
@@ -920,18 +922,14 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
         if total_runs > 1_000 and not os.environ.get("QA_BATCH_ALLOW_MANY_RUNS"):
           raise ValueError("Sorry you are sending too many runs at once. Consider using --offline or get an approval.")
           sys.exit(1)
-        # TODO: accumulate and send all at once to avoid 100s of requests?
-        db_output = notify_qa_database(**{
-          **ctx.obj,
+        pending_runs.append((job, {
           **run_context.obj, # for now we don't want to worry about backward compatibility, and input_path being abs vs relative...
           "is_pending": True,
           "data": {
             "job_options": run_context.job_options,
             "root_command_id": root_command_id,
           }
-        })
-        if db_output: # Note: the ID is already in the matching job above
-          job.id = db_output["id"]
+        }))
       if is_pending:
         wait_command = f"qa wait --output-id {matching_existing_output['id']}"
         if action_on_pending=="sync":
@@ -944,6 +942,12 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
         else:
           assert action_on_pending=="run"
       jobs.append(job)
+
+  if pending_runs:
+    db_outputs = notify_qa_database_runs([run for _, run in pending_runs], **ctx.obj)
+    for (job, _), db_output in zip(pending_runs, db_outputs):
+      if db_output: # Note: the ID is already in the matching job above
+        job.id = db_output["id"]
 
   if list_contexts:
     print(json.dumps([serialize_paths(j.run_context.asdict()) for j in jobs], indent=2))
