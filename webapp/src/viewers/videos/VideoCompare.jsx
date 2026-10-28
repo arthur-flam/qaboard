@@ -37,6 +37,8 @@ const WIPE_GRAB = 14;
 const basename = url => decodeURIComponent((url ?? 'video').split(/[?#]/)[0].split('/').pop()).replace(/\.[^.]+$/, '');
 const clamp = (x, min, max) => Math.min(max, Math.max(min, x));
 const other_letter = letter => letter === 'A' ? 'B' : 'A';
+// Blind comparisons: which side is A
+const coin_flip = () => Math.random() < 0.5;
 
 // The size, duration and error of a <video> or <img>. We read them from the element:
 // it can load before React commits it, and React drops the events of elements it hasn't committed.
@@ -151,7 +153,7 @@ export const VideoCompare = ({
     : { new: blind.a, reference: other_letter(blind.a) };
   const nextBlindStep = () => {
     if (!blind) {
-      const coin = Math.random() < 0.5;
+      const coin = coin_flip();
       setSwapped(coin);
       setBlind({ a: coin ? 'B' : 'A', revealed: false });
     } else if (!blind.revealed) setBlind({ ...blind, revealed: true });
@@ -227,25 +229,14 @@ export const VideoCompare = ({
   const second = swapped ? 'new' : 'reference';
   const order = [first, second];
   const swap = () => setSwapped(s => !s);
-  // The toggle, like the image viewer's: both videos show, they swap sides; one shows, or their difference alone:
-  // the first, the other, their difference, and again
-  const single = mode === 'single' || (mode === 'difference' && diff_layout === 'alone');
-  const lead = blind?.a === 'B' ? 'reference' : 'new';
-  const flip = () => {
-    if (!single || (mode === 'single' && first === lead)) return swap();
-    if (mode === 'single') {
-      swap();
-      setDiff({ ...diff, layout: 'alone' });
-      setMode('difference');
-      return;
-    }
-    if (first !== lead) swap();
-    setMode('single');
-  };
-  const flip_title = !single ? `Swap the sides: ${names[second]} | ${names[first]}`
-    : mode === 'single' && first === lead ? `Show the ${names[lead === 'new' ? 'reference' : 'new']} video`
-    : mode === 'single' ? `Show the difference: ${names[lead]} − ${names[lead === 'new' ? 'reference' : 'new']}`
-    : `Show the ${names[lead]} video`;
+  // The toggle, like the image viewer's, never changes the mode: in single mode it shows the other video, else the
+  // videos swap sides, or the difference its order
+  const single = mode === 'single';
+  const diff_alone = mode === 'difference' && diff_layout === 'alone';
+  const flip = swap;
+  const flip_title = single ? `Show the ${names[second]} video`
+    : diff_alone ? `Swap the difference: ${names[second]} − ${names[first]}`
+    : `Swap the sides: ${names[second]} | ${names[first]}`;
   const pickMode = value => {
     if (value === mode && value === 'single') swap();
     else if (value === mode && value === 'difference') toggleDiffLayout();
@@ -752,6 +743,7 @@ export const VideoCompare = ({
         {comparing && <Segmented label="Comparison" options={modes} value={mode} onChange={pickMode} />}
         {mode === 'difference' && <Button
           icon="three-columns"
+          text="With the videos"
           title={diff_between ? 'Show the difference alone (4)' : `Show the videos on each side of the difference: ${names[first]} | difference | ${names[second]} (4)`}
           active={diff_between}
           aria-pressed={diff_between}
@@ -857,10 +849,12 @@ export const VideoCompare = ({
         tiles={tiles}
       />}
     </div>
+    {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a custom widget: its keys are handled on the document (onKeyDown above) */}
     <div
       ref={stage}
       className={stage_class}
       style={{ width: stage_width, height: pane.height }}
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable, for its keyboard shortcuts
       tabIndex={0}
       role="application"
       aria-label="Videos: click to play or pause, scroll to zoom, drag to pan"

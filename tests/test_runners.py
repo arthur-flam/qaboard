@@ -3,6 +3,7 @@ Tests for the LSF concurrency limit and the dask runner.
 LSF is not available: we check the bsub commands we would send, and execute the job array scripts with bash.
 """
 import os
+import sys
 import re
 import time
 import tempfile
@@ -295,6 +296,39 @@ class TestJobGroups(unittest.TestCase):
     self.assertIn('-w "ended(abcdefgh_*)"', bsub.commands[6])
 
 
+  def test_stopped_batch_marks_its_runs_as_failed(self):
+    """When `qa batch` is stopped, the runs QA-Board still shows as pending end: failed unless they saved successful metrics"""
+    import json
+    from qaboard.api import dir_to_url
+    from qaboard.runners import JobGroup
+    from qaboard.runners.lsf import LsfRunner
+    killed, done, other = make_jobs('lsf', ['a', 'b', 'c'], self.root.resolve(), queue='q')
+    done.run_context.output_dir.mkdir()
+    (done.run_context.output_dir / 'metrics.json').write_text(json.dumps({"is_failed": False}))
+    outputs = {
+      1: {"output_dir_url": dir_to_url(killed.run_context.output_dir), "is_pending": True, "is_failed": False},
+      2: {"output_dir_url": dir_to_url(done.run_context.output_dir), "is_pending": True, "is_failed": False},
+      3: {"output_dir_url": dir_to_url(other.run_context.output_dir), "is_pending": False, "is_failed": False},
+    }
+    group = JobGroup(jobs=[killed, done, other], job_options={"type": "lsf", "command_id": "abcdefgh-1234", "queue": "q"})
+    for stop in (SystemExit(1), KeyboardInterrupt()):
+      with mock.patch.object(LsfRunner, 'start_groups', side_effect=stop), \
+           mock.patch('qaboard.runners.job.get_outputs', return_value=outputs), \
+           mock.patch('qaboard.runners.job.notify_qa_database') as notify:
+        with self.assertRaises(type(stop)):
+          group.start(blocking=True, qa_context={"share": True})
+      updates = {call.kwargs['output_dir']: call.kwargs['is_failed'] for call in notify.call_args_list}
+      self.assertEqual(updates, {killed.run_context.output_dir: True, done.run_context.output_dir: False})
+      for call in notify.call_args_list:
+        self.assertFalse(call.kwargs['is_pending'])
+    # `qa batch --no-wait` doesn't wait for the runs: they're still running
+    with mock.patch.object(LsfRunner, 'start_groups', side_effect=KeyboardInterrupt), \
+         mock.patch('qaboard.runners.job.notify_qa_database') as notify:
+      with self.assertRaises(KeyboardInterrupt):
+        group.start(blocking=False, qa_context={"share": True})
+    notify.assert_not_called()
+
+
 class TestBuildPowershellEnv(unittest.TestCase):
   def env_lines(self, **context_env):
     from qaboard.runners.jenkins_windows import build_powershell_env
@@ -427,6 +461,26 @@ class TestJenkinsWindowsRunner(unittest.TestCase):
       JenkinsWindowsRunner(BareRunContext(output_dir)).start(blocking=False)
     content = (output_dir / 'run.ps1').read_text()
     self.assertIn('$ErrorActionPreference = "Stop"', content)
+
+
+class TestJenkinsTrigger(unittest.TestCase):
+  def test_the_trigger_says_who_and_which_project(self):
+    # Without a token, the server only starts the Jenkins jobs of the project's qaboard.yaml
+    import requests
+    from qaboard.runners import jenkins_windows
+    answer = mock.MagicMock(status_code=200)
+    answer.json.return_value = {"status": "pending", "url": "http://jenkins/queue/item/7/"}
+    with mock.patch.object(requests, 'post', return_value=answer) as post, \
+         mock.patch.object(jenkins_windows, 'get_jenkins_config', return_value={"build_url": "http://jenkins/job/windows", "token": None}), \
+         mock.patch.object(jenkins_windows, 'api_headers', {"Content-Type": "application/json", "Authorization": "Bearer qab_pat_x"}), \
+         mock.patch.object(jenkins_windows, 'project_name', return_value="group/repo"), \
+         mock.patch.object(sys.modules['qaboard.config'], 'commit_id', "abc123"):
+      jenkins_windows.trigger_run("echo hi")
+    self.assertTrue(post.call_args.args[0].endswith("/jenkins/build/trigger/"))
+    self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer qab_pat_x")
+    data = post.call_args.kwargs["json"]
+    self.assertEqual((data["project"], data["commit"], data["build_url"], data["params"]), ("group/repo", "abc123", "http://jenkins/job/windows", {"task": "echo hi"}))
+    self.assertIn("token", data)
 
 
 class TestJenkinsPolling(unittest.TestCase):
@@ -583,6 +637,27 @@ try:
   has_dask = True
 except ImportError:
   has_dask = False
+
+
+class TestCelerySettings(unittest.TestCase):
+  def test_passwords_come_from_the_environment(self):
+    """qaboard.yaml is in git: broker URLs can read the password from the environment"""
+    from qaboard.runners.celery_settings import celery_settings
+    config = {"runners": {"celery": {
+      "broker_url": "pyamqp://camera:${QA_CELERY_PASSWORD}@qaboard:5672/camera",
+      "result_backend": "rpc://",
+      "timezone": "$TZ_KEPT",
+      "worker_concurrency": 4,
+    }}}
+    with mock.patch.dict(os.environ, {"QA_CELERY_PASSWORD": "secret", "TZ_KEPT": "x"}):
+      settings = celery_settings(config)
+    self.assertEqual(settings["broker_url"], "pyamqp://camera:secret@qaboard:5672/camera")
+    self.assertEqual(settings["result_backend"], "rpc://")
+    self.assertEqual(settings["timezone"], "$TZ_KEPT")
+    self.assertEqual(settings["worker_concurrency"], 4)
+    # the project's configuration isn't changed
+    self.assertIn("${QA_CELERY_PASSWORD}", config["runners"]["celery"]["broker_url"])
+    self.assertEqual(celery_settings({}), {})
 
 
 class TestCleanOutputDir(unittest.TestCase):

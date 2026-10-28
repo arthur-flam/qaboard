@@ -16,7 +16,7 @@ import { AdminError } from "./states";
 import { jobQuery, jobErrorsQuery, job_errors_page_size, cancelJob, retryJob, isActiveJob } from "./api";
 import { Pager } from "./Users";
 import {
-  JobStatus, counters, error_kinds, errorKindLabel, nbErrors, number, formatDuration, jobDuration, isStale, kind_labels,
+  JobStatus, counters, error_kinds, errorKindLabel, nbErrors, number, formatBytes, formatDuration, jobDuration, isStale, kind_labels,
 } from "./jobs";
 import { Workers } from "./Storage";
 
@@ -135,6 +135,7 @@ export const JobDetail = ({ id }) => {
   };
   const again = changes => act(retryJob(queryClient, job.id, changes)).then(new_job => new_job && history.push(`/admin/storage/jobs/${new_job.id}`));
   const cancel = () => act(cancelJob(queryClient, job.id)).then(job => job && toaster.show({ message: job.status === 'cancelled' ? 'Cancelled' : 'It stops in a few seconds', intent: Intent.SUCCESS, timeout: 3000 }));
+  const forceCancel = () => act(cancelJob(queryClient, job.id, { force: true })).then(job => job && toaster.show({ message: 'Cancelled', intent: Intent.SUCCESS, timeout: 3000 }));
 
   const progress = job.progress ?? {};
   const active = isActiveJob(job);
@@ -148,7 +149,10 @@ export const JobDetail = ({ id }) => {
       <h3 className={Classes.HEADING} style={{ margin: 0 }}>#{job.id} {job.kind_label ?? kind_labels[job.kind]}</h3>
       <JobStatus job={job}/>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-        {active && <Button icon="stop" text="Cancel" intent={Intent.DANGER} variant="outlined" onClick={cancel} loading={busy} disabled={job.cancel_requested}/>}
+        {active && !job.cancel_requested && <Button icon="stop" text="Cancel" intent={Intent.DANGER} variant="outlined" onClick={cancel} loading={busy}/>}
+        {active && job.cancel_requested && <Tooltip content="Don't wait for its worker: another job of this kind can start. The worker may still be busy with it for a while, restart the jobs service to stop it at once." hoverOpenDelay={300}>
+          <Button icon="disable" text="Stop without waiting" intent={Intent.DANGER} onClick={forceCancel} loading={busy}/>
+        </Tooltip>}
         {!active && job.dry_run && <Button icon="trash" text="Run it for real" intent={Intent.DANGER} onClick={() => again({ dry_run: false })} loading={busy}/>}
         {!active && <Button icon="refresh" text="Run again" onClick={() => again()} loading={busy}/>}
       </span>
@@ -161,6 +165,15 @@ export const JobDetail = ({ id }) => {
       {job.attempts > 1 && <> · resumed {job.attempts - 1} time{job.attempts > 2 ? 's' : ''}</>}
     </p>
 
+    {(progress.scan_id || job.params?.scan_id) && <Callout icon="search" style={{ marginBottom: 12 }}>
+      <Link to={`/admin/storage/scans/${progress.scan_id ?? job.params.scan_id}`}>
+        {job.kind === 'scan_storage' ? (active ? 'Explore what the scan found so far' : 'Explore what the scan found') : `Back to scan #${job.params.scan_id}`}
+      </Link>
+      {job.kind === 'scan_storage' && progress.roots_total ? <span className={Classes.TEXT_MUTED}> · {number(progress.roots_done ?? 0)} of {number(progress.roots_total)} storage roots, {number(progress.folders_done ?? 0)} of {number(progress.folders_total ?? 0)} of their folders{progress.dirs_explored ? `, ${number(progress.dirs_explored)} folders read` : ''}{progress.current && active ? <> · now in <code>{progress.current}</code></> : null}</span> : null}
+    </Callout>}
+    {active && job.cancel_requested && <Callout intent={Intent.WARNING} icon="stop" title="Cancelling" style={{ marginBottom: 12 }}>
+      The job stops at its next check, usually in seconds. If it doesn't, its worker is stuck (e.g. on a storage that doesn't answer): stop it without waiting.
+    </Callout>}
     {job.status === 'queued' && <Workers workers={job.workers} queued/>}
     {isStale(job) && <Callout intent={Intent.WARNING} title="No news from its worker">
       Its last heartbeat was <Time iso={job.heartbeat_at}/>. If the worker was stopped, the job is queued again after 10 minutes, and resumes where it was.
@@ -182,7 +195,7 @@ export const JobDetail = ({ id }) => {
       {shown_counters.map(counter => {
         const key = job.dry_run && counter.dry_key ? counter.dry_key : counter.key;
         const content = <Card compact>
-          <div className="count" style={counter.intent === Intent.DANGER && progress[key] ? { color: Colors.RED3 } : undefined}>{number(progress[key])}</div>
+          <div className="count" style={counter.intent === Intent.DANGER && progress[key] ? { color: Colors.RED3 } : undefined}>{counter.format === 'bytes' ? formatBytes(progress[key]) : number(progress[key])}</div>
           <div className={Classes.TEXT_MUTED}>{job.dry_run && counter.dry ? counter.dry : counter.label}</div>
         </Card>;
         return counter.hint ? <Tooltip key={counter.key} content={counter.hint} hoverOpenDelay={300} targetTagName="div">{content}</Tooltip> : <div key={counter.key}>{content}</div>;

@@ -45,10 +45,9 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
 ## Ops
 - The cantaloupe admin endpoint is enabled with `qaboard`/`qaboard`. It is only reachable inside the compose network.
 - Base images: cantaloupe uses `alpine:3.10`, nginx uses Debian buster from archive.debian.org. Both are EOL.
-- On a fresh database `alembic upgrade head` fails (the baseline migration is empty). `migrate.sh` falls back to
-  `alembic downgrade head || alembic stamp head` and the app creates the tables, so it works, but it's noisy.
-  Worse: the fallback also hides real migration failures, so `deploy.py`/the helm Job can't stop a deploy on them.
-  Fix the baseline, then remove the fallback.
+- The baseline migration is empty: a new database can't be built by `alembic upgrade head`. The app creates the
+  tables when it's imported (`Base.metadata.create_all`), and `migrate.sh` stamps a new database (no data, no version)
+  at the head. A database with data but no version makes `migrate.sh` fail: stamp it by hand at the migration it has.
 - PostgreSQL 12 is EOL (Nov 2024). Upgrade with dump/restore, e.g. when moving to kubernetes (CloudNativePG uses 16).
 - Deploys need docker compose ≥ 2.24 on the hosts and on the GitLab runner (`${VAR:+...}` interpolation,
   `pull --policy`). SIRC's hosts run Docker Engine 24 (API 1.43): fine, but not healthcheck `start_interval`.
@@ -63,7 +62,10 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
     configured on PyPI, or a `PYPI_API_TOKEN` secret.
   - GitLab's manual `publish:PyPi` job (twine from planet31) is redundant with the GitHub release.
   - Docker images: `publish-docker-images` needs `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets.
-- CI tests the CLI on Python 3.11 only, but `requires-python` says `>=3.7`.
+- CI tests the CLI on Python 3.11 and 3.13, but `requires-python` says `>=3.7`. The code has no syntax or API newer
+  than 3.7 (checked in October 2026: `qa batch` runs on 3.8, the unit tests need click 8.2 so Python 3.10). Before
+  raising it, check the Python of the SIRC Windows nodes (installed by the `Install_qaboard_on_windows_nodes` Jenkins
+  job) and of the projects' own environments: `pip install` refuses a `qaboard` that requires a newer Python.
 - The website deploy workflow only runs on master pushes that touch `website/`.
 - The helm chart (`charts/qaboard`) is validated (lint, kubeconform) but was not run on a cluster yet.
   `deployments/sirc/values.yaml` has `TODO(sirc)`s, see `website/docs/backend-admin/kubernetes.mdx`.

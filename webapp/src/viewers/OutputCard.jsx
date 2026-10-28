@@ -1,7 +1,6 @@
 import { Fragment, memo, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useInView } from 'react-intersection-observer'
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DateTime } from 'luxon';
 import { FullScreen, useFullScreenHandle } from "react-full-screen";
 
 import styled from "styled-components";
@@ -16,8 +15,6 @@ import {
   Button,
   PopoverNext,
   Menu,
-  MenuItem,
-  MenuDivider,
   PopoverInteractionKind,
 } from "@blueprintjs/core";
 
@@ -25,18 +22,13 @@ import { OutputViewer } from "./OutputViewer";
 import { config_visualizations } from "./controls";
 import { MetricsTags } from "../components/metrics";
 import { OutputTags, StatusTag, RunBadges, style_skeleton } from '../components/tags'
-import { SubmittedByMenuItem } from '../components/SubmittedBy'
-import { humanFileSize, humanElapsedTime } from "./bit_accuracy/utils";
+import { RunInfoMenuItems } from '../components/RunInfoMenu'
 
-import { Link, history } from "../router"
 import { updateSelected } from "../hooks";
 import { http, errorMessage } from "../api/http";
 import { output_files_stale_time, invalidateOutputFiles } from "../api/queries";
-import { date_range_from_query, parse_query, path_segment, stringify_query } from "../selection";
-import { at_most, linux_to_windows, is_same_data } from '../utils'
-import { hasPathMappings } from '../utils/paths'
+import { at_most, is_same_data } from '../utils'
 import { is_image } from "./images/utils"
-import { copyWithToast } from "../utils/clipboard"
 import {
   parseVisualizationOptions,
   calculateOptionValues,
@@ -45,11 +37,6 @@ import {
   optionLabel,
   resolveOptionValue,
 } from "../utils/dynamicOptions"
-
-
-const on_copy = text => () => copyWithToast(text, {
-  message: <span className={Classes.TEXT_OVERFLOW_ELLIPSIS}><strong>Copied:</strong> {text}</span>,
-})
 
 
 const manifest_url = (output, { refresh = false } = {}) => (output?.is_running || refresh)
@@ -107,64 +94,37 @@ const compute_options = (outputs, manifest) => {
 }
 
 
-const error_html = error => {
-  const data = error.response?.data;
-  return typeof data === 'string' && data ? data : errorMessage(error);
-}
-
-
 const SlimCard = styled(Card)`
   overflow: "auto";
 `;
 
 // The button is in the full screen element, to exit too. No tooltips in there: they show outside of it.
-const FullScreenableSlimCard = ({ updateFullscreen, className, style, children }) => {
+const FullScreenable = ({ updateFullscreen, children }) => {
   const handle = useFullScreenHandle();
-  return <SlimCard compact className={className} style={style}>
-    <FullScreen handle={handle} onChange={state => updateFullscreen(state)}>
-      <div style={{position: "relative"}}>
-        <div style={{position: "absolute", right: "0px", top: "0px", zIndex: 1}}>
-          <Button
-            size="small"
-            variant="minimal"
-            icon={handle.active ? "minimize" : "fullscreen"}
-            aria-label={handle.active ? "Exit full screen" : "Full screen"}
-            title={handle.active ? "Exit full screen (Esc)" : "Full screen: this run's visualizations. Images have their own, in their toolbar"}
-            onClick={handle.active ? handle.exit : handle.enter}
-          />
-        </div>
+  return <FullScreen handle={handle} onChange={state => updateFullscreen(state)}>
+    <div style={{position: "relative"}}>
+      <div style={{position: "absolute", right: "0px", top: "0px", zIndex: 1}}>
+        <Button
+          size="small"
+          variant="minimal"
+          icon={handle.active ? "minimize" : "fullscreen"}
+          aria-label={handle.active ? "Exit full screen" : "Full screen"}
+          title={handle.active ? "Exit full screen (Esc)" : "Full screen: this run's visualizations. Images have their own, in their toolbar"}
+          onClick={handle.active ? handle.exit : handle.enter}
+        />
       </div>
-      {children}
-    </FullScreen>
-  </SlimCard>
-}
-
-
-// History shows the last 3 days by default: for older commits, it starts 3 days before the commit, to show it
-// and the commits before it
-const history_from = (commit, query) => {
-  const date = DateTime.fromISO(commit?.authored_datetime ?? '', { zone: 'utc' }).toLocal().minus({ days: 3 }).startOf('day');
-  if (!date.isValid) return query.from;
-  const [from] = date_range_from_query(query);
-  return date.toJSDate() < from ? date.toISODate() : query.from;
+    </div>
+    {children}
+  </FullScreen>;
 };
 
-// The results of this input over time, filtered to show only this input
-const history_location = (project, commit, output, type, search) => {
-  // https://stackoverflow.com/a/6969486
-  const filter = output.test_input_path?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const query = parse_query(search);
-  return {
-    pathname: `/${path_segment(project)}/history/${path_segment(commit?.branch ?? '')}`,
-    search: stringify_query({
-      ...query,
-      from: history_from(commit, query),
-      filter,
-      filter_ref: filter,
-      show_bit_accuracy: type === 'bit_accuracy',
-    }),
-  };
-}
+// Cards out of view show nothing yet, so nothing in full screen either: there can be hundreds of them, and the button
+// was most of what they cost
+const FullScreenableSlimCard = ({ updateFullscreen, viewable, className, style, children }) =>
+  <SlimCard compact className={className} style={style}>
+    {viewable ? <FullScreenable updateFullscreen={updateFullscreen}>{children}</FullScreenable> : children}
+  </SlimCard>;
+
 
 // Long paths are cut, the tags after them stay on the line
 const run_path_style = {
@@ -186,16 +146,9 @@ const OutputHeader = ({ project, commit, output, output_ref, type, manifests, st
     mismatch={output.reference_mismatch}
     manifests={manifests}
     commit={commit}
+    type={type}
     style={{marginLeft: '5px', marginRight: '5px'}}
   />
-
-  const go_to_history = e => {
-    // let the browser open new tabs/windows
-    if (e.button !== 0 || e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
-    e.preventDefault();
-    // the URL may have changed since we rendered
-    history.push(history_location(project, commit, output, type, window.location.search));
-  }
 
   let run_path = `${output.test_input_database === '/' ? '/' : ''}${output.test_input_path}`
   if (output.output_type === "pipeline" || output.test_input_path === "PIPELINE") {
@@ -205,36 +158,7 @@ const OutputHeader = ({ project, commit, output, output_ref, type, manifests, st
     run_path = output.test_input_metadata.label
   }
   const popover_content = <Menu>
-    {!!output.data?.batch && <>
-      <MenuDivider key={"Batch"} title="Batch" />
-      <MenuItem key="batch" text={output.data.batch} icon="group-objects" onClick={on_copy(output.data.batch)} />
-    </>}
-    {!!output.test_input_database && <>
-      <MenuDivider key={"Database"} title="Database" />
-      <MenuItem key="database-linux" text={output.test_input_database} icon="duplicate" onClick={on_copy(output.test_input_database)} />
-      {hasPathMappings() && <MenuItem key="database-windows" text={linux_to_windows(output.test_input_database)} icon="duplicate" onClick={on_copy(linux_to_windows(output.test_input_database))} />}
-    </>}
-    {!!output.test_input_path && <>
-      <MenuDivider key={"Input path"} title="Input path" />
-      <MenuItem key="input-linux" text={output.test_input_path} icon="duplicate" onClick={on_copy(output.test_input_path)} />
-    </>}
-    {has_metadata && <>
-      <MenuDivider key={"Properties"} title="Properties" />
-      { has_label && <MenuItem text={output.test_input_path} icon="document" />}
-      <MenuItem key="metadata" text="Metadata" icon="info-sign">
-        <pre>{JSON.stringify(output.test_input_metadata, null, 2)}</pre>
-      </MenuItem>
-    </>}
-    <MenuDivider key={"Output-Info"} title="Run Info" />
-    <SubmittedByMenuItem key="user" data={output.data} />
-    {!!output?.metrics?.compute_time && <MenuItem key="compute-time" text={humanElapsedTime(output.metrics.compute_time)} label="compute time" icon="stopwatch" />}
-    <MenuItem
-      key="created-date"
-      text={<span title={output.created_date}> {DateTime.fromISO(output.created_date, { zone: 'utc' }).toRelative()}</span>}
-      label="created"
-      icon="calendar"
-    />
-    {!!output?.data?.storage && <MenuItem key="storage" text={humanFileSize(output.data.storage, true)} label="storage" icon="folder-close" />}
+    <RunInfoMenuItems project={project} commit={commit} output={output} type={type} />
   </Menu>
   return <>
     <h5 className={Classes.HEADING} style={style} >
@@ -242,16 +166,7 @@ const OutputHeader = ({ project, commit, output, output_ref, type, manifests, st
       {tags_first && viewable && tags}
       {output.output_type !== "batch" && !viewable ?
         <span key="batch-info" style={run_path_style}>{run_path}</span> : <PopoverNext hoverCloseDelay={1000} interactionKind={PopoverInteractionKind.HOVER} content={popover_content}>
-        <span key="batch-info" style={run_path_style}>
-          <Link
-            to={history_location(project, commit, output, type, window.location.search)}
-            onClick={go_to_history}
-            title="See this input's results over time"
-            style={{ color: 'inherit' }}
-          >
-            {run_path}
-          </Link>
-        </span>
+        <span key="batch-info" style={run_path_style}>{run_path}</span>
       </PopoverNext>}
       {!tags_first && viewable && tags}
     </h5>
@@ -444,7 +359,7 @@ const OutputCard = memo(function OutputCard(props) {
             <span style={{ fontSize: '12px', fontWeight: '500', flex: 1 }}>{option_label}</span>
             {onToggleDynamicOptionSync && (
               <Tooltip content={`Use the ${option_label} chosen in the view options for all runs`}>
-                <Button icon="link" minimal small onClick={() => onToggleDynamicOptionSync(name)} style={sync_button_style}>
+                <Button icon="link" variant="minimal" size="small" onClick={() => onToggleDynamicOptionSync(name)} style={sync_button_style}>
                   Same for all runs
                 </Button>
               </Tooltip>
@@ -467,7 +382,6 @@ const OutputCard = memo(function OutputCard(props) {
               value={option.value}
               onChange={setSelectedOption(name)}
               fill
-              small
             />
           )}
         </div>
@@ -519,8 +433,8 @@ const OutputCard = memo(function OutputCard(props) {
                   >
                     <Button
                       icon="unlink"
-                      minimal
-                      small
+                      variant="minimal"
+                      size="small"
                       aria-label={`Choose ${optionLabel(option_name)} per run`}
                       onClick={() => onToggleDynamicOptionSync?.(option_name)}
                       style={unlink_button_style}
@@ -607,6 +521,7 @@ const OutputCard = memo(function OutputCard(props) {
   return <div style={container_style} className="output-card" data-output-id={output_new.id} ref={in_view_ref}>
     <FullScreenableSlimCard
       updateFullscreen={setFullscreen}
+      viewable={viewable}
       className="output-card"
       style={{
         ...maybe_style_skeleton,
@@ -615,13 +530,13 @@ const OutputCard = memo(function OutputCard(props) {
       }}
     >
       {error.new && <span key="error-new">
-        <Tooltip content={<span dangerouslySetInnerHTML={{ __html: error_html(error.new) }} />}>
+        <Tooltip content={<span>{errorMessage(error.new)}</span>}>
           <Tag style={{ margin: '5px' }} intent={Intent.DANGER}>Could not list the run's files</Tag>
         </Tooltip>
         <Button size="small" variant="minimal" icon="refresh" text="Retry" onClick={() => query_new.refetch()}/>
       </span>}
       {error.reference && <span key="error-ref">
-        <Tooltip content={<span dangerouslySetInnerHTML={{ __html: error_html(error.reference) }} />}>
+        <Tooltip content={<span>{errorMessage(error.reference)}</span>}>
           <Tag style={{ margin: '5px' }} intent={Intent.DANGER}>Could not list the reference's files</Tag>
         </Tooltip>
         <Button size="small" variant="minimal" icon="refresh" text="Retry" onClick={() => query_ref.refetch()}/>

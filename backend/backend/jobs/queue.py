@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..database import db_session
 from ..models import Job, JobError, JobSchedule, JobWorker
-from . import kinds
+from . import kinds, alerts
 from .cron import next_run, Cron, CronError, timezone
 from .params import ParamsError
 from .report import DatabaseReporter, utcnow
@@ -56,13 +56,22 @@ def create(kind: str, params: dict, user=None, label: Optional[str] = None, sche
   return job
 
 
-def cancel(job: Job) -> Job:
-  """Queued jobs stop now, running jobs at their next check (seconds). The caller commits."""
+def cancel(job: Job, force=False) -> Job:
+  """
+  Queued jobs stop now, running jobs at their next check (seconds). The caller commits.
+  `force`: a running job is cancelled now, without waiting for its worker, e.g. stuck on a storage that doesn't answer,
+  or whose worker is gone. Another job of its kind can start, its worker still finishes what it was doing.
+  """
   if job.status == 'queued':
     job.status = 'cancelled'
     job.finished_at = utcnow()
   elif job.status == 'running':
     job.cancel_requested = True
+    if force:
+      now = utcnow()
+      job.status, job.finished_at = 'cancelled', now
+      job.log = [*(job.log or []), {"at": now.isoformat() + 'Z', "level": 'warning',
+                 "message": f"Cancelled without waiting for its worker{f' ({job.worker})' if job.worker else ''}: it may still be busy with it"}][-300:]
   return job
 
 
@@ -71,14 +80,20 @@ def requeue_stale(now=None) -> int:
   now = now or utcnow()
   stale = (Job.query.filter(Job.status == 'running', Job.heartbeat_at < now - STALE_AFTER)
            .with_for_update(skip_locked=True).all())
+  given_up = []
   for job in stale:
     message = f"The worker {job.worker} stopped responding"
-    if job.attempts >= MAX_ATTEMPTS:
+    if job.cancel_requested:
+      job.status, job.finished_at = 'cancelled', now
+    elif job.attempts >= MAX_ATTEMPTS:
       job.status, job.finished_at, job.error = 'failed', now, f"{message}, {job.attempts} times: giving up."
+      given_up.append(job)
     else:
       job.status, job.worker = 'queued', None
-    job.log = [*(job.log or []), {"at": now.isoformat() + 'Z', "level": 'warning', "message": f"{message}: {'queued again, it will resume' if job.status == 'queued' else 'giving up'}"}][-300:]
+    job.log = [*(job.log or []), {"at": now.isoformat() + 'Z', "level": 'warning', "message": f"{message}: {'queued again, it will resume' if job.status == 'queued' else 'cancelled' if job.status == 'cancelled' else 'giving up'}"}][-300:]
   db_session.commit()
+  for job in given_up:
+    alerts.job_went_wrong(job, 'failed', message=job.error)
   return len(stale)
 
 
@@ -108,20 +123,25 @@ def run(job_id: int, stopping=lambda: False, echo=True) -> str:
   kind, params = job.kind, dict(job.params or {})
   db_session.commit()
   report = DatabaseReporter(job_id, stopping=stopping, echo=echo)
-  error = None
+  error, exception = None, None
   try:
     module = kinds.get(kind)
     params = module.validate(params)
     report.log(f"{'Resuming' if report.progress else 'Starting'}: {module.describe(params)}{' (dry run)' if params.get('dry_run') else ''}")
     module.run(params, report)
-  except Exception:
+  except Exception as e:
     db_session.rollback()
-    error = traceback.format_exc()
+    error, exception = traceback.format_exc(), e
     report.log(f"The job crashed: {error.strip().splitlines()[-1]}", level='error')
   report.flush(force=True)
 
   job = db_session.get(Job, job_id)
   db_session.refresh(job)
+  if job.status == 'cancelled':
+    # an admin didn't wait for it (cancel(force=True)): it's over already
+    job.log = [*(job.log or []), {"at": utcnow().isoformat() + 'Z', "level": 'info', "message": "Its worker stopped too"}][-300:]
+    db_session.commit()
+    return 'cancelled'
   if error:
     status = 'failed'
   elif report.cancelled or job.cancel_requested:
@@ -140,6 +160,8 @@ def run(job_id: int, stopping=lambda: False, echo=True) -> str:
     job.log = [*(job.log or []), {"at": utcnow().isoformat() + 'Z', "level": 'error' if status == 'failed' else 'success' if status == 'done' else 'warning',
                "message": {"failed": "Failed", "cancelled": "Cancelled", "done": "Done", "done_with_errors": f"Done, with {report.nb_errors} errors"}[status]}][-300:]
   db_session.commit()
+  if status in ('failed', 'done_with_errors'):
+    alerts.job_went_wrong(job, status, error=exception)
   return status
 
 

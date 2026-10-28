@@ -20,6 +20,14 @@ def env_list(value: str) -> list:
   return [v.strip() for v in value.split(',') if v.strip()]
 
 
+def sandbox_html() -> bool:
+  """
+  QABOARD_SANDBOX_HTML: the runs' HTML and SVG files can't act as whoever opens them. Off by default, for now: reports
+  with scripts then run them in our origin. Read by the proxy too (services/nginx/configure.sh), set it for both.
+  """
+  return env_flag(os.environ.get('QABOARD_SANDBOX_HTML', ''))
+
+
 def login_type() -> str:
   return (os.environ.get('QABOARD_LOGIN_TYPE') or 'LOCAL').upper()
 
@@ -105,6 +113,22 @@ DEFINITIONS = {
   'audit.retention_days': Definition(
     "Audit events older than this are deleted by `qaboard-admin purge-audit` (run it from a scheduled job).",
     730, int, minimum=30,
+  ),
+  'jobs.failure_emails': Definition(
+    "Email when a scheduled job (Admin > Storage > Schedules) fails or ends with errors. Requires QABOARD_SMTP_HOST.",
+    True, bool, env='QABOARD_JOBS_FAILURE_EMAILS', parse_env=env_flag,
+  ),
+  'jobs.failure_email_to': Definition(
+    "Who gets the emails about scheduled jobs that went wrong: user names or emails. Empty: the admins.",
+    [], list, env='QABOARD_JOBS_FAILURE_EMAIL_TO', parse_env=env_list,
+  ),
+  'storage.others_visible_to': Definition(
+    "Who sees other people's storage usage (Storage usage > Everyone's, Users): \"members\" (the project's developers and owners, from a grant, a group or qaboard.yaml: not every signed-in user) or \"signed_in\" (everyone who can see the project). Admins see everything.",
+    'members', str, env='QABOARD_STORAGE_OTHERS_VISIBLE_TO', choices=('members', 'signed_in'),
+  ),
+  'storage.exports_root': Definition(
+    "Where \"Export to a shared folder\" puts exports: <this folder>/<user>/<project>/<date>-<id>, all in one place where users find and delete them (Storage usage > Exports). Empty: in a share/ folder next to the commit's runs, as before. It must be in the storage (QABOARD_STORAGE_ROOTS).",
+    None, str, env='QABOARD_EXPORTS_ROOT', nullable=True,
   ),
 }
 
@@ -220,6 +244,14 @@ def validate(key: str, value):
       raise ValueError(f"{key} must be a text")
   if definition.choices and value not in definition.choices:
     raise ValueError(f"{key} must be one of: {', '.join(definition.choices)}")
+  if key == 'storage.exports_root':
+    from .storage import check_storage_path, UnsafePathError
+    if not value.startswith('/'):
+      raise ValueError(f"{key} must be an absolute path, e.g. /algo/qaboard/exports")
+    try:
+      check_storage_path(value)
+    except UnsafePathError as e:
+      raise ValueError(str(e))
   return value
 
 

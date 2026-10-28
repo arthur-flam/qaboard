@@ -191,8 +191,8 @@ def notify_qa_database(object_type='output', **kwargs):
   Updating the QA database.
   """
   import requests
-  from .config import is_ci, config, _metrics
-  from .config import commit_id, commit_branch, commit_tag, commit_committer_name, commit_committer_email, commit_authored_datetime, commit_parents, commit_message
+  from .config import is_ci, config, _metrics, run_context
+  from .config import commit_id, commit_branch, commit_tag, commit_committer_name, commit_committer_email, commit_author_email, commit_authored_datetime, commit_parents, commit_message
 
   if kwargs.get('offline'):
     return
@@ -204,6 +204,8 @@ def notify_qa_database(object_type='output', **kwargs):
   url = f"{api_prefix}/{object_type}/"
   data = {
     'job_type': 'ci' if is_ci else 'local',
+    # where it runs, more precisely: older servers ignore it
+    'run_context': run_context(),
     'commit_sha': commit_id,
     'git_commit_sha': commit_id, # backward compat for now
     # send all the data, with some light custom serialization for Path objects
@@ -216,6 +218,7 @@ def notify_qa_database(object_type='output', **kwargs):
     'commit_tag': commit_tag,
     'commit_committer_name': commit_committer_name,
     'commit_committer_email': commit_committer_email,
+    'commit_author_email': commit_author_email,
     'commit_authored_datetime': commit_authored_datetime,
     'commit_parents': commit_parents,
     'commit_message': commit_message,
@@ -228,8 +231,8 @@ def notify_qa_database(object_type='output', **kwargs):
 
   try:
     import simplejson
-    data = simplejson.dumps(data, ignore_nan=True, cls=makeNumpyEncoder())
-    r = requests.post(url, data=data, headers=headers, verify=api_verify, timeout=api_timeout)
+    payload = simplejson.dumps(data, ignore_nan=True, cls=makeNumpyEncoder())
+    r = requests.post(url, data=payload, headers=headers, verify=api_verify, timeout=api_timeout)
     if 'QA_VERBOSE' in os.environ:
       click.secho(r.text, fg='cyan', dim=True, err=True)
     print_server_warning(r)
@@ -243,10 +246,8 @@ def notify_qa_database(object_type='output', **kwargs):
   except Exception as e:
     click.secho(f'WARNING: [{e}] Failed to update QA-Board.', fg='yellow', bold=True, err=True)
     click.secho(url, fg='yellow', err=True)
-    data = json.loads(data)
-    for k in ['qaboard_config', 'qaboard_metrics', 'inputs_settings']:
-      if k in data:
-        del data[k]
+    # what we sent (or failed to serialize), without the big fields
+    data = {k: v for k, v in data.items() if k not in ['qaboard_config', 'qaboard_metrics', 'inputs_settings']}
     click.secho(str(data), fg='yellow', err=True)
     try:
       request_headers = {k: '<redacted>' if k.lower() == 'authorization' else v for k, v in r.request.headers.items()}

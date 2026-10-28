@@ -21,6 +21,9 @@ COOKIE_LIFETIME = datetime.timedelta(days=365)
 
 def start(user, provider_id: Optional[str] = None):
   """Opens a session for the user, in the current request's cookie. The caller commits."""
+  if getattr(user, 'kind', 'human') == 'service':
+    # the sign-in methods don't find them: this is the last line of defense
+    raise PermissionError(f"Service accounts only use tokens, they can't sign in: {user.user_name}")
   from backend import db_session
   from ..models import UserSession
   from ..audit import client_ip
@@ -109,6 +112,30 @@ def revoke_provider(user_id: int, provider_id: str) -> int:
   query = UserSession.query.filter(UserSession.user_id == user_id, UserSession.provider_id == provider_id,
                                    UserSession.revoked_at.is_(None), UserSession.expires_at > now)
   return query.update({"revoked_at": now}, synchronize_session=False)
+
+
+def upgrades_old_cookie(user) -> bool:
+  """
+  Whether a cookie from before sessions were stored (flask-login's, SAML's) becomes a stored session: nobody is signed
+  out by the upgrade. The server doesn't create these cookies anymore, so they're older than every stored session, and
+  flask-login's remember cookie never expires on the server: not if the user's sessions ended since (signed out,
+  ended by them or an admin, disabled), it could be a copy, nor after `sessions.max_days` since the upgrade.
+  """
+  from sqlalchemy import or_, and_, func
+  from backend import db_session
+  from ..models import UserSession, AuditEvent
+  if UserSession.query.filter(UserSession.user_id == user.id, UserSession.revoked_at.isnot(None)).first() is not None:
+    return False
+  ended = (AuditEvent.query
+           .filter(AuditEvent.target_type == 'user', AuditEvent.target_id == str(user.id))
+           .filter(or_(AuditEvent.action == 'session.revoke_all',
+                       and_(AuditEvent.action == 'user.update', AuditEvent.changes['status']['to'].astext == 'disabled')))
+           .first())
+  if ended is not None:
+    return False
+  # the first stored session: about when the server was upgraded
+  upgraded_at = db_session.query(func.min(UserSession.created_at)).scalar()
+  return upgraded_at is None or utcnow() < upgraded_at + datetime.timedelta(days=setting('sessions.max_days'))
 
 
 def serialize(row, current_id=None) -> dict:

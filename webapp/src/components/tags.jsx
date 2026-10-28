@@ -24,7 +24,7 @@ import { toaster } from "../toaster"
 import { copyDirectory } from "./logs/DirectoryActions"
 import { hidden_keys } from "../configurations/tokens"
 import { ConfigurationsTags, ConfigurationDiff } from "../configurations/ConfigurationsTags"
-import { runName } from "./logs/RunLogs"
+import { RunHistoryMenuItem } from "./RunInfoMenu"
 
 
 const style_skeleton = {
@@ -117,8 +117,16 @@ const RunBadge = ({badge}) => {
 
 
 
+// How QA-Board names a run: its label, else its input path
+const runName = output => {
+  if (output.test_input_metadata?.label) return output.test_input_metadata.label
+  if (output.output_type === "pipeline" || output.test_input_path === "PIPELINE") return `${output.data?.batch} (pipeline)`
+  return `${output.test_input_database === '/' ? '/' : ''}${output.test_input_path}`
+}
+
 // What users can do with a run: redo it, mark it as failed, delete it...
-const RunActionsMenu = ({ output, project, commit }) => {
+// `children`: menu items shown before the actions, e.g. what we know about the run (see RunInfoMenu)
+const RunActionsMenu = ({ output, project, commit, children }) => {
   const is_logged = useUser().is_logged
   const [waiting, setWaiting] = useState(false)
   // deletes need confirming: 'delete' or 'delete-files'
@@ -146,6 +154,7 @@ const RunActionsMenu = ({ output, project, commit }) => {
   }
   return (
     <Menu>
+      {children && <>{children}<MenuDivider title="Actions"/></>}
       {!is_logged && <LoginMenuItem text="Sign in to redo or delete"/>}
       {id && is_pending && <MenuItem
         icon="stop"
@@ -244,7 +253,7 @@ const open_in_webcde = async ({ output, commit, cde_sh }) => {
   }
 }
 
-const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, style }) => {
+const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, type, style }) => {
   const [waiting, setWaiting] = useState(false)
   const refreshCommit = useRefreshCommit()
   // where users install WebCDE, from QABOARD_WEBCDE_INSTALLER
@@ -259,7 +268,9 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
 
     {output_type !== "batch" &&
     <PopoverNext placement="bottom" content={
-      <RunActionsMenu output={output} project={project} commit={commit} />
+      <RunActionsMenu output={output} project={project} commit={commit}>
+        {!!output.test_input_path && !!commit?.branch && <RunHistoryMenuItem project={project} commit={commit} output={output} type={type} />}
+      </RunActionsMenu>
     }>
       <Button size="small" variant="minimal" icon="menu" className={Classes.TEXT_MUTED} style={{ marginLeft: "5px" }} aria-label="Run actions"/>
     </PopoverNext>}
@@ -357,4 +368,4 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
 }
 
 
-export { hidden_keys, RunActionsMenu, StatusTag, PlatformTag, ConfigurationsTags, MismatchTags, OutputTags, RunBadge, RunBadges, style_skeleton };
+export { hidden_keys, RunActionsMenu, StatusTag, PlatformTag, ConfigurationsTags, MismatchTags, OutputTags, RunBadge, RunBadges, runName, style_skeleton };

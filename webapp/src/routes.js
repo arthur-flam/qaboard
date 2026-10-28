@@ -1,6 +1,8 @@
 import { lazy } from "react";
 import { route_paths, app_paths } from "./route_paths";
 import { matchRoutes } from "./router";
+// the landing page: not loaded on demand
+import ExplorePage from "./explore/ExplorePage";
 
 // Pages are loaded on demand: each pulls heavy dependencies (plotly, monaco...)
 const CiCommitList = lazy(() => import("./CiCommitList"));
@@ -11,6 +13,7 @@ const AccessPage = lazy(() => import("./access/AccessPage"));
 const SettingsPage = lazy(() => import("./settings/SettingsPage"));
 const AdminPage = lazy(() => import("./admin/AdminPage"));
 const StoragePage = lazy(() => import("./storage/StoragePage"));
+const ActivityPage = lazy(() => import("./activity/ActivityPage"));
 const DevicePage = lazy(() => import("./device/DevicePage"));
 const LoginPage = lazy(() => import("./login/LoginPage"));
 
@@ -37,10 +40,13 @@ const app_pages = {
   admin_user: AdminPage,
   admin_group: AdminPage,
   admin_job: AdminPage,
+  admin_scan: AdminPage,
   admin: AdminPage,
   storage: StoragePage,
+  activity: ActivityPage,
   device: DevicePage,
   login: LoginPage,
+  explore: ExplorePage,
 };
 export const app_routes = Object.entries(app_paths).map(([name, path]) => ({ name, path, exact: true, main: app_pages[name] }));
 

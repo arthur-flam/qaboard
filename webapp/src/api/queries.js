@@ -14,6 +14,7 @@ export const default_site_config = {
   image_servers: { default: '/iiif/2/' },
   login_type: 'LOCAL',
   login_required: false,
+  sandbox_html: false,
   sentry_dsn: null,
   posthog_api_key: null,
   posthog_host: null,
@@ -159,11 +160,13 @@ export const commitsQuery = ({ project, branch, committer, from, to, metrics, ..
 // Pages are {commits, has_more}.
 export const commits_page_size = 50;
 const commits_url = ({ branch, committer }) => committer ? '/api/v1/commits/' : `/api/v1/commits/${branch ?? ''}`;
-export const commitsPagesQuery = ({ project, branch, committer, from, to, metrics, q, page_size = commits_page_size }) => infiniteQueryOptions({
-  queryKey: ['commits', project, { branch, committer, from, to, metrics, q, page_size, pages: true }],
+// `scope`: "mine" for the commits users wrote or have batches in, `origin`: e.g. "webapp,local" to leave out the CI's
+// `viewer`: whose lists of "mine" they are, only for the cache.
+export const commitsPagesQuery = ({ project, branch, committer, from, to, metrics, q, scope, origin, viewer, page_size = commits_page_size }) => infiniteQueryOptions({
+  queryKey: ['commits', project, { branch, committer, from, to, metrics, q, scope, origin, viewer, page_size, pages: true }],
   queryFn: async ({ signal, pageParam }) => {
     const { data, headers } = await http.get(commits_url({ branch, committer }), {
-      params: { project, committer, from, to, q, metrics: JSON.stringify(metrics ?? {}), limit: page_size, offset: pageParam },
+      params: { project, committer, from, to, q, scope, origin, metrics: JSON.stringify(metrics ?? {}), limit: page_size, offset: pageParam },
       signal,
     });
     // servers that predate pagination answer with everything at once, without the header
@@ -177,8 +180,50 @@ export const commitsPagesQuery = ({ project, branch, committer, from, to, metric
   staleTime: 30 * 1000,
 });
 
-// Lists of commits, whether they are paginated or not
-export const commits_of = data => data?.pages ? data.pages.flatMap(page => page.commits) : (data ?? []);
+// How many commits the lists would show: {all, mine, without_ci}. `mine` is null for anonymous users.
+export const commitCountsQuery = ({ project, branch, committer, from, to }) => queryOptions({
+  queryKey: ['commits', project, { branch, committer, from, to, counts: true }],
+  queryFn: async ({ signal }) => {
+    const { data } = await http.get('/api/v1/commit-counts', { params: { project, branch, committer, from, to }, signal });
+    return data;
+  },
+  enabled: !!project,
+  placeholderData: (previous, previous_query) => previous_query?.queryKey[1] === project ? previous : undefined,
+  staleTime: 30 * 1000,
+});
+
+// While runs wait or run, we refresh what shows them every `interval`. Runs can wait for hours (busy queues, stuck
+// jobs): when refreshes bring nothing new, we wait as long as nothing has changed, up to 5 minutes.
+// Refreshes that bring the same data keep it as is (structural sharing): when we got it is when it last changed.
+const changed_at = new WeakMap();
+const pendingRefetchInterval = (query, interval = 15 * 1000) => {
+  const { data, dataUpdatedAt } = query.state;
+  if (!changed_at.has(data)) changed_at.set(data, dataUpdatedAt);
+  const unchanged_for = dataUpdatedAt - changed_at.get(data);
+  return Math.min(Math.max(interval, unchanged_for), 5 * 60 * 1000);
+};
+
+// Batches, the latest first, with their commit: what users ran. Without `project`, the user's in every project (scope "mine").
+// Pages are {batches, has_more}. Refreshed while some of their runs wait or run.
+export const batches_page_size = 50;
+export const batchesPagesQuery = ({ project, branch, scope, origin, metrics, viewer, page_size = batches_page_size }) => infiniteQueryOptions({
+  queryKey: ['batches', project ?? null, { branch, scope, origin, metrics, viewer, page_size }],
+  queryFn: async ({ signal, pageParam }) => {
+    const { data, headers } = await http.get('/api/v1/batches', {
+      params: { project, branch, scope, origin, metrics: metrics ? JSON.stringify(metrics) : undefined, limit: page_size, offset: pageParam },
+      signal,
+    });
+    return { batches: data, has_more: headers?.get('X-Has-More') === 'true' };
+  },
+  initialPageParam: 0,
+  getNextPageParam: (last_page, pages, last_offset) => last_page.has_more ? last_offset + last_page.batches.length : undefined,
+  placeholderData: (previous, previous_query) => previous_query?.queryKey[1] === (project ?? null) ? previous : undefined,
+  staleTime: 15 * 1000,
+  refetchInterval: query => (query.state.data?.pages?.length ?? 0) === 1 && query.state.data.pages[0].batches.some(b => b.pending_outputs > 0) ? pendingRefetchInterval(query) : false,
+});
+
+// Lists of commits, whether they are paginated or not. Other queries share their key, like the counts: no commits.
+export const commits_of = data => data?.pages ? data.pages.flatMap(page => page.commits ?? []) : Array.isArray(data) ? data : [];
 
 
 // Without an id, the server answers with the latest commit on the branch (by default the project's reference branch)
@@ -190,10 +235,11 @@ export const commitQuery = ({ project, id, branch, batch }) => queryOptions({
   },
   enabled: !!project && id !== '',
   staleTime: 10 * 1000,
-  // keep up to date while outputs are running
+  // keep up to date while outputs are running. Each refresh downloads all the outputs: 15s per thousand of them at least
   refetchInterval: query => {
-    const batches = Object.values(query.state.data?.batches ?? {});
-    return batches.some(b => b.pending_outputs > 0) ? 15 * 1000 : false;
+    const commit = query.state.data;
+    const is_pending = Object.values(commit?.batches ?? {}).some(b => b.pending_outputs > 0);
+    return is_pending ? pendingRefetchInterval(query, Math.max(15 * 1000, 15 * nb_outputs(commit))) : false;
   },
 });
 

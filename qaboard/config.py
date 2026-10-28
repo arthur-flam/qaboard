@@ -113,7 +113,8 @@ else:
     if "include" in c:
       # paths will be relative to the root qaboard.yaml
       c_include_path = root_qatools / c["include"]
-      c_include = yaml.load(c_include_path.open(), Loader=yaml.SafeLoader)
+      with c_include_path.open() as f:
+        c_include = yaml.load(f, Loader=yaml.SafeLoader)
       c = merge(c_include, c)
     config = merge(c, config)
 
@@ -202,20 +203,64 @@ def storage_roots(config: Dict, project: Path, subproject: Path, user_name: Opti
         click.secho('If your organization has a site package (e.g. qaboard-site-sirc), install it to get default settings.', fg='red', err=True, dim=True)
   return outputs_root, artifacts_root, subproject_for_artifacts
 
+# The storage folders that don't exist, and that we couldn't create. Only the commands that save or read results
+# there need them (see `storage_needed_by`): local runs save theirs in the project's output/ folder.
+missing_storage: List[Path] = []
+
 def mkdir(path: Path):
-  global config_has_error
   if not path.exists():
     try:
       path.mkdir(parents=True)
       click.secho(f'Created: {path}', fg='blue', err=True)
     except Exception:
-      config_has_error = True
-      if not ignore_config_errors:
-        click.secho(f'ERROR: The storage path does not exist: "{path}".', fg='red', err=True)
-        if "/algo/" in str(path) and not Path(*path.parts[:3]).exists():
-          click.secho(f'INFO: To create storage locations for new projects, go to:', fg='blue', bold=True, err=True)
-          click.secho(f'      http://jenmaster1:8080/job/ALGO/job/CreateProjectStorage/build?delay=0sec', fg='blue', err=True)
-          click.secho(f'Products (HP1, 2X5...) are "Technology" projects, while CIS/KITT_ISP.. are "Group" projects.', fg='blue', err=True)
+      if path not in missing_storage:
+        missing_storage.append(path)
+
+
+# Commands that always use the storage, and what for
+commands_using_storage = {
+  'save-artifacts': '`qa save-artifacts` saves the build there',
+  'check-bit-accuracy': '`qa check-bit-accuracy` reads the reference results there',
+  'optimize': '`qa optimize` saves its results there',
+}
+
+def storage_needed_by(command: Optional[str], share: bool, is_ci: bool) -> Optional[str]:
+  """Why a command needs the storage, or None if it doesn't. Runs in CI or with --share save their results there."""
+  if command in ('auth', 'init'):
+    return None
+  if is_ci:
+    return 'In CI, `qa` saves results there'
+  if share:
+    return '`qa --share` saves results there'
+  return commands_using_storage.get(command) if command else None
+
+
+# No messages for --help, `qa init`, `qa auth` or when imported. Unlike `ignore_config_errors`, it doesn't change
+# once a warning was shown.
+shows_config_messages = not ignore_config_errors
+
+def report_missing_storage(needed_by: Optional[str], environ=os.environ) -> bool:
+  """
+  Whether the command must stop because the storage it needs is missing, after an error that says what to do.
+  When it doesn't need it, we warn about it, once: not again in the runs `qa batch` starts.
+  `needed_by` is why the command needs the storage, see `storage_needed_by`.
+  """
+  if not missing_storage or not shows_config_messages:
+    return False
+  paths = ', '.join(f'"{p}"' for p in missing_storage)
+  if needed_by:
+    click.secho(f'ERROR: The storage path does not exist, and qa could not create it: {paths}', fg='red', bold=True, err=True)
+    click.secho(f'       {needed_by}. To fix it: create the folder, mount your shared storage there,', fg='red', err=True)
+    click.secho('       or set QA_STORAGE (or `storage` in qaboard.yaml) to a folder your QA-Board server reads.', fg='red', err=True)
+    # Sites can explain how to get storage for new projects
+    storage_help = site_config('QABOARD_STORAGE_HELP')
+    if storage_help:
+      click.secho(f'INFO: {storage_help}', fg='blue', err=True)
+    return True
+  if 'QA_BATCH' not in environ:
+    click.secho(f'WARNING: The storage path does not exist: {paths}. Local runs save their results in output/ without it,', fg='yellow', err=True)
+    click.secho('         but `qa --share`, CI runs and `qa save-artifacts` need it: create or mount it, or set QA_STORAGE.', fg='yellow', err=True)
+  return False
 
 outputs_root: Optional[Path]
 artifacts_root: Optional[Path]
@@ -252,6 +297,46 @@ ci_env_variables = (
     'GIT_COMMIT',
 )
 is_ci = any([v in os.environ for v in ci_env_variables])
+
+# CI providers, and what tells them apart: QA-Board shows users their own runs, and can hide the CI's
+ci_providers = (
+  ('gitlab', 'GITLAB_CI'),
+  ('github', 'GITHUB_ACTIONS'),
+  ('jenkins', 'JENKINS_URL'),
+  ('azure', 'TF_BUILD'),
+  ('buildkite', 'BUILDKITE'),
+  ('circleci', 'CIRCLECI'),
+  ('teamcity', 'TEAMCITY_VERSION'),
+  ('bitbucket', 'BITBUCKET_BUILD_NUMBER'),
+  ('drone', 'DRONE'),
+  ('travis', 'TRAVIS'),
+)
+
+
+def run_context(environ=os.environ) -> dict:
+  """
+  Where `qa` runs: {"origin": "webapp" | "ci" | "local", ...}. Runs QA-Board starts set QABOARD_TUNING (and CI, like
+  pipelines). For CI pipelines: the provider, links to the pipeline and job, and who triggered them, when we know.
+  """
+  if 'QABOARD_TUNING' in environ:
+    return {"origin": "webapp"}
+  provider = next((name for name, variable in ci_providers if environ.get(variable)), None)
+  if not provider and not any(v in environ for v in ci_env_variables):
+    return {"origin": "local"}
+  context = {"origin": "ci", "provider": provider or "unknown"}
+  if provider == 'gitlab':
+    context.update(pipeline_url=environ.get('CI_PIPELINE_URL'), job_url=environ.get('CI_JOB_URL'),
+                   triggered_by=environ.get('GITLAB_USER_EMAIL') or environ.get('GITLAB_USER_LOGIN'))
+  elif provider == 'github':
+    server, repository, run_id = environ.get('GITHUB_SERVER_URL'), environ.get('GITHUB_REPOSITORY'), environ.get('GITHUB_RUN_ID')
+    if server and repository and run_id:
+      context['pipeline_url'] = f"{server}/{repository}/actions/runs/{run_id}"
+    context['triggered_by'] = environ.get('GITHUB_TRIGGERING_ACTOR') or environ.get('GITHUB_ACTOR')
+  elif provider == 'jenkins':
+    context.update(job_url=environ.get('BUILD_URL'), triggered_by=environ.get('BUILD_USER_EMAIL') or environ.get('BUILD_USER_ID'))
+  elif provider == 'buildkite':
+    context.update(job_url=environ.get('BUILDKITE_BUILD_URL'), triggered_by=environ.get('BUILDKITE_BUILD_CREATOR_EMAIL'))
+  return {k: v for k, v in context.items() if v}
 
 
 def github_pull_request_head() -> Optional[str]:
@@ -348,15 +433,17 @@ else:
 
 commit_committer_name: Optional[str] = user
 commit_committer_email: Optional[str] = None
+# who wrote it: commits merged from GitHub/GitLab have the forge, or the maintainer who rebased, as committer
+commit_author_email: Optional[str] = None
 commit_authored_datetime = os.environ.get("GIT_AUTHORED_DATETIME", datetime.datetime.now(datetime.timezone.utc).isoformat())
 commit_message: Optional[str] = os.environ.get("GIT_MESSAGE")
 commit_parents: List[str] = []
 if commit_id and is_in_git_repo:
-  fields = ['%cn', '%ce', '%ai', '%P', "%B"]
+  fields = ['%cn', '%ce', '%ae', '%ai', '%P', "%B"]
   try:
     commit_info = git_show("%n".join(fields), commit_id)
     fields_values = commit_info.split('\n', maxsplit=len(fields)-1)
-    commit_committer_name, commit_committer_email, commit_authored_datetime_, commit_parents_str, commit_message_ = fields_values
+    commit_committer_name, commit_committer_email, commit_author_email, commit_authored_datetime_, commit_parents_str, commit_message_ = fields_values
     if not commit_authored_datetime:
       commit_authored_datetime = commit_authored_datetime_
     if not commit_message:
@@ -466,7 +553,6 @@ if metrics_file:
       main_metrics = (_metrics or {}).get('main_metrics') or []
 
 # reexport for backward compat
-from .site_config import secrets
 
 # backward compat only for HW_ALG's tools/find_valid_build.py (removed 28/07/20)
 from .git import _Repo, _Commit

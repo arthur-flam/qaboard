@@ -25,11 +25,16 @@ export const app_paths = {
   // group ids: whatever the server uses
   admin_group: "/admin/groups/:group_id",
   admin_job: "/admin/storage/jobs/:job_id(\\d+)",
+  admin_scan: "/admin/storage/scans/:scan_id(\\d+)",
   // how much storage runs use, and deleting their files
-  storage: "/storage/:view(projects|batches|commits|branches|folders)?",
+  storage: "/storage/:view(projects|users|batches|commits|branches|folders|exports|untracked)?",
+  // what waits and runs now, and what ran recently
+  activity: "/activity",
   admin: "/admin/:section(overview|users|groups|requests|sign-in|tokens|storage|audit|settings)?",
   // the ways to sign in, ?next=<page> to go back to it (see login/LoginPage.jsx)
   login: "/login",
   // where `qa auth login` sends users to approve the login
   device: "/device",
+  // every project, as a tree (also at / for signed-out visitors, signed-in users get their home page there)
+  explore: "/projects",
 };

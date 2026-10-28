@@ -34,6 +34,14 @@ export const itemsQuery = (group, filters, { sort = 'size', offset = 0 } = {}) =
   staleTime: 30 * 1000,
 });
 
+// Who uses the most, everyone's runs with the filters: {users, total, totals, me, can_delete_others}
+export const usersQuery = filters => queryOptions({
+  queryKey: ['storage', 'users', filterParams(filters)],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/storage/users', { params: { ...filterParams(filters), limit: 200 }, signal })).data,
+  placeholderData: keepPreviousData,
+  staleTime: 30 * 1000,
+});
+
 // {path, children, here, partial}
 export const foldersQuery = (path, filters) => queryOptions({
   queryKey: ['storage', 'folders', path ?? '/', whoseParams(filters), filterParams({ ...filters, folder: null })],
@@ -77,3 +85,48 @@ export const cancelDeletion = async (queryClient, id) => {
 
 // After a deletion: the numbers change
 export const refreshUsage = queryClient => queryClient.invalidateQueries({ queryKey: ['storage'] });
+
+
+// What deletes results, when, and what it keeps. Without a project: every rule. {rules, settings, project}
+export const rulesQuery = project => queryOptions({
+  queryKey: ['storage', 'rules', project || ''],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/storage/rules', { params: { project: project || undefined }, signal })).data,
+  staleTime: 5 * 60 * 1000,
+});
+
+// The exports QA-Board tracks: {exports, totals: {count, bytes, linked_bytes}}
+export const exportsQuery = (filters, sort = 'size') => queryOptions({
+  queryKey: ['storage', 'exports', whoseParams(filters), filters.project ?? '', sort],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/storage/exports', {
+    params: { ...whoseParams(filters), project: filters.project || undefined, sort }, signal,
+  })).data,
+  placeholderData: keepPreviousData,
+  staleTime: 30 * 1000,
+});
+
+// => {job}
+export const deleteExports = async (queryClient, ids) => {
+  const { data } = await http.post('/api/v1/storage/exports/delete', { ids });
+  queryClient.invalidateQueries({ queryKey: ['storage', 'jobs'] });
+  return data;
+};
+
+export const measureExport = async (queryClient, id) => {
+  const { data } = await http.post(`/api/v1/storage/exports/${id}/measure`);
+  queryClient.invalidateQueries({ queryKey: ['storage', 'exports'] });
+  return data;
+};
+
+// What the latest storage scan found that QA-Board doesn't track, owned by the user: {scan, totals, entries}
+export const untrackedQuery = queryOptions({
+  queryKey: ['storage', 'untracked'],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/storage/untracked', { signal })).data,
+  staleTime: 60 * 1000,
+});
+
+// => {job}
+export const deleteUntracked = async (queryClient, paths) => {
+  const { data } = await http.post('/api/v1/storage/untracked/delete', { paths });
+  queryClient.invalidateQueries({ queryKey: ['storage', 'jobs'] });
+  return data;
+};
