@@ -328,6 +328,7 @@ running them all again when you asked to skip, sync or post-process the existing
 <li class="">See the link to your results when <code>qa batch</code> ends, not only when it starts.</li>
 <li class="">Tell your users how to get storage for new projects from your site package, with <code>QABOARD_STORAGE_HELP</code> (<a class="" href="https://samsung.github.io/qaboard/docs/project-init#site-defaults">docs</a>).</li>
 <li class=""><code>qa</code> tells QA-Board where it runs: from the web app, your terminal, or a CI pipeline (GitLab, GitHub Actions, Jenkins, Buildkite…, with links to the pipeline). QA-Board uses it to show you your own runs and leave out the CI's. Older versions of <code>qa</code> keep working: QA-Board guesses as before.</li>
+<li class=""><code>metadata(context)</code> in your entrypoint gets the run's context, like <code>run(context)</code>: filter batches on the configurations, the platform or the batch's name. <code>metadata(absolute_input_path, database, input_path)</code> still works. See <a class="" href="https://samsung.github.io/qaboard/docs/metadata-integration-external-databases#creating-metadata">Input metadata</a>.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="runners-lsf-dask-and-windows">Runners: LSF, Dask and Windows<a href="https://samsung.github.io/qaboard/release-notes/2026-10#runners-lsf-dask-and-windows" class="hash-link" aria-label="Direct link to Runners: LSF, Dask and Windows" title="Direct link to Runners: LSF, Dask and Windows" translate="no">​</a></h3>
 <ul>
