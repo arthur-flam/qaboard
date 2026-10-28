@@ -49,7 +49,8 @@ project, branch or person in a row to filter by it, and a row to select it.</li>
 <li class="">See how much space your deleted runs still take: deleting runs keeps their manifests, and the files written after
 they ended. QA-Board now measures what's left when it deletes runs.</li>
 <li class="">See what QA-Board deletes automatically, when, and what it keeps, on <strong>Storage usage</strong> and on the project's commit
-list (e.g. <em>Results deleted after 1 month</em>), with what the project's <em>qaboard.yaml</em> says.</li>
+list (e.g. <em>Results deleted after 1 month</em>), with what the project's <em>qaboard.yaml</em> says. Several rules are summed
+up in a line: open it to see them all.</li>
 <li class="">Find your exports in <strong>Storage usage → Exports</strong>: their size, the runs they come from, and delete them without a
 terminal. Exports are links to the runs' files by default: QA-Board says how much space only frees once the runs are
 deleted too (<a class="" href="https://samsung.github.io/qaboard/docs/user-guide/storage-usage#exports">exports</a>).</li>
@@ -421,6 +422,13 @@ and exports, what deleted runs and artifacts left, other files, with their owner
 folders by size with what they're made of, or the biggest untracked things anywhere, by owner or age. Delete them,
 track the exports so their owners see them, or add the runs back to QA-Board. What QA-Board uses can't be deleted
 from there (<a class="" href="https://samsung.github.io/qaboard/docs/backend-admin/storage#scanning-the-storage">scanning the storage</a>).</li>
+<li class="">Cancel a scan in seconds, even deep in a huge folder, and follow a running scan by the folders it has read.</li>
+<li class="">Delete old scans' results from <strong>Admin → Storage → Scans</strong> or the scan's page (the files stay on disk). The list
+shows the latest scans, the older ones on demand.</li>
+<li class="">Stop a job stuck cancelling with <strong>Stop without waiting</strong>, e.g. when its worker is stuck on a storage that doesn't
+answer: another job of its kind can then start.</li>
+<li class="">See the schedules in a line (how many are enabled, the next one, those whose last run went wrong) when there are
+many, and their table when you open it.</li>
 <li class="">Put the exports in one place with the <code>storage.exports_root</code> setting (<code>QABOARD_EXPORTS_ROOT</code>):
 <code>&lt;root&gt;/&lt;user&gt;/&lt;project&gt;/&lt;date&gt;-&lt;id&gt;</code>, instead of a <code>share/</code> folder next to the commit's results. QA-Board now
 tracks exports made from the web app, and their size.</li>
@@ -845,6 +853,7 @@ are no longer scanned again, even when you set your own excluded paths.</li>
 </ul>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="server-and-administration-1">Server and administration<a href="https://samsung.github.io/qaboard/release-notes/2026-10#server-and-administration-1" class="hash-link" aria-label="Direct link to Server and administration" title="Direct link to Server and administration" translate="no">​</a></h3>
 <ul>
+<li class="">Cancelled jobs whose worker died stay cancelled, instead of being queued again.</li>
 <li class="">The backend's log no longer repeats <em>argument of type 'NoneType' is not iterable</em> for projects without storage settings. Invalid storage settings are logged with the project and the error.</li>
 <li class="">LDAP accounts get their email from <code>QABOARD_LDAP_ATTRIBUTE_EMAIL</code> when it isn't <code>mail</code>: only <code>mail</code> was read.</li>
 <li class="">Show the demo projects' latest commits in the quickstart's commit list: the demo data's dates, and its files' modification times, move to when QA-Board first starts, instead of keeping the day the demo data was made (<a class="" href="https://samsung.github.io/qaboard/docs/get-started/quickstart">quickstart</a>).</li>
