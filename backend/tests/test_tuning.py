@@ -76,6 +76,8 @@ def test_check_tuning_request(tmp_path):
     check = check_tuning_request(ci_commit, data)
     assert check["errors"] == []
     assert check["batches"] == ["smoke"]
+    # the alias stands for a batch of the commit's batch file, named as in its qaboard.yaml
+    assert check["definitions"] == [{"name": "smoke", "files": ["sub/batches.yaml"]}]
     # the entrypoint is missing from the artifacts
     assert any("entrypoint" in w for w in check["warnings"])
 
@@ -84,6 +86,52 @@ def test_check_tuning_request(tmp_path):
     assert "Unknown batch: smok" in errors and "Defined: all, smoke" not in errors and "smoke" in errors
     assert "Unknown platform" in errors
     assert "name to the batch" in errors
+
+
+def test_check_tuning_request_says_where_batches_are_defined(tmp_path, monkeypatch):
+    import backend.api.tuning as tuning
+    config = {"project": {"name": "repo"}, "inputs": {"batches": "sub/batches.yaml"}}
+    ci_commit = make_commit(tmp_path, config, batches={"night-1": {}, "night-2": {"inputs": ["a"]}, "day": {}})
+    monkeypatch.setattr(tuning, "qaboard_data_shared_dir", tmp_path / "shared")
+    tuning.get_groups_path("repo/sub", name="alice").write_text("night-2:\n  inputs: [b]\n")
+    data = {"batch_label": "x", "selected_group": "night-*", "groups": ["alice"], "tuning_search": {"search_type": "grid"}}
+    check = tuning.check_tuning_request(ci_commit, data)
+    assert check["errors"] == []
+    assert check["definitions"] == [
+        {"name": "night-1", "files": ["sub/batches.yaml"]},
+        {"name": "night-2", "files": ["sub/batches.yaml", "alice.yml"]},
+    ]
+    # `qa batch` reads them in the same order as on the commit, QA-Board's last
+    assert [f["path"] for f in check["batches_files"]] == ["sub/batches.yaml", "alice.yml"]
+
+
+def test_copy_batches_files(tmp_path):
+    # `qa batch` reads exact copies, with their comments and file-level defaults, so runs match local ones
+    from backend.api.tuning import copy_batches_files
+    content = "# nightly runs\nconfigurations: [base]\nnight: {inputs: [a]}\n"
+    (tmp_path / "batches.yaml").write_text(content)
+    (tmp_path / "alice.yml").write_text("night: {inputs: [b]}\n")
+    files = [
+        {"source": "commit", "path": "qa/batches.yaml", "location": tmp_path / "batches.yaml"},
+        # paths from qaboard.yaml can be absolute or go up: the copies stay in the submission's folder
+        {"source": "commit", "path": "/shared/../batches.yaml", "location": tmp_path / "batches.yaml"},
+        {"source": "commit", "path": "batches.yaml", "location": tmp_path / "batches.yaml"},
+        {"source": "qaboard", "path": "alice.yml", "location": tmp_path / "alice.yml"},
+    ]
+    log_dir = tmp_path / "log"
+    copies = copy_batches_files(files, log_dir)
+    assert [c.relative_to(log_dir).as_posix() for c in copies] == [
+        "batches/commit/qa/batches.yaml",
+        "batches/commit/shared/batches.yaml",
+        "batches/commit/batches.yaml",
+        "batches/qaboard/alice.yml",
+    ]
+    assert copies[0].read_text() == content
+    assert copies[3].read_text() == "night: {inputs: [b]}\n"
+    # two paths that end up the same don't overwrite each other
+    copies = copy_batches_files([files[2], {**files[3], "source": "commit", "path": "batches.yaml"}], tmp_path / "log2")
+    assert [c.name for c in copies] == ["batches.yaml", "1-batches.yaml"]
+    assert copies[1].read_text() == "night: {inputs: [b]}\n"
 
 
 def test_check_tuning_request_without_batches_files(tmp_path):
@@ -193,7 +241,7 @@ def list_tests(app, name, commit="94d909ca"):
 def test_lists_a_batch_and_where_it_is_defined(dummy_app, batches_setup):
     data = list_tests(dummy_app, "ci")
     assert data["tests"] == [{"input_path": "a", "configurations": []}]
-    assert data["definitions"] == [{"name": "ci", "file": "qa/tests/tests.yaml"}]
+    assert data["definitions"] == [{"name": "ci", "files": ["qa/tests/tests.yaml"]}]
     assert [(f["path"], f["status"]) for f in data["files"]] == [
         ("qa/tests/tests.yaml", "ok"),
         ("qa/tests/nightly.yaml", "missing"),
@@ -209,7 +257,7 @@ def test_lists_a_batch_and_where_it_is_defined(dummy_app, batches_setup):
 
 def test_the_last_file_defining_a_batch_wins_like_for_qa_batch(dummy_app, batches_setup):
     data = list_tests(dummy_app, "both")
-    assert data["definitions"] == [{"name": "both", "file": "qa/tests/modes.yaml"}]
+    assert data["definitions"] == [{"name": "both", "files": ["qa/tests/tests.yaml", "qa/tests/modes.yaml"]}]
     assert [t["input_path"] for t in data["tests"]] == ["a", "b"]
 
 
@@ -223,7 +271,7 @@ def test_says_when_a_batch_is_not_defined(dummy_app, batches_setup):
 def test_says_which_inputs_are_missing(dummy_app, batches_setup):
     data = list_tests(dummy_app, "broken")
     assert data["tests"] == []
-    assert data["definitions"] == [{"name": "broken", "file": "qa/tests/tests.yaml"}]
+    assert data["definitions"] == [{"name": "broken", "files": ["qa/tests/tests.yaml"]}]
     assert f"Inputs not found by the QA-Board server: `missing-input` under `{batches_setup.database}`." in data["warnings"]
 
 
@@ -288,4 +336,97 @@ def test_says_which_input_is_wrong(dummy_app, batches_setup):
     assert data["tests"] == []
     # the file as in qaboard.yaml, not its path in the artifacts
     assert data["error"] == 'qa/tests/tests.yaml:4: The batch "ci" has an empty input, after "a": a "-" with nothing after it. Remove the "-", or write the input after it.'
-    assert data["definitions"] == [{"name": "ci", "file": "qa/tests/tests.yaml"}]
+    assert data["definitions"] == [{"name": "ci", "files": ["qa/tests/tests.yaml"]}]
+
+
+def test_lists_a_batch_without_a_commit_with_the_projects_config(dummy_app, batches_setup):
+    import copy
+    project_config = copy.deepcopy(batches_setup.config)
+    (batches_setup.tmp_path / "shared" / "group/repo").mkdir(parents=True)
+    (batches_setup.tmp_path / "shared" / "group/repo" / "alice.yml").write_text("mine:\n  inputs: [b]\n")
+    data = list_tests(dummy_app, "mine", commit=None)
+    assert data["tests"] == [{"input_path": "b", "configurations": []}]
+    assert [f["source"] for f in data["files"]] == ["qaboard", "qaboard"]
+    # the project's config is left as it was
+    assert batches_setup.config == project_config
+
+
+@pytest.fixture
+def custom_iter_inputs(batches_setup, monkeypatch):
+    """The commit's entrypoint defines iter_inputs: the server lists the tests with `qa batch --list`."""
+    import backend.api.tuning as tuning
+    (batches_setup.artifacts / "qa/main.py").write_text("def iter_inputs(*args):\n  pass\n")
+    monkeypatch.setattr(tuning, "check_storage_path", lambda path: None)
+    return batches_setup
+
+
+def list_tests_response(app, name):
+    from backend.api.tuning import get_group
+    query = {"project": "group/repo", "name": name, "commit": "94d909ca"}
+    with app.test_request_context("/api/v1/tests/group", method="POST", query_string=query, json={"groups": []}):
+        response, status = get_group()
+        return response.get_json(), status
+
+
+def test_listing_with_the_projects_code_in_a_missing_folder(dummy_app, custom_iter_inputs):
+    custom_iter_inputs.commit.artifacts_dir = custom_iter_inputs.tmp_path / "deleted"
+    data, status = list_tests_response(dummy_app, "ci")
+    assert status == 500
+    assert data["error"].startswith("Could not list the tests with the project's code:")
+
+
+def test_listing_with_the_projects_code_times_out(dummy_app, custom_iter_inputs, monkeypatch):
+    import subprocess
+    import backend.api.tuning as tuning
+    def too_slow(cmd, cwd, timeout):
+        assert timeout == tuning.LIST_TESTS_TIMEOUT
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    monkeypatch.setattr(tuning, "run_with_timeout", too_slow)
+    data, status = list_tests_response(dummy_app, "ci")
+    assert status == 504
+    assert "took more than" in data["error"]
+
+
+def test_run_with_timeout_stops_what_the_command_started(tmp_path):
+    import time
+    import subprocess
+    from backend.api.tuning import run_with_timeout
+    assert run_with_timeout(["bash", "-c", "echo out; echo err >&2"], cwd=tmp_path, timeout=10).stdout == "out\n"
+    marker = tmp_path / "still-running"
+    start = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_with_timeout(["bash", "-c", f"(sleep 1; touch {marker}) & sleep 30"], cwd=tmp_path, timeout=0.3)
+    assert time.monotonic() - start < 5
+    time.sleep(1.5)
+    assert not marker.exists()
+
+
+def test_mkdir_for_everyone_leaves_the_umask_alone(tmp_path):
+    import os
+    from backend.api.tuning import mkdir_for_everyone
+    (tmp_path / "existing").mkdir()
+    (tmp_path / "existing").chmod(0o755)
+    previous = os.umask(0o022)
+    try:
+        mkdir_for_everyone(tmp_path / "existing" / "batch" / "logs")
+        assert os.umask(0o022) == 0o022
+    finally:
+        os.umask(previous)
+    assert ((tmp_path / "existing" / "batch").stat().st_mode & 0o777) == 0o777
+    assert ((tmp_path / "existing" / "batch" / "logs").stat().st_mode & 0o777) == 0o777
+    assert ((tmp_path / "existing").stat().st_mode & 0o777) == 0o755
+    mkdir_for_everyone(tmp_path / "existing" / "batch" / "logs")  # already there
+
+
+def test_celery_script_has_no_default_broker_credentials(tmp_path, monkeypatch):
+    import backend.api.tuning as tuning
+    monkeypatch.setattr(tuning, "_run_script", lambda path, log_dir: None)
+    script = tmp_path / "qa_batch.sh"
+    script.write_text("#!/bin/bash\nqa batch\n")
+    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
+    tuning._dispatch_celery(script, tmp_path)
+    assert "CELERY_BROKER_URL" not in script.read_text()
+    script.write_text("#!/bin/bash\nqa batch\n")
+    monkeypatch.setenv("CELERY_BROKER_URL", "pyamqp://qaboard:secret@rabbitmq//")
+    tuning._dispatch_celery(script, tmp_path)
+    assert "export CELERY_BROKER_URL=pyamqp://qaboard:secret@rabbitmq//\n" in script.read_text()

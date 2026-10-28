@@ -11,10 +11,10 @@ from pathlib import Path
 from functools import lru_cache
 
 from sqlalchemy.orm import relationship
-from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Column
 from sqlalchemy import String, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy import cast, type_coerce, or_, and_, literal, func
+from sqlalchemy import or_, and_, literal, func
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -167,6 +167,11 @@ class Project(Base):
     try:
       project = session.query(Project).filter_by(**kwargs).one()
     except NoResultFound:
+      # the id is a path in the storage, and in the grants: a/../b would be b's
+      from ..access.policy import is_valid_project_id
+      project_id = kwargs.get('id')
+      if not is_valid_project_id(project_id, new=True):
+        raise ValueError(f"Invalid project id: {project_id!r}, expected e.g. group/repo")
       project = Project(**kwargs)
     if not project.data:
       project.data = {}
@@ -182,10 +187,15 @@ class Project(Base):
 @lru_cache(maxsize=1024)
 def _storage_roots(project_id, id_git, id_relative, storage_config_json, qa_storage, user_name=None):
   # qa_storage: $QA_STORAGE overrides the storage config, it's part of the cache key
+  storage_config = json.loads(storage_config_json)
   try:
-    outputs_root, artifacts_root, subproject_for_artifacts = storage_roots(json.loads(storage_config_json), Path(project_id), Path(id_relative), user_name=user_name)
-  except Exception as e:
-    print(e)
+    # projects without storage settings, when the caller has no defaults: the server's
+    if storage_config is None:
+      outputs_root, artifacts_root, subproject_for_artifacts = default_outputs_root, default_artifacts_root, Path()
+    else:
+      outputs_root, artifacts_root, subproject_for_artifacts = storage_roots(storage_config, Path(project_id), Path(id_relative), user_name=user_name)
+  except Exception:
+    print(f"WARNING: invalid storage settings for {project_id}, we use the server's: {traceback.format_exc()}")
     outputs_root = default_outputs_root
     artifacts_root = default_artifacts_root
     subproject_for_artifacts = Path()
@@ -199,7 +209,7 @@ def _storage_roots(project_id, id_git, id_relative, storage_config_json, qa_stor
 
 def is_relative_to(path : Path, path_maybe_parent : Path) -> bool:
   try:
-    relative_path = path.relative_to(path_maybe_parent)
+    path.relative_to(path_maybe_parent)
     return True
   except:
     return False
@@ -251,7 +261,7 @@ def update_project(data, db_session):
       elif str(path).endswith('json'):
         return json.loads(content)
       return yaml.load(content, Loader=yaml.SafeLoader)
-    except Exception as e:
+    except Exception:
       exc_type, exc_value, exc_traceback = sys.exc_info()
       info = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
       print(info, file=sys.stderr)

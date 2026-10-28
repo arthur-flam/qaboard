@@ -75,12 +75,16 @@ class RedirectStream():
       self.file.write(data if self.file_color else data_stripped)
     self.stream.flush()
     self.file.flush()
-  def __del__(self):
-    setattr(sys, self.stream_name, getattr(sys, f"__{self.stream_name}__"))
+  def restore(self):
+    """Stops the redirection: restores the stream we replaced, and closes the file."""
+    if getattr(sys, self.stream_name) is self:
+      setattr(sys, self.stream_name, self.stream)
     try:
       self.file.close()
     except Exception:
       pass # we avoid printing here
+  def __del__(self):
+    self.restore()
   def flush(self):
     self.file.flush()
     self.stream.flush()
@@ -141,8 +145,9 @@ def redirect_std_streams(file, color=None):
   try:
     yield stdout, stderr
   finally:
-    del stdout
-    del stderr
+    # in the reverse order, in case they wrap each other
+    stderr.restore()
+    stdout.restore()
 
 
 class TeeStream():
@@ -205,6 +210,41 @@ def tee_std_streams(file):
     sys.stdout, sys.stderr = previous
 
 
+@contextmanager
+def interrupted_by_sigterm():
+  """
+  In the block, SIGTERM raises KeyboardInterrupt like SIGINT does, so that `except KeyboardInterrupt` clauses run.
+  Does nothing outside of the main thread, where Python can't handle signals.
+  """
+  import signal
+  def raise_interrupt(_signo, _stackframe):
+    raise KeyboardInterrupt
+  try:
+    previous = signal.signal(signal.SIGTERM, raise_interrupt)
+  except ValueError:
+    previous = None
+  try:
+    yield
+  finally:
+    if previous is not None:
+      signal.signal(signal.SIGTERM, previous)
+
+
+@contextmanager
+def ignored_signals():
+  """Ignores SIGINT and SIGTERM in the block, e.g. while we save that we were interrupted: LSF sends both."""
+  import signal
+  try:
+    previous = {s: signal.signal(s, signal.SIG_IGN) for s in (signal.SIGINT, signal.SIGTERM)}
+  except ValueError: # not in the main thread
+    previous = {}
+  try:
+    yield
+  finally:
+    for s, handler in previous.items():
+      signal.signal(s, handler)
+
+
 class FailingEntrypoint:
   def run(self, context):
     return {"is_failed": True}
@@ -239,20 +279,49 @@ def entrypoint_module_path(entrypoint):
       click.secho(f'ERROR: Error importing the entrypoint ({entrypoint}).', fg='red', err=True, bold=True)
       click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red', err=True)
       click.secho(
-          f'{entrypoint} must implement a `run(context)` function, and optionally `postprocess` / `metadata` / `iter_inputs`.\n'
+          f'{entrypoint} must implement a `run(context)` function, and optionally `postprocess` / `metadata(context)` / `iter_inputs`.\n'
           'Please read the tutorial at https://samsung.github.io/qaboard/docs\n',
           dim=True, err=True)
       return FailingEntrypoint()
   return module
 
 
+def _metadata_takes_context(metadata_fn) -> bool:
+  """
+  metadata(context) gets the RunContext, like run(context).
+  For backward compatibility we still support metadata(absolute_input_path, database, input_path).
+  """
+  import inspect
+  try:
+    parameters = inspect.signature(metadata_fn).parameters.values()
+  except (TypeError, ValueError): # e.g. some builtins/C extensions: assume the old API
+    return False
+  if any(p.kind == p.VAR_POSITIONAL for p in parameters):
+    return False
+  positional = [p for p in parameters if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+  required = [p for p in positional if p.default is p.empty]
+  return len(required) <= 1 and len(positional) < 3
+
+
 # TODO: consider using @lru_cache since it's called twice within qa batch,
 #       but config is not hashable... we'd need to pass a path to the entrypoint
-def input_metadata(absolute_input_path, database, input_path, config):
+def input_metadata(context, config, *legacy_args):
+  """
+  Calls the entrypoint's metadata() for the input of a RunContext.
+  When listing a batch, the context doesn't have an output_dir or click_context yet.
+  Old callers use input_metadata(absolute_input_path, database, input_path, config).
+  """
+  if legacy_args:
+    from .run import RunContext
+    absolute_input_path, database, config = Path(context), Path(config), legacy_args[-1] # legacy_args: (input_path, config)
+    context = RunContext(type='default', input_path=absolute_input_path, database=database, platform='', configurations=[])
   entrypoint_module_ = entrypoint_module(config)
   if hasattr(entrypoint_module_, 'metadata'):
     try:
-      metadata = entrypoint_module_.metadata(absolute_input_path, database, input_path)
+      if _metadata_takes_context(entrypoint_module_.metadata):
+        metadata = entrypoint_module_.metadata(context)
+      else:
+        metadata = entrypoint_module_.metadata(context.input_path, context.database, context.rel_input_path)
       if metadata is None:
         metadata = {}
     except Exception:
@@ -265,8 +334,8 @@ def input_metadata(absolute_input_path, database, input_path, config):
   else:
     metadata = {}
   # update to metadata
-  metadata["input_path"] = str(absolute_input_path)
-  metadata["rel_input_path"] = str(input_path)
+  metadata["input_path"] = str(context.input_path)
+  metadata["rel_input_path"] = str(context.rel_input_path)
   return metadata
 
 
@@ -316,7 +385,7 @@ def is_plaintext(path, config=None):
   if not plaintext_patterns and binary_patterns:
     return not any(fnmatch(path.name, p) for p in binary_patterns)
   click.secho('ERROR: Cannot define both bit_accuracy.binary and bit_accuracy.plaintext in qaboard.yaml', fg='red')
-  exit(1)
+  sys.exit(1)
 
 
 def file_info(path, normalize_eof=True, config=None, compute_hashes=True, has_footer=False):
@@ -338,15 +407,14 @@ def file_info(path, normalize_eof=True, config=None, compute_hashes=True, has_fo
         print(f"ERROR: Error reading {path} (utf8/ignore), {e}")
         raise e
 
-    from tempfile import NamedTemporaryFile
-    with NamedTemporaryFile(mode='w+', delete=False, newline='\n') as normalized_file:
-      normalized_file_name = normalized_file.name + path.suffix
-    with open(normalized_file_name, 'w+', newline='\n', encoding="utf-8", errors='ignore') as normalized_file:
-      normalized_file.write(text)
-
-    normalized_file_info = file_info(normalized_file_name, normalize_eof=False, has_footer=has_footer)
-    Path(normalized_file_name).unlink()
-    return normalized_file_info
+    from tempfile import mkstemp
+    fd, normalized_file_name = mkstemp(suffix=path.suffix)
+    try:
+      with open(fd, 'w', newline='\n', encoding="utf-8", errors='ignore') as normalized_file:
+        normalized_file.write(text)
+      return file_info(normalized_file_name, normalize_eof=False, has_footer=has_footer)
+    finally:
+      Path(normalized_file_name).unlink()
 
   return _file_info(path, compute_hashes=compute_hashes)
 
@@ -462,11 +530,11 @@ def total_storage(manifest):
 def load_tuning_search(tuning_search: str, tuning_search_file: Path) -> Tuple[Dict, str]:
   if tuning_search and tuning_search_file:
     click.secho('Error: specify only one of --tuning-search or --tuning-search-file', fg='red', err=True)
-    exit(1)
+    sys.exit(1)
   if tuning_search_file:
     if not tuning_search_file.exists():
       click.secho('Error: could not find the file specified by --tuning-search-file', fg='red', err=True)
-      exit(1)
+      sys.exit(1)
     with tuning_search_file.open('r') as f:
       tuning_search = f.read()
     suffix = tuning_search_file.suffix

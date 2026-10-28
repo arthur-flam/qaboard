@@ -74,10 +74,11 @@ class Actor:
     return scope in tokens_lib.scopes_of(self.token)
 
   def allows_project(self, project_id: Optional[str]) -> bool:
-    """Tokens can be restricted to some projects"""
+    """Tokens can be restricted to some projects. A project's service accounts never reach outside of it."""
     if self.token is None:
       return True
-    return tokens_lib.matches_project(self.token.projects or [], project_id)
+    from .service_accounts import allows_project
+    return tokens_lib.matches_project(self.token.projects or [], project_id) and allows_project(self.user, project_id)
 
   def submitted_by(self) -> Optional[dict]:
     """Who really sent results, saved with runs, batches and commits"""
@@ -170,7 +171,7 @@ def session_user():
   if 'sid' in session or g.get('auth_error'):
     return None
   # Sessions opened before sessions were stored (flask-login's cookies, SAML's): they become stored sessions, nobody
-  # is signed out by the upgrade
+  # is signed out by the upgrade. Unless they could be copies (sessions.upgrades_old_cookie)
   user = None
   if session.get('_user_id') or request.cookies.get('remember_token'):
     from flask_login import current_user
@@ -184,7 +185,12 @@ def session_user():
     return None
   from flask_login import logout_user
   from backend import db_session
+  # the browser forgets the old cookies either way
   logout_user()
+  if not sessions.upgrades_old_cookie(user):
+    session.pop('samlUserdata', None)
+    g.auth_error = ('session_expired', "Your session expired: sign in again.")
+    return None
   sessions.start(user, (user.login_type or 'local').lower())
   db_session.commit()
   return user
@@ -209,6 +215,18 @@ def is_cross_site() -> bool:
     # not from a browser, or a browser that hides it: SameSite=Lax cookies already protect these
     return origin == 'null'
   return (urlparse(origin).hostname or '').lower() not in own_origins()
+
+
+def is_same_origin() -> bool:
+  """
+  Whether the browser says the request comes from our pages, for the GETs that change things (cookies come with
+  other websites' links). Unlike is_cross_site, nothing said means no.
+  """
+  if request.headers.get('Sec-Fetch-Site'):
+    return request.headers['Sec-Fetch-Site'] == 'same-origin'
+  # older browsers
+  origin = request.headers.get('Origin') or request.headers.get('Referer')
+  return bool(origin) and origin != 'null' and (urlparse(origin).hostname or '').lower() in own_origins()
 
 
 def is_public_endpoint() -> bool:

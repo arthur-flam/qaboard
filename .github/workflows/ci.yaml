@@ -41,22 +41,41 @@ jobs:
   python:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13: the Python of the images (the backend imports qaboard), 3.11: the oldest we test
+        python: ['3.11', '3.13']
     steps:
       - uses: actions/checkout@v4
+        with:
+          # the history, without the files' contents: to check the migrations against master's
+          fetch-depth: 0
+          filter: blob:none
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
           enable-cache: true
       - name: Install dependencies
         run: uv sync --locked --extra dev
       - name: Lint with flake8
-        # stop the build if there are Python syntax errors or undefined names
-        run: uv run --no-sync flake8 backend qaboard --count --select=E9,F63,F7,F82,W605 --show-source --statistics
+        # syntax errors, undefined names, unused imports and variables (see .flake8)
+        run: uv run --no-sync flake8 backend qaboard --count --show-source --statistics
       - name: Type Checks with MyPy
         run: uv run --no-sync mypy -p qaboard --ignore-missing-imports
       - name: Release notes
         # valid frontmatter and docs links
+        if: matrix.python == '3.11'
         run: uv run website/release-notes/release_notes.py check
+      - name: Merged migrations are never changed
+        # databases record the migrations they ran by id: a changed one doesn't run again where it already ran
+        if: matrix.python == '3.11' && github.event_name != 'release'
+        env:
+          # on master, what this push added; elsewhere, what the branch adds to master
+          BASE: ${{ github.ref == 'refs/heads/master' && github.event.before || format('origin/{0}', github.base_ref || 'master') }}
+        run: |
+          if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then exit 0; fi
+          .github/scripts/check_migrations.py "$BASE"
       - name: Unit Tests
         run: |
           # git is needed in the tests and setup to fail if not setup
@@ -65,12 +84,13 @@ jobs:
           uv run --no-sync green -vvv --quiet-stdout tests
       # Same build as the PyPI publish workflow (pypy.yml)
       - name: Build the package
+        if: matrix.python == '3.11'
         run: |
           uv build
           uvx twine check dist/*
 
   webapp:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # playwright 1.56 has no chromium for ubuntu 26.04
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     defaults:
       run:
@@ -179,6 +199,8 @@ jobs:
         run: |
           ./deployments/deploy.py deployments/production.env status
           ./deployments/deploy.py deployments/production.env compose logs --tail 200 backend proxy
+          # nginx logs to files (services/nginx/nginx.conf.template): why requests failed, and which replica they went to
+          ./deployments/deploy.py deployments/production.env compose exec -T proxy tail -n 50 /tmp/error.log || true
       # As <service>-<commit>: publish-docker-images tags them as latest, or with the release's version, once every job passed
       - name: Push the images
         if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'release'
@@ -221,7 +243,7 @@ jobs:
   # the images of this run. Its demo data is the seeder's test story, built into a demo-data image like the docs' demo
   # snapshot is (that one is in a private bucket: .github/workflows/docs-media.yml tests it the same way).
   quickstart:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # playwright 1.56 has no chromium for ubuntu 26.04
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     timeout-minutes: 45
     steps:
@@ -295,7 +317,7 @@ jobs:
   # (website/docs/get-started/quickstart.mdx), with demo data (see the quickstart job), a `qa batch` in the cluster,
   # then an upgrade
   helm-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # playwright 1.56 has no chromium for ubuntu 26.04
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     timeout-minutes: 45
     env:

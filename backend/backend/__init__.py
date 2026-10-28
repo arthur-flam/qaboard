@@ -87,12 +87,16 @@ import backend.api.video
 import backend.api.milestones
 import backend.api.auth
 import backend.api.tokens
+import backend.api.service_accounts
 import backend.api.users
 import backend.api.admin
 import backend.api.sign_in
 import backend.api.admin_sign_in
 import backend.api.admin_jobs
 import backend.api.storage
+import backend.api.admin_storage
+import backend.api.admin_services
+import backend.api.activity
 import backend.api.tasks
 import backend.api.files
 import backend.api.access

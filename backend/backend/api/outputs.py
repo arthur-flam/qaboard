@@ -8,10 +8,12 @@ from qaboard.conventions import deserialize_config
 
 from backend import app, db_session
 from ..models import TestInput, CiCommit, Output
+from ..origins import run_origin, run_user, claim_batch
 from ..storage import check_storage_path, UnsafePathError
 from ..redo import redo_response
 from ..metrics_definitions import save_metrics_definitions
 from ..notifications.batches import on_run_ended
+from ..access import invalid_project
 from .auth import login_required, is_authorized_user, ingest_access, forbidden_project, require_project_access
 
 # Keys of a run's data that only the server sets
@@ -26,7 +28,7 @@ def get_output(output_id):
   try:
     output = Output.query.filter(Output.id==output_id).one()
   except NoResultFound:
-    return jsonify({"error": f"Cannot find output {output_id}"}), 400
+    return jsonify({"error": f"Cannot find output {output_id}"}), 404
   if not is_authorized_user(None, output.batch.ci_commit.project_id):
     return forbidden_project(output.batch.ci_commit.project_id)
   return jsonify(output.to_dict())
@@ -43,22 +45,23 @@ def update_output(output_id):
   except NoResultFound:
     if request.method == 'DELETE':
       return {"status": "OK"}
-    return jsonify({"error": f"Cannot find output {output_id}"}), 400
+    return jsonify({"error": f"Cannot find output {output_id}"}), 404
   if forbidden := require_project_access(g.user, output.batch.ci_commit.project_id):
     return forbidden
 
   if request.method == 'PUT':
     data = request.get_json()
-    if 'is_pending' in data:
-      output.is_pending = data['is_pending']
-    if 'is_running' in data:
-      output.is_running = data['is_running']
+    if 'is_pending' in data or 'is_running' in data:
+      is_pending = data.get('is_pending', output.is_pending)
+      output.set_status(is_pending, data.get('is_running', output.is_running if is_pending else False))
     if 'is_failed' in data:
       output.is_failed = data['is_failed']
     if 'data' in data:
+      if not isinstance(data['data'], dict):
+        return jsonify({"error": "`data` must be an object"}), 400
       if not output.data:
         output.data = {}
-      output.data.update(data['data'])
+      output.data.update({k: v for k, v in data['data'].items() if k not in SERVER_KEYS})
       flag_modified(output, "data")
     if data.get('batch'):
       output.data["batch"] = data["batch"]
@@ -72,7 +75,7 @@ def update_output(output_id):
 
   if request.method == 'DELETE':
     if output.is_pending:
-      return {"error": "Please wait for the Output to finish running before deleting it"}, 500
+      return {"error": "Please wait for the Output to finish running before deleting it"}, 409
     soft = request.args.get('soft') == 'true'
     batch_id = output.batch_id
     try:
@@ -95,7 +98,7 @@ def output_redo(output_id):
   try:
     output = Output.query.filter(Output.id==output_id).one()
   except NoResultFound:
-    return jsonify({"error": f"Cannot find output {output_id}"}), 400
+    return jsonify({"error": f"Cannot find output {output_id}"}), 404
   if forbidden := require_project_access(g.user, output.batch.ci_commit.project_id):
     return forbidden
   return redo_response(output.batch, [output], g.user)
@@ -107,7 +110,7 @@ def get_output_manifest(output_id):
   try:
     output = Output.query.filter(Output.id==output_id).one()
   except NoResultFound:
-    return jsonify({"error": f"Cannot find output {output_id}"}), 400
+    return jsonify({"error": f"Cannot find output {output_id}"}), 404
   if not is_authorized_user(None, output.batch.ci_commit.project_id):
     return forbidden_project(output.batch.ci_commit.project_id)
   manifest_path = output.output_dir / "manifest.outputs.json"
@@ -149,6 +152,8 @@ def new_output_webhook():
   except UnsafePathError as e:
     return jsonify({"error": f"{e}"}), 400
 
+  if error := invalid_project(data.get('project')):
+    return error
   submitted_by, error = ingest_access(data.get('project'))
   if error:
     return error
@@ -235,6 +240,14 @@ def new_output_webhook():
     output.data.pop("submitted_by", None)
   # we can only trust CI outputs to run on the exact code from the commit
   output.data["ci"] = data['job_type'] == 'ci'
+  # where it comes from, and the batch's if it's new (backend/origins.py)
+  sent_data = data.get('data') if isinstance(data.get('data'), dict) else {}
+  sent_job_options = sent_data.get('job_options') if isinstance(sent_data.get('job_options'), dict) else {}
+  origin = run_origin(data, batch.data, submitted_by, [sent_data.get('root_command_id'), sent_job_options.get('command_id')])
+  output.data["origin"] = origin
+  claim_batch(batch, origin, run_user(data, submitted_by), (submitted_by or {}).get('user_id'))
+  if not isinstance(batch.latest_output_datetime, datetime.datetime) or now - batch.latest_output_datetime > threshold:
+    batch.latest_output_datetime = now
   if data.get('batch'):
     output.data["batch"] = data["batch"]
   if output.deleted:
@@ -244,11 +257,7 @@ def new_output_webhook():
   output.output_dir_override = output_directory
 
   # We update the output's status
-  output.is_running = data.get('is_running', False)
-  if output.is_running:
-    output.is_pending = True
-  else:
-    output.is_pending = data.get('is_pending', False)
+  output.set_status(data.get('is_pending', False), data.get('is_running', False))
 
   # A run that starts again (redo, qa batch...) is not failed anymore, until it says so when it ends.
   # Else re-runs of failed runs show as failed (and count as failed) while they are pending or running.

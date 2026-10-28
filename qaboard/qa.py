@@ -24,14 +24,14 @@ from .conventions import make_batch_dir, make_batch_conf_dir
 from .conventions import serialize_config, deserialize_config, get_settings
 from .utils import PathType, entrypoint_module, load_tuning_search
 from .utils import save_outputs_manifest, total_storage
-from .utils import redirect_std_streams, clean_output_dir
+from .utils import redirect_std_streams, clean_output_dir, interrupted_by_sigterm, ignored_signals
 from .utils import getenvs
 from .api import url_to_dir, print_url
 from .api import get_outputs, notify_qa_database, serialize_paths, exit_if_results_refused, ResultsUnreadable, print_auth_error
 from .iterators import iter_inputs, iter_parameters, load_runs_file, iter_runs, rerun_job_options, local_job_options
 from .batch_logs import saves_logs, batch_log
 
-from .config import config_has_error, ignore_config_errors
+from .config import config_has_error, ignore_config_errors, report_missing_storage, storage_needed_by
 from .config import project, project_root, subproject, config
 from .config import default_batches_files, get_default_database, default_batch_label, default_platform
 from .config import get_default_configuration, default_input_type
@@ -62,11 +62,15 @@ def qa(ctx, platform, configurations, label, tuning, tuning_filepath, dryrun, sh
   # Signing in is global, per server: it doesn't need a project
   if ctx.invoked_subcommand == 'auth':
     return
+  # Local runs save their results in output/: only some commands need the storage
+  storage_is_missing = report_missing_storage(storage_needed_by(ctx.invoked_subcommand, share, is_ci))
   # We want all paths to be relative to top-most qaboard.yaml
   # it should be located at the root of the git repository
   if config_has_error and not ignore_config_errors:
     click.secho('Please fix the error(s) above in qaboard.yaml', fg='red', err=True, bold=True)
-    exit(1)
+    sys.exit(1)
+  if storage_is_missing:
+    sys.exit(1)
 
   will_show_help = '-h' in sys.argv or '--help' in sys.argv
   noop_command = 'init' in sys.argv
@@ -165,7 +169,6 @@ def qa(ctx, platform, configurations, label, tuning, tuning_filepath, dryrun, sh
 @click.pass_context
 def get(ctx, input_path, output_path, variable):
   """Prints the value of the requested variable. Mostly useful for debug."""
-  from .config import outputs_commit, commit_branch, commit_message, artifacts_branch, artifacts_branch_root
   # backward compatibility
   if variable == "branch_ci_dir":
     variable = "artifacts_branch_root"
@@ -183,7 +186,7 @@ def get(ctx, input_path, output_path, variable):
     print(variables[variable])
   else:
     click.secho(f"Could not find {variable}", err=True, fg='red')
-    exit(1)
+    sys.exit(1)
 
 
 
@@ -247,46 +250,75 @@ def run(ctx, input_path, output_path, keep_previous, no_postprocess, forwarded_a
           # in CI, results QA-Board refuses are lost: don't compute them
           exit_if_results_refused()
 
-      start = time.time()
-      cwd = os.getcwd() 
-
-      try:
-        runtime_metrics = entrypoint_module(config).run(run_context)
-      except Exception as e:
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        click.secho(f'[ERROR] Your `run` function raised an exception: {e}', fg='red', bold=True)
+      # LSF sends SIGINT then SIGTERM when users bkill the job or it uses too much memory, before a SIGKILL:
+      # we say the run failed, or QA-Board would show it as running
+      with interrupted_by_sigterm():
         try:
-          exc_type, exc_value, exc_traceback = sys.exc_info()
-          click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red')
-        except Exception as e: # debug strange stale file errors, ideally remove this...
-          print(f"ERROR: {e}")
-        runtime_metrics = {'is_failed': True}
+          start = time.time()
+          cwd = os.getcwd() 
 
-      if not runtime_metrics:
-        runtime_metrics = {"is_failed": False}
+          try:
+            runtime_metrics = entrypoint_module(config).run(run_context)
+          except Exception as e:
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            click.secho(f'[ERROR] Your `run` function raised an exception: {e}', fg='red', bold=True)
+            try:
+              exc_type, exc_value, exc_traceback = sys.exc_info()
+              click.secho(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)), fg='red')
+            except Exception as e: # debug strange stale file errors, ideally remove this...
+              print(f"ERROR: {e}")
+            runtime_metrics = {'is_failed': True}
 
-      if not isinstance(runtime_metrics, dict):
-        click.secho(f'[ERROR] Your `run` function did not return a dict, but {runtime_metrics}', fg='red', bold=True)
-        runtime_metrics = {'is_failed': True}
+          if not runtime_metrics:
+            runtime_metrics = {"is_failed": False}
 
-      runtime_metrics['compute_time'] = time.time() - start
+          if not isinstance(runtime_metrics, dict):
+            click.secho(f'[ERROR] Your `run` function did not return a dict, but {runtime_metrics}', fg='red', bold=True)
+            runtime_metrics = {'is_failed': True}
 
-      # avoid issues if code in run() changes cwd
-      if os.getcwd() != cwd:
-        os.chdir(cwd)
+          runtime_metrics['compute_time'] = time.time() - start
 
-      metrics = postprocess_(runtime_metrics, run_context, skip=no_postprocess or runtime_metrics['is_failed'], save_manifests_in_database=save_manifests_in_database)
-      if not metrics:
-        metrics = runtime_metrics
+          # avoid issues if code in run() changes cwd
+          if os.getcwd() != cwd:
+            os.chdir(cwd)
 
-      if metrics['is_failed']:
-        click.secho('[ERROR] The run has failed.', fg='red', err=True)
-        click.secho(str(metrics), fg='red', bold=True)
-      else:
-        click.secho(str(metrics), fg='green')
-      exit_if_results_refused()
-      if metrics['is_failed']:
-        exit(1)
+          metrics = postprocess_(runtime_metrics, run_context, skip=no_postprocess or runtime_metrics['is_failed'], save_manifests_in_database=save_manifests_in_database)
+          if not metrics:
+            metrics = runtime_metrics
+
+          if metrics['is_failed']:
+            click.secho('[ERROR] The run has failed.', fg='red', err=True)
+            click.secho(str(metrics), fg='red', bold=True)
+          else:
+            click.secho(str(metrics), fg='green')
+          exit_if_results_refused()
+          if metrics['is_failed']:
+            sys.exit(1)
+        except KeyboardInterrupt:
+          mark_aborted(run_context)
+          raise
+
+
+def mark_aborted(run_context):
+  """Saves that the run failed after it was interrupted, in metrics.json and in QA-Board."""
+  with ignored_signals():
+    click.secho('[ERROR] The run was aborted: marked as failed.', fg='red', err=True)
+    metrics_path = run_context.output_dir / 'metrics.json'
+    metrics = {}
+    try:
+      if metrics_path.exists():
+        with metrics_path.open() as f:
+          metrics = json.load(f)
+    except (OSError, ValueError):
+      pass
+    metrics['is_failed'] = True
+    try:
+      with metrics_path.open('w') as f:
+        json.dump(metrics, f, sort_keys=True, indent=2, separators=(',', ': '))
+    except OSError as e:
+      click.secho(f'[ERROR] Could not write {metrics_path}: {e}', fg='red', err=True)
+    if not run_context.obj.get('offline') and not run_context.obj.get('dryrun'):
+      notify_qa_database(**run_context.obj, metrics=metrics, is_failed=True, is_pending=False, is_running=False)
 
 
 def postprocess_(runtime_metrics, run_context, skip=False, save_manifests_in_database=False):
@@ -501,7 +533,7 @@ def wait(ctx, output_id):
     else:
       click.secho("...waiting")
     time.sleep(5)
-  exit(0 if not output["is_failed"] else 1)
+  sys.exit(0 if not output["is_failed"] else 1)
 
 
 lsf_config = config['lsf'] if 'lsf' in config else config.get('runners', {}).get('lsf', {})
@@ -592,7 +624,11 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
   if not batches and not runs_file:
     click.secho(f'ERROR: you must provide a batch', fg='red', err=True, bold=True)
     click.secho(f'Use either `qa batch BATCH`, `qa batch BATCH_1 BATCH_2` or `qa batch --batch BATCH_2 --batch BATCH_2`', fg='red', err=True)
-    exit(1)
+    sys.exit(1)
+  # Those runs are saved in the commit's folder in the storage, even without --share
+  if prefix_outputs_path and not prefix_outputs_path.is_absolute():
+    if report_missing_storage('`qa batch --prefix-outputs-path` saves results there'):
+      sys.exit(1)
 
   runs = load_runs_file(runs_file) if runs_file else None
   # How the runs were started. Some options are for the whole batch, e.g. the concurrency
@@ -612,7 +648,7 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
     print_auth_error(e.response, "QA-Board refused to read the batch's runs")
     if action_on_existing != 'run':
       click.secho(f"ERROR: --action-on-existing={action_on_existing} needs the batch's runs, else all the runs would be done again.", fg='red', bold=True, err=True)
-      exit(1)
+      sys.exit(1)
     click.secho("         qa batch can't see which runs are pending: it may start them again.", fg='yellow', err=True)
   log = batch_log(ctx)
   command_id = os.environ.get('QA_BATCH_COMMAND_ID', log['command_id'] if log else str(uuid.uuid4())) # unique IDs for triggered runs makes it easier to wait/cancel them 
@@ -627,7 +663,8 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
     # so if we keep it defined we'll end up with deadlocks as those batch wait for the current batch to end...
     del os.environ['QA_BATCH_COMMAND_ID']
 
-  os.environ['QA_BATCH']= 'true' # triggered runs will be less verbose than with just `qa run` 
+  previous_qa_batch = os.environ.get('QA_BATCH') # set when this batch was started by another
+  os.environ['QA_BATCH']= 'true' # triggered runs will be less verbose than with just `qa run`
   os.environ['QA_BATCHES_FILES'] = json.dumps([str(b) for b in batches_files])
   dryrun = ctx.obj['dryrun'] or list_output_dirs or list_inputs or list_contexts
   should_notify_qa_database = (is_ci or ctx.obj['share']) and not (dryrun or ctx.obj['offline'])
@@ -820,7 +857,7 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
         if not matching_existing_output:
           click.secho("ERROR: At least 1 run cannot be found in QA-Board's past runs'", err=True, fg="red")
           click.secho(f"       {run_context}", err=True, fg="red")
-          exit(1)
+          sys.exit(1)
         run_context.output_dir = RunContext.from_api_output(matching_existing_output).output_dir
 
       if list_output_dirs:
@@ -911,7 +948,7 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
         total_runs += 1
         if total_runs > 1_000 and not os.environ.get("QA_BATCH_ALLOW_MANY_RUNS"):
           raise ValueError("Sorry you are sending too many runs at once. Consider using --offline or get an approval.")
-          exit(1)
+          sys.exit(1)
         # TODO: accumulate and send all at once to avoid 100s of requests?
         db_output = notify_qa_database(**{
           **ctx.obj,
@@ -973,8 +1010,11 @@ def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_sea
       del os.environ['QA_BATCH'] # restore verbosity
       if should_notify_qa_database:
         print_url(ctx, status="failure")
-      exit(1)
+      sys.exit(1)
     else:
+      # restore verbosity: print_url is quiet in runs started by `qa batch`, but this one ends
+      if previous_qa_batch is None:
+        del os.environ['QA_BATCH']
       if should_notify_qa_database:
         print_url(ctx)
 
@@ -1023,7 +1063,7 @@ def save_artifacts(ctx, files, excluded_groups, artifacts_path, groups):
       click.secho(
           "You are not in a git repository, maybe in an artifacts folder. `save_artifacts` is unavailable.",
           fg='yellow', dim=True)
-      exit(1)
+      sys.exit(1)
 
   for artifact_name, artifact_config in artifacts.items():
     click.secho(f'Saving artifacts: {artifact_name}', bold=True)
@@ -1034,8 +1074,11 @@ def save_artifacts(ctx, files, excluded_groups, artifacts_path, groups):
       click.secho(f"ERROR: {e}", fg='red')
       click.secho(f"We could not create one the folders required to save the artifacts..", fg='red', dim=True)
       click.secho(f"The disk could be full, or just the quota for the current user...", fg='red', dim=True)
-      click.secho(f"> Contact Alg-Infra@transchip.com", fg='blue')
-      exit(1)
+      from .site_config import site_config
+      storage_help = site_config('QABOARD_STORAGE_HELP')
+      if storage_help:
+        click.secho(f"INFO: {storage_help}", fg='blue')
+      sys.exit(1)
     if manifest_path.exists():
       with manifest_path.open() as f:
         try:

@@ -4,10 +4,26 @@ import { Classes, Intent, Spinner, Tag, Tooltip } from "@blueprintjs/core";
 import { parseDate } from "../settings/format";
 
 
+// Decimal units, like IT's quotas
+export const formatBytes = bytes => {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let size = Number(bytes ?? 0);
+  let unit = 0;
+  while (size >= 1000 && unit < units.length - 1) {
+    size /= 1000;
+    unit += 1;
+  }
+  return unit === 0 ? `${size} B` : `${size >= 100 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
+};
+
+
 export const kind_labels = {
   hard_delete: 'Hard-delete runs',
   garbage_collect: 'Delete old results',
   delete_artifacts: 'Delete artifacts',
+  scan_storage: 'Scan the storage',
+  measure_deleted: 'Measure what deleted runs left',
+  fail_stuck_runs: 'Fail stuck runs',
 };
 
 const statuses = {
@@ -46,6 +62,18 @@ export const progressSummary = job => {
   } else if (job.kind === 'garbage_collect') {
     parts.push(`${plural(progress.outputs ?? 0, 'run')} ${job.dry_run ? 'to clean' : 'cleaned'}`);
     if (progress.artifacts) parts.push(`artifacts of ${plural(progress.artifacts, 'commit')}`);
+  } else if (job.kind === 'scan_storage') {
+    parts.push(`${formatBytes(progress.bytes ?? 0)} in ${plural(progress.files ?? 0, 'file')}`);
+    if (progress.folders_total) parts.push(`${number(progress.folders_done ?? 0)}/${plural(progress.folders_total, 'folder')}`);
+    if (progress.dirs_explored) parts.push(`${plural(progress.dirs_explored, 'folder')} read`);
+  } else if (job.kind === 'measure_deleted') {
+    parts.push(`${plural(progress.runs_checked ?? 0, 'run')} measured, ${formatBytes(progress.bytes_left ?? 0)} left`);
+  } else if (job.kind === 'fail_stuck_runs') {
+    parts.push(`${plural(progress.runs_failed ?? 0, 'run')} ${job.dry_run ? 'to mark as failed' : 'marked as failed'}`);
+  } else if (['delete_runs', 'delete_exports', 'delete_paths'].includes(job.kind)) {
+    parts.push(`${formatBytes(progress.bytes_deleted ?? 0)} freed`);
+  } else if (job.kind === 'import_runs') {
+    parts.push(`${plural(progress.runs_imported ?? 0, 'run')} added`);
   } else if (job.kind === 'sync_groups' && progress.users !== undefined) {
     parts.push(`${plural(progress.users_changed ?? 0, 'user')} changed groups`);
   }
@@ -74,6 +102,38 @@ export const counters = {
     { key: 'commits_busy', label: 'Commits with runs in progress' },
     { key: 'commits_failed', label: 'Commits with errors', intent: Intent.DANGER, hint: "The next job tries them again: see the errors." },
     { key: 'commits_checked', label: 'Commits checked' },
+  ],
+  scan_storage: [
+    { key: 'bytes', label: 'Scanned', main: true, format: 'bytes' },
+    { key: 'files', label: 'Files' },
+    { key: 'folders_done', label: 'Folders done' },
+    { key: 'folders_total', label: 'Folders to scan' },
+    { key: 'dirs_explored', label: 'Folders read', hint: "Inside them too: big folders take a while to be done, this shows the scan is moving." },
+  ],
+  measure_deleted: [
+    { key: 'runs_checked', label: 'Deleted runs checked', main: true },
+    { key: 'runs_measured', label: 'had files left' },
+    { key: 'bytes_left', label: 'Left on disk', format: 'bytes' },
+    { key: 'runs_without_files', label: 'had no files left', hint: "Their folders were gone." },
+  ],
+  fail_stuck_runs: [
+    { key: 'runs_failed', label: 'Runs marked as failed', dry: 'Runs to mark as failed', main: true },
+    { key: 'batches', label: 'Batches' },
+    { key: 'projects', label: 'Projects' },
+  ],
+  delete_paths: [
+    { key: 'bytes_deleted', label: 'Freed', main: true, format: 'bytes' },
+    { key: 'paths_deleted', label: 'Folders and files deleted' },
+    { key: 'paths_failed', label: 'Not deleted, because of errors', intent: Intent.DANGER },
+  ],
+  delete_exports: [
+    { key: 'bytes_deleted', label: 'Freed', main: true, format: 'bytes', hint: "At most: hard links free their space only when the runs are deleted too." },
+    { key: 'exports_deleted', label: 'Exports deleted' },
+    { key: 'exports_failed', label: 'Not deleted, because of errors', intent: Intent.DANGER },
+  ],
+  import_runs: [
+    { key: 'runs_imported', label: 'Runs added to QA-Board', main: true },
+    { key: 'bytes', label: 'Their size', format: 'bytes' },
   ],
   sync_groups: [
     { key: 'users_changed', label: 'Users who changed groups', main: true },

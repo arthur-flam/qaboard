@@ -94,6 +94,49 @@ class TestQaCli(unittest.TestCase):
     assert '/dev/null =>' in result.output
     assert "'is_failed': False" in result.output
 
+  @unittest.skipIf(os.name == 'nt', "no SIGTERM")
+  def test_aborted_run_is_failed(self):
+    """LSF sends SIGINT then SIGTERM when users bkill the job or it uses too much memory: the run says it failed"""
+    import sys
+    import time
+    import signal
+    import tempfile
+    import subprocess
+    for signo in (signal.SIGINT, signal.SIGTERM):
+      with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp) / 'output'
+        command = [sys.executable, '-c', 'from qaboard.qa import main; main()', 'run', '-i', 'cli_tests/a.jpg', '-o', str(output_dir), 'sleep 30']
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
+        try:
+          log = output_dir / 'log.txt'
+          deadline = time.time() + 30
+          while not (log.exists() and 'sleep 30' in log.read_text()) and time.time() < deadline:
+            time.sleep(0.1)
+          process.send_signal(signo)
+          output, _ = process.communicate(timeout=20)
+        finally:
+          process.kill()
+        self.assertEqual(process.returncode, 1, output)
+        self.assertIn('The run was aborted', output)
+        self.assertEqual(json.loads((output_dir / 'metrics.json').read_text()), {"is_failed": True})
+
+  def test_aborted_run_updates_qaboard(self):
+    from unittest import mock
+    from qaboard.run import RunContext
+    self.qa('--help') # loads the modules
+    import tempfile
+    qa_module = import_module('qaboard.qa') # qaboard.qa is the click command
+    with tempfile.TemporaryDirectory() as tmp_dir:
+      tmp = Path(tmp_dir)
+      (tmp / 'metrics.json').write_text(json.dumps({"is_failed": False, "partial": 1}))
+      run_context = RunContext(type='default', input_path=Path('a.jpg'), database=Path(), output_dir=tmp, configurations=[], platform='linux')
+      with mock.patch.object(qa_module, 'notify_qa_database') as notify:
+        qa_module.mark_aborted(run_context)
+      self.assertEqual(json.loads((tmp / 'metrics.json').read_text()), {"is_failed": True, "partial": 1})
+    self.assertEqual(notify.call_count, 1)
+    self.assertEqual({k: notify.call_args.kwargs[k] for k in ('is_failed', 'is_pending', 'is_running')}, {'is_failed': True, 'is_pending': False, 'is_running': False})
+    self.assertEqual(notify.call_args.kwargs['metrics'], {"is_failed": True, "partial": 1})
+
   def test_run_in_ci_when_the_server_refuses_results(self):
     from unittest import mock
     from tests.test_auth import response
@@ -504,6 +547,25 @@ class TestQaCli(unittest.TestCase):
     print('stderr:', result.stderr)
     assert result.exit_code == 0
 
+
+  def test_batch_prints_the_results_url_at_the_start_and_the_end(self):
+    from unittest import mock
+    import requests
+    # other tests run `qa batch` in this process, and leave QA_BATCH set as if we were started by a batch
+    env = {k: v for k, v in os.environ.items() if k != 'QA_OFFLINE' and not k.startswith('QA_BATCH')}
+    # the runs (subprocesses) can't reach any server, and neither can this process
+    env['QABOARD_URL'] = 'http://127.0.0.1:9'
+    no_server = requests.ConnectionError('no server in tests')
+    # qaboard.api binds the project when imported, maybe by other tests from another directory
+    reload(import_module('qaboard.config'))
+    reload(import_module('qaboard.api'))
+    with mock.patch.dict(os.environ, env, clear=True), \
+         mock.patch('requests.post', side_effect=no_server), mock.patch('requests.get', side_effect=no_server):
+      result = self.qa('--share', 'batch', '--batches-file', 'image.batches.yaml', 'images', '--runner=local', 'echo "{input_path} => {output_dir}"')
+      qa_batch = os.environ.get('QA_BATCH')
+    assert result.exit_code == 0
+    self.assertEqual(result.stderr.count('Results: '), 2, result.stderr)
+    self.assertIsNone(qa_batch) # restored when the batch ends
 
   @unittest.skipUnless(shutil.which('bsub'), 'needs LSF (bsub)')
   def test_runner_lsf(self):

@@ -2,11 +2,14 @@
 id: storage
 sidebar_label: Cleaning the storage
 title: Cleaning the storage
+description: "Free disk space and keep the database small from the admin panel: hard-delete deleted runs, delete artifacts and old results, scan the storage, and schedule these jobs."
 ---
 Free disk space and keep the database small from **Admin → Storage**: delete for good the runs users deleted, purge the
-runs whose files are gone, delete commits' artifacts, delete old results as each project's *qaboard.yaml* says, and
-schedule these jobs instead of keeping cron jobs on the server. Jobs run in
+runs whose files are gone, delete commits' artifacts, delete old results as each project's *qaboard.yaml* says, find
+and delete what QA-Board doesn't track, and schedule these jobs instead of keeping cron jobs on the server. Jobs run in
 the background: their page shows their progress, their log, and every error.
+
+<Shot id="admin/storage" />
 
 ## Delete the runs users deleted, for good
 When users delete runs, QA-Board deletes their files but keeps their metadata, so they stay listed and can be redone.
@@ -18,6 +21,8 @@ On a busy server, those runs can become most of the database.
 3. Choose the runs' dates: **Runs created before** takes a date (`2026-01-31`, UTC) or a duration before the job starts
    (`1month`). **Count the deleted runs** says how many match.
 4. Start a **dry run** first: it deletes nothing and says what would be deleted. On its page, **Run it for real**.
+
+<Shot id="admin/hard-delete" />
 
 What's left of the runs' files is deleted, then their rows. Batches left without runs are deleted too; commits are kept.
 
@@ -79,7 +84,10 @@ and **Download all (CSV)** to send them to the people concerned. Once fixed, **R
 - **Git**: the project's repository can't be read (see above).
 - **Storage not mounted?**: a folder is missing where the storage may just not be mounted (see above).
 
-Only one job of each kind runs at a time. Cancel a running job from its page: it stops within seconds.
+Only one job of each kind runs at a time. Cancel a running job from its page: it stops within seconds. If it's still
+*Cancelling* after a minute, its worker is stuck, e.g. reading a storage that doesn't answer: **Stop without waiting**
+marks it as cancelled, so another job of its kind can start. Its worker may stay busy with it until it gets an answer:
+restart the backend (or wherever `qaboard-admin jobs worker` runs) to stop it at once.
 
 ## Users' storage usage
 Users see how much storage their runs use, and delete their runs' files, in **Storage usage** (their profile menu,
@@ -94,15 +102,94 @@ The numbers come from the `storage_usage` table, one row per batch and user who 
 
 A rebuild reads every run once, chunk by chunk: count about 5 minutes for 50 million runs.
 
+**Who sees other people's usage**: admins see everyone's. Other users see other people's runs, exports and the
+*Users* leaderboard only in the projects where they are developers or owners from a grant, a group or *qaboard.yaml*:
+not just because they're signed in, even when `projects.signed_in_role` makes every signed-in user a developer. To show
+everyone's usage to everyone who can see the project, set `storage.others_visible_to` (`QABOARD_STORAGE_OTHERS_VISIBLE_TO`)
+to `signed_in` in **Admin → Settings**. Only signed-in users have Storage usage.
+
+<Shot id="storage/users" />
+
+## Scanning the storage
+QA-Board only knows the files of its runs and artifacts. **Scan the storage** walks the projects' storage roots (and
+any other folder you add) and finds, with the owner of every file:
+- **Untracked runs**: folders with a `run.json` or a manifest that QA-Board doesn't know (a failed upload, a run
+  deleted for good while its folder stayed),
+- **Untracked exports**: folders with an export's `0.qa.url`, `0.qa.html` or `0.common.json` that QA-Board doesn't track,
+- what **deleted runs** and **deleted artifacts** left,
+- **other files**, e.g. copies, core dumps, users' own folders.
+
+Open a scan from **Scans** to explore it like `ncdu`: folders by size, with a bar of what they're made of, down to the
+size you chose (*Details down to*, 50 MB by default: smaller items are counted with their folder). **Biggest untracked**
+lists them anywhere, by kind, owner or age. Click an owner to see only theirs. Then select entries and:
+- **Delete…** them: only folders without anything QA-Board uses (runs, batches' files, artifacts) can be selected,
+- **Track** exports: their owners see them in **Storage usage → Exports**, and can delete them,
+- **Add runs to QA-Board**: untracked runs in a batch's folder are added to their batch, from their `run.json`,
+  manifest and metrics.
+
+Users see what they own in **Storage usage → Not tracked**, from the latest scan, and can delete the folders whose
+files are all theirs. Scanning doesn't change anything on disk.
+
+Delete old scans from the **Scans** list or the scan's page: only what they found is deleted, not the files. Users then
+see the latest scan that's done.
+
+<details>
+<summary>How long scans take, and what they don't see</summary>
+
+A scan reads every file's metadata, with 8 threads by default: on network storage, latency dominates, count hours for
+tens of millions of files. Schedule it at night, e.g. weekly. A scan stopped by a restart resumes: the folders it was
+in are scanned again. Hard links are counted once, symlinks aren't followed, and a folder reachable under several roots (nested, symlinked or bind-mounted) is scanned once. Storage snapshots (`.snapshot`, `.snapshots`, `.zfs`) are always skipped, whatever *Excluded paths* says.
+
+Scans see what the backend sees: the storage must be mounted at the same paths as on the machines where runs save
+results, and the worker reads it as root. Files of uids the backend can't name show as numbers.
+
+</details>
+
+## Exports
+Exports from the web app are recorded with their folder, project, commit, batch, who made them and their size. By
+default they go to a `share/` folder next to the commit's results, which is hard to find among the results. Put them all
+in one place with the `storage.exports_root` setting (**Admin → Settings**, or `QABOARD_EXPORTS_ROOT`):
+`<root>/<user>/<project>/<date>-<id>`. The folder must be on the same file system as the results for hard links, and
+under `QABOARD_STORAGE_ROOTS`.
+
+## What deleted runs leave
+When users delete runs, QA-Board keeps their manifests, and deletes only the files the manifests list: what the runs
+wrote after they ended stays. QA-Board measures what's left when it deletes runs, and users see it in **Storage
+usage**. Run **Measure what deleted runs left** once to measure the runs deleted before. **Hard-delete deleted runs**
+removes what's left.
+
+## Fail stuck runs
+When LSF kills a job, or its machine reboots, its run can't tell QA-Board it ended: it shows as running forever, in
+[Runs activity](/docs/user-guide/runs-activity) and on its commit. **Fail stuck runs** marks as failed the runs pending
+(waiting or running) for over a week, or what you choose. Nothing is deleted and their jobs aren't stopped: a run that
+still runs saves its results when it ends. Users can redo the others.
+
+Start with a dry run, then schedule it, e.g. *Stuck runs*: **Fail stuck runs** of `*`, pending for over `1week`, every
+night. **Runs activity** tells admins how many runs are pending for over a week, offers to start the job or schedule it,
+and says which schedule does it. Each run says why it failed (`data.failed_reason`).
+
+<Shot id="activity/stuck-runs" />
+
+Runs from before QA-Board recorded when runs start count from when they were created: a run redone just before the
+upgrade may look old. The dry run lists how many runs it would change, per project.
+
 ## Schedule jobs
 Click **New schedule**, choose the job and its settings, and when it runs with a cron expression
 (`minute hour day-of-month month day-of-week`, e.g. `0 2 * * *` every night at 2:00) in a time zone. The form shows the
 next runs. A schedule's run is skipped, with a message, while a job of the same kind is still running.
 
+When a scheduled job fails, ends with errors, or is given up because its workers kept dying, QA-Board emails the admins
+what went wrong, its first errors and a link to the job (it needs [emails](/docs/deploy#emails)). Send them to others with
+the setting `jobs.failure_email_to` (user names or emails, `QABOARD_JOBS_FAILURE_EMAIL_TO`), or turn them off with
+`jobs.failure_emails` (`QABOARD_JOBS_FAILURE_EMAILS=false`). A schedule that keeps failing sends at most one email
+every 6 hours, and the jobs you start yourself, even with **Run now**, aren't emailed. With
+[Sentry](/docs/backend-admin/monitoring#jobs-worker), every job that goes wrong is reported there too.
+
 For example, to replace the cron job of the [server's setup](/docs/deploy#optional-cleanup):
 - *Old results*: **Delete old results** of `*`, by default older than `1month`, every Saturday at 1:59.
 - *Nightly purge*: **Hard-delete runs** of `*`, **Both**, created before `1month`, every night.
 - *Artifacts*: **Delete artifacts** of `*`, commits without runs for `2months`, every Sunday.
+- *Stuck runs*: **Fail stuck runs** of `*`, pending for over `1week`, every night.
 
 <details>
 <summary>Where jobs run</summary>

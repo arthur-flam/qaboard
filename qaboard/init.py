@@ -4,6 +4,7 @@ Initialize a QA-Board project
 qa init
 ```
 """
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import subprocess
@@ -91,7 +92,7 @@ def qa_init(ctx):
     click.secho(f'You already have a qaboard.yaml configuration:', fg='green', bold=True, err=True)
     for p in config_paths:
       click.secho(str(p), fg='green')
-    exit(0)
+    sys.exit(0)
 
   # Locate the sample project's configuration
   qatools_dir = Path(__file__).resolve().parent
@@ -120,7 +121,7 @@ def qa_init(ctx):
     subprocess.run("git rev-parse --is-inside-work-tree", shell=True, stdout=subprocess.PIPE, check=True)
   except Exception:
     click.secho('Warning: Could not find a git repository', fg='yellow')
-    exit(0)
+    sys.exit(0)
 
 
   try:
@@ -141,15 +142,16 @@ def qa_init(ctx):
       name =  '/'.join(url.split('/')[3:]).replace('.git', '')
     print(f"project name: {name}")
 
-    p = subprocess.run(f"git remote show {remote}", stdout=subprocess.PIPE, shell=True, check=True, encoding='utf-8')
-    head_info = [l for l in p.stdout.strip().splitlines() if 'HEAD branch:' in l]
-    reference_branch = head_info[0].split(':')[1]
+    # It asks the remote: without network or credentials, we still fill the project's name and url
     try:
       p = subprocess.run(f"git remote show {remote}", stdout=subprocess.PIPE, shell=True, check=True, encoding='utf-8')
       head_info = [l for l in p.stdout.strip().splitlines() if 'HEAD branch:' in l]
-      reference_branch = head_info[0].split(':')[1]
+      reference_branch = head_info[0].split(':', 1)[1].strip()
+      if not reference_branch or reference_branch == '(unknown)': # e.g. an empty remote
+        raise ValueError(reference_branch)
     except Exception:
       click.secho('Warning: Could not find the remote HEAD, using master as reference branch', fg='yellow')
+      click.secho('         If your main branch is another one, change project.reference_branch in qaboard.yaml', fg='yellow')
       reference_branch = 'master'
     print(f"reference_branch: {reference_branch}")
 

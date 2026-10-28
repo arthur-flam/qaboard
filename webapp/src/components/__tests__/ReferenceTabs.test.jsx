@@ -47,6 +47,8 @@ beforeEach(() => {
   }));
 });
 afterEach(() => vi.unstubAllGlobals());
+// Blueprint's popovers don't clear their open/close delays when they unmount: we let them fire while `window` exists
+afterAll(() => new Promise(resolve => setTimeout(resolve, 1000)));
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40), c = 'c'.repeat(40), d = 'd'.repeat(40), e = 'e'.repeat(40), f = 'f'.repeat(40);
 
@@ -267,4 +269,35 @@ test('the first tab is the top results: only the two bars swap', async () => {
   expect(screen.getByTestId('labels')).toHaveTextContent('new vs ISP v2 (');
   expect(screen.getAllByRole('tab')).toHaveLength(2);
   expect(await screen.findByLabelText(/^Top: new/)).toBeInTheDocument();
+});
+
+test('dragging a tab says where it would go, between which tabs', async () => {
+  show(`/p/commit/${a}?reference=${b}&compare=${c}&compare=${d}`);
+  await waitFor(() => expect(tab(3)).toHaveTextContent('branch-ddd'));
+  const dataTransfer = { setData: () => {}, effectAllowed: '' };
+  const hint = () => document.querySelector('.qa-tabs-drop-hint');
+  const marker = () => document.querySelector('.qa-drop-marker');
+  // jsdom's drag events have no position: they're on the right half of tabs, so the drop is after them
+  fireEvent.dragStart(tab(1), { dataTransfer });
+  expect(hint()).toHaveTextContent(/^Drop between two references/);
+  fireEvent.dragOver(tab(3), { dataTransfer });
+  expect(hint()).toHaveTextContent(/^Move ref last, after ref 3$/);
+  expect(tab(3).querySelector('.qa-drop-marker')).not.toBeNull();
+  fireEvent.dragEnd(tab(1));
+  expect(hint()).toBeNull();
+
+  const third = tab(3);
+  fireEvent.dragStart(third, { dataTransfer });
+  fireEvent.dragOver(tab(1), { dataTransfer });
+  expect(hint()).toHaveTextContent(/^Move ref 3 between ref and release 1.0$/);
+  // next to itself, it wouldn't move: no marker
+  fireEvent.dragOver(tab(2), { dataTransfer });
+  expect(hint()).toHaveTextContent('ref 3 is already there');
+  expect(marker()).toBeNull();
+  // dropped between the first two
+  fireEvent.dragOver(tab(1), { dataTransfer });
+  fireEvent.drop(tab(1), { dataTransfer });
+  await waitFor(() => expect(tab(2)).toHaveTextContent('branch-ddd'));
+  expect(hint()).toBeNull();
+  expect(marker()).toBeNull();
 });

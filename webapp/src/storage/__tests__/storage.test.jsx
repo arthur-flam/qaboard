@@ -76,6 +76,67 @@ describe('Storage usage', () => {
     expect(history.location.search).toBe('?project=proj%2Fa');
   });
 
+  it("shows the commits' message, author and date, and filters by project, branch or user in a click", async () => {
+    const commit = { message: 'Tune the AWB', details: 'Tune the AWB\n\nWith more tests', author: 'Alice Doe', authored_at: '2026-06-30T00:00:00Z' };
+    const fetch = mockApi({
+      'GET /api/v1/storage/overview': { ...overview, scope: 'all', users: [{ user_name: 'alice', bytes: 30 * GB, runs: 3 }, { user_name: 'bob', bytes: 5 * GB, runs: 1 }] },
+      'GET /api/v1/storage/items': { ...items, items: [batch({ commit, users: ['alice', 'bob'], nb_users: 2 })], total: 1 },
+      'GET /api/v1/storage/jobs': { jobs: [] },
+    });
+    renderAt('/storage/batches?scope=all');
+    const [row] = within(await screen.findByRole('table', { name: 'Batches' })).getAllByTestId('storage-item');
+    expect(within(row).getByText('Tune the AWB')).toHaveAttribute('title', commit.details);
+    expect(row).toHaveTextContent('Alice Doe');
+    fireEvent.click(within(row).getByRole('button', { name: 'feature' }));
+    await waitFor(() => expect(history.location.search).toBe('?scope=all&branch=feature'));
+    fireEvent.click(within(row).getByRole('button', { name: 'proj/a' }));
+    await waitFor(() => expect(history.location.search).toBe('?scope=all&project=proj%2Fa&branch=feature'));
+    fireEvent.click(within(row).getByRole('button', { name: 'bob' }));
+    await waitFor(() => expect(history.location.search).toBe('?scope=user&user=bob&project=proj%2Fa&branch=feature'));
+    // clicking the row selects it
+    fireEvent.click(within(row).getByText('3'));
+    expect(screen.getByRole('region', { name: 'Selection' })).toHaveTextContent('1 batch selected');
+    expect(calls(fetch, 'GET', '/api/v1/storage/items').length).toBeGreaterThan(0);
+  });
+
+  it('cuts long project names in the summary', async () => {
+    const long = 'group/team/some/very/long/path/to/tests/products/the-project';
+    mockApi({
+      'GET /api/v1/storage/overview': { ...overview, projects: [{ ...overview.projects[0], project_id: long }, overview.projects[1]] },
+      'GET /api/v1/storage/jobs': { jobs: [] },
+    });
+    renderAt('/storage');
+    const link = within(await screen.findByTestId('projects-total')).getByRole('link', { name: long });
+    expect(link.parentElement).toHaveAttribute('title', long);
+    expect(link.parentElement).toHaveStyle({ textOverflow: 'ellipsis' });
+  });
+
+  it('ranks who uses the most, and opens their runs', async () => {
+    const fetch = mockApi({
+      'GET /api/v1/storage/overview': { ...overview, scope: 'all' },
+      'GET /api/v1/storage/users': {
+        users: [
+          { user_name: 'bob', bytes: 30 * GB, runs: 10, batches: 4, commits: 2, projects: 2, last_run_at: '2026-07-01T00:00:00Z', top_project: { project_id: 'proj/a', bytes: 25 * GB } },
+          { user_name: 'alice', bytes: 10 * GB, runs: 3, batches: 1, commits: 1, projects: 1, last_run_at: '2026-07-01T00:00:00Z', top_project: { project_id: 'proj/b', bytes: 10 * GB } },
+        ],
+        total: 2, totals: { bytes: 40 * GB, runs: 13 }, me: 'alice', can_delete_others: false,
+      },
+      'GET /api/v1/storage/items': items,
+      'GET /api/v1/storage/jobs': { jobs: [] },
+    });
+    renderAt('/storage/users?project=proj/a');
+    const rows = within(await screen.findByRole('table', { name: 'Users' })).getAllByTestId('storage-user');
+    expect(rows[0]).toHaveTextContent('bob');
+    expect(rows[0]).toHaveTextContent('75%');
+    expect(rows[1]).toHaveTextContent('you');
+    expect(new URL(calls(fetch, 'GET', '/api/v1/storage/users').at(-1)[0], 'http://localhost').searchParams.get('project')).toBe('proj/a');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Find someone' }), { target: { value: 'ali' } });
+    expect(screen.getAllByTestId('storage-user')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Their runs' }));
+    await waitFor(() => expect(history.location.pathname).toBe('/storage/batches'));
+    expect(history.location.search).toBe('?scope=user&user=alice&project=proj%2Fa');
+  });
+
   it("selects batches, keeps milestones, and deletes after a preview", async () => {
     const fetch = mockApi({
       'GET /api/v1/storage/overview': overview,
@@ -128,6 +189,52 @@ describe('Storage usage', () => {
     expect(lastBody(fetch, 'POST', '/api/v1/storage/delete')).toEqual({ group: 'batch', scope: 'me', filters: { project: 'proj/a' }, confirm: 'Delete 120 batches' });
   });
 
+  it('starts the folders where the runs are, and skips folders that only lead to one', async () => {
+    const fetch = mockApi({
+      'GET /api/v1/storage/overview': overview,
+      'GET /api/v1/storage/jobs': { jobs: [] },
+      'GET /api/v1/storage/folders': url => {
+        const path = new URL(url, 'http://localhost').searchParams.get('path');
+        const empty = { bytes: 0, runs: 0, batches: 0 };
+        return [path === '/'
+          ? { path: '/', skipped: false, children: [{ name: 'algo/proj/outputs/alice', path: '/algo/proj/outputs/alice', bytes: 39 * GB, runs: 6, batches: 3 }], here: empty, partial: empty }
+          : { path: '/algo/proj/outputs/alice', skipped: true, children: [{ name: 'a/b/c', path: '/algo/proj/outputs/alice/a/b/c', bytes: 39 * GB, runs: 6, batches: 3 }], here: empty, partial: empty }, 200];
+      },
+    });
+    renderAt('/storage/folders');
+    expect(await screen.findByText('Started where the runs are')).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'a/b/c' });
+    expect(link).toHaveAttribute('href', '/storage/folders?path=%2Falgo%2Fproj%2Foutputs%2Falice%2Fa%2Fb%2Fc');
+    expect(new URL(calls(fetch, 'GET', '/api/v1/storage/folders')[0][0], 'http://localhost').searchParams.get('path')).toBe(null);
+    // the breadcrumbs' root is "/" itself, not where the runs start
+    act(() => history.push('/storage/folders?path=%2F'));
+    expect(await screen.findByRole('link', { name: 'algo/proj/outputs/alice' })).toBeInTheDocument();
+    expect(screen.queryByText('Started where the runs are')).not.toBeInTheDocument();
+  });
+
+  it('says when a project is selected, and shows all projects', async () => {
+    mockApi({ 'GET /api/v1/storage/overview': { ...overview, projects: [overview.projects[0]] }, 'GET /api/v1/storage/jobs': { jobs: [] } });
+    renderAt('/storage/projects?project=proj/a');
+    const table = await screen.findByRole('table', { name: 'Projects' });
+    expect(table.parentElement).toHaveTextContent('Only proj/a is shown.');
+    expect(screen.getByRole('button', { name: 'All projects' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all projects' }));
+    await waitFor(() => expect(history.location.search).toBe(''));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'All projects' })).not.toBeInTheDocument());
+  });
+
+  it("hides other people's usage from who can't see it", async () => {
+    mockApi({
+      'GET /api/v1/storage/overview': { ...overview, can_see_others: 'none' },
+      'GET /api/v1/storage/users': { can_see_others: 'none', users: [], total: 0, totals: { bytes: 0 }, me: 'alice' },
+      'GET /api/v1/storage/jobs': { jobs: [] },
+    });
+    renderAt('/storage/users');
+    expect(await screen.findByText('Only your own usage')).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: 'Whose runs' })).not.toBeInTheDocument();
+    expect(screen.queryByText("Everyone's")).not.toBeInTheDocument();
+  });
+
   it('finds the runs in a folder from a quota alert', async () => {
     const fetch = mockApi({
       'GET /api/v1/storage/overview': overview,
@@ -162,5 +269,107 @@ describe('Storage usage', () => {
     fireEvent.click(screen.getByRole('button', { name: "Why does IT's quota say something else?" }));
     expect(await screen.findByText(/du -sh \/algo\/proj\/outputs\/alice/)).toBeInTheDocument();
     expect(screen.getByText(/-user alice/)).toBeInTheDocument();
+  });
+});
+
+
+describe('Leftovers, rules, exports and untracked files', () => {
+  const rules = {
+    project: null, settings: {},
+    rules: [{ kind: 'garbage_collect', schedule: 'old', when: 'every day at 02:00 (UTC)', next_run_at: '2026-10-23T02:00:00Z', projects: '*', dry_run: false,
+      title: 'Old results are deleted', detail: 'The files of runs on commits without new runs for 1month are deleted.', keeps: 'Milestones are kept.', after: '1month' }],
+  };
+
+  it('shows what deleted runs left, and the deletion rules', async () => {
+    mockApi({
+      'GET /api/v1/storage/overview': { ...overview, totals: { ...overview.totals, deleted: { runs: 4, bytes: 2 * GB, unmeasured: 0 } }, exports: { count: 2, bytes: 3 * GB, linked_bytes: GB } },
+      'GET /api/v1/storage/jobs': { jobs: [] },
+      'GET /api/v1/storage/rules': rules,
+    });
+    renderAt('/storage');
+    expect(await screen.findByTestId('deleted-leftovers')).toHaveTextContent('2.0 GB');
+    expect(screen.getByTestId('deleted-leftovers')).toHaveTextContent('left by 4 deleted runs');
+    expect(screen.getByTestId('exports-total')).toHaveTextContent('3.0 GB');
+    const rule = await screen.findByTestId('deletion-rule');
+    expect(rule).toHaveTextContent('Old results are deleted');
+    expect(rule).toHaveTextContent('every day at 02:00 (UTC)');
+  });
+
+  it('sums up many deletion rules in a line, until asked', async () => {
+    const rule = rules.rules[0];
+    mockApi({
+      'GET /api/v1/storage/overview': overview,
+      'GET /api/v1/storage/jobs': { jobs: [] },
+      'GET /api/v1/storage/rules': { ...rules, rules: [rule, { ...rule, kind: 'hard_delete', title: 'Deleted runs are deleted for good' }, { ...rule, kind: 'delete_artifacts', title: 'Old artifacts are deleted' }] },
+    });
+    renderAt('/storage');
+    expect(await screen.findByTestId('deletion-rules-summary')).toHaveTextContent('Old results are deleted · Deleted runs are deleted for good · Old artifacts are deleted');
+    expect(screen.queryByTestId('deletion-rule')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show the 3 rules' }));
+    expect(await screen.findAllByTestId('deletion-rule')).toHaveLength(3);
+    expect(screen.queryByTestId('deletion-rules-summary')).not.toBeInTheDocument();
+  });
+
+  it('says when nothing deletes results', async () => {
+    mockApi({ 'GET /api/v1/storage/overview': overview, 'GET /api/v1/storage/items': items, 'GET /api/v1/storage/jobs': { jobs: [] }, 'GET /api/v1/storage/rules': { rules: [], settings: {}, project: 'proj/a' } });
+    renderAt('/storage/batches?project=proj/a');
+    expect(await screen.findByTestId('deletion-rules')).toHaveTextContent("Nothing deletes this project's results automatically");
+  });
+
+  it('lists exports, explains links, and deletes them', async () => {
+    const fetch = mockApi({
+      'GET /api/v1/storage/overview': overview,
+      'GET /api/v1/storage/jobs': { jobs: [] },
+      'GET /api/v1/storage/exports': {
+        exports: [
+          { id: 1, path: '/algo/proj/outputs/aa/bbb/share/1234abcd', project_id: 'proj/a', hexsha: 'a'.repeat(40), batch_label: 'big', created_by: 'alice', owner: 'alice', source: 'web',
+            created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-02T00:00:00Z', bytes: 3 * GB, linked_bytes: 3 * GB, files: 30, measured_at: '2026-10-02T00:00:00Z', exports: 2 },
+          { id: 2, path: '/algo/exports/bob/x', project_id: null, created_by: 'bob', owner: 'bob', source: 'scan', bytes: GB, linked_bytes: 0, files: 3, exports: 0 },
+        ],
+        totals: { count: 2, bytes: 4 * GB, linked_bytes: 3 * GB },
+      },
+      'POST /api/v1/storage/exports/delete': () => [{ job: { id: 9 } }, 201],
+    });
+    renderAt('/storage/exports?scope=all');
+    const [mine, bobs] = await screen.findAllByTestId('export');
+    expect(within(mine).getByText('Links to the runs')).toBeInTheDocument();
+    expect(within(mine).getByText('2 exports in this folder')).toBeInTheDocument();
+    expect(within(bobs).queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(within(mine).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete…' }));
+    expect(await screen.findByText(/that space is freed only once the runs are deleted too/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 1 export' }));
+    await waitFor(() => expect(calls(fetch, 'POST', '/api/v1/storage/exports/delete')).toHaveLength(1));
+    expect(lastBody(fetch, 'POST', '/api/v1/storage/exports/delete')).toEqual({ ids: [1] });
+  });
+
+  it("shows what the latest scan found that QA-Board doesn't track, and deletes what's yours", async () => {
+    const entry = props => ({ path: '/algo/proj/outputs/alice/tmp', kind: 'untracked_files', bytes: 5 * GB, untracked_bytes: 5 * GB, files: 100, kinds: { untracked_files: 5 * GB },
+      owners: { alice: 5 * GB }, owner: 'alice', only_yours: true, deletable: true, action: null, ref: {}, newest_mtime: '2026-01-01T00:00:00Z', ...props });
+    const fetch = mockApi({
+      'GET /api/v1/storage/overview': overview,
+      'GET /api/v1/storage/jobs': { jobs: [] },
+      'GET /api/v1/storage/untracked': {
+        scan: { id: 3, finished_at: '2026-10-21T00:00:00Z', roots: [] }, user: 'alice',
+        totals: { bytes: 7 * GB, by_kind: { untracked_files: 5 * GB, untracked_export: 2 * GB } },
+        entries: [entry(), entry({ path: '/algo/proj/outputs/shared', only_yours: false, owners: { alice: GB, bob: GB } })],
+      },
+      'POST /api/v1/storage/untracked/delete': () => [{ job: { id: 10 } }, 201],
+    });
+    renderAt('/storage/untracked');
+    const [yours, shared] = await screen.findAllByTestId('untracked');
+    expect(screen.getByText(/that you own and QA-Board doesn't track/)).toHaveTextContent('7.0 GB');
+    expect(within(shared).queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(within(yours).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete 5.0 GB' }));
+    await waitFor(() => expect(calls(fetch, 'POST', '/api/v1/storage/untracked/delete')).toHaveLength(1));
+    expect(lastBody(fetch, 'POST', '/api/v1/storage/untracked/delete')).toEqual({ paths: ['/algo/proj/outputs/alice/tmp'] });
+  });
+
+  it('explains how to find untracked files before any scan', async () => {
+    mockApi({ 'GET /api/v1/storage/overview': overview, 'GET /api/v1/storage/jobs': { jobs: [] }, 'GET /api/v1/storage/untracked': { scan: null, totals: {}, entries: [] } });
+    renderAt('/storage/untracked');
+    expect(await screen.findByText("The storage wasn't scanned yet")).toBeInTheDocument();
   });
 });

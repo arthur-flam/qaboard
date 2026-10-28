@@ -149,7 +149,10 @@ def match(value, value_filter) -> bool:
     return value == value_filter
 
 
-def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config, only=None, exclude=None):
+def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config, only=None, exclude=None, run_context=None):
+  """run_context: what metadata(context) gets for each input, besides input_path/database (e.g. the batch's configurations)"""
+  if run_context is None:
+    run_context = RunContext(type="default", input_path=Path(), database=database, platform="", configurations=[])
   if path and path != "*":
     # sorted: glob lists in filesystem order, which differs between machines, and so would the runs of a batch
     input_paths = sorted(database.glob(str(path))) # to support wildcards
@@ -161,7 +164,7 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
     _record_missing_input(path, database)
     if 'QA_BATCH_FAIL_IF_EMPTY' in os.environ:
       click.secho(f'ERROR: No inputs found for the batch "{path}" under {database}', fg='red', err=True)
-      exit(1)
+      sys.exit(1)
     else:
       click.secho(f'WARNING: No inputs found for the batch "{path}" under {database}', fg='yellow', err=True)
       if 'QABOARD_TUNING' in os.environ and not database.is_absolute():
@@ -200,8 +203,10 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
         # but some projects rely on metadata() to limit the amount of tests they run based on the git diff
         # for those, we don't want to QA_BATCH_FAIL_IF_EMPTY check to fail
         seen_inputs.add(i)
-        if only or exclude:
-          metadata = input_metadata(i, database, i.relative_to(database), qatools_config)
+        # QA_BATCH_ALWAYS_GET_METADATA: call metadata() for every input, even without only/exclude filters,
+        # for projects whose metadata() has useful side effects (semi-undocumented).
+        if only or exclude or 'QA_BATCH_ALWAYS_GET_METADATA' in os.environ:
+          metadata = input_metadata(replace(run_context, input_path=i, database=database), qatools_config)
           if only and not match(metadata, only): continue
           if exclude and match(metadata, exclude): continue
         # delete metadata that start with _
@@ -235,7 +240,7 @@ def iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config
       click.secho(f'WARNING: No inputs found matching "{path}" [{globs}] under "{database}".', fg='yellow', err=True)
 
 
-def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exclude=None):
+def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exclude=None, run_context=None):
   if path and Path(path).is_absolute():
     database_str, *path_parts =  Path(path).resolve().parts
     path = Path(*path_parts)
@@ -262,7 +267,7 @@ def _iter_inputs(path, database, inputs_settings, qatools_config, only=None, exc
   elif not isinstance(globs, tuple) and not isinstance(globs, list):
     globs = [globs]
   use_parent_folder = inputs_settings.get('use_parent_folder', False)
-  yield from iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config, only=only, exclude=exclude)
+  yield from iter_inputs_at_path(path, database, globs, use_parent_folder, qatools_config, only=only, exclude=exclude, run_context=run_context)
 
 
 
@@ -288,7 +293,8 @@ def iter_inputs(
     try:
       from .config import project, subproject
       batches_file_path = location_from_spec(batches_file, {"project": project, "subproject": subproject})
-      new_batches = yaml.load(open(batches_file_path), Loader=yaml.SafeLoader)
+      with open(batches_file_path) as f:
+        new_batches = yaml.load(f, Loader=yaml.SafeLoader)
       if new_batches is None:
         click.secho(f"WARNING: no data in: {batches_file}", fg='yellow', err=True)
         continue
@@ -578,7 +584,7 @@ def iter_batch(batch: Dict, default_run_context: RunContext, qatools_config, def
 
     locations = batch.get('inputs', batch.get('tests'))
     if not locations:
-      inputs_iter = _iter_inputs(None, run_context.database, inputs_settings, qatools_config, only=batch.get('only'), exclude=batch.get('exclude'))
+      inputs_iter = _iter_inputs(None, run_context.database, inputs_settings, qatools_config, only=batch.get('only'), exclude=batch.get('exclude'), run_context=run_context)
       yield from (replace(run_context, input_path=i, database=d) for i, d in inputs_iter)
       return
 
@@ -635,7 +641,7 @@ def iter_batch(batch: Dict, default_run_context: RunContext, qatools_config, def
         else: # string?
           location_run_context.configurations =  [*location_run_context.configurations, location_configurations]
       if debug: click.secho(str(location_run_context.database / location), bold=True, fg='cyan', err=True)
-      inputs_iter = _iter_inputs(location, location_run_context.database, location_inputs_settings, qatools_config, only=batch.get('only'), exclude=batch.get('exclude'))
+      inputs_iter = _iter_inputs(location, location_run_context.database, location_inputs_settings, qatools_config, only=batch.get('only'), exclude=batch.get('exclude'), run_context=location_run_context)
       yield from (replace(location_run_context, input_path=i, database=d) for i, d in inputs_iter)
 
 
