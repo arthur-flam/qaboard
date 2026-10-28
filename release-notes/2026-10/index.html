@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.83170e99.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.96bc2a72.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0459941.js" defer="defer"></script>
 </head>
 <body>
@@ -360,6 +360,7 @@ running them all again when you asked to skip, sync or post-process the existing
 <li class="">Compare with any milestone in <code>qa gate</code>: <code>--reference &#x27;#12&#x27;</code> (or <code>gate.reference</code>) uses the milestone whose link is <code>/&lt;project&gt;/milestone/12-...</code>, shared or not, and the gate compares with the milestone&#x27;s batch (<a class="" href="/qaboard/docs/quality-gate">quality gate</a>).</li>
 <li class=""><code>qa batch</code> sets a commit status that links to the results on GitHub too (<a class="" href="/qaboard/docs/ci-integration">CI integration</a>).</li>
 <li class=""><code>qa check-bit-accuracy</code> waits for the GitHub checks of the reference commit too, like it does for GitLab pipelines (<a class="" href="/qaboard/docs/bit-accuracy">bit-accuracy</a>).</li>
+<li class=""><code>qa check-bit-accuracy</code> asks QA-Board where the reference&#x27;s runs are, instead of guessing their folders. Offline, or for runs QA-Board doesn&#x27;t know, it looks in the storage, in every user&#x27;s folder when your storage settings have a <code>{user}</code>, and says where it looked when a run is missing (<a class="" href="/qaboard/docs/bit-accuracy#where-runs-are-found">where runs are found</a>).</li>
 <li class="">In GitHub Actions, <code>qa</code> records the pull request&#x27;s branch and last commit instead of the temporary merge commit, and the tag of tag builds (<a class="" href="/qaboard/docs/ci-integration#example-with-github-actions">CI integration</a>).</li>
 <li class=""><code>qa</code> finds your git host, its API and its token in <code>QABOARD_GIT_HOSTS</code> too, and sends <code>GITHUB_ACCESS_TOKEN</code> only to github.com and the GitHub hosts you configured (<a class="" href="/qaboard/docs/backend-admin/git-hosts#the-cli">git hosts</a>).</li>
 <li class="">In CI, <code>qa</code>&#x27;s Sentry reports are tagged with its version, and <code>QABOARD_SENTRY_VERIFY</code> (or <code>SENTRY_CA_CERTS</code>) can be the CA bundle that signed your Sentry server&#x27;s certificate, or <code>system</code> (<a class="" href="/qaboard/docs/backend-admin/monitoring#the-qa-cli">the qa CLI</a>).</li>
@@ -860,6 +861,10 @@ are no longer scanned again, even when you set your own excluded paths.</li>
 <li class=""><code>bit_accuracy.failed_ci_job_name</code> works again: <code>qa check-bit-accuracy</code> only looks at that job (<code>&lt;job&gt; &lt;subproject&gt;</code> in subprojects).</li>
 <li class=""><code>qa check-bit-accuracy</code> counts skipped CI jobs as successful, instead of waiting for them.</li>
 <li class="">Windows test vectors no longer fail bit-accuracy on hex outputs whose end-of-lines differ.</li>
+<li class=""><code>qa --share check-bit-accuracy</code> compares your runs with the reference&#x27;s CI runs, instead of looking for reference runs with your own <code>@user|</code> label.</li>
+<li class=""><code>qa check-bit-accuracy</code> fails when the runs differ from any of the references, e.g. any parent of a merge commit: only the last one counted.</li>
+<li class=""><code>qa check-bit-accuracy</code> without <code>--batch</code> only compares the runs of the <code>--label</code> you give: with the default label, it also compared the other labels&#x27; runs.</li>
+<li class=""><code>qa check-bit-accuracy --reference origin/my-branch</code> works, instead of failing with a <code>NameError</code>.</li>
 <li class=""><code>qa check-bit-accuracy</code> ignores the same files with or without manifests: <code>bit_accuracy.ignore</code> patterns match the start of file paths.</li>
 <li class=""><code>qa check-bit-accuracy</code> without manifests no longer reports identical files as different.</li>
 <li class="">The update check no longer crashes on release-candidate or development versions.</li>
