@@ -105,6 +105,22 @@ class TestMatchingRun(unittest.TestCase):
     runs = [qaboard_run('/in-db1', database='/db1'), qaboard_run('/in-db2', database='/db2')]
     self.assertEqual(matching_run(run_context(database='/db2'), runs)['output_dir_url'], dir_to_url(Path('/in-db2')))
 
+  def test_closest(self):
+    runs = [
+      qaboard_run('/other-input', input='dir/b.jpg'),
+      qaboard_run('/far', configurations=['base', {'gain': 100}]),
+      qaboard_run('/close', configurations=['base', {'gain': 4}]),
+      qaboard_run('/close-other-platform', platform='hw', configurations=['base', {'gain': 4}]),
+    ]
+    run = run_context(configurations=['base', {'gain': 3}])
+    self.assertIsNone(matching_run(run, runs))
+    self.assertEqual(matching_run(run, runs, 'closest')['output_dir_url'], dir_to_url(Path('/close')))
+    self.assertEqual(matching_run(run_context(platform='hw', configurations=['base', {'gain': 3}]), runs, 'closest')['output_dir_url'], dir_to_url(Path('/close-other-platform')))
+    # the same run when there is one
+    same = qaboard_run('/same', configurations=['base', {'gain': 3}], extra_parameters={'forwarded_args': ['-v']})
+    self.assertEqual(matching_run(run, [*runs, same], 'closest')['output_dir_url'], dir_to_url(Path('/same')))
+    self.assertIsNone(matching_run(run_context(input='dir/c.jpg'), runs, 'closest'))
+
 
 class TestCommitRuns(unittest.TestCase):
   def setUp(self):
@@ -155,6 +171,42 @@ class TestCommitRuns(unittest.TestCase):
   def test_label(self):
     with self.storage('ci'):
       self.assertEqual(CommitRuns('a' * 40, 'other-label', ask_qaboard=False).find(self.run), [])
+
+
+  def save_run(self, root, configurations, platform='linux', input='dir/a.jpg'):
+    """A run saved by `qa run` under `root`"""
+    run = run_context(input=input, platform=platform, configurations=configurations)
+    output_dir = root / run_dir_in_commit('default', platform, configurations, {}, run.rel_input_path, run.database, {})
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / 'run.json').write_text(json.dumps({'database': '/db', 'input_path': input, 'platform': platform, 'configurations': configurations, 'extra_parameters': {}}))
+    return output_dir
+
+  def test_closest_saved_runs(self):
+    run = run_context(configurations=['base', {'gain': 3}])
+    storage = [self.tmp / 'storage' / user / 'commit' for user in ['alice', 'ci']]
+    far = self.save_run(storage[1], ['base', {'gain': 100}])
+    close = self.save_run(storage[1], ['base', {'gain': 4}])
+    # another input with the same folder name: it would be the closest
+    self.save_run(storage[1], ['base', {'gain': 3.1}], input='dir/a.png')
+    with mock.patch.object(bit_accuracy, 'commit_outputs_dirs', return_value=storage):
+      runs = CommitRuns('a' * 40, 'default', ask_qaboard=False, match='closest')
+      self.assertEqual(runs.find(run), [close])
+      self.assertEqual(runs.find_runs(run)[0][1]['configurations'], ['base', {'gain': 4}])
+      self.assertEqual(CommitRuns('a' * 40, 'default', ask_qaboard=False).find(run), [])
+      # the same run in each user's folder
+      same = [self.save_run(d, ['base', {'gain': 3}]) for d in storage]
+      self.assertEqual(runs.find(run), same)
+      self.assertEqual(CommitRuns('a' * 40, 'other-label', ask_qaboard=False, match='closest').find(run), [])
+      self.assertIn(far, [d for d, _ in runs.saved_runs_on_input(storage[1], run)])
+      self.assertEqual(runs.looked_at(run_context(input='dir/c.jpg'))[0].parts[-3:], ('output', '*', 'dir-c'))
+
+  def test_closest_asks_qaboard_first(self):
+    run = run_context(configurations=['base', {'gain': 3}])
+    self.save_run(self.tmp / 'storage', ['base', {'gain': 3}])
+    known = (qaboard_run(self.tmp / 'anywhere', configurations=['base', {'gain': 4}]),)
+    with mock.patch.object(bit_accuracy, 'commit_outputs_dirs', return_value=[self.tmp / 'storage']), \
+         mock.patch.object(bit_accuracy, 'runs_known_by_qaboard', return_value=known):
+      self.assertEqual(CommitRuns('a' * 40, 'default', match='closest').find(run), [self.tmp / 'anywhere'])
 
 
 class TestIsBitAccurate(unittest.TestCase):

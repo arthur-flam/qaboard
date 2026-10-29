@@ -21,8 +21,9 @@ from typing import Dict, Iterator, List, Optional, Tuple
 import click
 from click import secho
 
-from .conventions import batch_folder_name, get_commit_dirs, run_dir_in_commit
+from .conventions import batch_folder_name, get_commit_dirs, output_dirs_for_input_part, run_dir_in_commit
 from .iterators import iter_inputs
+from .matching import run_distance
 from .run import RunContext
 from .utils import PathType, checked_cde_attrs
 from .config import project, config, default_batches_files
@@ -259,21 +260,34 @@ def runs_known_by_qaboard(commit: str, batch_label: str) -> Optional[Tuple[Dict,
   return tuple(o for o in info['outputs'].values() if not o.get('deleted'))
 
 
-def _without_forwarded_args(extra_parameters) -> str:
-  return json.dumps({k: v for k, v in (extra_parameters or {}).items() if k != 'forwarded_args'}, sort_keys=True)
+# How we pick the reference run: the one with the same configurations, platform and tuning parameters,
+# or the closest one on the same input, like the web app does
+REFERENCE_MATCHES = ('exact', 'closest')
 
-def matching_run(run_context: RunContext, runs) -> Optional[Dict]:
-  """The run from QA-Board with the same input, configurations, platform and tuning parameters"""
-  matches = [
-    r for r in runs
-    if Path(r['test_input_path']).as_posix() == run_context.rel_input_path.as_posix()
-    and r['platform'] == run_context.platform
-    and json.dumps(r['configurations'], sort_keys=True) == json.dumps(run_context.configurations, sort_keys=True)
-    and _without_forwarded_args(r['extra_parameters']) == _without_forwarded_args(run_context.extra_parameters)
-  ]
-  if len(matches) > 1: # the same input in different databases
-    matches = [r for r in matches if Path(r['test_input_database']) == Path(run_context.database)] or matches
-  return matches[0] if matches else None
+def run_settings(run) -> Dict:
+  """What identifies a run on an input, from a RunContext, a run from QA-Board or a run.json"""
+  get = (lambda k: getattr(run, k)) if isinstance(run, RunContext) else run.get
+  return {
+    'platform': get('platform'),
+    'configurations': get('configurations') or [],
+    # forwarded arguments (qa run -i input --some-arg) are not part of a run's directory
+    'extra_parameters': {k: v for k, v in (get('extra_parameters') or {}).items() if k != 'forwarded_args'},
+  }
+
+def is_same_run(settings: Dict, other: Dict) -> bool:
+  return json.dumps(settings, sort_keys=True) == json.dumps(other, sort_keys=True)
+
+def matching_run(run_context: RunContext, runs, match='exact') -> Optional[Dict]:
+  """The run from QA-Board with the same input, and the same configurations, platform and tuning parameters
+  or with match='closest' the closest ones"""
+  settings = run_settings(run_context)
+  same_input = [r for r in runs if Path(r['test_input_path']).as_posix() == run_context.rel_input_path.as_posix()]
+  # the same input can be in different databases
+  other_database = lambda r: Path(r['test_input_database']) != Path(run_context.database)
+  if match == 'closest':
+    return min(same_input, key=lambda r: (run_distance(settings, run_settings(r)), other_database(r)), default=None)
+  matches = [r for r in same_input if is_same_run(settings, run_settings(r))]
+  return min(matches, key=other_database, default=None)
 
 
 @dataclass
@@ -286,6 +300,7 @@ class CommitRuns:
   # Where the runs are saved if not in the storage (local runs), or where we look first (our own runs)
   local_dir: Optional[Path] = None
   in_storage: bool = True
+  match: str = 'exact'
   _storage_dirs: Optional[List[Path]] = field(default=None, repr=False)
 
   def run_dir(self, run_context: RunContext) -> Path:
@@ -300,21 +315,61 @@ class CommitRuns:
 
   def find(self, run_context: RunContext) -> List[Path]:
     """The output directories of the run (more than one if users' storage folders each have one)"""
+    return [output_dir for output_dir, _ in self.find_runs(run_context)]
+
+  def find_runs(self, run_context: RunContext) -> List[Tuple[Path, Dict]]:
+    """The output directories of the run, with the settings of the run found (see run_settings)"""
     if self.ask_qaboard:
       runs = runs_known_by_qaboard(self.commit, self.batch_label)
       if runs is not None:
-        run = matching_run(run_context, runs)
+        run = matching_run(run_context, runs, self.match)
         if run:
           from .api import url_to_dir
-          return [url_to_dir(run['output_dir_url'])]
+          return [(url_to_dir(run['output_dir_url']), run_settings(run))]
     run_dir = self.run_dir(run_context)
-    if self.local_dir is not None and (self.local_dir / run_dir).is_dir():
-      return [self.local_dir / run_dir]
-    return [d / run_dir for d in self.storage_dirs() if (d / run_dir).is_dir()]
+    found = [self.local_dir / run_dir] if self.local_dir is not None and (self.local_dir / run_dir).is_dir() else []
+    if not found:
+      found = [d / run_dir for d in self.storage_dirs() if (d / run_dir).is_dir()]
+    if not found and self.match == 'closest':
+      return self.closest_saved_runs(run_context)
+    return [(output_dir, run_settings(run_context)) for output_dir in found]
+
+  def saved_runs_on_input(self, root: Path, run_context: RunContext) -> List[Tuple[Path, Dict]]:
+    """The runs saved under `root` on the input, whatever their configurations, platform and tuning parameters"""
+    from .config import config
+    # the platform, configurations and tuning parameters are hashed in the folder between the label's and the input's
+    input_dir = output_dirs_for_input_part(run_context.rel_input_path, Path(run_context.database), config)
+    pattern = Path(glob.escape(str(root / batch_folder_name(self.batch_label)))) / '*' / glob.escape(str(input_dir)) / 'run.json'
+    runs = []
+    for run_path in sorted(glob.glob(str(pattern))):
+      try:
+        run_info = json.loads(Path(run_path).read_text())
+      except (OSError, ValueError):
+        continue
+      # inputs whose folder have the same name, e.g. a.jpg and a.png
+      if Path(run_info.get('input_path', '')).as_posix() == run_context.rel_input_path.as_posix():
+        runs.append((Path(run_path).parent, run_settings(run_info)))
+    return runs
+
+  def closest_saved_runs(self, run_context: RunContext) -> List[Tuple[Path, Dict]]:
+    """The saved runs on the input that are the closest to the run (more than one if users' storage folders each have one)"""
+    runs = self.saved_runs_on_input(self.local_dir, run_context) if self.local_dir is not None else []
+    if not runs:
+      runs = [run for d in self.storage_dirs() for run in self.saved_runs_on_input(d, run_context)]
+    if not runs:
+      return []
+    settings = run_settings(run_context)
+    distances = [run_distance(settings, run_settings_) for _, run_settings_ in runs]
+    return [run for run, distance in zip(runs, distances) if distance == min(distances)]
 
   def looked_at(self, run_context: RunContext) -> List[Path]:
     """Where we looked for the run, for error messages"""
-    run_dir = self.run_dir(run_context)
+    if self.match == 'closest': # any run on the input
+      from .config import config
+      input_dir = output_dirs_for_input_part(run_context.rel_input_path, Path(run_context.database), config)
+      run_dir = batch_folder_name(self.batch_label) / '*' / input_dir
+    else:
+      run_dir = self.run_dir(run_context)
     roots = [self.local_dir] if self.local_dir is not None else []
     if self.in_storage:
       storage_dirs = self.storage_dirs()
@@ -381,6 +436,15 @@ def describe(run_context: RunContext) -> str:
   if run_context.configurations:
     description = f"{description}  {json.dumps(run_context.configurations)}"
   return description
+
+def describe_differences(settings: Dict, reference: Dict) -> str:
+  """How the reference run's settings differ, e.g. 'platform: hw, configurations: ["base", "fast"]'"""
+  names = {'platform': 'platform', 'configurations': 'configurations', 'extra_parameters': 'tuning'}
+  return ', '.join(
+    f"{name}: {reference[key] if key == 'platform' else json.dumps(reference[key])}"
+    for key, name in names.items()
+    if json.dumps(settings[key], sort_keys=True) != json.dumps(reference[key], sort_keys=True)
+  )
 
 
 def is_bit_accurate(dir_new, dir_ref, run_context: RunContext, strict=False, manifest_name='manifest.outputs.json'):
@@ -565,7 +629,8 @@ def check_bit_accuracy_manifest(ctx, batches, batches_files, strict):
 @click.option('--strict', is_flag=True, help="By default only files existing in current/ref runs are checked. This files ensure we fail if some files exist in one run and not the other.")
 @click.option('--reference-label', default = None, help="Compare against another label on the same batch")
 @click.option('--reference-platform', help="Compare against a difference platform.")
-def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference_label, reference_platform):
+@click.option('--reference-match', type=click.Choice(REFERENCE_MATCHES), default='exact', show_default=True, help="Compare with the reference's run with the same configurations, platform and tuning parameters, or with the closest one on the same input, like the web app.")
+def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference_label, reference_platform, reference_match):
     """
     Checks the bit accuracy of the results in the current output directory
     versus the latest commit on origin/develop.
@@ -620,11 +685,17 @@ def check_bit_accuracy(ctx, reference, batches, batches_files, strict, reference
     for reference_commit in reference_commits:
       # if the reference commit is pending or failed, we wait or maybe pick a parent
       reference_commit = lastest_successful_ci_commit(reference_commit) # TODO: don't do this if passed a commit hash
-      references = CommitRuns(reference_commit, reference_label, ask_qaboard=not ctx.obj['offline'])
+      references = CommitRuns(reference_commit, reference_label, ask_qaboard=not ctx.obj['offline'], match=reference_match)
       click.secho(f"Reference: {reference_commit[:8]} ({reference_label})", fg='cyan', bold=True, err=True)
       for run_context, new_dirs in runs_dirs:
         reference_run = replace(run_context, platform=reference_platform) if reference_platform else run_context
-        reference_dirs = references.find(reference_run)
+        reference_runs = references.find_runs(reference_run)
+        reference_dirs = [reference_dir for reference_dir, _ in reference_runs]
+        for _, reference_settings in reference_runs[:1]:
+          differences = describe_differences(run_settings(reference_run), reference_settings)
+          if differences:
+            click.secho(f"≈  {describe(run_context)}", fg='yellow', err=True, nl=False)
+            click.secho(f"  versus the closest run, with {differences}", fg='yellow', dim=True, err=True)
         if not reference_dirs:
           click.secho(f"ERROR: No reference for {describe(run_context)}", fg='red')
           for d in references.looked_at(reference_run):
