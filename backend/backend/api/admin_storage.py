@@ -6,14 +6,14 @@ from flask import request, jsonify, g
 from sqlalchemy import or_
 
 from backend import app, db_session
-from ..models import StorageScan, StorageScanEntry, Export, Job
+from ..models import StorageScan, StorageScanEntry, Job
 from ..audit import audit
 from .. import accounts
 from ..jobs import queue
 from ..jobs.params import ParamsError
 from ..jobs.scan import UNTRACKED
 from ..jobs.storage_actions import deletable
-from ..exports import serialize as serialize_export
+from ..exports import serialize as serialize_export, found
 from .auth import admin_required
 
 
@@ -198,14 +198,8 @@ def admin_scan_track_exports(scan_id):
   for entry in entries:
     if entry.kind != 'untracked_export':
       continue
-    export = Export.query.filter(Export.path == entry.path).one_or_none()
-    if export is None:
-      export = Export(path=entry.path, owner=accounts.resolve(entry.owner), source='scan', created_at=entry.newest_mtime or queue.utcnow(),
-                      updated_at=entry.newest_mtime or queue.utcnow(), bytes=entry.bytes, files=entry.files,
-                      measured_at=scan.finished_at or queue.utcnow(), data={"scan_id": scan_id})
-      db_session.add(export)
-      db_session.flush()
-    export.deleted_at = None
+    export = found(entry.path, owner=accounts.resolve(entry.owner), bytes=entry.bytes, files=entry.files, changed_at=entry.newest_mtime,
+                   measured_at=scan.finished_at, scan_id=scan_id)
     entry.kind, entry.action = 'export', 'tracked'
     entry.ref = {**(entry.ref or {}), "export_id": export.id}
     tracked.append(export)

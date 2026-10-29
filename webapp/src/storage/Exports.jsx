@@ -77,7 +77,7 @@ export const ExportsView = ({ filters, me }) => {
       <HTMLSelect aria-label="Sort exports" options={sort_options} value={sort} onChange={e => setSort(e.target.value)}/>
     </div>
     {exports.length === 0
-      ? <NonIdealState icon="export" title="No exports" description={<>QA-Board tracks the exports made from the web app. Older exports show up after an admin scans the storage: see the <Link to="/storage/untracked">Not tracked</Link> tab.</>}/>
+      ? <NonIdealState icon="export" title="No exports" description={<>QA-Board tracks the exports made from the web app. Older exports show up after an admin scans the storage. Exports into folders you chose are in the <Link to="/storage/untracked">Not tracked</Link> tab.</>}/>
       : <div style={{ overflowX: 'auto', opacity: isFetching ? 0.7 : 1 }}>
         <HTMLTable compact style={{ width: '100%' }} aria-label="Exports">
           <thead><tr><th style={{ width: 30 }}><span className={Classes.TEXT_MUTED} aria-label="Select"/></th><th>Size</th><th>Folder</th><th>From</th><th>Owner</th><th>Last export</th><th><span className={Classes.TEXT_MUTED}>Actions</span></th></tr></thead>

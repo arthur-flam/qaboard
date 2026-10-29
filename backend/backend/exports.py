@@ -7,11 +7,14 @@ don't account for them, and they can be big, so we track them (models/Export.py)
   folder next to the commit's runs: easy to find, and not lost among the runs.
 - "link" exports are hard links: they share their space with the runs' files. Deleting the runs doesn't free it while
   the export exists, and deleting the export doesn't free it while the runs exist (`linked_bytes`).
+- Scans track the exports QA-Board made the folder of, e.g. before it tracked exports (`found`). Exports into folders
+  users chose aren't: deleting an export deletes its folder, with what users had there. Admins track them from the scan.
 """
 import re
 import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, parse_qs, unquote
 
 from .database import db_session
 from .models import Export
@@ -23,6 +26,9 @@ from . import accounts
 EXPORTS_KEPT = 20  # the latest exports into a folder, in Export.data
 # files that exports write next to the runs' files: scans recognize exports by them
 MARKERS = ('0.qa.url', '0.qa.html', '0.common.json')
+# the folders QA-Board makes for exports: share/<8 hex> next to a commit's runs, <date>-<8 hex> in `storage.exports_root`
+own_folder = re.compile(r'/share/[0-9a-f]{8}$')
+own_folder_in_root = re.compile(r'/\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$')
 
 
 def utcnow():
@@ -77,6 +83,57 @@ def record(path, project_id=None, hexsha=None, batch_label=None, user_name=None,
   except Exception as e:
     print(f"WARNING: could not measure the export {path}: {e}")
   db_session.flush()
+  return export
+
+
+def made_by_qaboard(path: str, exports_root: Optional[str]) -> bool:
+  """If QA-Board made the export's folder, rather than users choosing a folder, where they may have other files"""
+  if own_folder.search(path):
+    return True
+  return bool(exports_root) and path.startswith(exports_root.rstrip('/') + '/') and bool(own_folder_in_root.search(path))
+
+
+def origin(path) -> dict:
+  """The project, commit and batch of an export, from its 0.qa.url: URL=<QA-Board>/<project>/commit/<hexsha>?batch=<label>..."""
+  try:
+    with open(Path(path) / '0.qa.url', errors='replace') as f:
+      content = f.read(10_000)
+  except OSError:
+    return {}
+  line = re.search(r'^URL=(\S+)', content, re.MULTILINE)
+  url = urlparse(line.group(1)) if line else None
+  match = re.match(r'/(?P<project>.+)/commit/(?P<hexsha>[0-9a-f]{7,40})/?$', url.path) if url else None
+  if not match:
+    return {}
+  batch = parse_qs(url.query).get('batch')
+  return {"project_id": unquote(match['project']), "hexsha": match['hexsha'], "batch_label": batch[0] if batch else None}
+
+
+def found(path: str, session=db_session, owner: Optional[str] = None, bytes=None, files=None, changed_at=None, measured_at=None,
+          scan_id=None, measure=False) -> Export:
+  """
+  Tracks an export a scan found: its owner sees it in "Storage usage", and can delete it. With its project, commit
+  and batch, if its 0.qa.url says. `measure`: measured like the exports QA-Board makes, else with the scan's numbers.
+  The caller commits.
+  """
+  export = session.query(Export).filter(Export.path == path).one_or_none()
+  now = utcnow()
+  if export is None:
+    export = Export(path=path, source='scan', created_at=changed_at or now, updated_at=changed_at or now, data={})
+    session.add(export)
+  export.deleted_at, export.deleted_by = None, None
+  for key, value in origin(path).items():
+    if value and not getattr(export, key):
+      setattr(export, key, value)
+  export.owner = owner or export.owner
+  export.bytes, export.files, export.measured_at = bytes, files, measured_at or now
+  export.data = {**(export.data or {}), "scan_id": scan_id}
+  if measure:
+    try:
+      measure_export(export)
+    except Exception as e:
+      print(f"WARNING: could not measure the export {path}: {e}")
+  session.flush()
   return export
 
 

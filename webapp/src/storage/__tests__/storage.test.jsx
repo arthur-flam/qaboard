@@ -392,6 +392,38 @@ describe('Leftovers, rules, exports and untracked files', () => {
     expect(lastBody(fetch, 'POST', '/api/v1/storage/untracked/delete')).toEqual({ paths: ['/algo/proj/outputs/alice/tmp'] });
   });
 
+  it("shows admins everyone's untracked files, with their owners", async () => {
+    const admin = { ...alice, user_name: 'ines', is_admin: true };
+    const fetch = mockApi({
+      'GET /api/v1/storage/overview': { ...overview, scope: 'all' },
+      'GET /api/v1/storage/jobs': { jobs: [] },
+      'GET /api/v1/storage/untracked': {
+        scan: { id: 3, finished_at: '2026-10-21T00:00:00Z', roots: [] }, user: null,
+        totals: { bytes: 2 * GB, by_kind: { untracked_run: 2 * GB } },
+        entries: [{ path: '/algo/proj/outputs/bob/stray', kind: 'untracked_run', bytes: 2 * GB, untracked_bytes: 2 * GB, files: 3, kinds: { untracked_run: 2 * GB },
+          owners: { bob: 2 * GB }, owner: 'bob', only_yours: false, deletable: true, action: null, ref: {}, newest_mtime: null }],
+      },
+    });
+    renderAt('/storage/untracked?scope=all', admin);
+    const [row] = await screen.findAllByTestId('untracked');
+    expect(new URL(calls(fetch, 'GET', '/api/v1/storage/untracked')[0][0], 'http://localhost').searchParams.get('scope')).toBe('all');
+    expect(screen.getByText(/found on disk, that QA-Board doesn't track/)).toHaveTextContent('2.0 GB');
+    expect(within(screen.getByRole('table', { name: 'Not tracked' })).getByRole('columnheader', { name: 'Owner' })).toBeInTheDocument();
+    expect(row).toHaveTextContent('bob');
+    expect(within(row).getByRole('checkbox')).toBeInTheDocument();
+  });
+
+  it("tells users who pick everyone's that they only see their own untracked files", async () => {
+    mockApi({
+      'GET /api/v1/storage/overview': { ...overview, scope: 'all' },
+      'GET /api/v1/storage/jobs': { jobs: [] },
+      'GET /api/v1/storage/untracked': { scan: { id: 3, finished_at: '2026-10-21T00:00:00Z', roots: [] }, user: 'alice', totals: { bytes: 0, by_kind: {} }, entries: [] },
+    });
+    renderAt('/storage/untracked?scope=all');
+    expect(await screen.findByText(/Only admins see other people's files/)).toBeInTheDocument();
+    expect(screen.getByText(/nothing big of yours/)).toBeInTheDocument();
+  });
+
   it('explains how to find untracked files before any scan', async () => {
     mockApi({ 'GET /api/v1/storage/overview': overview, 'GET /api/v1/storage/jobs': { jobs: [] }, 'GET /api/v1/storage/untracked': { scan: null, totals: {}, entries: [] } });
     renderAt('/storage/untracked');
