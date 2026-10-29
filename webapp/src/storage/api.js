@@ -30,7 +30,8 @@ export const itemsQuery = (group, filters, { sort = 'size', offset = 0 } = {}) =
   queryFn: async ({ signal }) => (await http.get('/api/v1/storage/items', {
     params: { group, ...whoseParams(filters), ...filterParams(filters), sort, offset, limit: items_page_size }, signal,
   })).data,
-  placeholderData: keepPreviousData,
+  // the previous page or filters while the next load, never another tab's: batches, commits and branches have other fields
+  placeholderData: (previous, previousQuery) => previousQuery?.queryKey[2] === group ? previous : undefined,
   staleTime: 30 * 1000,
 });
 

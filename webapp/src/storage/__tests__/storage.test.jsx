@@ -3,7 +3,7 @@
  * Run with: cd webapp && npm test -- storage/
  */
 import { act, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { unstable_HistoryRouter as HistoryRouter } from 'react-router';
+import { unstable_HistoryRouter as HistoryRouter, useLocation } from 'react-router';
 
 import { history, RouteMatch } from '../../router';
 import { matchAppRoute } from '../../routes';
@@ -25,10 +25,11 @@ const mockApi = routes => vi.spyOn(globalThis, 'fetch').mockImplementation((url,
 const calls = (fetch, method, path) => fetch.mock.calls.filter(([url, init]) => (init?.method ?? 'GET') === method && url.startsWith(path));
 const lastBody = (fetch, method, path) => JSON.parse(calls(fetch, method, path).at(-1)[1].body);
 
-const renderAt = pathname => {
+// like the app's routes (App.jsx): the view follows the URL
+const Routed = () => <RouteMatch match={matchAppRoute(useLocation().pathname).match}><StoragePage/></RouteMatch>;
+const renderAt = (pathname, user = alice) => {
   act(() => history.replace(pathname));
-  const { match } = matchAppRoute(pathname.split('?')[0]);
-  return renderWithProviders(<HistoryRouter history={history}><RouteMatch match={match}><StoragePage/></RouteMatch></HistoryRouter>, { user: alice });
+  return renderWithProviders(<HistoryRouter history={history}><Routed/></HistoryRouter>, { user });
 };
 
 const overview = {
@@ -98,6 +99,29 @@ describe('Storage usage', () => {
     fireEvent.click(within(row).getByText('3'));
     expect(screen.getByRole('region', { name: 'Selection' })).toHaveTextContent('1 batch selected');
     expect(calls(fetch, 'GET', '/api/v1/storage/items').length).toBeGreaterThan(0);
+  });
+
+  it("goes from batches to commits without showing the batches as commits", async () => {
+    let answer;
+    const commits = new Promise(resolve => { answer = resolve; });
+    const commit = { ...batch({ key: 10, labels: ['big', 'nightly'], batches: 2 }), batch_id: undefined, batch_label: undefined };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(url => {
+      const { pathname, searchParams } = new URL(url, 'http://localhost');
+      if (pathname === '/api/v1/storage/overview') return json(overview);
+      if (pathname !== '/api/v1/storage/items') return json({ jobs: [] });
+      // like the API: a batch counts 1 batch, and has no labels
+      if (searchParams.get('group') === 'batch') return json({ ...items, items: [batch({ batches: 1 })], total: 1 });
+      return commits.then(() => json({ items: [commit], total: 1, totals: { bytes: 30 * GB, runs: 3 }, group: 'commit' }));
+    });
+    renderAt('/storage/batches?project=proj/a');
+    await screen.findByRole('table', { name: 'Batches' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Commits' }));
+    await waitFor(() => expect(history.location.pathname).toBe('/storage/commits'));
+    expect(screen.queryByRole('table', { name: 'Batches' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Commits' })).not.toBeInTheDocument();
+    answer();
+    const [row] = within(await screen.findByRole('table', { name: 'Commits' })).getAllByTestId('storage-item');
+    expect(within(row).getByRole('link', { name: 'nightly' })).toBeInTheDocument();
   });
 
   it('cuts long project names in the summary', async () => {
