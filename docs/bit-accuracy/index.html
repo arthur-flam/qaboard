@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.96bc2a72.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.f31f53e9.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0459941.js" defer="defer"></script>
 </head>
 <body>
@@ -99,7 +99,8 @@ build failure left the reference without results.</p>
 <h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="where-runs-are-found">Where runs are found<a href="#where-runs-are-found" class="hash-link" aria-label="Direct link to Where runs are found" title="Direct link to Where runs are found" translate="no">​</a></h3>
 <p><code>qa check-bit-accuracy</code> looks for the runs that have the same input, configurations, platform and tuning parameters as
 yours (with <code>--reference-platform</code>, on that platform), in the reference&#x27;s batch with the same label (or
-<code>--reference-label</code>):</p>
+<code>--reference-label</code>). With <code>--reference-match closest</code>, it compares with the closest run on the same input instead,
+like the web app picks reference runs (see <a href="#options" class="">options</a>):</p>
 <ol>
 <li class=""><strong>It asks QA-Board</strong> where they are. It knows the runs of every CI and <code>qa --share</code> batch, wherever they were saved.</li>
 <li class=""><strong>Otherwise it looks in the storage</strong>, where <code>qa</code> saves runs (<code>storage</code> in <em>qaboard.yaml</em>): offline (<code>qa --offline</code>),
@@ -116,6 +117,11 @@ to compare with runs you shared, use <code>--reference-label &quot;@&lt;your-use
 only one of the runs are errors too.</li>
 <li class=""><code>--reference-label</code>: compare with the reference&#x27;s runs that used another <a class="" href="/qaboard/docs/using-the-qa-cli#qa---label-my-label">label</a>,
 e.g. <code>qa --label new check-bit-accuracy --batch all --reference-label old</code>.</li>
+<li class=""><code>--reference-match closest</code>: compare each run with the reference&#x27;s closest run on the same input, like the web
+app: the one with the fewest different configurations, then tuning parameters, on the same platform if possible.
+Use it when the reference didn&#x27;t run the same configurations, e.g. you&#x27;re testing a new one. <code>qa</code> says which runs
+were compared with a different one, and how they differ. By default (<code>exact</code>) runs without an identical reference
+run fail.</li>
 <li class=""><code>--reference-platform</code>: compare with the reference&#x27;s runs on another platform, e.g.
 <code>qa --platform hw-model check-bit-accuracy --batch &lt;batch&gt; --reference-platform linux</code>.</li>
 <li class=""><code>--batch</code> can be repeated, and <code>--batches-file</code> names the batches files, like for <code>qa batch</code>.</li>
