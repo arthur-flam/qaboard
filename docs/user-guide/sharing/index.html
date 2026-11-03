@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.ad500c62.css">
-<script src="/qaboard/assets/js/runtime~main.6f690d1e.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.635eb55a.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.f0087e9e.js" defer="defer"></script>
 </head>
 <body>
@@ -88,9 +88,13 @@ In a folder that existed before, QA-Board only adds files: it never replaces wha
 it skipped), and the folder isn&#x27;t listed with your exports in <strong>Storage usage</strong>.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="bug-reports-and-support">Report a bug or ask for help<a href="#bug-reports-and-support" class="hash-link" aria-label="Direct link to Report a bug or ask for help" title="Direct link to Report a bug or ask for help" translate="no">​</a></h2>
 <ul>
-<li class="">If the web app crashes, you&#x27;ll see <strong>Sorry, something went wrong!</strong> with a <strong>Report the bug</strong> button. It opens an
-email with the page&#x27;s link and the error filled in, or your team&#x27;s issue tracker: your admins choose where bug
-reports go.</li>
+<li class="">If part of the web app crashes, only that part is replaced by an error: a viewer in a run&#x27;s card, or the page, with
+the sidebar still there. <strong>Try again</strong> shows it again, <strong>Go back</strong> returns to the previous page, and going to any
+other page works as usual. What you selected is in the URL: reloading the page brings you back to the same view.</li>
+<li class="">When your server reports errors, the page says that the maintainers were notified, with your username: add what you
+were doing in the box below, it goes with the report. Otherwise, <strong>Report the problem</strong> opens an email with the
+page&#x27;s link and the error filled in, or your team&#x27;s issue tracker: your admins choose where bug reports go.
+<strong>Technical details</strong> has everything to paste in a chat, with <strong>Copy</strong>.</li>
 <li class="">For anything else, send the link of the page you&#x27;re looking at to your QA-Board admins: with it, they see what you
 see.</li>
 <li class="">Questions on how a project&#x27;s results are produced (metrics, visualizations, inputs) go to that project&#x27;s lead.</li>
