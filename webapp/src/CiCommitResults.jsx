@@ -27,6 +27,7 @@ import { BatchesEditor } from "./components/tuning/BatchesEditor";
 import TuningExploration from "./components/tuning/TuningExploration";
 import { useViewerControls, controls_changes, controls_defaults, config_visualizations } from "./viewers/controls";
 import { ExportPlugin } from "./plugins/ExportPlugin";
+import { LegacyExportPlugin } from "./plugins/LegacyExportPlugin";
 import { ScriptPlugin } from "./plugins/ScriptPlugin";
 import { humanFileSize, file_options as file_options_list, bit_accuracy_url_defaults } from "./viewers/bit_accuracy/utils";
 import { project_web_url } from "./utils";
@@ -209,6 +210,22 @@ const CiCommitResults = () => {
     filter_batch_new={filter_batch_new}
     filter_batch_ref={filter_batch_ref}
     batch_dir_url={new_batch.batch_dir_url}
+    new_batch={new_batch}
+    ref_batch={ref_batch}
+    labels={comparison.labels}
+  />;
+  // the previous export, while people move to the new one
+  const legacy_export_plugin = <LegacyExportPlugin
+    project={new_project}
+    ref_project={ref_project}
+    config={config}
+    new_commit_id={new_commit?.id ?? new_commit_id}
+    ref_commit_id={ref_commit?.id ?? ref_commit_id}
+    selected_batch_new={selected_batch_new}
+    selected_batch_ref={selected_batch_ref}
+    filter_batch_new={filter_batch_new}
+    filter_batch_ref={filter_batch_ref}
+    batch_dir_url={new_batch.batch_dir_url}
   />;
   const output_cards_props = {
     project: new_project,
@@ -302,7 +319,7 @@ const CiCommitResults = () => {
     batch_ref={selected_batch_ref}
     filter_ref={filter_batch_ref}
   />;
-  const runs_actions = <>{export_plugin}{script_plugin}</>;
+  const runs_actions = <>{export_plugin}{legacy_export_plugin}{script_plugin}</>;
   // the cards can be compact, like the logs
   const cards_actions = <><OutputCardDensityControl/>{runs_actions}</>;
   // the commits' fixed headers
