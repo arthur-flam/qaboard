@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.2fd77e6d.css">
-<script src="/qaboard/assets/js/runtime~main.05a53a7f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.2a23e51d.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.816f71b4.js" defer="defer"></script>
 </head>
 <body>
@@ -72,8 +72,9 @@ them can take a few seconds.</p>
 <p>Each user&#x27;s page in <strong>Admin → Users</strong> has a <strong>Usage</strong> card: their last 30 days by event and by project.</p>
 <p><strong>Admin → Overview</strong> gets a <strong>Get more from QA-Board</strong> list next to the security checklist: what isn&#x27;t configured
 yet (email notifications, single sign-on, git host webhooks, Sentry, annotation sources, a storage cleaning
-schedule, project owners), and what the usage says: projects with CI runs nobody looked at in 90 days, users
-active in the web app who never used the CLI, and products in use where nobody started a tuning.</p>
+schedule, project owners), and what the last 90 days of usage say: projects with CI runs nobody looked at, users
+active in the web app who didn&#x27;t use the CLI, and products in use where nobody started a tuning. Those three are
+computed at most every hour.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="settings">Settings<a href="#settings" class="hash-link" aria-label="Direct link to Settings" title="Direct link to Settings" translate="no">​</a></h2>
 <table><thead><tr><th>Setting</th><th>Environment variable</th><th>Default</th><th></th></tr></thead><tbody><tr><td><code>analytics.enabled</code></td><td><code>QABOARD_ANALYTICS_ENABLED</code></td><td><code>true</code></td><td>Off: the server records nothing, and the web app doesn&#x27;t send events. Change it in <strong>Admin → Settings</strong></td></tr><tr><td><code>ingest.auth</code></td><td><code>QABOARD_INGEST_AUTH</code></td><td><code>off</code></td><td>With <code>token</code>, events from the CLI without a token are dropped, like results (<a class="" href="/qaboard/docs/backend-admin/user-management#results-sent-by-qa">details</a>)</td></tr></tbody></table>
 <p>Users can keep their <code>qa</code> quiet with <code>QA_NO_ANALYTICS=1</code> in their environment. <code>qa --offline</code> sends nothing either.</p>
