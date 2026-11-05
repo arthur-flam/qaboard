@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.2fd77e6d.css">
-<script src="/qaboard/assets/js/runtime~main.db974c4f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.b8f22739.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.816f71b4.js" defer="defer"></script>
 </head>
 <body>
@@ -166,6 +166,9 @@ the page, next to <strong>vs. reference</strong>, with how many runs have each c
 <strong>··· shared</strong> tag lists them, and the <strong>Config</strong> tag&#x27;s diff shows them.</li>
 <li class=""><strong>Long strings that vary between runs</strong> start with <code>…</code> when they share a long beginning, e.g. <code>…scenes/night.yaml</code>.
 Hover them for the full string.</li>
+<li class=""><strong>Long settings</strong>, like commands, paths or lists, are shortened with <code>…</code>. Hover one to read it, or <strong>click it to
+show all the settings in full</strong>, in every run, wrapped on several lines. Click one again to shorten them. The web app
+remembers your choice, also in <strong>Settings → Preferences</strong> and the <strong>Configuration</strong> section of the View options.</li>
 <li class=""><strong>To always see full configurations</strong>, turn off <strong>Hide them in each run</strong>, at the top of the page or in the
 <strong>Configuration</strong> section of the <a class="" href="/qaboard/docs/user-guide/commit-page#view-options">View options</a>. Runs then show all their
 settings, the shared ones outlined.</li>
