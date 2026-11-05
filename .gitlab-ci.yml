@@ -158,7 +158,14 @@ build:images:
       if [ -d ~/.docker/cli-plugins ]; then ln -sfn ~/.docker/cli-plugins "\$DOCKER_CONFIG/cli-plugins"; fi
       echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
       # BuildKit's cache on the build host makes unchanged layers instant (e.g. the backend's dependencies)
-      docker compose --env-file deployments/sirc/production.env build backend frontend website proxy cantaloupe fluentd
+      # Resolving the FROM images on Docker Hub through the proxy often times out ("failed to solve: DeadlineExceeded"):
+      # retry, the images and layers already built come from BuildKit's cache. Durable fix: deployments/sirc/runbooks/deployment.md
+      for attempt in 1 2 3; do
+        docker compose --env-file deployments/sirc/production.env build backend frontend website proxy cantaloupe fluentd && break
+        if [ "\$attempt" = 3 ]; then exit 1; fi
+        echo "Build failed (attempt \$attempt/3), retrying in 30s" >&2
+        sleep 30
+      done
       docker compose --env-file deployments/sirc/production.env push backend frontend website proxy cantaloupe fluentd
       EOF
     - echo "Pushed $QABOARD_IMAGE:*-$QABOARD_VERSION"

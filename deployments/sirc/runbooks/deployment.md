@@ -75,6 +75,19 @@ deployments/deploy.py deployments/sirc/production.env up --build
 
 What `up` does, step by step, is described at the top of `deployments/deploy.py`. If a deploy fails, the job's log says which step. If the images can't be pulled or the migrations fail, nothing running was changed. If the new backend replicas are unhealthy, the previous ones keep serving.
 
+## Image builds time out on `FROM` (`failed to solve: DeadlineExceeded`)
+BuildKit asks Docker Hub for the base images (`FROM python:...`, `fluent/fluentd:...`) on every build, through the proxy,
+and that often times out. `build:images` retries the build 3 times, which usually gets through. If it keeps failing:
+- Pull the base image by hand on the build host, and check that the build host still works with Docker Hub
+  (proxy configuration of the docker daemon, Docker Hub's rate limit for anonymous pulls):
+  `docker pull fluent/fluentd:v1.16.6-debian-1.0`
+- Check which builder runs the builds: `docker buildx ls`. The `docker` driver with the classic image store uses a
+  base image that is already on the host without asking Docker Hub; a `docker-container` builder, or the containerd
+  image store (`docker info | grep -i 'storage driver'`), asks the registry every time.
+- Durable fix: don't go to Docker Hub through the proxy for each build. Either configure a pull-through mirror for
+  the docker daemon of the build host (`"registry-mirrors"` in `/etc/docker/daemon.json`, e.g. a GitLab dependency
+  proxy or a `registry:2` in proxy mode), or push the base images to our registry and build `FROM` there.
+
 ## Staging
 Staging runs the production images and configuration, with **its own database**. To get production's data, seed it with the manual GitLab job `staging:refresh-db`, or:
 
