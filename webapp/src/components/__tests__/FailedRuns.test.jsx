@@ -29,24 +29,14 @@ describe('the failed runs', () => {
     render([run(1, 'a.raw'), run(2, 'b.raw'), run(3, 'ok.raw', { is_failed: false })]);
     expect(screen.getByText('2 failed')).toBeInTheDocument();
     expect(screen.getByText('a.raw').closest('a')).toHaveAttribute('href', '/s/1/log.txt');
-    expect(screen.getAllByLabelText('Go to the run')).toHaveLength(2);
+    expect(screen.getAllByLabelText('Show only this run')).toHaveLength(2);
     expect(screen.queryByText(/List the/)).not.toBeInTheDocument();
   });
 
-  it('scrolls to the card of a run, or filters the page to show it', async () => {
+  it('filters the page to show one run', async () => {
     render([run(1, 'a.raw'), run(2, 'b.raw')], 'night');
-    const card = document.createElement('div');
-    card.className = 'output-card';
-    card.dataset.outputId = '2';
-    card.scrollIntoView = vi.fn();
-    document.body.appendChild(card);
-    fireEvent.click(screen.getAllByLabelText('Go to the run')[1]);
-    expect(card.scrollIntoView).toHaveBeenCalledTimes(1);
-    expect(url_filter()).toBe(null);
-    card.remove();
-
-    fireEvent.click(screen.getAllByLabelText('Go to the run')[0]);
-    await waitFor(() => expect(url_filter()).toBe('night id:1'));
+    fireEvent.click(screen.getAllByLabelText('Show only this run')[1]);
+    await waitFor(() => expect(url_filter()).toBe('night id:2'));
   });
 
   it('collapses a long list, and filters the page to show only the failed runs', async () => {

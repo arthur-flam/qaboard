@@ -71,8 +71,8 @@ Batches that are milestones are protected: see [What a milestone keeps](/docs/us
 <summary>The messages above the views</summary>
 
 - **N running** / **N pending**: hover to list the runs. **Stop runs** cancels them.
-- **N failed**: up to 5 failed runs are listed: each name opens its log, and the target button next to it goes to
-  the run (its card when it's on the page, otherwise the page shows only this run). When more failed, often for a
+- **N failed**: up to 5 failed runs are listed: each name opens its log, and the target button next to it adds
+  `id:<run id>` to the filter, to show only this run. When more failed, often for a
   common reason, the list is collapsed: **List the N runs** opens it. **Show only the failed runs** adds
   `status:failed` to the filter, **Show all the runs** removes it, and **Open the logs** shows the
   [Logs](/docs/user-guide/logs) view.

@@ -98,12 +98,8 @@ const SimpleOutputList = ({outputs, intent, link_logs = false, actions}) => {
 // the page down, users rather filter the page to show only the runs that failed, and list them on demand.
 const few_failed_runs = 5
 
-// Scrolls to the run's card when it's on the page, otherwise filters the page to show only this run
-const goToRun = (id, filter) => {
-  const card = document.querySelector(`.output-card[data-output-id="${id}"]`)
-  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  else updateSelected({ filter_batch_new: only_run_filter(filter, id) })
-}
+// Filters the page to show only this run (Back shows them all again)
+const goToRun = (id, filter) => updateSelected({ filter_batch_new: only_run_filter(filter, id) })
 
 // The runs that failed, among those the filter keeps
 const FailedRunsCallout = ({ runs, filter, onShowLogs }) => {
@@ -117,8 +113,8 @@ const FailedRunsCallout = ({ runs, filter, onShowLogs }) => {
       outputs={runs}
       intent={Intent.DANGER}
       link_logs
-      actions={o => <Tooltip content="Go to the run" placement="right">
-        <Button size="small" variant="minimal" icon="locate" aria-label="Go to the run" onClick={() => goToRun(o.id, filter)}/>
+      actions={o => <Tooltip content="Show only this run" placement="right">
+        <Button size="small" variant="minimal" icon="locate" aria-label="Show only this run" onClick={() => goToRun(o.id, filter)}/>
       </Tooltip>}
     />}
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
