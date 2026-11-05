@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.2fd77e6d.css">
-<script src="/qaboard/assets/js/runtime~main.2e8eea56.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.dde8adb6.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.816f71b4.js" defer="defer"></script>
 </head>
 <body>
@@ -78,13 +78,13 @@ redo them later if the commit&#x27;s artifacts are there. <strong>The files can&
 scripts, or by hand) stay too. The card <em>left by N deleted runs</em> says how much they take. Your admins remove what&#x27;s
 left when they delete the runs for good, usually with a schedule listed in <em>What QA-Board deletes automatically</em>.</p></div></div></details>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="exports">Exports<a href="#exports" class="hash-link" aria-label="Direct link to Exports" title="Direct link to Exports" translate="no">​</a></h2>
-<p><strong>Export</strong> on the commit page gathers files from many runs in one folder, to share them. <strong>Exports</strong> lists yours:
-their folder, size, the commit and batch they come from, and when you last exported there. Check the ones you don&#x27;t need
+<p><strong>Export</strong> on the commit page gathers files from many runs in a new folder, to share them. <strong>Exports</strong> lists yours:
+their name, folder, size, the commit and batch they come from, and when you last exported there. Check the ones you don&#x27;t need
 and <strong>Delete…</strong>: no terminal needed. The runs aren&#x27;t deleted.</p>
 <div class="theme-admonition theme-admonition-caution admonition_xJq3 alert alert--warning"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13.499a.98.98 0 0 0 0 1.001c.193.31.53.501.886.501h13.964c.367 0 .704-.19.877-.5a1.03 1.03 0 0 0 .01-1.002L8.893 1.5zm.133 11.497H6.987v-2.003h2.039v2.003zm0-3.004H6.987V5.987h2.039v4.006z"></path></svg></span>Exports are links</div><div class="admonitionContent_BuS1"><p>By default, an export&#x27;s files are hard links to the runs&#x27; files: they take no extra space, but deleting the runs doesn&#x27;t
 free the space while the export exists, and the other way round. QA-Board tags them <em>Links to the runs</em>. Copies
 (when you pick another folder) take space of their own.</p></div></div>
-<p>Exporting again to the same folder adds to it, and the export is measured again. If you deleted files of an export
+<p>Each export goes to a new folder. Exporting into a folder you chose adds to it, and the export is measured again. If you deleted files of an export
 yourself, the refresh button measures it again. Exports made before QA-Board tracked them show up once your admins scan
 the storage, tagged <em>Found by a scan</em>.</p>
 <details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>Exports in a folder someone chose</summary><div><div class="collapsibleContent_i85q"><p>Deleting an export deletes its folder. When a scan found an export in a folder someone chose rather than one QA-Board

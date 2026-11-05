@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.2fd77e6d.css">
-<script src="/qaboard/assets/js/runtime~main.2e8eea56.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.dde8adb6.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.816f71b4.js" defer="defer"></script>
 </head>
 <body>
@@ -120,9 +120,9 @@ any other folder you add) and finds, with the owner of every file:</p>
 <li class=""><strong>Untracked runs</strong>: folders with a <code>run.json</code> or a manifest that QA-Board doesn&#x27;t know (a failed upload, a run
 deleted for good while its folder stayed),</li>
 <li class=""><strong>Exports</strong> QA-Board doesn&#x27;t track, e.g. made before it tracked them: folders with an export&#x27;s <code>0.qa.url</code>,
-<code>0.qa.html</code> or <code>0.common.json</code>. Scans track them: their owners see them in <strong>Storage usage → Exports</strong>, with the
+<code>0.qa.html</code>, <code>0.export.json</code>, <code>0.export.csv</code> or <code>0.common.json</code>. Scans track them: their owners see them in <strong>Storage usage → Exports</strong>, with the
 project, commit and batch their <code>0.qa.url</code> gives. Deleting an export deletes its folder, so when it isn&#x27;t one
-QA-Board made (<code>share/&lt;id&gt;</code> next to a commit&#x27;s runs, or in <code>storage.exports_root</code>) but a folder someone chose, where
+QA-Board made (<code>share/&lt;date&gt;-&lt;name&gt;-&lt;id&gt;</code> next to a commit&#x27;s runs, or in <code>storage.exports_root</code>) but a folder someone chose, where
 they may have other files, only admins and whoever owns all its files can delete it,</li>
 <li class="">what <strong>deleted runs</strong> and <strong>deleted artifacts</strong> left,</li>
 <li class=""><strong>other files</strong>, e.g. copies, core dumps, users&#x27; own folders.</li>
@@ -145,11 +145,17 @@ tens of millions of files. Schedule it at night, e.g. weekly. A scan stopped by 
 in are scanned again. Hard links are counted once, symlinks aren&#x27;t followed, and a folder reachable under several roots (nested, symlinked or bind-mounted) is scanned once. Storage snapshots (<code>.snapshot</code>, <code>.snapshots</code>, <code>.zfs</code>) are always skipped, whatever <em>Excluded paths</em> says.</p><p>Scans see what the backend sees: the storage must be mounted at the same paths as on the machines where runs save
 results, and the worker reads it as root. Files of uids the backend can&#x27;t name show as numbers.</p></div></div></details>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="exports">Exports<a href="#exports" class="hash-link" aria-label="Direct link to Exports" title="Direct link to Exports" translate="no">​</a></h2>
-<p>Exports from the web app are recorded with their folder, project, commit, batch, who made them and their size. By
-default they go to a <code>share/</code> folder next to the commit&#x27;s results, which is hard to find among the results. Put them all
+<p>Exports from the web app are recorded with their folder, name, project, commit, batch, who made them and their size.
+Each export gets a new folder, <code>&lt;date&gt;-&lt;name&gt;-&lt;id&gt;</code> (the name is optional). By default they go to a <code>share/</code> folder next
+to the commit&#x27;s results, which is hard to find among the results. Put them all
 in one place with the <code>storage.exports_root</code> setting (<strong>Admin → Settings</strong>, or <code>QABOARD_EXPORTS_ROOT</code>):
-<code>&lt;root&gt;/&lt;user&gt;/&lt;project&gt;/&lt;date&gt;-&lt;id&gt;</code>. The folder must be on the same file system as the results for hard links, and
+<code>&lt;root&gt;/&lt;user&gt;/&lt;project&gt;/&lt;date&gt;-&lt;name&gt;-&lt;id&gt;</code>. The folder must be on the same file system as the results for hard links, and
 under <code>QABOARD_STORAGE_ROOTS</code>.</p>
+<details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>The export APIs</summary><div><div class="collapsibleContent_i85q"><p>The web app previews and exports with <code>POST /api/v1/exports/preview</code> and <code>POST /api/v1/exports</code>: it sends the runs, and
+how to name their files (a template, and fields per run); the server lists the files and checks the names. The older
+<code>/api/v1/export</code> (query parameters), which scripts call, is deprecated but works as before, with its own names and
+<code>0.common.json</code>/<code>0.mappings.json</code>. Its answers carry a <code>Deprecation: true</code> header, so you can find its callers in your
+proxy&#x27;s logs before it&#x27;s removed.</p></div></div></details>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="what-deleted-runs-leave">What deleted runs leave<a href="#what-deleted-runs-leave" class="hash-link" aria-label="Direct link to What deleted runs leave" title="Direct link to What deleted runs leave" translate="no">​</a></h2>
 <p>When users delete runs, QA-Board keeps their manifests, and deletes only the files the manifests list: what the runs
 wrote after they ended stays. QA-Board measures what&#x27;s left when it deletes runs, and users see it in <strong>Storage
