@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.2fd77e6d.css">
-<script src="/qaboard/assets/js/runtime~main.16b18701.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.05a53a7f.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.816f71b4.js" defer="defer"></script>
 </head>
 <body>
@@ -91,8 +91,9 @@ a sequence, which one every card shows. See
 one at a time, or their difference. Then the project&#x27;s own switches, if it has some.</li>
 <li class=""><strong>Configuration</strong>: the settings all the runs shown share, <strong>Hide them in each run</strong>, and <strong>Shorten long settings
 with …</strong>.</li>
-<li class=""><strong>Sort runs</strong>: by name, run id, storage, a tuning parameter or a metric, for the tables and the run cards. Until you
-choose, runs are sorted by the project&#x27;s default metric, marked <em>(default)</em>.</li>
+<li class=""><strong>Sort runs</strong>: by name, batch, database, status, configuration, run id, storage, a tuning parameter or a metric, for
+the tables, the run cards and the logs. Until you choose, runs are sorted by the project&#x27;s default metric, else by
+batch when they come from several, else by name, marked <em>(default)</em>.</li>
 </ul>
 <p><strong>Reset</strong> goes back to the project&#x27;s defaults, except for the sorting.</p>
 <details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>More about the panel</summary><div><div class="collapsibleContent_i85q"><ul>
@@ -109,8 +110,10 @@ numbers, like its last frame, else its first). The value you pick applies to all
 closest one, with a note on its card. <strong>Per run</strong> lets you choose in each card instead. Changing an option keeps the
 image viewers&#x27; zoom and region.</li>
 <li class=""><strong>Compare images</strong> can also be set above any image, or with the keys <kbd>1</kbd> to <kbd>4</kbd>.</li>
-<li class=""><strong>Sort runs</strong>: the order reads like the values: <em>Highest first</em>, <em>A to Z</em>, <em>Newest first</em>... It sorts by the new
-runs&#x27; values. The Summary doesn&#x27;t use it.</li>
+<li class=""><strong>Sort runs</strong>: the order reads like the values: <em>Highest first</em>, <em>A to Z</em>, <em>Newest first</em>, <em>Failed first</em>... Each
+starts in its natural order: names A to Z, failed runs first, metrics highest first. Names are sorted &quot;naturally&quot;
+(<code>frame2</code> before <code>frame10</code>), runs without a value come last, and ties are sorted by name. <strong>Batch</strong> and <strong>Database</strong>
+are listed when the runs come from several. It sorts by the new runs&#x27; values. The Summary doesn&#x27;t use it.</li>
 </ul></div></div></details>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="views">The views<a href="#views" class="hash-link" aria-label="Direct link to The views" title="Direct link to The views" translate="no">​</a></h2>
 <p>The sidebar lists the views, grouped by what they&#x27;re about. Each one answers a different question.</p>
