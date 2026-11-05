@@ -15,8 +15,8 @@ import { DEFAULT_MODE, MODES } from "../image-viewer/modes";
 import DynamicOptionControl from "./DynamicOptionControl";
 import { defaultRule, optionLabel, resolveOptionValue } from "../utils/dynamicOptions";
 import SidePanel from "./SidePanel";
-import { SharedSettings, useSharedConfiguration, useHideSharedSettings } from "../configurations/ConfigurationsTags";
-import { HideSharedSwitch } from "../configurations/ConfigurationOverview";
+import { SharedSettings, useSharedConfiguration, useHideSharedSettings, useShortenLongSettings } from "../configurations/ConfigurationsTags";
+import { HideSharedSwitch, ShortenLongSettingsSwitch } from "../configurations/ConfigurationOverview";
 import { FileOptionSwitches, file_options_summary } from "../viewers/bit_accuracy/utils";
 import { usePrefsStore, useOutputCardDensity, useRunNameOrigin } from "../stores/prefs";
 import { run_name_origin_options } from "./RunInfoMenu";
@@ -144,6 +144,7 @@ const ViewOptionsPanel = ({
   // what all the runs shown share, hidden in each run (see ConfigurationsTags)
   const shared = useSharedConfiguration();
   const hide_shared = useHideSharedSettings();
+  const shorten_long = useShortenLongSettings();
 
   const [prev_reveal_files, setPrevRevealFiles] = useState(revealFiles);
   if (revealFiles !== prev_reveal_files) {
@@ -345,7 +346,10 @@ const ViewOptionsPanel = ({
         .filter(control => !!controls[control.name] !== !!control.default)
         .map(control => `${control.label || humanize(control.name)} ${controls[control.name] ? 'on' : 'off'}`),
     ],
-    configuration: shared?.collapse && !hide_shared ? ['Shared settings shown in each run'] : [],
+    configuration: [
+      ...(shared?.collapse && !hide_shared ? ['Shared settings shown in each run'] : []),
+      ...(!shorten_long ? ['Long settings shown in full'] : []),
+    ],
     display: [],
     files: file_options_on.map(option => `Output files: ${option}`),
     sorting: sort_changed ? [`Sorted by ${sort_label(sort_value)}, ${order_label}`] : [],
@@ -422,6 +426,7 @@ const ViewOptionsPanel = ({
           <SharedSettings tokens={shared.tokens} />
         </div>
         {shared.collapse && <HideSharedSwitch />}
+        <ShortenLongSettingsSwitch style={{ marginTop: 6 }} />
       </>,
     },
     {
