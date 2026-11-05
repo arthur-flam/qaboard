@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.2fd77e6d.css">
-<script src="/qaboard/assets/js/runtime~main.b8f22739.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.2e8eea56.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.816f71b4.js" defer="defer"></script>
 </head>
 <body>
@@ -63,8 +63,11 @@ reference bar. While runs are pending, the page refreshes by itself every 15 sec
 <details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>Every item of the ☰ menu</summary><div><div class="collapsibleContent_i85q"><table><thead><tr><th>Section</th><th>Items</th></tr></thead><tbody><tr><td>Commit</td><td><strong>Copy artifacts directory</strong> (Linux path, and Windows path when your server has path mappings), <strong>View in browser</strong>.</td></tr><tr><td>Batch</td><td><strong>Copy output directory</strong>, <strong>View in browser</strong>. <strong>Move runs to another batch</strong>, <strong>Rename batch</strong>.</td></tr><tr><td>Redo</td><td><strong>Redo deleted runs</strong>, <strong>Redo failed runs</strong>, <strong>Redo all runs…</strong>. With a filter, they redo only the runs that match it. See <a class="" href="/qaboard/docs/user-guide/running-from-the-webapp#redo-stop-and-clean-up-runs">Running from the web app</a>.</td></tr><tr><td>Delete</td><td><strong>Delete failed runs…</strong>, <strong>Delete all runs…</strong>, <strong>Delete multiple batches</strong>. With <strong>Delete files, keep metadata</strong>, only the files are deleted, optionally only those matching patterns like <code>*.png</code>.</td></tr></tbody></table><p>Batches that are milestones are protected: see <a class="" href="/qaboard/docs/user-guide/milestones#what-a-milestone-keeps">What a milestone keeps</a>.</p></div></div></details>
 <details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>The messages above the views</summary><div><div class="collapsibleContent_i85q"><ul>
 <li class=""><strong>N running</strong> / <strong>N pending</strong>: hover to list the runs. <strong>Stop runs</strong> cancels them.</li>
-<li class=""><strong>N failed</strong>: the failed runs, each name opens its log. <strong>Open the logs</strong> shows the <a class="" href="/qaboard/docs/user-guide/logs">Logs</a>
-view.</li>
+<li class=""><strong>N failed</strong>: up to 5 failed runs are listed: each name opens its log, and the target button next to it adds
+<code>id:&lt;run id&gt;</code> to the filter, to show only this run. When more failed, often for a
+common reason, the list is collapsed: <strong>List the N runs</strong> opens it. <strong>Show only the failed runs</strong> adds
+<code>status:failed</code> to the filter, <strong>Show all the runs</strong> removes it, and <strong>Open the logs</strong> shows the
+<a class="" href="/qaboard/docs/user-guide/logs">Logs</a> view.</li>
 <li class=""><strong>N of the runs below were deleted</strong>: <strong>Redo deleted runs</strong> runs them again.</li>
 <li class=""><strong>Be careful, those are local runs</strong>: they were started from someone&#x27;s workspace, and may not match the committed
 code.</li>
