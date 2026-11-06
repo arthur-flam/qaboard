@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.2fd77e6d.css">
-<script src="/qaboard/assets/js/runtime~main.78b9e669.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.a201a982.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.772f0703.js" defer="defer"></script>
 </head>
 <body>
@@ -135,18 +135,28 @@ projects yet. If something is wrong, see <a class="" href="/qaboard/docs/backend
 <p>Admins see <strong>Admin</strong> in the user menu: users, sign-in, settings, and the jobs that clean the storage.</p>
 <ul>
 <li class="">
-<p>The user names in <code>QABOARD_ADMINS</code> (<a href="#3-describe-your-site" class="">step 3</a>) are admins as soon as they sign in.</p>
+<p><strong>The setup page</strong>: open QA-Board, it shows <strong>Set up QA-Board</strong> on a new server. Paste the setup token from the
+backend&#x27;s logs, choose a user name and a password: you&#x27;re the first admin, signed in.</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">deployments/deploy.py deployments/mysite/production.env compose logs backend </span><span class="token operator" style="color:#393A34">|</span><span class="token plain"> </span><span class="token function" style="color:#d73a49">grep</span><span class="token plain"> </span><span class="token parameter variable" style="color:#36acaa">-A1</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;setup token&quot;</span><br></div></code></pre></div></div>
 </li>
 <li class="">
-<p>To sign in before LDAP or single sign-on work, create a local admin account. It asks for the password:</p>
-<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">deployments/deploy.py deployments/mysite/production.env compose </span><span class="token builtin class-name">exec</span><span class="token plain"> backend qaboard-admin create-admin admin </span><span class="token parameter variable" style="color:#36acaa">--password</span><br></div></code></pre></div></div>
+<p><strong>Or from the environment</strong>, for automated installs: <code>QABOARD_ADMIN_PASSWORD</code> in <code>.env</code> creates the local admin
+<code>admin</code> when the server starts without admins (see <a class="" href="/qaboard/docs/backend-admin/user-management#the-first-admin">the first admin</a>).</p>
+</li>
+<li class="">
+<p>The user names in <code>QABOARD_ADMINS</code> (<a href="#3-describe-your-site" class="">step 3</a>) are admins as soon as they sign in, e.g. with LDAP or
+single sign-on.</p>
+</li>
+<li class="">
+<p>From the server&#x27;s shell, <code>qaboard-admin create-admin &lt;user_name&gt; --password</code> creates a local admin. It asks for the password.</p>
 </li>
 </ul>
 <p><strong>Check it worked:</strong> sign in with <strong>Sign in</strong>, at the top right, and open <strong>Admin</strong>. Its <strong>Overview</strong> has a security
 checklist of what to look at next. More in <a class="" href="/qaboard/docs/backend-admin/user-management">User management</a>.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="7-choose-how-users-sign-in">7. Choose how users sign in<a href="#7-choose-how-users-sign-in" class="hash-link" aria-label="Direct link to 7. Choose how users sign in" title="Direct link to 7. Choose how users sign in" translate="no">​</a></h2>
 <span id="managing-access-rights-and-users" class="anchorTargetHideOnScrollNavbar_vjPI"></span>
-<p>By default, users have local accounts, and anyone can create one from the sign-in page (<strong>Create one</strong>). Instead:</p>
+<p>By default, users have local accounts: admins create them in <strong>Admin → Users → New user</strong>, and anyone can create one
+from the sign-in page (<strong>Create one</strong>) until you turn <code>auth.local_signup</code> off. Instead:</p>
 <ul>
 <li class=""><strong>Single sign-on</strong> with OpenID Connect (Keycloak, Entra ID, Okta, Google...): see
 <a class="" href="/qaboard/docs/backend-admin/sign-in">Sign-in and single sign-on</a>.</li>
