@@ -1,0 +1,117 @@
+{#
+  The house style of QA-Board's emails: the pieces every email is made of. See backend/notifications/STYLE.md.
+  Outlook 2016/2019 render emails with Word: tables for layout, inline styles and bgcolor attributes, widths in
+  attributes, padding on cells only (not on <p> or <a>), VML for buttons. No flexbox, grid, CSS variables, web fonts,
+  background images, border-radius that matters, or <div> layout.
+  Import with: {% import "_ui.html" as ui %}
+#}
+{% set font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" %}
+{% set mono = "Consolas,'SFMono-Regular',Menlo,'Liberation Mono',monospace" %}
+{# Blueprint's palette, like the web app #}
+{% set colors = {
+  'text': '#1C2127', 'body': '#404854', 'muted': '#5F6B7C', 'faint': '#738091', 'disabled': '#8F99A8',
+  'border': '#E5E8EB', 'page': '#F0F2F5', 'code_background': '#F6F7F9', 'header': '#1C2127', 'header_muted': '#ABB3BF',
+  'link': '#1B69B6', 'primary': '#2D72D2',
+} %}
+{# light: Blueprint's intent colors, for the accent bar, tags and callouts #}
+{% set intents = {
+  'primary': {'accent': '#2D72D2', 'background': '#E7F0FB', 'text': '#215DB0'},
+  'success': {'accent': '#238551', 'background': '#E8F4EE', 'text': '#1C6E42'},
+  'warning': {'accent': '#C87619', 'background': '#FBF0E2', 'text': '#935610'},
+  'danger': {'accent': '#CD4246', 'background': '#FAE9E9', 'text': '#AC2F33'},
+} %}
+
+{# A text style: font, size and line height, exact in Outlook #}
+{% macro text(size=15, line=22, color=colors.body, weight=None) -%}
+font-family:{{ font }};font-size:{{ size }}px;line-height:{{ line }}px;mso-line-height-rule:exactly;{% if weight %}font-weight:{{ weight }};{% endif %}color:{{ color }};
+{%- endmacro %}
+
+{# A row of the email's white card. Use: {% call ui.row('28px 32px 4px 32px') %}…{% endcall %} #}
+{% macro row(padding='20px 32px 4px 32px', background='#FFFFFF') -%}
+<tr>
+  <td bgcolor="{{ background }}" class="px" style="background-color:{{ background }};padding:{{ padding }};">
+    {{ caller() }}
+  </td>
+</tr>
+{%- endmacro %}
+
+{# Small caps above a section #}
+{% macro section_title(content) -%}
+<p style="margin:0 0 10px 0;{{ text(11, 16, colors.muted, 600) }}letter-spacing:0.6px;text-transform:uppercase;">{{ content }}</p>
+{%- endmacro %}
+
+{# The email's title, under the header #}
+{% macro h1(content, margin='0 0 10px 0') -%}
+<h1 style="margin:{{ margin }};{{ text(22, 30, colors.text, 600) }}word-break:break-word;">{{ content }}</h1>
+{%- endmacro %}
+
+{% macro link(url, content, weight=None, color=colors.link) -%}
+<a href="{{ url }}" style="color:{{ color }};text-decoration:none;{% if weight %}font-weight:{{ weight }};{% endif %}">{{ content }}</a>
+{%- endmacro %}
+
+{# A tag, e.g. SUCCEEDED or MAINTENANCE #}
+{% macro tag(content, intent='primary') -%}
+{% set c = intents[intent] %}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td bgcolor="{{ c.background }}" style="background-color:{{ c.background }};padding:3px 8px;{{ text(11, 16, c.text, 700) }}letter-spacing:0.6px;text-transform:uppercase;">{{ content }}</td>
+  </tr>
+</table>
+{%- endmacro %}
+
+{#
+  The main call to action: one per email. "Bulletproof": VML for Outlook (Word can't pad links), a link elsewhere.
+  `width` must fit the label: about 8px per character plus 40.
+#}
+{% macro button_cell(url, label, width=168) -%}
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ url }}" style="height:40px;v-text-anchor:middle;width:{{ width }}px;" arcsize="8%" stroke="f" fillcolor="{{ colors.primary }}">
+  <w:anchorlock/>
+  <center style="color:#FFFFFF;font-family:'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:600;">{{ label }}</center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-- --><a href="{{ url }}" style="display:inline-block;width:{{ width }}px;background-color:{{ colors.primary }};border-radius:3px;color:#FFFFFF;font-family:{{ font }};font-size:14px;font-weight:600;line-height:40px;text-align:center;text-decoration:none;-webkit-text-size-adjust:none;">{{ label }}</a><!--<![endif]-->
+{%- endmacro %}
+
+{# The button, and an optional secondary link next to it #}
+{% macro button(url, label, width=None, secondary_url=None, secondary_label=None) -%}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td>
+      {{ button_cell(url, label, width or button_width(label)) }}
+    </td>
+    {% if secondary_url %}
+    <td style="padding-left:20px;{{ text(14, 20) }}">
+      {{ link(secondary_url, secondary_label, 600) }}
+    </td>
+    {% endif %}
+  </tr>
+</table>
+{%- endmacro %}
+
+{% macro button_width(label) -%}
+{{ [168, (label | length) * 8 + 40] | max }}
+{%- endmacro %}
+
+{# A colored box for what readers must not miss, e.g. a maintenance window #}
+{% macro callout(intent='primary') -%}
+{% set c = intents[intent] %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td width="4" bgcolor="{{ c.accent }}" style="width:4px;background-color:{{ c.accent }};font-size:1px;line-height:1px;">&nbsp;</td>
+    <td bgcolor="{{ c.background }}" style="background-color:{{ c.background }};padding:12px 16px;{{ text(14, 20, colors.text) }}">
+      {{ caller() }}
+    </td>
+  </tr>
+</table>
+{%- endmacro %}
+
+{# The fine print under the card: why they get the email, and how to stop it. links: [(label, url)] #}
+{% macro footer(reason, links=()) -%}
+<tr>
+  <td class="px" style="padding:20px 32px 0 32px;{{ text(12, 18, colors.faint) }}">
+    {% if reason %}<p style="margin:0 0 6px 0;">{{ reason }}</p>{% endif %}
+    {% if links %}<p style="margin:0;">{% for label, url in links %}{% if not loop.first %} &nbsp;·&nbsp; {% endif %}<a href="{{ url }}" style="color:{{ colors.muted }};text-decoration:underline;">{{ label }}</a>{% endfor %}</p>{% endif %}
+  </td>
+</tr>
+{%- endmacro %}

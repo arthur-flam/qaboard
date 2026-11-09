@@ -213,6 +213,7 @@ const sidebars: SidebarsConfig = {
         "backend-admin/annotations",
         "backend-admin/monitoring",
         "backend-admin/usage-analytics",
+        "backend-admin/messaging-users",
         "backend-admin/troubleshooting",
     ]
   }

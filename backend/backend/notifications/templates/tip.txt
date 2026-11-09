@@ -1,0 +1,13 @@
+{{ title }}
+
+{{ body_text }}
+{% if cta_url %}
+{{ cta_label }}: {{ cta_url }}
+{% endif %}
+
+--
+{{ reason }}
+{% if unsubscribe_url %}Stop these tips: {{ unsubscribe_url }}
+{% endif %}
+Email preferences: {{ preferences_url }}
+QA-Board is open source: {{ github_url }}

@@ -116,6 +116,7 @@ GROUPS = [
   Group('git', "Git hosts", "git-repo", "Where the projects' repositories live: QA-Board clones them, receives their push webhooks, shows their avatars and CI statuses.", "/docs/backend-admin/git-hosts"),
   Group('jenkins', "Jenkins", "build", "The Jenkins servers that QA-Board starts builds on, for projects' integrations.", "/docs/triggering-third-party-tools#trigger-jenkins-builds"),
   Group('email', "Email", "envelope", "How QA-Board sends emails: to users when their batches end, and to admins when scheduled jobs fail.", "/docs/deploy#emails"),
+  Group('tips', "Tips emails", "lightbulb", "A welcome email at people's first sign-in, then one tip a week about using QA-Board, then they stop. People turn them off in Settings → Preferences, or from any of them. See Admin → Messages.", "/docs/backend-admin/messaging-users#tips-emails"),
   Group('web_app', "Web app", "application", "What the web app shows users: where they get help, the docs, avatars, install instructions."),
   Group('analytics', "Usage analytics", "timeline-line-chart", "What QA-Board records about how people use it (Admin → Usage).", "/docs/backend-admin/usage-analytics"),
   Group('storage', "Storage and performance", "database", "Where exports go, and caches and shortcuts for large projects.", "/docs/backend-admin/storage"),
@@ -423,6 +424,26 @@ DEFINITIONS = {
     "Who gets the emails about scheduled jobs that went wrong: user names or emails. Empty: the admins.",
     [], list, env='QABOARD_JOBS_FAILURE_EMAIL_TO', parse_env=env_list,
     label="Who gets them", group='email', default_text="The admins.",
+  ),
+
+  # ---- Tips emails (backend/notifications/tips_emails.py)
+  'tips.enabled': Definition(
+    "Email new users a welcome at their first sign-in, then one tip a week, until the last one. Requires an SMTP server. "
+    "People who used QA-Board before don't get them, unless you enroll them in Admin → Messages.",
+    False, bool, env='QABOARD_TIPS_EMAILS', parse_env=env_flag, label="Send tips emails", group='tips',
+  ),
+  'tips.every_days': Definition(
+    "Days between two tips. The first one comes right after the first sign-in.",
+    7, int, env='QABOARD_TIPS_EVERY_DAYS', minimum=1, maximum=60, label="Days between tips", group='tips', unit='days',
+  ),
+  'tips.inactive_days': Definition(
+    "Pause the tips of people who didn't sign in, use the web app or run qa for this many days. They resume when people are back.",
+    30, int, env='QABOARD_TIPS_INACTIVE_DAYS', minimum=7, maximum=365, label="Pause after inactivity", group='tips', unit='days',
+  ),
+  'tips.folder': Definition(
+    "A folder with more tips, e.g. about your support channels or your teams' projects: Markdown files like the built-in ones "
+    "(backend/notifications/tips/README.md). A file with a built-in tip's key replaces it, `disabled: true` removes it.",
+    None, str, env='QABOARD_TIPS_FOLDER', nullable=True, label="Your tips", group='tips', placeholder="/etc/qaboard/tips",
   ),
 
   # ---- Web app

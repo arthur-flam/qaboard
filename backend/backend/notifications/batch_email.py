@@ -290,7 +290,7 @@ _environment = Environment(
 def render_batch_email(summary, info):
   """Returns (subject, html, text)"""
   content = email_content(summary, info)
-  context = {**content, 'summary': summary}
+  context = {**content, 'summary': summary, 'header_url': content['links']['results'], 'header_right': content['project_name'], 'accent': content['status']}
   html = _environment.get_template('batch_ended.html').render(**context)
   text = _environment.get_template('batch_ended.txt').render(**context)
   return content['subject'], html, text

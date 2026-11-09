@@ -39,6 +39,8 @@ PUBLIC_ENDPOINTS = {
   'setup_status', 'setup_first_admin',
   # nginx asks it whether users may read files, it answers 401 itself
   'authorize_files',
+  # banners, e.g. about a maintenance, show on the sign-in page too; the link to stop the tips emails needs no sign-in
+  'announcements_active', 'announcement_calendar', 'tips_unsubscribe',
 }
 # The `qa` CLI sends results there: open unless ingest.auth is "token"
 INGEST_ENDPOINTS = {

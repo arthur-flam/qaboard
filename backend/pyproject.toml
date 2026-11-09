@@ -44,6 +44,10 @@ dependencies = [
     "authlib>=1.9.1",
     # Swagger UI's files, for the API docs page at /api/v1/docs (api/openapi.py)
     "flask-swagger-ui>=5.17",
+    # emails: templates, and the tips written in Markdown with YAML front matter (backend/notifications/)
+    "jinja2",
+    "markdown-it-py>=3",
+    "pyyaml",
 ]
 
 [tool.setuptools.packages.find]
@@ -53,7 +57,7 @@ exclude = ["smoke_tests*"]
 
 [tool.setuptools.package-data]
 # the emails' templates
-"backend.notifications" = ["templates/*"]
+"backend.notifications" = ["templates/*", "tips/*.md"]
 # the API's description, served at /api/v1/openapi.json
 "backend" = ["openapi.yaml"]
 

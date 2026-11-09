@@ -18,3 +18,4 @@ from .Export import *
 from .StorageScan import *
 from .ProjectView import *
 from .UsageEvent import *
+from .Communication import *
