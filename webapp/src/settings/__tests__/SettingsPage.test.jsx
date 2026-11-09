@@ -9,6 +9,7 @@ import { history, RouteMatch } from '../../router';
 import { matchAppRoute } from '../../routes';
 import { SettingsPage, tabs } from '../SettingsPage';
 import { usePrefsStore } from '../../stores/prefs';
+import { synced_keys, account_keys } from '../../stores/prefsSync';
 import { actionLabel } from '../format';
 import { renderWithProviders } from '../../test-utils';
 
@@ -84,6 +85,19 @@ test('preferences use the same store as the pages', async () => {
   fireEvent.click(screen.getByRole('radio', { name: /^Never/ }));
   expect(usePrefsStore.getState().runNameOrigin).toBe('never');
   usePrefsStore.setState({ commitListDensity: before.commitListDensity, outputCardDensity: before.outputCardDensity, runNameOrigin: before.runNameOrigin });
+});
+
+test('signed-in users can turn off the tips emails: it follows their account', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({}));
+  renderAt('/settings/preferences');
+  const tips = screen.getByLabelText(/^Tips about QA-Board/);
+  expect(tips).toBeChecked();
+  fireEvent.click(tips);
+  expect(usePrefsStore.getState().tips_emails).toBe(false);
+  expect(synced_keys).toContain('tips_emails');
+  // not sent from this browser to the next account that signs in
+  expect(account_keys).toContain('tips_emails');
+  usePrefsStore.setState({ tips_emails: true });
 });
 
 test('activity loads older events on demand', async () => {

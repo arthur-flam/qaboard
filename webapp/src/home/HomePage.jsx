@@ -10,6 +10,7 @@ import { FromYourProjects, GetStarted, NeedsAttention, Recent, RunningNow, useFe
 import { useMyProjects, YourProjects } from "./YourProjects";
 import { Learn, WhatsNew, YourStorage } from "./SideCards";
 import { usePageTitle, app_title } from "../pageTitle";
+import { Announcements } from "../announcements/Announcements";
 
 
 const Grid = styled.main`
@@ -65,6 +66,7 @@ const HomePage = () => {
 
   return <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
     <SiteNavbar via="home"/>
+    <Announcements/>
     <Grid>
       <PageTitle>Home of {user.full_name || user.user_name}</PageTitle>
       <div className="qa-home-left">

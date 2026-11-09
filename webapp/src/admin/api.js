@@ -520,3 +520,70 @@ export const usageUserQuery = id => queryOptions({
 });
 // The same tables as CSV, for spreadsheets: users, groups, projects, or the raw events
 export const usageCsvUrl = (table, params) => buildUrl(`/api/v1/admin/usage/${table}`, { ...usageParams(params), format: 'csv' });
+
+
+// Admin → Messages (backend/api/messages.py): banners, who to email, the tips emails.
+// {announcements: current and upcoming, past: the last 50 that ended}
+export const adminAnnouncementsQuery = queryOptions({
+  queryKey: ['admin', 'announcements'],
+  queryFn: async ({ signal }) => {
+    const { data } = await http.get('/api/v1/admin/announcements', { signal });
+    return { announcements: data?.announcements ?? [], past: data?.past ?? [] };
+  },
+  staleTime: 30 * 1000,
+});
+
+// the banners on the admin's own pages too
+const invalidateAnnouncements = queryClient => Promise.all([
+  queryClient.invalidateQueries({ queryKey: ['admin', 'announcements'] }),
+  queryClient.invalidateQueries({ queryKey: ['announcements'] }),
+]);
+
+// `id` to update (only the fields that changed: a change makes it show again to those who dismissed it), else creates it.
+// Dates are ISO strings, null clears them. => the announcement, or throws with the server's 400 {error}
+export const saveAnnouncement = async (queryClient, id, fields) => {
+  const { data } = id
+    ? await http.put(`/api/v1/admin/announcements/${id}`, fields)
+    : await http.post('/api/v1/admin/announcements', fields);
+  await invalidateAnnouncements(queryClient);
+  return data;
+};
+
+export const deleteAnnouncement = async (queryClient, id) => {
+  const { data } = await http.delete(`/api/v1/admin/announcements/${id}`);
+  await invalidateAnnouncements(queryClient);
+  return data;
+};
+
+// People's email addresses: {recipients: [{user_name, full_name, email, address}], without_email: [user_name], to: "Name <a@x>; ...", active_days, project}
+// `active_days`: 0 for everyone. `project`: who used it (or its subprojects). `admins`: only the admins.
+export const recipientsQuery = ({ active_days = 30, project = '', admins = false } = {}) => queryOptions({
+  queryKey: ['admin', 'recipients', { active_days, project, admins }],
+  queryFn: async ({ signal }) => {
+    const params = { active_days, project: project || undefined, admins: admins ? true : undefined };
+    const { data } = await http.get('/api/v1/admin/recipients', { params, signal });
+    return { recipients: data?.recipients ?? [], without_email: data?.without_email ?? [], to: data?.to ?? '' };
+  },
+  placeholderData: keepPreviousData,
+  staleTime: 60 * 1000,
+});
+
+// {enabled, every_days, inactive_days, folder, email_enabled, errors, tips: [...], people: {enrolled, due...}}
+export const tipsQuery = queryOptions({
+  queryKey: ['admin', 'tips'],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/admin/tips', { signal })).data,
+  staleTime: 30 * 1000,
+});
+
+// The email as people get it, for an <iframe>: the server sandboxes it
+export const tipPreviewUrl = key => `/api/v1/admin/tips/${encodeURIComponent(key)}/preview?format=html`;
+
+// To the admin's own address => {sent_to}
+export const sendTestTip = async key => (await http.post(`/api/v1/admin/tips/${encodeURIComponent(key)}/test`)).data;
+
+// People active in the last `active_days` who signed up before the tips: they get the tips, not the welcome. => {enrolled}
+export const enrollInTips = async (queryClient, active_days) => {
+  const { data } = await http.post('/api/v1/admin/tips/enroll', { active_days });
+  queryClient.invalidateQueries({ queryKey: ['admin', 'tips'] });
+  return data;
+};

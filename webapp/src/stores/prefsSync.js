@@ -11,11 +11,12 @@ import { useUser } from "../hooks";
 import { usePrefsStore } from "./prefs";
 
 // Not `siderCollapsed` (it depends on the screen) nor `milestones` (they move to the account, see milestones/hooks.js)
-export const synced_keys = ['theme', 'commitListDensity', 'outputCardDensity', 'runNameOrigin', 'favorites', 'milestoneGroupsCollapsed', 'exploreGroups', 'imagePixelValues', 'tuning', 'hide_shared_settings', 'shorten_long_settings', 'listScope', 'git_emails', 'homeDismissed', 'exportLast', 'exportPresets'];
+export const synced_keys = ['theme', 'commitListDensity', 'outputCardDensity', 'runNameOrigin', 'favorites', 'milestoneGroupsCollapsed', 'exploreGroups', 'imagePixelValues', 'tuning', 'hide_shared_settings', 'shorten_long_settings', 'listScope', 'git_emails', 'homeDismissed', 'exportLast', 'exportPresets', 'tips_emails'];
 
 // What belongs to an account rather than to a browser: never sent from this browser to the account that signs in
-// (it may be another person's), e.g. the server reads git_emails to know whose commits are whose
-export const account_keys = ['git_emails', 'listScope', 'homeDismissed'];
+// (it may be another person's), e.g. the server reads git_emails to know whose commits are whose, and tips_emails
+// whether to send them tips
+export const account_keys = ['git_emails', 'listScope', 'homeDismissed', 'tips_emails'];
 
 export const preferences_url = '/api/v1/user/preferences';
 
