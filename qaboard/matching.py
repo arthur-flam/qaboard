@@ -63,7 +63,11 @@ def js_stringify(value) -> str:
 # ---------------------------------------------------------------------------- settings
 
 # Some configuration keys are used and shown by viewers: they're not settings
-HIDDEN_KEYS = ("badges", "roi", "auto_rois")
+HIDDEN_KEYS = ("badges", "roi", "auto_rois", "view")
+
+def _is_hidden(key, value) -> bool:
+  # `view` is what a run asks the web app to show when it's a mapping: else it's a project's own parameter
+  return key in HIDDEN_KEYS and (key != "view" or isinstance(value, dict))
 
 @dataclass(frozen=True)
 class Token:
@@ -84,7 +88,7 @@ def _visit(value, path: str, tokens: List[Token]):
   # Lists of objects have a setting per leaf ("layers[0].type"), lists of values are one setting
   if isinstance(value, dict) and value:
     for key in js_keys(value):
-      if not path and key in HIDDEN_KEYS:
+      if not path and _is_hidden(key, value[key]):
         continue
       _visit(value[key], f'{path}.{key}' if path else str(key), tokens)
   elif isinstance(value, list) and any(isinstance(v, dict) and v for v in value):

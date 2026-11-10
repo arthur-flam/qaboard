@@ -54,6 +54,11 @@ shows, even for the 113 MP test wall of the camera ISP example.
   caption="The detector draws its boxes, and outlines in red what it missed: the int8 model (left) misses two people that fp32 finds."
 />
 
+### Options per run {#image-options}
+A run can say how its images open, with `view.images`, in its batch's configurations or its input's metadata: the
+comparison mode (`mode: difference`), the analysis panel (`analysis: profiles`), regions of interest. See
+[Show each test what matters for it](/docs/visualizations#per-test-views).
+
 ### Regions of interest {#image-regions}
 The viewer can open each run's images zoomed on the part that matters for its test, and offer the others as
 thumbnails: give it regions under the key `roi`. They are not an option of the visualization in *qaboard.yaml*: each
