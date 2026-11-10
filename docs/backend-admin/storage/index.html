@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.0469eb56.css">
-<script src="/qaboard/assets/js/runtime~main.41d26d3f.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.7e1da72b.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.8dcbefa8.js" defer="defer"></script>
 </head>
 <body>
@@ -133,7 +133,8 @@ lists them anywhere, by kind, owner or age. Click an owner to see only theirs. T
 <ul>
 <li class=""><strong>Delete…</strong> them: only folders without anything QA-Board uses (runs, batches&#x27; files, artifacts) can be selected,</li>
 <li class=""><strong>Add runs to QA-Board</strong>: untracked runs in a batch&#x27;s folder are added to their batch, from their <code>run.json</code>,
-manifest and metrics.</li>
+manifest and metrics. Not the earlier attempts of runs that were <a class="" href="/qaboard/docs/storage/where-is-the-data#reruns">done again</a>,
+whose files <code>qa</code> couldn&#x27;t remove: delete those.</li>
 </ul>
 <p>Users see what they own in <strong>Storage usage → Not tracked</strong>, from the latest scan, and can delete the folders whose
 files are all theirs. Admins see everyone&#x27;s there when they choose <em>Everyone&#x27;s</em>, or someone&#x27;s from the <em>Users</em> tab.
