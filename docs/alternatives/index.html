@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.0469eb56.css">
-<script src="/qaboard/assets/js/runtime~main.7e1da72b.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.936e07cd.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.8dcbefa8.js" defer="defer"></script>
 </head>
 <body>
@@ -98,14 +98,16 @@ and QA-Board when the agent is one part of a product whose other parts you alrea
 builds, failures grouped by cause, flaky tests across an organization, coverage comments on pull requests.</p>
 <p>QA-Board follows each suite as a run: counts, failures, flaky and skipped tests and coverage over time, next to your
 other quality metrics, with each suite&#x27;s tests compared with the reference&#x27;s and a gate that catches tests deleted to
-get a green CI (see <a class="" href="/qaboard/docs/use-cases/software-quality">tests and coverage</a>). It has no history of a single test case,
-and doesn&#x27;t comment on pull requests.</p>
+get a green CI (see <a class="" href="/qaboard/docs/use-cases/software-quality">tests and coverage</a>). The gate comments on pull requests with
+its verdict (experimental). QA-Board has no history of a single test case.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="benchmarking">Benchmarking and profiling tools<a href="#benchmarking" class="hash-link" aria-label="Direct link to Benchmarking and profiling tools" title="Direct link to Benchmarking and profiling tools" translate="no">​</a></h2>
 <p>CodSpeed, Bencher and asv run microbenchmarks on every change, with measurements stable enough to flag a few
 percent, and comment on pull requests. Continuous profilers and APM tools watch production.</p>
 <p>QA-Board is for end-to-end performance: latency distributions under the same load profiles on every commit, flame
 graph diffs, CPU per core, History per profile, and tuning frontiers (see <a class="" href="/qaboard/docs/use-cases/serving-latency">performance</a>).
-It doesn&#x27;t decide whether a change is noise: repeat your measurements, and set the gate&#x27;s thresholds above the noise.</p>
+The gate&#x27;s verdict goes to the pull request too, as <a class="" href="/qaboard/docs/quality-gate#pull-request-comments">a comment</a> that also
+says when runs only passed after being done again. It doesn&#x27;t decide whether a change is noise: repeat your
+measurements, and set the gate&#x27;s thresholds above the noise.</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="in-house">Notebooks, spreadsheets and in-house dashboards<a href="#in-house" class="hash-link" aria-label="Direct link to Notebooks, spreadsheets and in-house dashboards" title="Direct link to Notebooks, spreadsheets and in-house dashboards" translate="no">​</a></h2>
 <p>A notebook answers a new question in an afternoon, and nothing replaces that. Then results get pasted into a
 spreadsheet, screenshots into a chat thread, and someone maintains a dashboard for one project. QA-Board is what
