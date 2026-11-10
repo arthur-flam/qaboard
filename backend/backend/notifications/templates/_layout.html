@@ -1,0 +1,70 @@
+{#
+  The frame of every QA-Board email: a 600px card on a gray page, a dark header like the web app's sidebar, an accent
+  bar, the content rows, then the fine print. See backend/notifications/STYLE.md.
+  Templates extend it and set: subject, preheader, header_url, header_right (optional), accent (an intent: primary,
+  success, warning, danger). They fill {% block content %} with ui.row()s, and {% block footer %} with ui.footer().
+#}
+{% import "_ui.html" as ui %}
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+<title>{{ subject }}</title>
+<!--[if mso]>
+<noscript><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+<style>table, td, th, p, a, span, div, li, h1, h2, h3 { font-family: 'Segoe UI', Arial, sans-serif !important; } .mono { font-family: Consolas, 'Courier New', monospace !important; }</style>
+<![endif]-->
+<style>
+  body { margin: 0; padding: 0; width: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table, td { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  a { color: {{ ui.colors.link }}; }
+  a:hover { text-decoration: underline !important; }
+  @media only screen and (max-width: 620px) {
+    .container { width: 100% !important; }
+    .px { padding-left: 20px !important; padding-right: 20px !important; }
+    .stat { display: inline-block !important; width: 50% !important; box-sizing: border-box; border-right: 0 !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:{{ ui.colors.page }};" bgcolor="{{ ui.colors.page }}">
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:{{ ui.colors.page }};">{{ preheader }}{% for _ in range(60) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{{ ui.colors.page }}" style="background-color:{{ ui.colors.page }};">
+<tr>
+<td align="center" style="padding:24px 12px 32px 12px;">
+<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td><![endif]-->
+<table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="width:600px;max-width:600px;">
+
+  {# Header: dark, like the web app's sidebar #}
+  <tr>
+    <td bgcolor="{{ ui.colors.header }}" class="px" style="background-color:{{ ui.colors.header }};padding:14px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="{{ ui.text(15, 20, '#FFFFFF', 700) }}letter-spacing:0.2px;">
+            <a href="{{ header_url }}" style="color:#FFFFFF;text-decoration:none;">QA-Board</a>
+          </td>
+          {% if header_right %}<td align="right" style="{{ ui.text(13, 20, ui.colors.header_muted) }}">{{ header_right }}</td>{% endif %}
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% set accent_color = ui.intents[accent or 'primary'].accent %}
+  <tr>
+    <td bgcolor="{{ accent_color }}" height="4" style="background-color:{{ accent_color }};height:4px;font-size:4px;line-height:4px;mso-line-height-rule:exactly;">&nbsp;</td>
+  </tr>
+
+  {% block content %}{% endblock %}
+
+  {% block footer %}{% endblock %}
+
+</table>
+<!--[if mso]></td></tr></table><![endif]-->
+</td>
+</tr>
+</table>
+</body>
+</html>

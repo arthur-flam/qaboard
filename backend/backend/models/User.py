@@ -42,6 +42,8 @@ class User(Base, UserMixin):
   # what the sign-in methods say about them, refreshed at each sign-in and daily (backend/sign_in/profiles.py):
   # {title, department, organization, source, updated_at, picture: {sha256, source, updated_at}}
   profile = Column(JSONB(), nullable=False, default=dict, server_default='{}')
+  # when they started getting the tips emails: their first sign-in, or when an admin enrolled them (notifications/tips_emails.py)
+  tips_started_at = Column(DateTime(), nullable=True)
 
 
   def __repr__(self):

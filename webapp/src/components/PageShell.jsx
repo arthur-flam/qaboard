@@ -17,6 +17,7 @@ import { ThemeButton } from "./ThemeButton";
 import Footer from "./Footer";
 import EmptyLoading from "./EmptyLoading";
 import { usePageTitle, app_title } from "../pageTitle";
+import { Announcements } from "../announcements/Announcements";
 
 
 // On narrow screens the bar's groups wrap on several rows instead of overflowing the page
@@ -88,6 +89,8 @@ export const PageShell = ({ title, tab_title, description, wide = false, account
       {account && <AuthButton/>}
     </NavbarGroup>
   </WrappingNavbar>
+  {/* also on the sign-in page: e.g. during a maintenance */}
+  <Announcements/>
   <Content $wide={wide}>
     {title && <h2 className={`${Classes.HEADING} qa-page-title`}>{title}</h2>}
     {description && <p className={`${Classes.TEXT_MUTED} qa-page-description`}>{description}</p>}

@@ -13,7 +13,7 @@ import { queryClient, persistOptions, onCacheRestored } from "./api/queryClient"
 import { siteConfigQuery, userQuery } from "./api/queries";
 import { installLoginHandler } from "./components/authentication/login";
 import { toaster } from "./toaster";
-import { ComparisonProvider, useSelected } from "./hooks";
+import { ComparisonProvider, useComparison, useSelected } from "./hooks";
 import { initSentry, initPostHog, initUsage, setUser } from "./analytics";
 import { PageViews } from "./usePageViews";
 import { Layout } from "./components/layout";
@@ -48,6 +48,8 @@ import { ManageMilestonesHost } from "./milestones/ManageMilestones"
 import { useImportLegacyMilestones } from "./milestones/hooks"
 import { ProjectAccessGate } from "./access/NoProjectAccess"
 import { ProjectNotFoundGate } from "./notFound/ProjectNotFoundGate"
+import { Announcements } from "./announcements/Announcements"
+import { commit_header_height } from "./components/layout"
 
 // In development, inspect queries and their cache: https://tanstack.com/query/latest/docs/framework/react/devtools
 const ReactQueryDevtools = import.meta.env.DEV
@@ -174,6 +176,15 @@ const RecordProjectView = () => {
   return null;
 }
 
+// Projects' pages start below their fixed bars, with a padding of their height: the banners go right below the bars,
+// and push the page down by their own height only
+const navbar_height = 50
+const ProjectAnnouncements = () => {
+  const { selected, selected_views, references } = useComparison()
+  const height = selected?.route?.is_commit ? commit_header_height({ selected_views: selected_views ?? [], references: references ?? [] }) : navbar_height
+  return <Announcements style={{ marginTop: height, marginBottom: -height, position: 'relative', zIndex: 1 }}/>
+}
+
 const ProjectApp = ({ pathname }) => {
   const matched = matchRoutes(routes, pathname);
   if (!matched) return null;
@@ -192,6 +203,7 @@ const ProjectApp = ({ pathname }) => {
         <AppNavbar/>
         {/* the content area: on its left the sidebar (collapsible), on its right room for a docked side panel (see App.css) */}
         <div className="qa-content-area" style={{paddingLeft: sider_width, minHeight: '100vh', display: 'flex', flexDirection: 'column'}}>
+          <ProjectAnnouncements/>
           {/* projects users can't see say whom to ask */}
           <ProjectAccessGate>
             <PageErrorBoundary fallback={projectPageFallback}>

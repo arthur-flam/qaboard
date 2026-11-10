@@ -27,6 +27,8 @@ HEARTBEAT_EVERY = 30  # seconds
 PURGE_EVERY = 3600
 USAGE_EVERY = 300
 USAGE_LOCK = 802_517  # pg_advisory_lock key: one worker at a time updates the storage usage
+TIPS_EVERY = 300
+TIPS_LOCK = 802_518  # one worker at a time sends the tips emails (backend/notifications/tips_emails.py)
 # The worker schedules a nightly rebuild of the storage usage, and runs one if there was none. QABOARD_STORAGE_USAGE_AUTO=0 to manage it yourself.
 USAGE_SCHEDULE = {"name": "Storage usage", "kind": "storage_usage", "cron": "17 3 * * *", "timezone": "UTC", "params": {}}
 # And a daily update of users' groups, from LDAP and single sign-on (jobs/groups.py). QABOARD_GROUPS_SYNC_AUTO=0 to manage it yourself.
@@ -50,6 +52,7 @@ class Worker:
     self.running = {}  # lane => job id
     self.purged_at = None
     self.usage_at = None
+    self.tips_at = None
     self.usage_since = utcnow() - datetime.timedelta(hours=1)
 
   @property
@@ -118,6 +121,25 @@ class Worker:
       finally:
         lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": USAGE_LOCK})
 
+  def send_tips(self):
+    """The tips emails that are due. One worker at a time."""
+    from ..notifications import tips_emails
+    now = utcnow()
+    if self.tips_at and (now - self.tips_at).total_seconds() < TIPS_EVERY:
+      return
+    self.tips_at = now
+    if not tips_emails.settings()['enabled']:
+      return
+    with engine.connect() as lock:
+      if not lock.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": TIPS_LOCK}).scalar():
+        return
+      try:
+        sent = tips_emails.send_due_tips(db_session)
+        if sent:
+          print(f"[worker {self.id}] tips emails: {sent}", flush=True)
+      finally:
+        lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": TIPS_LOCK})
+
   def housekeeping(self):
     queue.requeue_stale()
     queue.run_due_schedules()
@@ -132,6 +154,12 @@ class Worker:
         db_session.rollback()
         print(f"[worker {self.id}] WARNING: could not update the storage usage: {traceback.format_exc()}", flush=True)
         alerts.capture_exception(e)
+    try:
+      self.send_tips()
+    except Exception as e:
+      db_session.rollback()
+      print(f"[worker {self.id}] WARNING: could not send the tips emails: {traceback.format_exc()}", flush=True)
+      alerts.capture_exception(e)
 
   def run_next(self, lane: str) -> bool:
     """The next job of the lane, if there's one. Returns whether a job ran."""

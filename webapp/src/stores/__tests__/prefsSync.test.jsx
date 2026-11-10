@@ -21,6 +21,12 @@ describe('mergeOnLogin', () => {
     expect(apply).toEqual({});
   });
 
+  it("takes the account's choice about tips emails, never the browser's", () => {
+    expect(synced_keys).toContain('tips_emails');
+    expect(mergeOnLogin({ tips_emails: true }, { tips_emails: false }, { keys: synced_keys, defaults: { tips_emails: true } }).apply).toEqual({ tips_emails: false });
+    expect(mergeOnLogin({ tips_emails: false }, {}, { keys: synced_keys, defaults: { tips_emails: true } }).push).toEqual({});
+  });
+
   const keys = ['theme', 'commitListDensity', 'favorites', 'tuning'];
 
   it("applies the server's values", () => {

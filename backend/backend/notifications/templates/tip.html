@@ -1,0 +1,24 @@
+{#
+  The tips emails: a welcome, then one tip a week (backend/notifications/tips_emails.py, the tips in tips/*.md).
+  The house style: _layout.html and _ui.html, see backend/notifications/STYLE.md.
+  Preview: uv run backend/backend/notifications/preview.py
+#}
+{% extends "_layout.html" %}
+{% import "_ui.html" as ui %}
+{% block content %}
+{% call ui.row('28px 32px 12px 32px') %}
+      {{ ui.h1(title, '0 0 16px 0') }}
+      {{ body }}
+{% endcall %}
+{% if cta_url %}
+{% call ui.row('4px 32px 28px 32px') %}
+      {{ ui.button(cta_url, cta_label) }}
+{% endcall %}
+{% else %}
+{% call ui.row('0 32px 12px 32px') %}&nbsp;{% endcall %}
+{% endif %}
+{% endblock %}
+
+{% block footer %}
+{{ ui.footer(reason, ([('Stop these tips', unsubscribe_url)] if unsubscribe_url else []) + [('Email preferences', preferences_url), ('QA-Board is open source', github_url)]) }}
+{% endblock %}

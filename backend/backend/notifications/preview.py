@@ -1,12 +1,13 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["jinja2"]
+# dependencies = ["jinja2", "markdown-it-py", "pyyaml", "markupsafe"]
 # ///
 """
-Renders example "batch ended" emails, to check how they look after changing templates/batch_ended.html:
-  uv run backend/backend/notifications/preview.py [output directory]
-Open the .html files in a browser. To check Outlook, send one to yourself: --send you@example.com (uses QABOARD_SMTP_*).
+Renders QA-Board's emails, to check how they look after changing the templates (templates/) or the tips (tips/*.md):
+example "batch ended" emails, and every tip.
+  uv run backend/backend/notifications/preview.py [output directory] [--tips-folder /etc/qaboard/tips]
+Open the .html files in a browser. To check Outlook, send them to yourself: --send you@example.com (uses QABOARD_SMTP_*).
 """
 import sys
 import random
@@ -15,6 +16,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from batch_email import render_batch_email, summarize  # noqa: E402
+# the tips module is part of the backend package: import it as such, without the backend's own __init__
+import importlib.util  # noqa: E402
+import types  # noqa: E402
+package = types.ModuleType('notifications')
+package.__path__ = [str(Path(__file__).parent)]
+sys.modules['notifications'] = package
+def load(name):
+  spec = importlib.util.spec_from_file_location(f'notifications.{name}', Path(__file__).parent / f'{name}.py')
+  module = importlib.util.module_from_spec(spec)
+  sys.modules[spec.name] = module
+  spec.loader.exec_module(module)
+  return module
+load('markdown_email')
+tips_emails = load('tips_emails')
 
 
 metrics_config = {
@@ -80,11 +95,32 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument('output_dir', nargs='?', default='email-previews')
   parser.add_argument('--send', metavar='EMAIL', help="also email them, with the QABOARD_SMTP_* settings")
+  parser.add_argument('--tips-folder', help="your tips, like the tips.folder setting")
   args = parser.parse_args()
   output_dir = Path(args.output_dir)
   output_dir.mkdir(parents=True, exist_ok=True)
   for name, (example_runs, example_info) in examples.items():
     subject, html, text = render_batch_email(summarize(example_runs, metrics_config), {**info, **example_info})
+    (output_dir / f"{name}.html").write_text(html)
+    (output_dir / f"{name}.txt").write_text(f"Subject: {subject}\n\n{text}")
+    print(f"{output_dir / name}.html  {subject}")
+    if args.send:
+      from mail import send_email
+      send_email(args.send, subject, html, text)
+
+  tips, errors = tips_emails.load_tips(args.tips_folder)
+  for error in errors:
+    print(f"ERROR: {error}")
+  numbered = [t for t in tips if not t.new_users_only]
+  for tip in tips:
+    subject, html, text = tips_emails.render_tip(tip, {
+      'qaboard_url': info['qaboard_url'],
+      'unsubscribe_url': f"{info['qaboard_url']}/api/v1/tips/unsubscribe?key=example",
+      'position': numbered.index(tip) + 1 if tip in numbered else None,
+      'total': len(numbered),
+      'started_at': '9 November 2026',
+    })
+    name = f"tip-{int(tip.order):02d}-{tip.key}"
     (output_dir / f"{name}.html").write_text(html)
     (output_dir / f"{name}.txt").write_text(f"Subject: {subject}\n\n{text}")
     print(f"{output_dir / name}.html  {subject}")

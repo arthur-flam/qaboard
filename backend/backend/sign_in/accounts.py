@@ -18,7 +18,15 @@ def finish(user, provider_id: str, subject: Optional[str] = None, email: Optiona
   identities.record(user, provider_id, subject or user.user_name, email=email or user.email, claims=claims, refresh_token=refresh_token)
   if user.status == 'pending':
     request_access(user)
+  first_sign_in = user.last_login_at is None
   user.last_login_at = utcnow()
+  if first_sign_in:
+    # the welcome email, then a tip a week (backend/notifications/tips_emails.py)
+    try:
+      from ..notifications.tips_emails import enroll_new_user
+      enroll_new_user(user)
+    except Exception as e:
+      print(f"[sign-in] WARNING: could not enroll {user.user_name} in the tips emails: {type(e).__name__}: {e}")
   # groups whose rules match this sign-in's claims (backend/access/groups.py)
   from ..access.groups import sync as sync_groups
   try:

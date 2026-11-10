@@ -466,6 +466,8 @@ UNAUTHENTICATED_ENDPOINTS = {
   ("tuning.py", "groups"),
   # page views: a no-op for signed-out visitors (the web app sends them anyway), checks the login itself
   ("api.py", "post_project_view"),
+  # the link to stop the tips emails: its signed key is the credential (notifications/tips_emails.py), it only turns them off
+  ("messages.py", "tips_unsubscribe"),
   # authenticated with the git host's webhook secret (QABOARD_WEBHOOK_SECRET by default)
   ("webhooks.py", "gitlab_webhook"), ("webhooks.py", "github_webhook"), ("webhooks.py", "gitea_webhook"), ("webhooks.py", "bitbucket_webhook"),
   # a new server's first admin: only while it has no accounts, with the setup token from the server's logs (backend/first_admin.py)
@@ -1443,7 +1445,7 @@ UNCHECKED_PROJECT_ROUTES = {
   # admins: admin_required
   ("admin.py", "admin_audit"), ("admin_access.py", "admin_grants"), ("admin_access.py", "admin_delete_grant"),
   ("admin_jobs.py", "admin_estimate_job"), ("admin_jobs.py", "admin_jobs_projects"), ("admin_jobs.py", "admin_job_errors"),
-  ("admin_jobs.py", "admin_job_errors_csv"), ("usage.py", "admin_usage_projects"),
+  ("admin_jobs.py", "admin_job_errors_csv"), ("usage.py", "admin_usage_projects"), ("messages.py", "admin_recipients"),
   # storage usage: filters_from limits them to the projects users can read (allowed_projects), and users only
   # delete their own runs. Their deletions' errors are about their own runs.
   ("storage.py", "storage_overview"), ("storage.py", "storage_delete"), ("storage.py", "storage_job_errors"),

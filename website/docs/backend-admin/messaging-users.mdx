@@ -1,0 +1,112 @@
+---
+id: messaging-users
+sidebar_label: Messaging users
+title: Messaging users
+description: "Tell users about a maintenance with a banner and a calendar invite, copy the emails of the people who use QA-Board into Outlook, and send new users a welcome and a weekly tip."
+---
+Three ways to reach the people who use your QA-Board, all in **Admin → Messages**:
+
+- **Announcements**: a banner at the top of every page, e.g. for a scheduled maintenance, with a calendar file people
+  add in one click.
+- **Recipients**: the emails of the people who use QA-Board, or one project, ready to paste in Outlook.
+- **Tips emails**: a welcome at people's first sign-in, then one tip a week, then they stop.
+
+QA-Board doesn't send your announcements by email: your email client already does that well, with your signature, Cc
+and replies. QA-Board gives you the banner, the calendar file and the list of people.
+
+## Announce a scheduled maintenance {#announce-a-maintenance}
+1. In **Admin → Messages**, click **Scheduled maintenance**. It fills in a warning banner, shown from now until the end
+   of the maintenance window. Set the window, and a link to the details if you have one.
+2. Save. Every page of the web app, and the sign-in page, shows the banner. People can hide it, unless you uncheck
+   **Dismissible**: do that for an outage that's on now. When you edit an announcement, it shows again to those who hid it.
+3. Download its **Calendar file** (`.ics`) and open it in Outlook: it opens as an appointment. Click
+   **Invite Attendees**, paste the [recipients](#copy-the-recipients), and send. People get a regular meeting invite.
+   It shows as *free* in their calendars: it doesn't block their time.
+
+Users can also click **Add to calendar** in the banner. The calendar file keeps the same event when you change the
+announcement, so calendars that import it again update it instead of adding a second one.
+
+Banners show from their **Show from** date until their **Until** date, without one until you delete them. Keep them
+short: a title, a sentence or two, and a link to the details.
+
+<details>
+<summary>Which banner for what</summary>
+
+| Kind | For | Dismissible |
+|---|---|---|
+| **Information** | news, a new feature worth trying | yes |
+| **Warning** | a coming maintenance, a change people must act on | yes, until it starts |
+| **Outage** | something broken now: say what and until when | no |
+| **Success** | it's over, things work again | yes |
+
+The most severe banners show first.
+
+</details>
+
+## Copy the recipients {#copy-the-recipients}
+**Admin → Messages → Recipients** lists the people (not service accounts) with an active account who used QA-Board
+in the last 30 days: they signed in, opened the web app, or ran `qa`. Choose another period, or **Everyone**. With a
+**project**, it lists who used that project or its subprojects in the period, e.g. to tell a team about a change to its
+CI.
+
+**Copy for Outlook** copies them as `Full Name <email>; ...`: paste them in the **To** field, or in **Bcc** for a large
+list. **Admin → Users** has the same **Copy emails** button. People without a known email address are listed apart: set
+`email.domain` (Admin → Settings → Email) if your user names are the first part of your emails.
+
+## Tips emails {#tips-emails}
+New users get a welcome right after their first sign-in: what QA-Board is, and where to start in the docs. Then one
+tip a week, each on one thing to try in the web app (comparing with a release, finding where images differ, sharing
+links, finding regressions...), and the last one says where to follow what's new. Then they stop.
+
+Turn them on in **Admin → Settings → Tips emails**. They need an [SMTP server](/docs/deploy#emails).
+
+- **Only new users** get them. To send the tips (not the welcome) to the people who already use QA-Board, click
+  **Enroll people already using QA-Board** in Admin → Messages: it enrolls those active in the period you choose.
+- **Never twice, never spammy.** At most one tip a week, at about the time of the week people first signed in. People
+  who didn't use QA-Board for a month are paused, and resume when they're back. Every email has a link to stop them,
+  and people turn them off in **Settings → Preferences**. Email clients show an **Unsubscribe** button too.
+- **Preview them** in Admin → Messages, and **Send me a test** to check how your email client shows them.
+
+Admin → Messages shows how many people got each tip, and how many wait for their next one, are paused, are done or
+turned them off.
+
+<details>
+<summary>Add your own tips, change or remove ours</summary>
+
+The tips are Markdown files in the QA-Board repository, `backend/backend/notifications/tips/`: its `README.md`
+describes their format. To add tips about your own support channels or your teams' projects, put files like them in a
+folder the server can read, and set **Your tips** (`tips.folder`) to that folder:
+
+```markdown
+---
+key: where-to-get-help
+subject: "Where to get help with QA-Board"
+preheader: "Our support channel, office hours, and the people who run QA-Board here."
+cta:
+  label: "Join the channel"
+  url: "https://chat.example.com/qaboard"
+---
+Ask in our channel...
+```
+
+- The file name's number sets the order: `02.5-where-to-get-help.md` comes after the second tip.
+- A file with the `key` of one of our tips replaces it; `disabled: true` removes it.
+- Each `key` is sent once per person, whatever you change: rewording or reordering tips never sends them twice, and a new
+  tip reaches the people who are still in the sequence. Never reuse a key for a different tip.
+- Check how they render: `uv run backend/backend/notifications/preview.py previews --tips-folder /your/folder`.
+
+</details>
+
+<details>
+<summary>Every setting</summary>
+
+| Setting | Default | What it does |
+|---|---|---|
+| `tips.enabled` (`QABOARD_TIPS_EMAILS`) | off | Send the tips emails |
+| `tips.every_days` (`QABOARD_TIPS_EVERY_DAYS`) | 7 | Days between two tips |
+| `tips.inactive_days` (`QABOARD_TIPS_INACTIVE_DAYS`) | 30 | Pause the tips of people who didn't use QA-Board for this long |
+| `tips.folder` (`QABOARD_TIPS_FOLDER`) | none | A folder with your own tips |
+
+The jobs worker sends them, every five minutes, at most 50 at a time.
+
+</details>

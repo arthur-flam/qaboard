@@ -16,6 +16,7 @@ import { Audit } from "./Audit";
 import { Settings } from "./Settings";
 import { SignIn } from "./SignIn";
 import { AccessRequests } from "./AccessRequests";
+import { Messages } from "./Messages";
 import { Storage } from "./Storage";
 import { JobDetail } from "./JobDetail";
 import { ScanExplorer } from "./ScanExplorer";
@@ -31,6 +32,7 @@ export const sections = [
   { id: 'users', title: 'Users', icon: 'people', Panel: Users },
   { id: 'groups', title: 'Groups', icon: 'inherited-group', Panel: Groups },
   { id: 'requests', title: 'Access requests', icon: 'endorsed', Panel: AccessRequests },
+  { id: 'messages', title: 'Messages', icon: 'envelope', Panel: Messages },
   { id: 'sign-in', title: 'Sign-in', icon: 'log-in', Panel: SignIn },
   { id: 'tokens', title: 'Tokens', icon: 'key', Panel: AdminTokens },
   { id: 'service-accounts', title: 'Service accounts', icon: 'build', Panel: InstanceServiceAccounts },

@@ -1,7 +1,7 @@
 // Admin → Users: search, filters and pages. Filters are in the URL (?search=&status=&admin=true&offset=)
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Classes, HTMLSelect, HTMLTable, InputGroup, Intent, NonIdealState, Switch, Tag, Tooltip } from "@blueprintjs/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Classes, HTMLSelect, HTMLTable, InputGroup, Intent, Menu, MenuDivider, MenuItem, NonIdealState, PopoverNext, Switch, Tag, Tooltip } from "@blueprintjs/core";
 import { useLocation } from "react-router";
 
 import { history, Link } from "../router";
@@ -11,6 +11,7 @@ import { Loading } from "../settings/states";
 import { AdminError } from "./states";
 import { usersQuery, users_page_size } from "./api";
 import { CreateUserDialog } from "./CreateUserDialog";
+import { copyRecipients } from "./messages/Recipients";
 
 
 export const UserTags = ({ user }) => <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4 }}>
@@ -50,6 +51,20 @@ const writeFilters = ({ search, status, admin, offset }) => {
 };
 
 
+// People's addresses, to paste in Outlook. More choices in Admin → Messages → Recipients.
+const CopyEmails = () => {
+  const queryClient = useQueryClient();
+  return <PopoverNext placement="bottom-end" content={<Menu aria-label="Copy emails">
+    <MenuItem icon="time" text="Active in the last 30 days" onClick={() => copyRecipients(queryClient, { active_days: 30 })}/>
+    <MenuItem icon="people" text="Everyone" onClick={() => copyRecipients(queryClient, { active_days: 0 })}/>
+    <MenuDivider/>
+    <MenuItem icon="envelope" text="More choices in Messages…" onClick={() => history.push('/admin/messages')}/>
+  </Menu>}>
+    <Button icon="duplicate" endIcon="caret-down" text="Copy emails" title="Copy people's email addresses, to paste in Outlook"/>
+  </PopoverNext>;
+};
+
+
 export const Users = () => {
   const location = useLocation();
   const filters = readFilters(location.search);
@@ -86,6 +101,7 @@ export const Users = () => {
       <span style={{ marginLeft: 'auto' }} className={Classes.TEXT_MUTED}>
         {!isPending && !error && `${total} user${total === 1 ? '' : 's'}`}
       </span>
+      <CopyEmails/>
       <Button icon="new-person" intent={Intent.PRIMARY} text="New user" onClick={() => setCreating(true)}/>
     </div>
     <CreateUserDialog isOpen={creating} onClose={() => setCreating(false)}/>

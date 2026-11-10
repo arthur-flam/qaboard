@@ -58,6 +58,8 @@ export const usePrefsStore = create()(persist(
     exportLast: {},
     // export settings users saved: [{id, name, project (null: all projects), settings}]
     exportPresets: [],
+    // the weekly tips emails after signing up: the server doesn't send them when it's false (backend/notifications/tips_emails.py)
+    tips_emails: true,
 
     toggleFavorite: project => set(state => ({
       favorites: { ...state.favorites, [project]: !state.favorites[project] },
@@ -104,6 +106,7 @@ export const usePrefsStore = create()(persist(
       return { exportPresets: [...others, { id, name, project, settings }] };
     }),
     deleteExportPreset: id => set(state => ({ exportPresets: (state.exportPresets ?? []).filter(p => p.id !== id) })),
+    setTipsEmails: on => set({ tips_emails: !!on }),
     toggleHideSharedSettings: () => set(state => ({ hide_shared_settings: !state.hide_shared_settings })),
     toggleShortenLongSettings: () => set(state => ({ shorten_long_settings: !state.shorten_long_settings })),
     updateTuning: (project, form) => set(state => ({

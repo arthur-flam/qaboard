@@ -517,6 +517,7 @@ def test_settings_list(admin):
     'email.from', 'email.reply_to', 'email.domain', 'email.timezone', 'web.support_url', 'web.docs_root', 'web.avatar_url',
     'web.cli_requirements', 'web.webcde_installer', 'web.proxy_hosts', 'analytics.posthog_api_key', 'analytics.posthog_host',
     'storage.image_cache_gb', 'metrics.skip_aggregation',
+    'tips.enabled', 'tips.every_days', 'tips.inactive_days', 'tips.folder',
   }
   groups = {g["id"] for g in admin.get('/api/v1/admin/settings').get_json()["groups"]}
   assert {s["group"] for s in settings.values()} <= groups

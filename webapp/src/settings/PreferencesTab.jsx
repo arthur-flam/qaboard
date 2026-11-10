@@ -35,6 +35,8 @@ export const PreferencesTab = ({ user }) => {
   const toggleHideShared = usePrefsStore(state => state.toggleHideSharedSettings);
   const shorten_long = usePrefsStore(state => state.shorten_long_settings !== false);
   const toggleShortenLong = usePrefsStore(state => state.toggleShortenLongSettings);
+  const tips_emails = usePrefsStore(state => state.tips_emails !== false);
+  const setTipsEmails = usePrefsStore(state => state.setTipsEmails);
   const nb_favorites = usePrefsStore(state => Object.values(state.favorites).filter(Boolean).length);
 
   return <section aria-label="Preferences">
@@ -75,6 +77,9 @@ export const PreferencesTab = ({ user }) => {
         <Switch checked={!!hide_shared} onChange={toggleHideShared} label="Hide the settings all runs share, show them once above the runs"/>
         <Switch checked={shorten_long} onChange={toggleShortenLong} label="Shorten long settings with …, e.g. paths, commands and lists. Hover them to see them in full"/>
       </FormGroup>
+      {user?.is_logged && <FormGroup label="Emails" helperText="Emails about your batches and your projects don't change.">
+        <Switch checked={tips_emails} onChange={() => setTipsEmails(!tips_emails)} label="Tips about QA-Board, one a week for a few weeks after you sign up"/>
+      </FormGroup>}
       <FormGroup label="Pinned projects">
         <span className={Classes.TEXT_MUTED}>
           {nb_favorites ? `You pinned ${nb_favorites} project${nb_favorites === 1 ? '' : 's'} on top of the projects list.` : "Pin projects on top of the projects list with their star."}

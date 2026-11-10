@@ -40,6 +40,7 @@ import { project_web_url } from "../utils"
 import { build_tree, filter_projects, count_projects, is_listed, quiet_tooltip } from "./tree"
 import { Sparkline } from "./Sparkline"
 import { usePageTitle, app_title } from "../pageTitle";
+import { Announcements } from "../announcements/Announcements";
 
 
 const activity_words = { human: 'last used', run: 'last run', commit: 'last commit' };
@@ -308,6 +309,7 @@ const ExplorePage = () => {
   return (
     <div style={{minHeight: '100vh', display: 'flex', flexDirection: 'column'}}>
       <SiteNavbar/>
+      <Announcements/>
       <Container>
         <PrivateContent>
           <ExploreList/>

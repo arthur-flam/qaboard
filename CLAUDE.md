@@ -129,6 +129,12 @@ website shows them at `/release-notes` (with RSS/Atom feeds).
 - Code: `webapp/src/releaseNotes/` (popup, panel, links), `website/src/components/ReleaseNoteHighlights.js`
   and `website/src/theme/BlogPostItem/Content/` (highlight cards on the website).
 
+**Emails** follow a house style that works in Outlook 2016/2019 (tables, inline styles, VML buttons):
+`backend/backend/notifications/STYLE.md`. New emails extend `templates/_layout.html` and use the components of
+`templates/_ui.html`. The weekly tips new users get are Markdown files in `backend/backend/notifications/tips/` (keys
+are never reused: they record who got what). Preview them all with `uv run backend/backend/notifications/preview.py`.
+Banners and the emails of the people to message are in Admin → Messages (`website/docs/backend-admin/messaging-users.mdx`).
+
 **Docs** (`website/docs/`) have one sidebar per audience (`website/sidebars.ts`): the **User guide**
 (`user-guide/`, for people looking at results in the web app), **Project integration** (wrapping code with `qa`,
 qaboard.yaml, runners, integrations), and **Admin** (`backend-admin/`, running the server). When a change
