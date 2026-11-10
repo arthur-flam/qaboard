@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.0469eb56.css">
-<script src="/qaboard/assets/js/runtime~main.936e07cd.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.8dcbefa8.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.8794d103.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.a973cd1e.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -99,8 +99,9 @@ other.</p></div></div>
 where <code>qa</code> only warns. See <a class="" href="/qaboard/docs/backend-admin/user-management#results-sent-by-qa">Results sent by qa</a>.</p></div></div>
 <div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u exploring_GXdl" title="We want it and are working out how. Tell us if you need it.">Exploring</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="object-storage-for-results">Object storage for results<a href="#object-storage-for-results" class="hash-link" aria-label="Direct link to Object storage for results" title="Direct link to Object storage for results" translate="no">​</a></h3><p>Keep results in S3, R2, GCS or MinIO instead of a file share. The upload protocol is designed for it, and Cantaloupe,
 the image server, can read from S3.</p></div></div>
-<div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u exploring_GXdl" title="We want it and are working out how. Tell us if you need it.">Exploring</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="a-kubernetes-job-runner">A Kubernetes Job runner<a href="#a-kubernetes-job-runner" class="hash-link" aria-label="Direct link to A Kubernetes Job runner" title="Direct link to A Kubernetes Job runner" translate="no">​</a></h3><p>Run each run of a <code>qa batch</code> as a Kubernetes Job, next to the existing runners: local, LSF, Celery, Dask and
-Jenkins.</p></div></div>
+<div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u shipped_J_ht" title="Released and documented: use it today.">Shipped</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="a-kubernetes-job-runner">A Kubernetes Job runner<a href="#a-kubernetes-job-runner" class="hash-link" aria-label="Direct link to A Kubernetes Job runner" title="Direct link to A Kubernetes Job runner" translate="no">​</a></h3><p>Run each run of a <code>qa batch</code> in a pod of a Kubernetes Job, or several short runs per pod, as your own user, within
+your cluster&#x27;s queues and quotas. Start batches on the cluster from the web app. See
+<a class="" href="/qaboard/docs/kubernetes-runner">Run batches on Kubernetes</a>.</p></div></div>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="enterprise">Enterprise<a href="#enterprise" class="hash-link" aria-label="Direct link to Enterprise" title="Direct link to Enterprise" translate="no">​</a></h2>
 <p>QA-Board already serves many teams in one company. These items are about doing that with less admin work.</p>
 <div class="item_wEMw"><div class="status_wPfY"><span class="badge_iR2u shipped_J_ht" title="Released and documented: use it today.">Shipped</span></div><div class="body_nqgO"><h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI title_nL88" id="ldap-and-saml-sign-in">LDAP and SAML sign-in<a href="#ldap-and-saml-sign-in" class="hash-link" aria-label="Direct link to LDAP and SAML sign-in" title="Direct link to LDAP and SAML sign-in" translate="no">​</a></h3><p>Sign in with your directory or your SSO, block anonymous users, and restrict projects or folders by user name, email
