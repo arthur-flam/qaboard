@@ -90,8 +90,9 @@ The web app's **Output Files** and the [quality gate](/docs/quality-gate)'s `req
 files.
 
 :::note
-If you work with text files on both Linux and Windows, line endings can make identical files differ. Say which files
-are text with `bit_accuracy.plaintext`, *or* which are binary with `bit_accuracy.binary`, like the camera ISP's
+Text files are hashed with LF line endings on every platform, so the same file has the same hash on Linux and
+Windows. By default, `.txt`, `.cde`, `.hex`, `.iir` and `.dvs` files are text. Say which files are text with
+`bit_accuracy.plaintext`, *or* which are binary with `bit_accuracy.binary`, like the camera ISP's
 `plaintext: ['*.txt']`.
 :::
 
