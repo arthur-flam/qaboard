@@ -1,4 +1,4 @@
-import { matching_output } from '../utils';
+import { matching_output, reference_candidates } from '../utils';
 
 // like normalize_output's
 const run = (id, { configurations = ['base'], extra_parameters = {}, ...extra } = {}) => ({
@@ -67,5 +67,53 @@ describe('matching_output', () => {
     expect(output_ref.id).toBe(3);
     // run 4 has the same configuration as run 3
     expect(mismatch.alternatives).toBe(1);
+  });
+
+  it('counts reference runs on other inputs that are as close: two shots with the same metadata.id', () => {
+    const output = run(1, { input_path: 'sensor-a/scene.png', test_input_path: 'sensor-a/scene.png', test_input_metadata: { id: 'scene' } });
+    const shot = (id, path) => run(id, { input_path: path, test_input_path: path, test_input_metadata: { id: 'scene' } });
+    const { output_ref, mismatch, match } = matching_output({ output, batch: batch([shot(2, 'sensor-b/scene-1.png'), shot(3, 'sensor-b/scene-2.png')]) });
+    expect(output_ref.id).toBe(2);
+    expect(mismatch.alternatives).toBe(1);
+    expect(match).toEqual({ by: 'id', others: 1, tied: 1, preferred: false });
+  });
+
+  it('says how it matched', () => {
+    expect(matching_output({ output: run(1), batch: batch([run(2)]) }).match).toMatchObject({ by: 'input', exact: true });
+    expect(matching_output({ output: run(1), batch: batch([]) }).match).toBeNull();
+  });
+
+  const named = (id, path, extra) => run(id, { input_path: `/db/${path}`, test_input_path: path, ...extra });
+
+  it('pairs runs by name, before the same input', () => {
+    const output = named(1, 'street_reg05.png');
+    const outputs = [named(2, 'street_reg05.png'), named(3, 'street_reg03.png')];
+    expect(matching_output({ output, batch: batch(outputs) }).output_ref.id).toBe(2);
+    const rules = { pairs: [{ from: 'reg05', to: 'reg03' }], prefer: [], pins: {} };
+    const { output_ref, match } = matching_output({ output, batch: batch(outputs), rules });
+    expect(output_ref.id).toBe(3);
+    expect(match.by).toBe('pair');
+  });
+
+  it('prefers reference runs with the facts users picked', () => {
+    const outputs = [run(2), run(3, { platform: 'arm' })];
+    expect(matching_output({ output: run(1), batch: batch(outputs) }).output_ref.id).toBe(2);
+    const rules = { pairs: [], prefer: [{ key: 'platform', value: 'arm' }], pins: {} };
+    const { output_ref, match } = matching_output({ output: run(1), batch: batch(outputs), rules });
+    expect(output_ref.id).toBe(3);
+    expect(match.preferred).toBe(true);
+  });
+
+  it('compares with the reference run users picked, if it is still there', () => {
+    const outputs = [run(2), run(3, { configurations: ['other'] })];
+    expect(matching_output({ output: run(1), batch: batch(outputs), rules: { pairs: [], prefer: [], pins: { 1: '3' } } }))
+      .toMatchObject({ output_ref: { id: 3 }, match: { by: 'pin' } });
+    expect(matching_output({ output: run(1), batch: batch(outputs), rules: { pairs: [], prefer: [], pins: { 1: '99' } } }).output_ref.id).toBe(2);
+  });
+
+  it('lists the reference runs users can pick, similar names last', () => {
+    const output = named(1, 'street_reg05.png');
+    const outputs = [named(2, 'street_reg03.png'), named(3, 'street_reg05.png', { configurations: ['other'] }), named(4, 'office_reg09.png')];
+    expect(reference_candidates({ output, batch: batch(outputs) }).map(c => [c.o.id, c.kind])).toEqual([[3, 'input'], [2, 'similar']]);
   });
 });

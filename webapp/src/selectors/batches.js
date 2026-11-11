@@ -38,12 +38,13 @@ export const compute_config = ({ new_batch, new_commit, project_data, selected }
 // Outputs with their matching reference output. We reuse the objects when nothing changed,
 // so that output cards don't re-render when e.g. the filter changes.
 const with_reference_cache = new WeakMap();
-const with_reference = (output, reference_id, reference_mismatch) => {
+// `reference_match`: how we found the reference run, see matching_output
+const same_fields = (a, b) => a === b || (!!a && !!b && Object.keys(a).every(k => a[k] === b[k]) && Object.keys(b).every(k => a[k] === b[k]));
+const with_reference = (output, reference_id, reference_mismatch, reference_match) => {
   const cached = with_reference_cache.get(output);
-  const same_mismatch = (a, b) => a === b || (!!a && !!b && Object.keys(a).every(k => a[k] === b[k]));
-  if (cached && cached.reference_id === reference_id && same_mismatch(cached.reference_mismatch, reference_mismatch))
+  if (cached && cached.reference_id === reference_id && same_fields(cached.reference_mismatch, reference_mismatch) && same_fields(cached.reference_match, reference_match))
     return cached;
-  const value = { ...output, reference_id, reference_mismatch };
+  const value = { ...output, reference_id, reference_mismatch, reference_match };
   with_reference_cache.set(output, value);
   return value;
 };
@@ -79,7 +80,8 @@ const with_filter = (batch, filter) => {
 };
 
 
-// What the commit page compares: the selected batches of the new and reference commits, filtered
+// What the commit page compares: the selected batches of the new and reference commits, filtered.
+// `selected.rules`: how runs find their reference run, beyond the default (src/matching/rules.js)
 export const compute_batches = ({ new_commit, ref_commit, selected, metrics }) => {
   const selected_batch_new = available_batch(new_commit, selected.selected_batch_new);
   const selected_batch_ref = available_batch(ref_commit, selected.selected_batch_ref);
@@ -100,8 +102,8 @@ export const compute_batches = ({ new_commit, ref_commit, selected, metrics }) =
   const outputs = { ...new_filtered.outputs };
   for (const id of filtered_ids) {
     const output = new_filtered.outputs[id];
-    const { output_ref, mismatch } = matching_output({ output, batch: ref_batch, index });
-    outputs[id] = with_reference(output, output_ref.id, mismatch);
+    const { output_ref, mismatch, match } = matching_output({ output, batch: ref_batch, index, rules: selected.rules });
+    outputs[id] = with_reference(output, output_ref.id, mismatch, match);
   }
 
   const all_outputs = Object.values(outputs);
@@ -124,5 +126,6 @@ export const compute_batches = ({ new_commit, ref_commit, selected, metrics }) =
   };
   // how the runs are sorted: { by, order, default_by }
   const sorting = { by: sort_by, order: sort_order, default_by };
-  return { selected_batch_new, selected_batch_ref, new_batch, ref_batch, sorting };
+  // ref_lookup: the reference runs by input, for the reference picker (index_outputs)
+  return { selected_batch_new, selected_batch_ref, new_batch, ref_batch, ref_lookup: index, sorting };
 };

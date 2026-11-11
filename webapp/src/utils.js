@@ -2,6 +2,8 @@ import { interpolateRainbow } from "d3-scale-chromatic";
 import md5 from "js-md5";
 
 import { config_distance } from "./configurations/tokens";
+import { rename, similar_positions } from "./matching/names";
+import { preferred_score } from "./matching/rules";
 import { setPathMappings, linux_to_windows } from "./utils/paths";
 import { repo_url } from "./git";
 import { toaster } from "./toaster";
@@ -92,75 +94,129 @@ const pretty_label = batch => {
 
 const empty_output = { metrics: undefined, extra_parameters: {} };
 
+// How different a reference run is, high => more different
+const match_score = (output, o) =>
+  8 * ((o.input_path !== output.input_path) | 0) +
+  4 * ((o.configurations_str !== output.configurations_str) | 0) +
+  2 * ((o.platform !== output.platform) | 0) +
+  1 * ((o.extra_parameters_str !== output.extra_parameters_str) | 0);
+const mismatch_of = (o, score) => ({
+  test_input_path: score & 8 ? o.test_input_path : null,
+  configurations: score & 4 ? o.configurations : null,
+  platform: score & 2 ? o.platform : null,
+  extra_parameters: score & 1 ? o.extra_parameters : null,
+});
 
-// Finds the reference output that best matches an output.
-// Pass an index made with index_outputs(batch) when matching many outputs against the same batch.
-const matching_output = ({ output, batch, index }) => {
-  index = index ?? index_outputs(batch);
-  // high => more different
-  const match_score = o =>
-    8 * ((o.input_path !== output.input_path) | 0) +
-    4 * ((o.configurations_str !== output.configurations_str) | 0) +
-    2 * ((o.platform !== output.platform) | 0) +
-    1 * ((o.extra_parameters_str !== output.extra_parameters_str) | 0);
+// The reference runs that could do, the likeliest first: those users paired by name (src/matching/rules.js), on the
+// same input, with the same metadata.id. Then those with the preferences users gave, then the closest settings.
+const RANK = { pair: 0, input: 1, id: 2, similar: 3 };
+const EXACT = Object.freeze({ by: 'input', exact: true, others: 0, tied: 0, preferred: false });
 
-  // Most of the time there's an identical run: no need to measure how different the others are
-  const exact = index.exact.get(run_key(output));
-  if (exact !== undefined)
-    return { output_ref: index.outputs[exact], mismatch: null };
-
-  // Candidates run on the same input, in the batch's order
+const candidates_of = (output, index, renamed_positions, prefer) => {
+  const renamed = new Set(renamed_positions);
   const positions = new Set([
+    ...renamed_positions,
     ...(index.by_input_path.get(output.input_path) ?? []),
     ...(index.by_test_input_path.get(output.test_input_path) ?? []),
     ...((output.test_input_metadata?.id && index.by_metadata_id.get(output.test_input_metadata.id)) || []),
   ]);
   const candidates = [...positions].sort((a, b) => a - b).map(i => {
     const o = index.outputs[i];
+    const same_input = o.input_path === output.input_path || o.test_input_path === output.test_input_path;
+    const kind = renamed.has(i) ? 'pair' : same_input ? 'input' : 'id';
     return {
       o,
-      dist_input_path: 1 - Number(o.input_path === output.input_path || o.test_input_path === output.test_input_path),
+      kind,
+      rank: RANK[kind],
+      preferred: preferred_score(o, prefer),
+      dist_input_path: 1 - Number(same_input),
       dist_configurations: config_distance(o.configurations, output.configurations),
       dist_extra_parameters: config_distance(o.extra_parameters, output.extra_parameters),
     };
   });
   // We prefer to compare an ouput versus a similar one
   candidates.sort((a, b) =>
+    (a.rank - b.rank) ||
+    (b.preferred - a.preferred) ||
     (a.dist_input_path - b.dist_input_path) ||
     (a.dist_configurations - b.dist_configurations) ||
     (a.dist_extra_parameters - b.dist_extra_parameters) ||
     // same platform first (it used to sort them last)
     ((b.o.platform === output.platform) - (a.o.platform === output.platform))
   );
-
-  let output_ref = candidates[0]?.o ?? empty_output;
-  let ref_match_score = match_score(output_ref);
-  let imperfect_match = candidates.length > 0 && ref_match_score > 0;
-  let mismatch = imperfect_match ? {
-    test_input_path: ref_match_score & 8 ? output_ref.test_input_path : null,
-    configurations: ref_match_score & 4 ? output_ref.configurations : null,
-    platform: ref_match_score & 2 ? output_ref.platform : null,
-    extra_parameters: ref_match_score & 1 ? output_ref.extra_parameters : null,
-  } : null;
-  // only when there are some: the mismatch is compared with the backend's in tests/fixtures/metrics-compare.json
-  const alternatives = imperfect_match ? count_alternatives(candidates) : 0;
-  if (alternatives > 0) mismatch.alternatives = alternatives;
-  return { output_ref, mismatch };
+  return candidates;
 };
 
-// How many reference runs, with other settings, have as many different settings as the one we picked:
-// only how similar their values are (the distances' fractional part) made us choose.
+// Finds the reference output that best matches an output: { output_ref, mismatch, match }.
+// Pass an index made with index_outputs(batch) when matching many outputs against the same batch.
+// `rules`: what users changed, { pairs, prefer, pins } (src/matching/rules.js). Without, it's what the backend does
+// (backend/backend/compare.py): `mismatch` is compared with its own in tests/fixtures/metrics-compare.json.
+// `match`: how we found it, for the run cards: { by: 'pin' | 'pair' | 'input' | 'id', others, tied, preferred }, null without
+const matching_output = ({ output, batch, index, rules }) => {
+  index = index ?? index_outputs(batch);
+  const pairs = rules?.pairs ?? [], prefer = rules?.prefer ?? [];
+
+  const pinned = rules?.pins?.[output.id];
+  const pinned_position = pinned !== undefined ? index.by_id.get(String(pinned)) : undefined;
+  if (pinned_position !== undefined) {
+    const o = index.outputs[pinned_position];
+    const score = match_score(output, o);
+    return { output_ref: o, mismatch: score > 0 ? mismatch_of(o, score) : null, match: { by: 'pin', others: 0, tied: 0, preferred: false } };
+  }
+
+  const renamed = pairs.length ? rename(output.test_input_path, pairs) : null;
+  const renamed_positions = renamed ? index.by_test_input_path.get(renamed) ?? [] : [];
+  // Most of the time there's an identical run: no need to measure how different the others are
+  if (!renamed_positions.length && !prefer.length) {
+    const exact = index.exact.get(run_key(output));
+    if (exact !== undefined)
+      return { output_ref: index.outputs[exact], mismatch: null, match: EXACT };
+  }
+
+  const candidates = candidates_of(output, index, renamed_positions, prefer);
+  const best = candidates[0];
+  if (!best) return { output_ref: empty_output, mismatch: null, match: null };
+  const score = match_score(output, best.o);
+  const mismatch = score > 0 ? mismatch_of(best.o, score) : null;
+  // only when there are some: the mismatch is compared with the backend's in tests/fixtures/metrics-compare.json
+  const alternatives = mismatch ? count_alternatives(candidates) : 0;
+  if (alternatives > 0) mismatch.alternatives = alternatives;
+  const match = { by: best.kind, others: candidates.length - 1, tied: alternatives, preferred: best.preferred > 0 };
+  return { output_ref: best.o, mismatch, match };
+};
+
+// How many other reference runs are as close as the one we picked: as many different settings, only how similar
+// their values are (the distances' fractional part) made us choose. Runs on other inputs count: e.g. two reference
+// shots with the same metadata.id and settings, we take the first.
 const count_alternatives = candidates => {
   const [best] = candidates;
   const same = (a, b) => Math.floor(a) === Math.floor(b);
-  const settings = new Set();
+  const key = c => `${c.o.input_path}\u0000${c.o.configurations_str}\u0000${c.o.extra_parameters_str}`;
+  const runs = new Set();
   for (const c of candidates.slice(1)) {
-    if (c.dist_input_path !== best.dist_input_path) continue;
+    if (c.rank !== best.rank || c.preferred !== best.preferred || c.dist_input_path !== best.dist_input_path) continue;
     if (!same(c.dist_configurations, best.dist_configurations) || !same(c.dist_extra_parameters, best.dist_extra_parameters)) continue;
-    if (c.o.configurations_str === best.o.configurations_str && c.o.extra_parameters_str === best.o.extra_parameters_str) continue;
-    settings.add(`${c.o.configurations_str}\u0000${c.o.extra_parameters_str}`);
+    if (key(c) === key(best)) continue;
+    runs.add(key(c));
   }
-  return settings.size;
+  return runs.size;
+};
+
+// All the reference runs users can pick for a run, the likeliest first, for the reference picker:
+// [{ o, kind: 'pair' | 'input' | 'id' | 'similar', ... }]. "similar": their name differs by one part (src/matching/names.js).
+const reference_candidates = ({ output, batch, index, rules }) => {
+  index = index ?? index_outputs(batch);
+  const pairs = rules?.pairs ?? [], prefer = rules?.prefer ?? [];
+  const renamed = pairs.length ? rename(output.test_input_path, pairs) : null;
+  const renamed_positions = renamed ? index.by_test_input_path.get(renamed) ?? [] : [];
+  const candidates = candidates_of(output, index, renamed_positions, prefer);
+  const seen = new Set(candidates.map(c => c.o));
+  const similar = similar_positions(renamed ?? output.test_input_path, index)
+    .map(i => index.outputs[i])
+    .filter(o => !seen.has(o))
+    .map(o => ({ o, kind: 'similar', rank: RANK.similar, preferred: preferred_score(o, prefer), dist_configurations: config_distance(o.configurations, output.configurations) }))
+    .sort((a, b) => (b.preferred - a.preferred) || (a.dist_configurations - b.dist_configurations));
+  return [...candidates, ...similar];
 };
 
 const run_key = o => `${o.input_path}\u0000${o.configurations_str}\u0000${o.extra_parameters_str}\u0000${o.platform}`;
@@ -173,6 +229,7 @@ const index_outputs = batch => {
   const by_input_path = new Map();
   const by_test_input_path = new Map();
   const by_metadata_id = new Map();
+  const by_id = new Map();
   const exact = new Map();
   const add = (map, key, i) => {
     if (key === undefined || key === null) return;
@@ -183,9 +240,10 @@ const index_outputs = batch => {
     add(by_input_path, o.input_path, i);
     add(by_test_input_path, o.test_input_path, i);
     if (o.test_input_metadata?.id) add(by_metadata_id, o.test_input_metadata.id, i);
+    by_id.set(String(o.id), i);
     if (!exact.has(run_key(o))) exact.set(run_key(o), i);
   });
-  return { outputs, by_input_path, by_test_input_path, by_metadata_id, exact };
+  return { outputs, by_input_path, by_test_input_path, by_metadata_id, by_id, exact };
 };
 
 const safe_regex = s => {
@@ -611,6 +669,7 @@ export {
   groupBy,
   groupByObject,
   matching_output,
+  reference_candidates,
   index_outputs,
   calendarStrings,
   shortId,
