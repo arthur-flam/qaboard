@@ -4,6 +4,9 @@
 // Names are split in parts at separators: folders, and the separators of qaboard/matching.py's STRING_SEPARATOR.
 // A rule replaces whole parts: "reg0x1A=05" -> "reg0x1A=03" doesn't change "reg0x1A=055".
 
+import { string_change } from "../configurations/tokens";
+
+// The same separators as the configurations' (string_separator in src/configurations/tokens.js)
 const SEPARATORS = /([\s/\\.,:;=_\-@|+()[\]{}"']+)/;
 const IS_SEPARATOR = /[\s/\\.,:;=_\-@|+()[\]{}"']/;
 const is_separator = c => c !== undefined && IS_SEPARATOR.test(c);
@@ -66,25 +69,16 @@ export const rename = (name, pairs) => {
   return out === name ? null : out;
 };
 
-// "reg0x1A=05 → 03": the rule, without what both sides start with up to a separator
+// "reg0x1A=05 → 03": the rule as text, cut at separators like the changes of settings (string_change)
 export const rule_text = ({ from, to }) => {
-  let p = 0;
-  while (p < from.length && p < to.length && from[p] === to[p]) p++;
-  while (p > 0 && !is_separator(from[p - 1])) p--;
-  return `${from} → ${to.slice(p) || to}`;
+  const { prefix, before, after, suffix } = string_change(from, to);
+  return `${prefix}${before} → ${after}${suffix}`;
 };
 
-// The parts of `name` that differ from `other`'s, to mark them: [{ text, changed }]
 // How many runs a rule gives a reference run: their name with it is a reference run's
 export const paired_by = (rule, outputs, index) =>
   outputs.filter(o => index.by_test_input_path.has(rename(o.test_input_path, [rule]))).length;
 
-export const marked_name = (name, other) => {
-  const changes = name_changes(other, name);
-  if (!changes) return [{ text: name, changed: false }];
-  const changed = new Set(changes.map(c => c.index));
-  return split_name(name).map((text, i) => ({ text, changed: changed.has(i) }));
-};
 
 
 // ---------------------------------------------------------------------------- similar names

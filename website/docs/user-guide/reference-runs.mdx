@@ -12,12 +12,14 @@ could do.
 ## Compare runs on different inputs by name {#pair-by-name}
 Say you captured the same scenes with a register at two values, and the names say which: `street_reg0x1A=05_g4.raw`
 and `street_reg0x1A=03_g4.raw`. Put one batch in the **new** bar and the other in the **ref** bar: no run has a
-reference on its input, and the ref bar says so, with **7 without reference**.
+reference on its input. Above the runs, next to the settings they share, the **Reference runs** row says so: *7 runs
+have no reference run*, and suggests the change of name that pairs the most of them: `reg0x1A=05 → 03 pairs 5 runs`.
 
-1. Click **7 without reference** in the ref bar. QA-Board lists the changes of name that would pair the runs, the
-   likeliest first: `reg0x1A=05 → 03 pairs 5 runs`.
-2. Click **Pair**. Each run is compared with the reference run whose name has `reg0x1A=03` instead of
-   `reg0x1A=05`. The ref bar now says **Matching: reg0x1A=05 → 03**.
+1. Click **Pair**. Each run is compared with the reference run whose name has `reg0x1A=03` instead of `reg0x1A=05`.
+2. The row now lists the pair under **Paired by name**: remove it with its **✕**.
+
+When there are other likely changes, **1 other change** lists them. Changes of names show like changes of settings:
+`reg0x1A=[05 → 03]`, cut at the same separators.
 
 The link of the page keeps the pairs: share it, and others see the same comparison. To pair names QA-Board didn't
 suggest, click **Pair other names…** and type both parts, like `reg0x1A=05` and `reg0x1A=03`.
@@ -57,7 +59,7 @@ with a similar name, the parts of their name that differ highlighted, and what t
   shot of the scene, and every run prefers reference runs with `unit = 2`. Pick a similar name, and every run is
   paired by that change of name.
 
-To go back to the default, click **✕** next to **Matching** in the ref bar, or remove one rule in its menu.
+To go back to the default, click **Back to the default** in the **Reference runs** row, or remove one rule with its **✕**.
 
 :::note
 The pairs and preferences you pick are in the page's link, for the web app. `qa gate`, `qa check-bit-accuracy` and the

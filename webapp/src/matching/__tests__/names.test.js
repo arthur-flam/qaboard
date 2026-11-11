@@ -1,4 +1,4 @@
-import { marked_name, name_changes, rename, rule_of_change, rule_text, similar_positions, split_name, suggest_pairs } from '../names';
+import { name_changes, rename, rule_of_change, rule_text, similar_positions, split_name, suggest_pairs } from '../names';
 import { index_outputs } from '../../utils';
 
 const output = (id, test_input_path) => ({
@@ -35,10 +35,6 @@ describe('names', () => {
   it('shows rules short', () => {
     expect(rule_text({ from: 'reg0x1A=05', to: 'reg0x1A=03' })).toBe('reg0x1A=05 → 03');
     expect(rule_text({ from: 'sensorA', to: 'sensorB' })).toBe('sensorA → sensorB');
-  });
-
-  it('marks the parts that differ', () => {
-    expect(marked_name('a_03_b', 'a_05_b').filter(p => p.changed).map(p => p.text)).toEqual(['03']);
   });
 
   it('finds the reference runs whose name differs by one part', () => {

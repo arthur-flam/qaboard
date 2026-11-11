@@ -11,7 +11,8 @@ import { reference_candidates } from "../utils";
 import { runName } from "../utils/runName";
 import { metric_formatter } from "../components/metrics";
 import { toaster } from "../toaster";
-import { marked_name, name_changes, rename, rule_of_change, rule_text } from "./names";
+import { name_changes, rename, rule_of_change, rule_text } from "./names";
+import { TextChange } from "../configurations/ConfigurationsTags";
 import { fact_text, preferences_for, rules_to_selection, rules_defaults } from "./rules";
 
 const SHOWN = 100;
@@ -30,7 +31,6 @@ const Picker = styled.div`
   .picker-item .picker-metric { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .picker-item .picker-why { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; }
   .picker-fact { font-family: var(--bp-typography-family-mono, monospace); font-size: 11px; padding: 0 4px; border-radius: 2px; background: var(--qa-surface-alt); }
-  mark { background: var(--qa-highlight); color: inherit; font-weight: 600; border-radius: 2px; padding: 0 1px; }
   .picker-foot { border-top: 1px solid var(--qa-border); padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
   .picker-foot .${Classes.RADIO} { margin: 0 12px 0 0; }
   .picker-hint { min-height: 18px; }
@@ -143,7 +143,6 @@ export default function ReferencePicker({ output, onClose }) {
     <div className="picker-list" role="listbox" aria-label="Reference runs" tabIndex={candidates.length > 6 ? -1 : 0} autoFocus={candidates.length <= 6}>
       {shown.map((c, i) => {
         const facts = preferences_for(c.o, output);
-        const name = marked_name(c.o.test_input_path ?? '', output.test_input_path ?? '');
         const metric_line = metric_text(output, c.o, metric);
         return <div key={c.o.id} role="presentation">
           {(i === 0 || shown[i - 1].kind !== c.kind) && <div role="presentation" className={`picker-group ${Classes.TEXT_MUTED}`}>{group_title(c.kind, output)}</div>}
@@ -151,12 +150,16 @@ export default function ReferencePicker({ output, onClose }) {
             type="button"
             role="option"
             aria-selected={c.o === current}
+            aria-label={c.o.test_input_path}
             className={`picker-item${i === index ? ' active' : ''}`}
             onMouseEnter={() => setActive(i)}
             onClick={() => pick(c)}
           >
             <Icon icon={c.o === current ? 'record' : 'circle'} size={12} style={{ marginTop: 3, color: c.o === current ? 'var(--qa-side-1)' : undefined }} className={c.o === current ? undefined : Classes.TEXT_MUTED}/>
-            <span className="picker-name">{name.map((part, j) => part.changed ? <mark key={j}>{part.text}</mark> : part.text)}</span>
+            {/* names paired or alike: what changes from the run's name, like settings' changes */}
+            <span className="picker-name">{c.kind === 'pair' || c.kind === 'similar'
+              ? <TextChange before={output.test_input_path ?? ''} after={c.o.test_input_path ?? ''}/>
+              : c.o.test_input_path}</span>
             <span className={`picker-metric ${Classes.TEXT_MUTED}`}>{metric_line}</span>
             <span className={`picker-why ${Classes.TEXT_MUTED}`}>
               {c.o === auto?.o && <span>closest</span>}

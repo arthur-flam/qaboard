@@ -41,7 +41,6 @@ import { toaster } from "../toaster"
 import { track } from "../analytics"
 import { copyDirectory } from "./logs/DirectoryActions"
 import { hasPathMappings } from "../utils/paths"
-import { ReferenceMatching } from "../matching/ReferenceMatching";
 import { CopyLinkButton } from "./CopyLinkButton"
 
 
@@ -615,7 +614,6 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
         onChange={update(`selected_batch_${type}`)}
         hide_counts
       />
-      {type === 'ref' && <ReferenceMatching/>}
       {!!commit && <>
         {!!link && <CopyLinkButton {...link}/>}
         <Tooltip content="Reload this commit's results">

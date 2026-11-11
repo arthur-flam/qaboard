@@ -119,12 +119,12 @@ test('pairs runs on other inputs by name', async ({ page }) => {
   await page.goto(sweep_page);
   const card = name => page.locator('.output-card, [data-run], article').filter({ hasText: name }).first();
   await expect(page.getByText('no reference').first()).toBeVisible();
-  // the change that pairs the most runs first, not the scenes that differ
-  await page.getByRole('button', { name: /^7 without reference/ }).click();
-  await expect(page.getByText('reg0x1A=05 → 03', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Pair', exact: true }).first().click();
+  // above the runs: the change that pairs the most runs first, not the scenes that differ
+  const matching = page.getByRole('region', { name: 'Configurations' });
+  await expect(matching.getByText('7 runs have no reference run.')).toBeVisible();
+  await matching.getByRole('button', { name: 'Pair reg0x1A=05 → 03' }).click();
   await expect(page).toHaveURL(/pair=reg0x1A%3D05%7Creg0x1A%3D03/);
-  await expect(page.getByRole('button', { name: /^Matching: reg0x1A=05 → 03/ })).toBeVisible();
+  await expect(matching.getByText('Paired by name:')).toBeVisible();
   await expect(page.getByText('≈ reg0x1A=03').first()).toBeVisible();
   // the ramp ran with another gain: its name differs by two parts, users pick it
   // cards show their tags once they're on screen
@@ -135,7 +135,7 @@ test('pairs runs on other inputs by name', async ({ page }) => {
   await expect(page).toHaveURL(/pin=110%3A210/);
   await expect(page.getByText('picked', { exact: true })).toBeVisible();
   // back to the default
-  await page.getByRole('button', { name: 'Back to the default matching' }).click();
+  await matching.getByRole('button', { name: 'Back to the default' }).click();
   await expect(page).not.toHaveURL(/pair=|pin=/);
   await expect(card('night_moon')).toBeVisible();
 });
@@ -150,7 +150,8 @@ test('says when two reference runs were as close, and picks the other for all th
   await page.getByText('All runs like this').click();
   await page.getByRole('option', { name: /macbeth_d65_unit2/ }).click();
   await expect(page).toHaveURL(/prefer=meta%3Aunit%3D2/);
-  await expect(page.getByText('unit = 2', { exact: true })).toBeVisible();
+  // on the run, and in the rules above the runs
+  await expect(page.getByText('unit = 2', { exact: true })).toHaveCount(2);
   await expect(page.getByText('2 tied')).toHaveCount(0);
 });
 
