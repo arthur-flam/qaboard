@@ -123,7 +123,8 @@ export default function ReferencePicker({ output, onClose }) {
   const onKeyDown = event => {
     if (event.key === 'ArrowDown') { event.preventDefault(); setActive(Math.min(shown.length - 1, index + 1)); }
     if (event.key === 'ArrowUp') { event.preventDefault(); setActive(Math.max(0, index - 1)); }
-    if (event.key === 'Enter') { event.preventDefault(); pick(highlighted); }
+    // a focused button or link handles its own Enter
+    if (event.key === 'Enter' && !event.target.closest('button, a, [role="radio"], input[type="radio"]')) { event.preventDefault(); pick(highlighted); }
   };
 
   return <Picker onKeyDown={onKeyDown} role="dialog" aria-label={`Compare ${runName(output)} with another reference run`}>
@@ -177,7 +178,7 @@ export default function ReferencePicker({ output, onClose }) {
       <span className={`picker-hint ${Classes.TEXT_MUTED}`}>{hint}</span>
       <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <a href={`${docs_root ?? ''}docs/user-guide/reference-runs`} target="_blank" rel="noopener noreferrer">How runs find their reference ↗</a>
-        {rules.pins[output.id] && <Button size="small" variant="minimal" text="Back to automatic" onClick={() => {
+        {rules.pins[output.id] && <Button size="small" variant="minimal" text="Back to the default" onClick={() => {
           const { [output.id]: _, ...pins } = rules.pins;
           save({ ...rules, pins });
         }}/>}

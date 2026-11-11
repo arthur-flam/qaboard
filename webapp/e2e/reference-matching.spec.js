@@ -115,7 +115,7 @@ test.afterEach(async ({}, testInfo) => {
 
 const sweep_page = `/${project}/commit/sweep?reference=sweep&batch=sweep-0x1A%3D05&batch_ref=sweep-0x1A%3D03&selected_views=output-list`;
 
-test('pairs runs on other inputs by name, in one click', async ({ page }) => {
+test('pairs runs on other inputs by name', async ({ page }) => {
   await page.goto(sweep_page);
   const card = name => page.locator('.output-card, [data-run], article').filter({ hasText: name }).first();
   await expect(page.getByText('no reference').first()).toBeVisible();
@@ -127,6 +127,8 @@ test('pairs runs on other inputs by name, in one click', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^Matching: reg0x1A=05 → 03/ })).toBeVisible();
   await expect(page.getByText('≈ reg0x1A=03').first()).toBeVisible();
   // the ramp ran with another gain: its name differs by two parts, users pick it
+  // cards show their tags once they're on screen
+  await page.getByText('ramp_16bit_reg0x1A=05_g8.raw').scrollIntoViewIfNeeded();
   await page.getByText('no reference · 1 similar').click();
   await expect(page.getByRole('dialog', { name: /Compare .*ramp_16bit/ })).toBeVisible();
   await page.getByRole('option', { name: /ramp_16bit_reg0x1A=03_g4/ }).click();

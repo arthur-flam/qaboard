@@ -600,8 +600,8 @@ export const ConfigurationDiff = ({ configurations, tuning = null, mismatch, con
     <Legend />
     {mismatch?.alternatives > 0 && <p style={{ fontSize: 12, margin: '8px 0 0 0' }}>
       <Icon icon="git-branch" size={12} intent={Intent.WARNING} style={{ marginRight: 5 }} />
-      {mismatch.alternatives === 1 ? 'Another reference run differs' : `${mismatch.alternatives} other reference runs differ`} by
-      as many settings: we picked the one with the closest values.
+      {mismatch.alternatives === 1 ? 'Another reference run is' : `${mismatch.alternatives} other reference runs are`} as
+      close: we picked the one with the closest values, or the first.
     </p>}
     <div style={{ marginTop: 8 }}>
       <Button size="small" variant="minimal" icon="duplicate" text="Copy the changes" onClick={() => copyWithToast(diff_text(ops), { what: 'the changes' })} />

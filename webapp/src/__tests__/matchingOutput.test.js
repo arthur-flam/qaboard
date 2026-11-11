@@ -116,4 +116,17 @@ describe('matching_output', () => {
     const outputs = [named(2, 'street_reg03.png'), named(3, 'street_reg05.png', { configurations: ['other'] }), named(4, 'office_reg09.png')];
     expect(reference_candidates({ output, batch: batch(outputs) }).map(c => [c.o.id, c.kind])).toEqual([[3, 'input'], [2, 'similar']]);
   });
+
+  it("doesn't count as tied the reference runs the platform tells apart", () => {
+    const output = run(1, { input_path: 'a/scene.png', test_input_path: 'a/scene.png', test_input_metadata: { id: 'scene' } });
+    const shot = (id, path, platform = 'linux') => run(id, { input_path: path, test_input_path: path, test_input_metadata: { id: 'scene' }, platform });
+    const { output_ref, match } = matching_output({ output, batch: batch([shot(2, 'b/scene-1.png', 'arm'), shot(3, 'b/scene-2.png')]) });
+    expect(output_ref.id).toBe(3);
+    expect(match.tied).toBe(0);
+  });
+
+  it('says a preference picked the reference run only when it changed the pick', () => {
+    const rules = { pairs: [], prefer: [{ key: 'platform', value: 'linux' }], pins: {} };
+    expect(matching_output({ output: run(1), batch: batch([run(2), run(3, { platform: 'arm' })]), rules }).match.preferred).toBe(false);
+  });
 });

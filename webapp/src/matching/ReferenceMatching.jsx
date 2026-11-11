@@ -29,7 +29,8 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // Typed by users: "reg0x1A=05" and "reg0x1A=03". When they differ by one part, the rule is on that part.
 const typed_rule = (from, to) => {
   const changes = name_changes(from, to);
-  return changes?.length === 1 ? rule_of_change(changes[0]) : { from, to };
+  const rule = changes?.length === 1 ? rule_of_change(changes[0]) : null;
+  return rule?.from && rule?.to ? rule : { from, to };
 };
 
 export const ReferenceMatching = () => {
@@ -83,7 +84,7 @@ export const ReferenceMatching = () => {
             <Button size="small" intent={i === 0 ? Intent.PRIMARY : undefined} text="Pair" onClick={() => add_pair(s.rule)}/>
           </div>)}
         </>
-        : <p className={Classes.TEXT_MUTED} style={{ margin: 0, fontSize: 12 }}>No reference run has the same input, its id, or a name that differs by one part.</p>}
+        : <p className={Classes.TEXT_MUTED} style={{ margin: 0, fontSize: 12 }}>No change of one part of their names would pair them. A run's tag lists the reference runs with a similar name.</p>}
     </div>}
 
     {rules.pairs.length > 0 && <div>
@@ -92,7 +93,7 @@ export const ReferenceMatching = () => {
     </div>}
     {rules.prefer.length > 0 && <div>
       <h4>Preferred reference runs</h4>
-      <div className="chips">{rules.prefer.map(p => <Tag key={p.key} minimal icon="star" onRemove={() => save({ prefer: rules.prefer.filter(q => q !== p) })}>{fact_text(p)}</Tag>)}</div>
+      <div className="chips">{rules.prefer.map(p => <Tag key={`${p.key}=${p.value}`} minimal icon="star" onRemove={() => save({ prefer: rules.prefer.filter(q => q !== p) })}>{fact_text(p)}</Tag>)}</div>
     </div>}
     {pins > 0 && <div className="row">
       <span>{plural(pins, 'run')} compared with a reference run you picked</span>
@@ -121,7 +122,7 @@ export const ReferenceMatching = () => {
 
     <div className="foot">
       <span className={Classes.TEXT_MUTED}>
-        {status.outputs.length - status.without} of {plural(status.outputs.length, 'run')} have a reference{status.tied > 0 && ` · ${status.tied} had reference runs as close as each other: we took the first`}.
+        {status.outputs.length - status.without} of {plural(status.outputs.length, 'run')} {status.outputs.length === 1 ? 'has' : 'have'} a reference{status.tied > 0 && ` · ${status.tied} had reference runs as close as each other: we took the first`}.
         {rules.custom && ' Saved in the link. Checks from the CLI and the API use the default.'}
       </span>
       <span className="row">

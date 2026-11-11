@@ -62,4 +62,23 @@ describe('names', () => {
     // rules users have are not suggested again
     expect(suggest_pairs({ unmatched: runs, outputs: runs, index, pairs: [suggestions[0].rule] })[0].rule.to).not.toBe('reg0x1A=03');
   });
+
+  it('stays fast and finite on names that differ in a part every name has, or start with a separator', () => {
+    const n = 3000;
+    const refs = Array.from({ length: n }, (_, i) => output(i, `set_a/scene_${i}.raw`));
+    const runs = Array.from({ length: n }, (_, i) => output(n + i, `set_a/scene_${i}x.raw`));
+    const index = index_outputs(batch(refs));
+    const start = performance.now();
+    expect(suggest_pairs({ unmatched: runs, outputs: runs, index })).toEqual([]);
+    expect(performance.now() - start).toBeLessThan(2000);
+    // "_a" and "b_a": an empty part
+    const odd = index_outputs(batch([output(1, 'b_a')]));
+    expect(suggest_pairs({ unmatched: [output(2, '_a')], outputs: [output(2, '_a')], index: odd })).toEqual([]);
+    expect(rename('a_b', [{ from: '', to: 'x' }])).toBeNull();
+  });
+
+  it('applies all the rules to the name as it is', () => {
+    expect(rename('x_A_y', [{ from: 'A', to: 'B' }, { from: 'B', to: 'C' }])).toBe('x_B_y');
+    expect(rename('A_B', [{ from: 'A', to: 'B' }, { from: 'B', to: 'C' }])).toBe('B_C');
+  });
 });

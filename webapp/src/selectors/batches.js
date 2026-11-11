@@ -80,6 +80,20 @@ const with_filter = (batch, filter) => {
 };
 
 
+// The reference's runs and their lookups, the same objects while the batch and its filter are the same: sorting or
+// filtering the new runs doesn't index them again, and the reference picker's lookups stay (src/matching/names.js)
+const reference_runs_cache = new WeakMap();
+const reference_runs = (raw_ref, filter = '') => {
+  let by_filter = reference_runs_cache.get(raw_ref);
+  if (!by_filter) reference_runs_cache.set(raw_ref, by_filter = new Map());
+  if (!by_filter.has(filter)) {
+    if (by_filter.size > 10) by_filter.clear();
+    const ref_batch = with_filter(raw_ref, filter);
+    by_filter.set(filter, { ref_batch, index: index_outputs(ref_batch) });
+  }
+  return by_filter.get(filter);
+};
+
 // What the commit page compares: the selected batches of the new and reference commits, filtered.
 // `selected.rules`: how runs find their reference run, beyond the default (src/matching/rules.js)
 export const compute_batches = ({ new_commit, ref_commit, selected, metrics }) => {
@@ -88,7 +102,7 @@ export const compute_batches = ({ new_commit, ref_commit, selected, metrics }) =
   const raw_new = new_commit?.batches?.[selected_batch_new] ?? empty_batch;
   const raw_ref = ref_commit?.batches?.[selected_batch_ref] ?? empty_batch;
 
-  const ref_batch = with_filter(raw_ref, selected.filter_batch_ref);
+  const { ref_batch, index } = reference_runs(raw_ref, selected.filter_batch_ref);
   const new_filtered = with_filter(raw_new, selected.filter_batch_new);
 
   // the default depends on the runs, not on the filter: the order doesn't change while users type one
@@ -98,7 +112,6 @@ export const compute_batches = ({ new_commit, ref_commit, selected, metrics }) =
   const filtered_ids = sorted_ids(new_filtered.filtered.outputs, new_filtered.outputs, sort_by, sort_order);
 
   // we find the matching outputs once
-  const index = index_outputs(ref_batch);
   const outputs = { ...new_filtered.outputs };
   for (const id of filtered_ids) {
     const output = new_filtered.outputs[id];

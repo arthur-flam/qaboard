@@ -31,6 +31,7 @@ export const rule_of_change = ({ from, to, before }) => ({ from: before + from, 
 // Where `text` is in `name` as whole parts
 const whole_parts_at = (name, text) => {
   const at = [];
+  if (!text) return at;
   for (let i = name.indexOf(text); i !== -1; i = name.indexOf(text, i + 1)) {
     const end = i + text.length;
     const starts = i === 0 || is_separator(name[i - 1]) || is_separator(text[0]);
@@ -41,24 +42,28 @@ const whole_parts_at = (name, text) => {
 };
 
 // The name with the rules applied, null when none applies. Rules replace whole parts only: "reg0x1A=05" isn't in
-// "reg0x1A=055", nor "05gain" in "reg05gain4".
+// "reg0x1A=055", nor "05gain" in "reg05gain4". All rules apply to the name as it is: A → B and B → C don't make C of A.
+// Where two rules match the same text, the first wins.
 export const rename = (name, pairs) => {
   if (!name || !pairs?.length) return null;
-  let renamed = name;
+  const replacements = [];
   for (const { from, to } of pairs) {
     if (!from || from === to) continue;
-    const at = whole_parts_at(renamed, from);
-    if (at.length) {
-      let out = '', last = 0;
-      for (const i of at) {
-        if (i < last) continue;
-        out += renamed.slice(last, i) + to;
-        last = i + from.length;
-      }
-      renamed = out + renamed.slice(last);
+    for (const at of whole_parts_at(name, from)) {
+      const end = at + from.length;
+      if (replacements.some(r => at < r.end && end > r.at)) continue;
+      replacements.push({ at, end, to });
     }
   }
-  return renamed === name ? null : renamed;
+  if (!replacements.length) return null;
+  replacements.sort((a, b) => a.at - b.at);
+  let out = '', last = 0;
+  for (const r of replacements) {
+    out += name.slice(last, r.at) + r.to;
+    last = r.end;
+  }
+  out += name.slice(last);
+  return out === name ? null : out;
 };
 
 // "reg0x1A=05 → 03": the rule, without what both sides start with up to a separator
@@ -98,6 +103,9 @@ const one_part_keys = name => {
   return keys;
 };
 
+// Names that share a key with more reference runs than this differ by a part that's in every name, like the scene in
+// set_a/scene_12.raw: they're not "similar", and looking them up would compare every run with every reference run
+const MAX_SIMILAR = 20;
 const similar_indexes = new WeakMap();
 // `index`: from index_outputs (src/utils.js), its outputs by position
 export const similar_index = index => {
@@ -111,6 +119,7 @@ export const similar_index = index => {
       similar.get(key).push(position);
     }
   });
+  for (const [key, positions] of similar) if (positions.length > MAX_SIMILAR) similar.delete(key);
   similar_indexes.set(index, similar);
   return similar;
 };
@@ -142,12 +151,14 @@ export const suggest_pairs = ({ unmatched, outputs, index, labels = {}, pairs = 
   if (!unmatched.length || !index.outputs.length) return [];
   const have = new Set(pairs.map(p => `${p.from}\u0000${p.to}`));
   const found = new Map();
-  for (const o of unmatched) {
+  // enough runs to find the changes that pair many of them
+  for (const o of unmatched.slice(0, 1000)) {
     const name = o.test_input_path;
     for (const position of similar_positions(name, index)) {
       const changes = name_changes(name, index.outputs[position].test_input_path);
       if (changes?.length !== 1) continue;
       const rule = rule_of_change(changes[0]);
+      if (!rule.from || !rule.to) continue;
       const key = `${rule.from}\u0000${rule.to}`;
       if (have.has(key)) continue;
       const entry = found.get(key) ?? { rule, change: changes[0], runs: new Set() };

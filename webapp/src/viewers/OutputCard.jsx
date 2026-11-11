@@ -202,7 +202,7 @@ const OutputHeader = ({ project, commit, output, output_ref, type, manifests, st
     return <CompactHeader $summary={!!summary}>
       {prefix}
       {name}
-      <ReferenceMatchTag output={output}/>
+      {viewable && <ReferenceMatchTag output={output}/>}
       <RunBadges output={output}/>
       {summary
         ? <LazyHoverPopover className="summary" placement="bottom-start" content={<div style={configuration_popover_style}>
@@ -221,7 +221,7 @@ const OutputHeader = ({ project, commit, output, output_ref, type, manifests, st
     <h5 className={Classes.HEADING} style={style} >
       {prefix}
       {name}
-      <ReferenceMatchTag output={output}/>
+      {viewable && <ReferenceMatchTag output={output}/>}
       {viewable && tags}
     </h5>
     {has_badges && <p style={{maxWidth: '600px'}}>

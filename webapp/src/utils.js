@@ -122,10 +122,12 @@ const candidates_of = (output, index, renamed_positions, prefer) => {
   ]);
   const candidates = [...positions].sort((a, b) => a - b).map(i => {
     const o = index.outputs[i];
+    const position = i;
     const same_input = o.input_path === output.input_path || o.test_input_path === output.test_input_path;
     const kind = renamed.has(i) ? 'pair' : same_input ? 'input' : 'id';
     return {
       o,
+      position,
       kind,
       rank: RANK[kind],
       preferred: preferred_score(o, prefer),
@@ -145,6 +147,18 @@ const candidates_of = (output, index, renamed_positions, prefer) => {
     ((b.o.platform === output.platform) - (a.o.platform === output.platform))
   );
   return candidates;
+};
+
+// The reference run we'd pick without the preferences
+const default_pick = (candidates, output) => {
+  const order = (a, b) =>
+    (a.rank - b.rank) ||
+    (a.dist_input_path - b.dist_input_path) ||
+    (a.dist_configurations - b.dist_configurations) ||
+    (a.dist_extra_parameters - b.dist_extra_parameters) ||
+    ((b.o.platform === output.platform) - (a.o.platform === output.platform)) ||
+    (a.position - b.position);
+  return candidates.reduce((best, c) => order(c, best) < 0 ? c : best);
 };
 
 // Finds the reference output that best matches an output: { output_ref, mismatch, match }.
@@ -179,22 +193,25 @@ const matching_output = ({ output, batch, index, rules }) => {
   const score = match_score(output, best.o);
   const mismatch = score > 0 ? mismatch_of(best.o, score) : null;
   // only when there are some: the mismatch is compared with the backend's in tests/fixtures/metrics-compare.json
-  const alternatives = mismatch ? count_alternatives(candidates) : 0;
+  const alternatives = mismatch ? count_alternatives(candidates, output) : 0;
   if (alternatives > 0) mismatch.alternatives = alternatives;
-  const match = { by: best.kind, others: candidates.length - 1, tied: alternatives, preferred: best.preferred > 0 };
+  // preferred: the preferences changed the pick, not only "it has them"
+  const preferred = best.preferred > 0 && default_pick(candidates, output) !== best;
+  const match = { by: best.kind, others: candidates.length - 1, tied: alternatives, preferred };
   return { output_ref: best.o, mismatch, match };
 };
 
 // How many other reference runs are as close as the one we picked: as many different settings, only how similar
 // their values are (the distances' fractional part) made us choose. Runs on other inputs count: e.g. two reference
 // shots with the same metadata.id and settings, we take the first.
-const count_alternatives = candidates => {
+const count_alternatives = (candidates, output) => {
   const [best] = candidates;
   const same = (a, b) => Math.floor(a) === Math.floor(b);
   const key = c => `${c.o.input_path}\u0000${c.o.configurations_str}\u0000${c.o.extra_parameters_str}`;
   const runs = new Set();
   for (const c of candidates.slice(1)) {
     if (c.rank !== best.rank || c.preferred !== best.preferred || c.dist_input_path !== best.dist_input_path) continue;
+    if ((c.o.platform === output.platform) !== (best.o.platform === output.platform)) continue;
     if (!same(c.dist_configurations, best.dist_configurations) || !same(c.dist_extra_parameters, best.dist_extra_parameters)) continue;
     if (key(c) === key(best)) continue;
     runs.add(key(c));

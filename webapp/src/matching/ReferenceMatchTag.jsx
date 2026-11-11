@@ -54,7 +54,7 @@ const describe = (output, match, reference, ref_lookup, rules) => {
 
 export const ReferenceMatchTag = ({ output }) => {
   const comparison = useComparison();
-  const open_for = useReferencePicker(state => state.open_for);
+  const is_open = useReferencePicker(state => state.open_for === String(output.id));
   const open = useReferencePicker(state => state.open);
   const close = useReferencePicker(state => state.close);
   if (!comparison) return null;
@@ -65,7 +65,6 @@ export const ReferenceMatchTag = ({ output }) => {
 
   const reference = ref_batch?.outputs?.[output.reference_id];
   const tag = describe(output, output.reference_match, reference, ref_lookup, selected.reference_rules);
-  const is_open = open_for === String(output.id);
   const target = tag
     ? <Tag
         minimal
