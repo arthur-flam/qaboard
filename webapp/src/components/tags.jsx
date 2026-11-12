@@ -265,8 +265,9 @@ const open_in_webcde = async ({ output, commit, cde_sh }) => {
 // `pick_reference`: on run cards, users can pick the reference run it compares with
 const RunMenuButton = ({ output, project, commit, type, style, pick_reference = false }) => <LazyPopover placement="bottom-end" content={
   <RunActionsMenu output={output} project={project} commit={commit}>
-    <RunInfoMenuItems project={project} commit={commit} output={output} type={type} />
+    {/* it changes what the run is compared with: first */}
     {pick_reference && <PickReferenceMenuItem output={output}/>}
+    <RunInfoMenuItems project={project} commit={commit} output={output} type={type} />
   </RunActionsMenu>
 }>
   <Button size="small" variant="minimal" icon="more" className={Classes.TEXT_MUTED} style={style} aria-label="Run actions" title="Run info, history and actions"/>

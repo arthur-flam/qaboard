@@ -1,6 +1,7 @@
 // Derived data about the batches we compare. Pure functions: they never modify their inputs,
 // so the cached server data stays intact and React sees changes.
-import { filter_batch, matching_output, index_outputs } from "../utils";
+import { filter_batch } from "../utils";
+import { matching_output, index_outputs } from "../matching/match";
 import { empty_batch } from "../defaults";
 import { default_sort_by, effective_sort_order, sorted_ids } from "./sorting";
 

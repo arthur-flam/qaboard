@@ -1,15 +1,13 @@
 // Pairing runs on different inputs by their names, e.g. a register sweep's captures, street_reg0x1A=05.raw with
 // street_reg0x1A=03.raw: users don't need ids in metadata (see the `pair` rules in src/matching/rules.js).
 //
-// Names are split in parts at separators: folders, and the separators of qaboard/matching.py's STRING_SEPARATOR.
-// A rule replaces whole parts: "reg0x1A=05" -> "reg0x1A=03" doesn't change "reg0x1A=055".
+// Names are split in parts at the separators of the configurations' changes (string_separator), and shown like them:
+// street_reg0x1A=[05 → 03]_g4.raw. A rule replaces whole parts: "reg0x1A=05" -> "reg0x1A=03" doesn't change "reg0x1A=055".
 
-import { string_change } from "../configurations/tokens";
+import { string_change, string_separator } from "../configurations/tokens";
 
-// The same separators as the configurations' (string_separator in src/configurations/tokens.js)
-const SEPARATORS = /([\s/\\.,:;=_\-@|+()[\]{}"']+)/;
-const IS_SEPARATOR = /[\s/\\.,:;=_\-@|+()[\]{}"']/;
-const is_separator = c => c !== undefined && IS_SEPARATOR.test(c);
+const SEPARATORS = new RegExp(`(${string_separator.source}+)`);
+const is_separator = c => c !== undefined && string_separator.test(c);
 
 // Alternate parts and separators: "a/b_c" => ["a", "/", "b", "_", "c"]. Parts are at even indices.
 export const split_name = name => name.split(SEPARATORS);
@@ -69,6 +67,9 @@ export const rename = (name, pairs) => {
   return out === name ? null : out;
 };
 
+// The name of the reference run a run is paired with by the rules: its own name when no rule applies
+export const paired_name = (name, pairs) => rename(name, pairs) ?? name;
+
 // "reg0x1A=05 → 03": the rule as text, cut at separators like the changes of settings (string_change)
 export const rule_text = ({ from, to }) => {
   const { prefix, before, after, suffix } = string_change(from, to);
@@ -78,8 +79,6 @@ export const rule_text = ({ from, to }) => {
 // How many runs a rule gives a reference run: their name with it is a reference run's
 export const paired_by = (rule, outputs, index) =>
   outputs.filter(o => index.by_test_input_path.has(rename(o.test_input_path, [rule]))).length;
-
-
 
 // ---------------------------------------------------------------------------- similar names
 
@@ -97,23 +96,26 @@ const one_part_keys = name => {
   return keys;
 };
 
-// Names that share a key with more reference runs than this differ by a part that's in every name, like the scene in
-// set_a/scene_12.raw: they're not "similar", and looking them up would compare every run with every reference run
+// Names that share a key with more other names than this differ by a part that's in every name, like the scene in
+// set_a/scene_12.raw: they're not "similar", and looking them up would compare every run with every reference run.
+// We count names, not runs: a tuning batch has many runs per input.
 const MAX_SIMILAR = 20;
 const similar_indexes = new WeakMap();
-// `index`: from index_outputs (src/utils.js), its outputs by position
-export const similar_index = index => {
+// `index`: from index_outputs (src/matching/match.js), its outputs by position
+const similar_index = index => {
   let similar = similar_indexes.get(index);
   if (similar) return similar;
   similar = new Map();
   index.outputs.forEach((o, position) => {
     if (!o.test_input_path) return;
     for (const key of one_part_keys(o.test_input_path)) {
-      if (!similar.has(key)) similar.set(key, []);
-      similar.get(key).push(position);
+      if (!similar.has(key)) similar.set(key, { names: new Set(), positions: [] });
+      const entry = similar.get(key);
+      entry.names.add(o.test_input_path);
+      entry.positions.push(position);
     }
   });
-  for (const [key, positions] of similar) if (positions.length > MAX_SIMILAR) similar.delete(key);
+  for (const [key, { names }] of similar) if (names.size > MAX_SIMILAR) similar.delete(key);
   similar_indexes.set(index, similar);
   return similar;
 };
@@ -124,7 +126,7 @@ export const similar_positions = (name, index) => {
   const similar = similar_index(index);
   const positions = new Set();
   for (const key of one_part_keys(name))
-    for (const position of similar.get(key) ?? [])
+    for (const position of similar.get(key)?.positions ?? [])
       if (index.outputs[position].test_input_path !== name) positions.add(position);
   return [...positions].sort((a, b) => a - b);
 };
@@ -136,7 +138,8 @@ const SUGGESTED = 4;
 // Parts of the batches' names, e.g. sweep-0x1A=05: a change from one to the other is likely what users compare
 const parts_of = label => new Set(split_name(label ?? '').filter((_, i) => i % 2 === 0 && _));
 
-// Rules that would give a reference to the runs without one: [{ rule, pairs }], the likeliest first.
+// Rules that would give a reference to the runs without one: [{ rule, pairs }], the likeliest first. `pairs`: how many
+// runs without reference it gives one (it may also change the reference of others, e.g. on the same input).
 // `unmatched`: new runs without reference, `outputs`: all the new runs shown, `index`: the reference runs',
 // `labels`: { new, reference } the batches' names, `pairs`: the rules users have already.
 // Likeliest: those that pair the most runs, whose parts are in most of the runs' names (a register value, a sensor,
@@ -168,7 +171,7 @@ export const suggest_pairs = ({ unmatched, outputs, index, labels = {}, pairs = 
     .slice(0, 20)
     .map(({ rule, change, runs }) => {
       const having = outputs.filter(o => whole_parts_at(o.test_input_path ?? '', rule.from).length).length;
-      const paired = paired_by(rule, outputs, index);
+      const paired = paired_by(rule, unmatched, index);
       const in_labels = new_parts.has(change.from) && ref_parts.has(change.to) ? 2 : 1;
       return { rule, pairs: paired, score: runs.size * (1 + having / Math.max(1, outputs.length)) * in_labels };
     });

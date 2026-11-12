@@ -1,5 +1,5 @@
 import { name_changes, rename, rule_of_change, rule_text, similar_positions, split_name, suggest_pairs } from '../names';
-import { index_outputs } from '../../utils';
+import { index_outputs } from '../match';
 
 const output = (id, test_input_path) => ({
   id, test_input_path, input_path: `/db/${test_input_path}`, test_input_metadata: {},
@@ -59,18 +59,26 @@ describe('names', () => {
     expect(suggest_pairs({ unmatched: runs, outputs: runs, index, pairs: [suggestions[0].rule] })[0].rule.to).not.toBe('reg0x1A=03');
   });
 
-  it('stays fast and finite on names that differ in a part every name has, or start with a separator', () => {
-    const n = 3000;
-    const refs = Array.from({ length: n }, (_, i) => output(i, `set_a/scene_${i}.raw`));
-    const runs = Array.from({ length: n }, (_, i) => output(n + i, `set_a/scene_${i}x.raw`));
+  it("doesn't call similar the names that differ by a part every name has, nor empty parts", () => {
+    // set_a/scene_<i>.raw: leaving out the scene, every name is the same. Looking them up would compare all with all.
+    const refs = Array.from({ length: 30 }, (_, i) => output(i, `set_a/scene_${i}.raw`));
+    const runs = Array.from({ length: 30 }, (_, i) => output(100 + i, `set_a/scene_${i}x.raw`));
     const index = index_outputs(batch(refs));
-    const start = performance.now();
+    expect(similar_positions('set_a/scene_3x.raw', index)).toEqual([]);
     expect(suggest_pairs({ unmatched: runs, outputs: runs, index })).toEqual([]);
-    expect(performance.now() - start).toBeLessThan(2000);
     // "_a" and "b_a": an empty part
     const odd = index_outputs(batch([output(1, 'b_a')]));
     expect(suggest_pairs({ unmatched: [output(2, '_a')], outputs: [output(2, '_a')], index: odd })).toEqual([]);
     expect(rename('a_b', [{ from: '', to: 'x' }])).toBeNull();
+  });
+
+  it('counts names, not runs, so tuning batches with many runs per input keep their similar names', () => {
+    // 25 runs per input: tuning parameters
+    const refs = ['scene0_reg03.raw', 'scene1_reg03.raw'].flatMap((name, s) => Array.from({ length: 25 }, (_, i) => output(s * 100 + i, name)));
+    const index = index_outputs(batch(refs));
+    expect(similar_positions('scene0_reg05.raw', index)).toHaveLength(25);
+    const run = output(1000, 'scene0_reg05.raw');
+    expect(suggest_pairs({ unmatched: [run], outputs: [run], index })[0].rule).toEqual({ from: 'scene0_reg05', to: 'scene0_reg03' });
   });
 
   it('applies all the rules to the name as it is', () => {

@@ -6,14 +6,13 @@ import { Button, Classes, Icon, InputGroup, Radio, RadioGroup } from "@blueprint
 import styled from "styled-components";
 
 import { useComparison, useSiteConfig } from "../hooks";
-import { updateSelected } from "../selection";
-import { reference_candidates } from "../utils";
 import { runName } from "../utils/runName";
 import { metric_formatter } from "../components/metrics";
-import { toaster } from "../toaster";
-import { name_changes, rename, rule_of_change, rule_text } from "./names";
 import { TextChange } from "../configurations/ConfigurationsTags";
-import { fact_text, preferences_for, rules_to_selection, rules_defaults } from "./rules";
+import { reference_candidates, rules_for_all } from "./match";
+import { rule_text } from "./names";
+import { fact_text, preferences_for, without_pin } from "./rules";
+import { save_rules } from "./save";
 
 const SHOWN = 100;
 
@@ -22,8 +21,13 @@ const Picker = styled.div`
   display: flex;
   flex-direction: column;
   .picker-head { padding: 10px 12px 6px; display: flex; flex-direction: column; gap: 6px; }
-  .picker-list { margin: 0; padding: 0 4px 4px; max-height: 320px; overflow-y: auto; }
-  .picker-group { padding: 6px 8px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .picker-head .${Classes.RADIO} { margin: 0 12px 0 0; }
+  .picker-head .${Classes.LABEL} { margin: 0; }
+  .picker-list { margin: 0; padding: 0 4px 4px; max-height: 360px; overflow-y: auto; }
+  /* the group stays in sight while scrolling its runs */
+  .picker-group { position: sticky; top: 0; z-index: 1; background: var(--qa-surface); padding: 6px 8px 2px; font-size: 12px; }
+  .picker-group .label { text-transform: uppercase; letter-spacing: .05em; font-size: 11px; }
+  .picker-group code { font-size: 11px; }
   .picker-item { display: grid; grid-template-columns: 16px 1fr auto; gap: 2px 8px; width: 100%; padding: 6px 8px; border: 0;
     border-radius: 3px; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
   .picker-item.active { background: var(--qa-hover); }
@@ -32,29 +36,17 @@ const Picker = styled.div`
   .picker-item .picker-why { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; }
   .picker-fact { font-family: var(--bp-typography-family-mono, monospace); font-size: 11px; padding: 0 4px; border-radius: 2px; background: var(--qa-surface-alt); }
   .picker-foot { border-top: 1px solid var(--qa-border); padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
-  .picker-foot .${Classes.RADIO} { margin: 0 12px 0 0; }
   .picker-hint { min-height: 18px; }
+  .picker-in-use { font-weight: 600; color: var(--qa-side-1); }
 `;
 
 const group_title = (kind, output) => ({
-  pair: 'Paired by name',
-  input: 'Same input',
-  id: `Same metadata.id: ${output.test_input_metadata?.id}`,
-  similar: 'Similar name',
+  pair: <span className="label">Paired by name</span>,
+  input: <span className="label">Same input</span>,
+  // ids are case-sensitive: not uppercased
+  id: <><span className="label">Same metadata.id</span> <code>{output.test_input_metadata?.id}</code></>,
+  similar: <span className="label">Similar name</span>,
 }[kind]);
-
-// What a reference run would add as rules for all the runs, compared to the reference run picked now:
-// for a similar name, its name's changes; else what it has that the one picked now hasn't (platform, tuning parameters,
-// metadata, configurations), e.g. the other shot of a scene with the same metadata.id
-const rules_for_all = (output, candidate, current, rules) => {
-  if (candidate.kind === 'similar' || !current) {
-    const name = rename(output.test_input_path, rules.pairs) ?? output.test_input_path;
-    const changes = name_changes(name, candidate.o.test_input_path);
-    return changes?.length && changes.length <= 2 ? { pairs: changes.map(rule_of_change), prefer: [] } : null;
-  }
-  const prefer = preferences_for(candidate.o, current);
-  return prefer.length ? { pairs: [], prefer } : null;
-};
 
 const metric_text = (output, o, metric) => {
   const value = o.metrics?.[metric?.key];
@@ -89,36 +81,31 @@ export default function ReferencePicker({ output, onClose }) {
     ? { key: metrics.default_metric, ...metrics.available_metrics[metrics.default_metric] }
     : null;
 
-  const save = next => {
-    updateSelected(rules_to_selection(next), { defaults: rules_defaults });
-    onClose();
-  };
+  const highlighted = shown[index];
+  const for_all = highlighted && scope === 'all' && highlighted.o !== current
+    ? rules_for_all({ output, candidate: highlighted, current, rules, index: ref_lookup })
+    : null;
   const pick = c => {
     if (!c) return;
-    if (scope === 'all') {
-      const added = rules_for_all(output, c, current, rules);
-      if (added) {
-        const pairs = [...rules.pairs.filter(p => !added.pairs.some(a => a.from === p.from)), ...added.pairs];
-        const prefer = [...rules.prefer.filter(p => !added.prefer.some(a => a.key === p.key)), ...added.prefer];
-        const { [output.id]: _, ...pins } = rules.pins;
-        toaster.show({ message: `Every run now compares with ${added.pairs.length ? added.pairs.map(rule_text).join(', ') : `reference runs with ${added.prefer.map(fact_text).join(', ')}`}`, icon: 'link' });
-        return save({ pairs, prefer, pins });
-      }
+    const all = scope === 'all' && c.o !== current ? rules_for_all({ output, candidate: c, current, rules, index: ref_lookup }) : null;
+    onClose();
+    if (all) {
+      const what = all.added.pairs.length ? all.added.pairs.map(rule_text).join(', ') : `reference runs with ${all.added.prefer.map(fact_text).join(', ')}`;
+      return save_rules(rules, all.rules, `Every run like this one now compares with ${what}`);
     }
-    const { [output.id]: _, ...pins } = rules.pins;
-    // picking what we'd pick anyway undoes the pin
-    if (c.o === auto?.o && !rules.pins[output.id]) return onClose();
-    save({ ...rules, pins: c.o === auto?.o ? pins : { ...pins, [output.id]: c.o.id } });
+    if (c.o === current) return;
+    // picking what the rules pick anyway undoes the pin
+    const unpinned = without_pin(rules, output.id);
+    save_rules(rules, c.o === auto?.o ? unpinned : { ...unpinned, pins: { ...unpinned.pins, [output.id]: c.o.id } }, `${runName(output)} now compares with ${c.o.test_input_path}`);
   };
 
-  const highlighted = shown[index];
-  const added = highlighted && scope === 'all' ? rules_for_all(output, highlighted, current, rules) : null;
   let hint;
   if (!highlighted) hint = null;
-  else if (highlighted.o === current) hint = 'The reference run this run compares with.';
-  else if (scope === 'run' || !added) hint = <>Compare <b>this run</b> with it. The others don't change.</>;
-  else if (added.pairs.length) hint = <>Every run whose name has <code>{added.pairs.map(p => p.from).join(', ')}</code> compares with the reference run named with <code>{added.pairs.map(p => p.to).join(', ')}</code>.</>;
-  else hint = <>Prefer reference runs with <code>{added.prefer.map(fact_text).join(', ')}</code>, for every run.</>;
+  else if (highlighted.o === current) hint = 'The reference run in use.';
+  else if (scope === 'run') hint = <>Compare <b>this run</b> with it. The others don't change.</>;
+  else if (!for_all) hint = <>No rule for all runs would pick it: only <b>this run</b> will compare with it.</>;
+  else if (for_all.added.pairs.length) hint = <>Every run whose name has <code>{for_all.added.pairs.map(p => p.from).join(', ')}</code> compares with the reference run named with <code>{for_all.added.pairs.map(p => p.to).join(', ')}</code>.</>;
+  else hint = <>Prefer reference runs with <code>{for_all.added.prefer.map(fact_text).join(', ')}</code>, for every run.</>;
 
   const onKeyDown = event => {
     if (event.key === 'ArrowDown') { event.preventDefault(); setActive(Math.min(shown.length - 1, index + 1)); }
@@ -130,6 +117,11 @@ export default function ReferencePicker({ output, onClose }) {
   return <Picker onKeyDown={onKeyDown} role="dialog" aria-label={`Compare ${runName(output)} with another reference run`}>
     <div className="picker-head">
       <strong>Compare {runName(output)} with…</strong>
+      {/* before the list: users choose the scope, then click a run, which applies it */}
+      <RadioGroup inline label="Apply to" selectedValue={scope} onChange={event => setScope(event.currentTarget.value)}>
+        <Radio label="This run" value="run"/>
+        <Radio label="All runs like this" value="all"/>
+      </RadioGroup>
       {candidates.length > 6 && <InputGroup
         size="small"
         autoFocus
@@ -162,7 +154,7 @@ export default function ReferencePicker({ output, onClose }) {
               : c.o.test_input_path}</span>
             <span className={`picker-metric ${Classes.TEXT_MUTED}`}>{metric_line}</span>
             <span className={`picker-why ${Classes.TEXT_MUTED}`}>
-              {c.o === auto?.o && <span>closest</span>}
+              {c.o === current && <span className="picker-in-use">in use</span>}
               {facts.slice(0, 3).map(f => <span key={f.key} className="picker-fact">{fact_text(f)}</span>)}
               {facts.length > 3 && <span>+{facts.length - 3}</span>}
               {!facts.length && c.kind !== 'similar' && c.o.test_input_path === output.test_input_path && <span>same settings</span>}
@@ -174,16 +166,12 @@ export default function ReferencePicker({ output, onClose }) {
       {candidates.length > shown.length && !filter && <div role="presentation" className={Classes.TEXT_MUTED} style={{ padding: '6px 8px', fontSize: 12 }}>{candidates.length - shown.length} more: filter to find them</div>}
     </div>
     <div className="picker-foot">
-      <RadioGroup inline label="Apply to" selectedValue={scope} onChange={event => setScope(event.currentTarget.value)} className="picker-scope">
-        <Radio label="This run" value="run"/>
-        <Radio label="All runs like this" value="all"/>
-      </RadioGroup>
       <span className={`picker-hint ${Classes.TEXT_MUTED}`}>{hint}</span>
       <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <a href={`${docs_root ?? ''}docs/user-guide/reference-runs`} target="_blank" rel="noopener noreferrer">How runs find their reference ↗</a>
-        {rules.pins[output.id] && <Button size="small" variant="minimal" text="Back to the default" onClick={() => {
-          const { [output.id]: _, ...pins } = rules.pins;
-          save({ ...rules, pins });
+        {output.reference_match?.by === 'pin' && <Button size="small" variant="minimal" text="Use the default for this run" onClick={() => {
+          onClose();
+          save_rules(rules, without_pin(rules, output.id), `${runName(output)} compares with its default reference run again`);
         }}/>}
       </span>
     </div>

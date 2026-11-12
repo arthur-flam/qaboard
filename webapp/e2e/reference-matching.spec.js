@@ -117,7 +117,6 @@ const sweep_page = `/${project}/commit/sweep?reference=sweep&batch=sweep-0x1A%3D
 
 test('pairs runs on other inputs by name', async ({ page }) => {
   await page.goto(sweep_page);
-  const card = name => page.locator('.output-card, [data-run], article').filter({ hasText: name }).first();
   await expect(page.getByText('no reference').first()).toBeVisible();
   // above the runs: the change that pairs the most runs first, not the scenes that differ
   const matching = page.getByRole('region', { name: 'Configurations' });
@@ -125,7 +124,9 @@ test('pairs runs on other inputs by name', async ({ page }) => {
   await matching.getByRole('button', { name: 'Pair reg0x1A=05 → 03' }).click();
   await expect(page).toHaveURL(/pair=reg0x1A%3D05%7Creg0x1A%3D03/);
   await expect(matching.getByText('Paired by name:')).toBeVisible();
-  await expect(page.getByText('≈ reg0x1A=03').first()).toBeVisible();
+  await expect(page.getByText('↔ reg0x1A=03').first()).toBeVisible();
+  // with Undo
+  await expect(page.getByText(/5 runs paired by name/)).toBeVisible();
   // the ramp ran with another gain: its name differs by two parts, users pick it
   // cards show their tags once they're on screen
   await page.getByText('ramp_16bit_reg0x1A=05_g8.raw').scrollIntoViewIfNeeded();
@@ -133,16 +134,17 @@ test('pairs runs on other inputs by name', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: /Compare .*ramp_16bit/ })).toBeVisible();
   await page.getByRole('option', { name: /ramp_16bit_reg0x1A=03_g4/ }).click();
   await expect(page).toHaveURL(/pin=110%3A210/);
-  await expect(page.getByText('picked', { exact: true })).toBeVisible();
-  // back to the default
-  await matching.getByRole('button', { name: 'Back to the default' }).click();
+  await expect(page.getByText('picked by you', { exact: true })).toBeVisible();
+  // back to the default, and undo it
+  await matching.getByRole('button', { name: 'Reset to default matching' }).click();
   await expect(page).not.toHaveURL(/pair=|pin=/);
-  await expect(card('night_moon')).toBeVisible();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page).toHaveURL(/pair=.*pin=/);
 });
 
-test('says when two reference runs were as close, and picks the other for all the runs', async ({ page }) => {
+test('says when two reference runs fit equally well, and picks the other for all the runs', async ({ page }) => {
   await page.goto(`/${project}/commit/sensors?reference=sensors&batch=imx766&batch_ref=imx586&selected_views=output-list`);
-  const tied = page.getByText('2 tied');
+  const tied = page.getByText('1 of 2');
   await expect(tied).toBeVisible();
   // the run with a single reference run on another input says which, quietly
   await expect(page.getByText('≈ street_dusk')).toBeVisible();
@@ -152,14 +154,14 @@ test('says when two reference runs were as close, and picks the other for all th
   await expect(page).toHaveURL(/prefer=meta%3Aunit%3D2/);
   // on the run, and in the rules above the runs
   await expect(page.getByText('unit = 2', { exact: true })).toHaveCount(2);
-  await expect(page.getByText('2 tied')).toHaveCount(0);
+  await expect(page.getByText('1 of 2')).toHaveCount(0);
 });
 
 test('opens the picker from the run menu, even when nothing shows on the run', async ({ page }) => {
   await page.goto(`/${project}/commit/sensors?reference=sensors&batch=imx766&batch_ref=imx766&selected_views=output-list`);
-  await expect(page.getByText('tied')).toHaveCount(0);
+  await expect(page.getByText('1 of 2')).toHaveCount(0);
   await page.getByRole('button', { name: 'Run actions' }).first().click();
-  await page.getByRole('menuitem', { name: /Compare with another reference run/ }).click();
+  await page.getByRole('menuitem', { name: /Change reference run/ }).click();
   await expect(page.getByRole('dialog', { name: /Compare .* with another reference run/ })).toBeVisible();
   await expect(page.getByText('Same input')).toBeVisible();
 });

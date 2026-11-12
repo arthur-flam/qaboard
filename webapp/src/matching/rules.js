@@ -3,35 +3,40 @@
 //   ?pair=reg0x1A=05|reg0x1A=03   runs whose name has the first part compare with the reference run that has the second
 //   ?prefer=platform=arm          among the reference runs that could do, those with this fact first
 //   ?pin=<run id>:<reference id>  this run compares with this reference run
-// The checks of the CLI and the API (`qa gate`, backend/backend/compare.py) use the default.
+// The checks of the CLI and the API (`qa gate`, backend/backend/compare.py) use the default: see src/matching/match.js
+// for how to port the rules there.
 
 const as_list = value => value === undefined || value === null || value === '' ? [] : [].concat(typeof value === 'object' && !Array.isArray(value) ? Object.values(value) : value);
 
-// `|` can't be in Windows file names, and is rare elsewhere
-export const parse_pair = text => {
-  const at = text.indexOf('|');
+// The first half can have the separator: we escape it, and "%" ("a|b" => "a%7Cb"). The second half is as is.
+const escape = (text, separator) => text.replace(/%/g, '%25').replaceAll(separator, encodeURIComponent(separator));
+const unescape = text => text.replace(/%7C|%3D|%25/gi, code => decodeURIComponent(code));
+const split_once = (text, separator) => {
+  const at = text.indexOf(separator);
   if (at <= 0 || at === text.length - 1) return null;
-  return { from: text.slice(0, at), to: text.slice(at + 1) };
+  return [unescape(text.slice(0, at)), text.slice(at + 1)];
 };
-export const pair_to_query = ({ from, to }) => `${from}|${to}`;
 
-// facts are "platform", "param:<path>", "meta:<key>", "config:<item>": we split at the first "="
-export const parse_prefer = text => {
-  const at = text.indexOf('=');
-  if (at <= 0) return null;
-  return { key: text.slice(0, at), value: text.slice(at + 1) };
+// `|` can't be in Windows file names, and is rare elsewhere
+const parse_pair = text => {
+  const parts = split_once(String(text), '|');
+  return parts && { from: parts[0], to: parts[1] };
 };
-export const prefer_to_query = ({ key, value }) => `${key}=${value}`;
-
-export const parse_pin = text => {
+// facts are "platform", "param:<path>", "meta:<key>", "config:<item>"
+const parse_prefer = text => {
+  const parts = split_once(String(text), '=');
+  return parts && { key: parts[0], value: parts[1] };
+};
+const parse_pin = text => {
   const [output, reference] = String(text).split(':');
   return output && reference ? [output, reference] : null;
 };
 
 const no_rules = Object.freeze({ pairs: [], prefer: [], pins: {}, custom: false });
+const rules_key = rules => JSON.stringify([rules.pairs, rules.prefer, rules.pins]);
 
 // The rules in a URL's query (parsed by qs). The same object for the same rules: the runs' references are computed
-// again only when they change, not with each change of the URL.
+// again only when they change (compute_batches in src/selectors/batches.js), not with each change of the URL.
 const recent = new Map();
 export const rules_from_query = query => {
   const pairs = as_list(query.pair).map(parse_pair).filter(Boolean);
@@ -49,15 +54,31 @@ export const rules_from_query = query => {
 
 // What to give updateSelected to save rules
 export const rules_to_selection = ({ pairs = [], prefer = [], pins = {} }) => ({
-  pair: pairs.map(pair_to_query),
-  prefer: prefer.map(prefer_to_query),
+  pair: pairs.map(({ from, to }) => `${escape(from, '|')}|${to}`),
+  prefer: prefer.map(({ key, value }) => `${escape(key, '=')}=${value}`),
   pin: Object.entries(pins).map(([output, reference]) => `${output}:${reference}`),
 });
 export const rules_defaults = { pair: [], prefer: [], pin: [] };
 
-// A key for the rules
-export const rules_key = rules => rules.custom ? JSON.stringify([rules.pairs, rules.prefer, rules.pins]) : '';
 
+// ---------------------------------------------------------------------------- changing rules
+
+export const without_pin = (rules, output_id) => {
+  const { [output_id]: _, ...pins } = rules.pins;
+  return { ...rules, pins };
+};
+
+// The rules with others added. A pair replaces the one on the same part, and is left out when another does the same
+// change already (e.g. "a_reg05 → a_reg03" with "reg05 → reg03"). A preference replaces the one on the same fact.
+export const add_rules = (rules, { pairs = [], prefer = [] }) => {
+  const kept = rules.pairs.filter(p => !pairs.some(n => n.from === p.from));
+  const new_pairs = pairs.filter(n => !kept.some(p => p.from !== n.from && n.from.includes(p.from) && n.from.replace(p.from, p.to) === n.to));
+  return {
+    ...rules,
+    pairs: [...kept, ...new_pairs],
+    prefer: [...rules.prefer.filter(p => !prefer.some(n => n.key === p.key)), ...prefer],
+  };
+};
 
 // ---------------------------------------------------------------------------- facts
 

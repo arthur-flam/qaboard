@@ -1,4 +1,5 @@
-import { matching_output, reference_candidates } from '../utils';
+import { matching_output, reference_candidates, rules_for_all, index_outputs } from '../matching/match';
+import { rules_from_query } from '../matching/rules';
 
 // like normalize_output's
 const run = (id, { configurations = ['base'], extra_parameters = {}, ...extra } = {}) => ({
@@ -79,7 +80,7 @@ describe('matching_output', () => {
   });
 
   it('says how it matched', () => {
-    expect(matching_output({ output: run(1), batch: batch([run(2)]) }).match).toMatchObject({ by: 'input', exact: true });
+    expect(matching_output({ output: run(1), batch: batch([run(2)]) }).match).toMatchObject({ by: 'input', others: 0, tied: 0 });
     expect(matching_output({ output: run(1), batch: batch([]) }).match).toBeNull();
   });
 
@@ -128,5 +129,47 @@ describe('matching_output', () => {
   it('says a preference picked the reference run only when it changed the pick', () => {
     const rules = { pairs: [], prefer: [{ key: 'platform', value: 'linux' }], pins: {} };
     expect(matching_output({ output: run(1), batch: batch([run(2), run(3, { platform: 'arm' })]), rules }).match.preferred).toBe(false);
+  });
+
+  it('matches like the backend without rules in the URL', () => {
+    const output = named(1, 'street_reg05.png');
+    const outputs = [named(2, 'street_reg03.png'), named(3, 'street_reg05.png', { configurations: ['other'] })];
+    expect(matching_output({ output, batch: batch(outputs), rules: rules_from_query({}) }))
+      .toEqual(matching_output({ output, batch: batch(outputs) }));
+  });
+
+  describe('rules for all the runs like one', () => {
+    const rules = (extra = {}) => ({ pairs: [], prefer: [], pins: {}, custom: true, ...extra });
+    const candidate = (o, kind) => ({ o, kind });
+
+    it('pairs by name from the run\'s own name, with the rules users have', () => {
+      const output = named(1, 'a_reg05_s1.raw');
+      const ref = named(2, 'a_reg03_s2.raw');
+      const index = index_outputs(batch([ref]));
+      const all = rules_for_all({ output, candidate: candidate(ref, 'similar'), current: undefined, rules: rules({ pairs: [{ from: 'reg05', to: 'reg03' }] }), index });
+      expect(matching_output({ output, index, rules: all.rules }).output_ref).toBe(ref);
+    });
+
+    it('pins instead when no rule would pick the reference run', () => {
+      // another input, while one on the same input ranks first: a preference can't pick it
+      const output = run(1, { input_path: 'x.raw', test_input_path: 'x.raw', test_input_metadata: { id: 's', sensor: 'a' } });
+      const same = run(10, { input_path: 'x.raw', test_input_path: 'x.raw', test_input_metadata: { id: 's', sensor: 'a' } });
+      const other = run(11, { input_path: 'y.raw', test_input_path: 'y.raw', test_input_metadata: { id: 's', sensor: 'b' } });
+      const index = index_outputs(batch([same, other]));
+      expect(rules_for_all({ output, candidate: candidate(other, 'id'), current: same, rules: rules(), index })).toBeNull();
+      // an empty part ("/a/b" and "x/a/b"): no rule
+      const odd = named(5, '/a/b');
+      const ref = named(6, 'x/a/b');
+      expect(rules_for_all({ output: odd, candidate: candidate(ref, 'similar'), rules: rules(), index: index_outputs(batch([ref])) })).toBeNull();
+    });
+
+    it('prefers what the other reference run has', () => {
+      const shot = (id, unit) => run(id, { input_path: `b/${unit}.png`, test_input_path: `b/${unit}.png`, test_input_metadata: { id: 'scene', unit } });
+      const output = run(1, { input_path: 'a.png', test_input_path: 'a.png', test_input_metadata: { id: 'scene' } });
+      const [one, two] = [shot(2, 1), shot(3, 2)];
+      const index = index_outputs(batch([one, two]));
+      const all = rules_for_all({ output, candidate: candidate(two, 'id'), current: one, rules: rules(), index });
+      expect(all.added.prefer).toEqual([{ key: 'meta:unit', value: '2' }]);
+    });
   });
 });

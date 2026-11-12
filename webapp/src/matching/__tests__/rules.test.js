@@ -1,4 +1,4 @@
-import { preferences_for, preferred_score, rules_from_query, rules_to_selection, run_facts, fact_text } from '../rules';
+import { add_rules, preferences_for, preferred_score, rules_from_query, rules_to_selection, run_facts, fact_text } from '../rules';
 import { parse_query } from '../../selection';
 
 describe('reference rules', () => {
@@ -19,5 +19,18 @@ describe('reference rules', () => {
     const other = { platform: 'x86', extra_parameters: { isp: { gain: 4 } }, test_input_metadata: {}, configurations: [] };
     expect(preferences_for(run, other).map(fact_text)).toEqual(['platform = arm', 'sensor = imx766', 'low-light']);
     expect(preferred_score(run, [{ key: 'platform', value: 'arm' }, { key: 'meta:sensor', value: 'other' }])).toBe(1);
+  });
+
+  it('keeps separators and % in what the URL splits', () => {
+    const rules = { pairs: [{ from: 'a|b%7C', to: 'c|d' }], prefer: [{ key: 'param:a=b', value: '1=2' }], pins: {} };
+    const query = parse_query(`?${new URLSearchParams(Object.entries(rules_to_selection(rules)).flatMap(([k, vs]) => vs.map(v => [k, v])))}`);
+    expect(rules_from_query(query)).toMatchObject({ pairs: rules.pairs, prefer: rules.prefer });
+  });
+
+  it('adds rules: a pair replaces the one on the same part, and is left out when another does it already', () => {
+    const rules = { pairs: [{ from: 'reg05', to: 'reg03' }], prefer: [{ key: 'platform', value: 'arm' }], pins: {} };
+    const next = add_rules(rules, { pairs: [{ from: 'a_reg05', to: 'a_reg03' }, { from: 's1', to: 's2' }], prefer: [{ key: 'platform', value: 'x86' }] });
+    expect(next.pairs).toEqual([{ from: 'reg05', to: 'reg03' }, { from: 's1', to: 's2' }]);
+    expect(next.prefer).toEqual([{ key: 'platform', value: 'x86' }]);
   });
 });
