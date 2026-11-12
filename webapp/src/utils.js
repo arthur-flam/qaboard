@@ -1,7 +1,6 @@
 import { interpolateRainbow } from "d3-scale-chromatic";
 import md5 from "js-md5";
 
-import { matching_output, index_outputs } from "./matching/match";
 import { setPathMappings, linux_to_windows } from "./utils/paths";
 import { repo_url } from "./git";
 import { toaster } from "./toaster";
@@ -512,9 +511,6 @@ export {
   format,
   groupBy,
   groupByObject,
-  // in src/matching/match.js, here for older imports
-  matching_output,
-  index_outputs,
   calendarStrings,
   shortId,
   pretty_label,
