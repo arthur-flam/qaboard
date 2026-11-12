@@ -631,7 +631,7 @@ def test_sent_batch_files_are_copied_as_sent(tmp_path):
     files, errors = sent_batches_files([{"path": "C:\\work\\..\\qa\\local.yaml", "content": content}])
     assert errors == []
     copies = copy_batches_files(files, tmp_path / "log")
-    assert [c.relative_to(tmp_path / "log").as_posix() for c in copies] == ["batches/sent/work/qa/local.yaml"]
+    assert [c.relative_to(tmp_path / "log").as_posix() for c in copies] == ["batches/sent/0/local.yaml"]
     assert copies[0].read_text() == content
 
 
@@ -665,21 +665,72 @@ def test_missing_artifacts_tell_how_to_recreate_them(tmp_path, monkeypatch):
     assert "`recreate_artifacts`" in warning and "https://qaboard.example.com/docs/storage/deleting-old-data#recreating-artifacts" in warning
 
 
-def commits_matching(monkeypatch, hexshas):
+def lookup(monkeypatch, hexshas, exact=None):
     import backend.api.tuning as tuning
     ci_commit = MagicMock()
+    ci_commit.query.filter.return_value.first.return_value = SimpleNamespace(hexsha=exact) if exact else None
     ci_commit.query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [SimpleNamespace(hexsha=h) for h in hexshas]
     monkeypatch.setattr(tuning, "CiCommit", ci_commit)
-    return tuning.commit_not_found("group/repo", "abc")
+    return tuning.lookup_commit("group/repo", "abc")
 
 
 def test_unknown_or_ambiguous_commits(monkeypatch):
-    assert commits_matching(monkeypatch, ["abc123"]) is None
-    body, status = commits_matching(monkeypatch, [])
-    assert status == 404 and "doesn't know the commit abc in group/repo" in body["error"] and body["errors"] == [body["error"]]
+    commit, error = lookup(monkeypatch, ["abc123"])
+    assert commit.hexsha == "abc123" and error is None
+    commit, (body, status) = lookup(monkeypatch, [])
+    assert commit is None and status == 404 and "doesn't know the commit abc in group/repo" in body["error"] and body["errors"] == [body["error"]]
     # a short prefix doesn't pick one of the commits for users
-    body, status = commits_matching(monkeypatch, ["abc123456789aa", "abc987654321bb", "abc0"])
-    assert status == 400 and "Several commits" in body["error"] and "abc123456789" in body["error"]
+    commit, (body, status) = lookup(monkeypatch, ["abc123456789aa", "abc987654321bb", "abc0"])
+    assert commit is None and status == 400 and "Several commits" in body["error"] and "abc123456" in body["error"]
+    # ids that are not git hashes, like v1 and v10: the exact one wins
+    commit, error = lookup(monkeypatch, ["abc", "abcd"], exact="abc")
+    assert commit.hexsha == "abc" and error is None
+
+
+def test_aliases_can_not_stand_for_too_many_batches(tmp_path):
+    from backend.api.tuning import check_tuning_request, resolved_batches
+    from qaboard.iterators import resolve_aliases
+    # aliases that refer to each other stop
+    assert list(resolve_aliases("x", {"x": ["x"]})) == ["x"]
+    assert resolved_batches(["a"], {"a": ["b", "c"]}) == ["b", "c"]
+    config = {"project": {"name": "repo"}, "inputs": {"batches": "sub/batches.yaml"}}
+    ci_commit = make_commit(tmp_path, config, batches={"b0": {}})
+    nested = "\n".join(f"  a{i}: [{', '.join([f'a{i + 1}'] * 10)}]" for i in range(8))
+    sent = [{"path": "bomb.yaml", "content": f"aliases:\n{nested}\n  a8: [b0]\n"}]
+    check = check_tuning_request(ci_commit, {"batch_label": "x", "selected_group": "a0", "groups": [], "batches_files": sent})
+    assert "more than 10000 batches" in check["errors"][0]
+
+
+def test_sent_batch_files_copies_never_collide(tmp_path):
+    from backend.api.tuning import copy_batches_files, sent_batches_files
+    files, errors = sent_batches_files([
+        {"path": "a", "content": "a: {}\n"}, {"path": "a/b.yaml", "content": "b: {}\n"},
+        {"path": "2-a.yaml", "content": "c: {}\n"}, {"path": "a.yaml", "content": "d: {}\n"}, {"path": "a.yaml", "content": "e: {}\n"},
+        {"path": "x" * 300 + ".yaml", "content": "f: {}\n"},
+    ])
+    assert errors == []
+    copies = copy_batches_files(files, tmp_path / "log")
+    assert len(set(copies)) == len(files)
+    assert [c.read_text() for c in copies] == ["a: {}\n", "b: {}\n", "c: {}\n", "d: {}\n", "e: {}\n", "f: {}\n"]
+    assert copies[5].name == "batches.yaml"
+
+
+def test_sent_batch_files_with_lone_surrogates_are_invalid():
+    from backend.api.tuning import sent_batches_files
+    for sent in ({"path": "a.yaml", "content": "a: {}\n\ud800"}, {"path": "\ud800.yaml", "content": "a: {}\n"}):
+        files, errors = sent_batches_files([sent])
+        assert files == [] and "Invalid batch file" in errors[0]
+
+
+def test_requests_must_be_json(dummy_app, monkeypatch):
+    import flask
+    import backend.api.tuning as tuning
+    monkeypatch.setattr(tuning, "lookup_commit", lambda project_id, hexsha: (SimpleNamespace(), None))
+    for endpoint in (tuning.check_tuning, tuning.start_tuning):
+        with dummy_app.test_request_context("/api/v1/commit/abc/batch", method="POST", query_string={"project": "repo"}, data="nope"):
+            flask.g.user = {"user_name": "alice"}
+            response, status = endpoint("abc")
+        assert status == 400 and response.get_json()["error"] == "Send the request as a JSON object."
 
 
 def test_start_a_batch_from_an_api_client(dummy_app, tmp_path, monkeypatch):
@@ -691,8 +742,7 @@ def test_start_a_batch_from_an_api_client(dummy_app, tmp_path, monkeypatch):
     batch = SimpleNamespace(batch_dir=tmp_path / "outputs" / "batch", batch_dir_override=None, data={})
     commit.get_or_create_batch = lambda label: batch
     commit.outputs_dir = tmp_path / "outputs"
-    monkeypatch.setattr(tuning, "commit_not_found", lambda project_id, hexsha: None)
-    monkeypatch.setattr(tuning, "find_commit", lambda project_id, hexsha: commit)
+    monkeypatch.setattr(tuning, "lookup_commit", lambda project_id, hexsha: (commit, None))
     monkeypatch.setattr(tuning, "db_session", MagicMock())
     monkeypatch.setattr(tuning, "check_storage_path", lambda path: None)
     monkeypatch.setattr(tuning, "user_batch_dir", lambda batch_dir, user: batch_dir)
@@ -722,7 +772,7 @@ def test_start_a_batch_from_an_api_client(dummy_app, tmp_path, monkeypatch):
     assert '"parameter_search": {}' in command
     # the user's private and the shared batches, then the sent file
     assert [p.relative_to(started["log_dir"]).as_posix() for p in sorted(started["log_dir"].glob("batches/**/*.y*ml"))] == [
-        "batches/commit/sub/batches.yaml", "batches/qaboard/alice.yml", "batches/qaboard/extra-batches.yml", "batches/sent/local.yaml",
+        "batches/commit/sub/batches.yaml", "batches/qaboard/alice.yml", "batches/qaboard/extra-batches.yml", "batches/sent/3/local.yaml",
     ]
-    assert (started["log_dir"] / "batches/sent/local.yaml").read_text() == "mine: {inputs: [b]}\n"
+    assert (started["log_dir"] / "batches/sent/3/local.yaml").read_text() == "mine: {inputs: [b]}\n"
     assert "export QABOARD_TUNING=true" in started["script"]

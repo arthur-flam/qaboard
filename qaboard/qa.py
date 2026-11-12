@@ -68,9 +68,13 @@ def qa(ctx, platform, configurations, label, tuning, tuning_filepath, dryrun, sh
   if ctx.invoked_subcommand in ('auth', 'runs'):
     return
   # Local runs save their results in output/: only some commands need the storage
-  # `qa batch --commit` only talks to QA-Board
-  on_server = ctx.invoked_subcommand in ('batch', 'optimize') and any(a == '--commit' or a.startswith('--commit=') for a in ctx.args)
-  storage_is_missing = report_missing_storage(storage_needed_by(ctx.invoked_subcommand, share, is_ci)) if not on_server else False
+  needed_by = storage_needed_by(ctx.invoked_subcommand, share, is_ci)
+  if ctx.invoked_subcommand in ('batch', 'optimize'):
+    # they check it once they know if they run locally: with --commit, QA-Board starts the batch (see check_storage)
+    ctx.obj['storage_needed_by'] = needed_by
+    storage_is_missing = False
+  else:
+    storage_is_missing = report_missing_storage(needed_by)
   # We want all paths to be relative to top-most qaboard.yaml
   # it should be located at the root of the git repository
   if config_has_error and not ignore_config_errors:
@@ -595,6 +599,12 @@ default_lsf_concurrency = lsf_config.get('concurrency', 0)
 dask_config = (config.get('runners') or {}).get('dask') or {}
 default_dask_concurrency = dask_config.get('concurrency')
 
+def check_storage(ctx):
+  """For `qa batch` and `qa optimize`, when they run locally: exits if the storage they need is missing (see the `qa` group)."""
+  if report_missing_storage(ctx.obj.pop('storage_needed_by', None)):
+    sys.exit(1)
+
+
 def split_batch_names(batch_names) -> Tuple[List[str], Optional[List[str]]]:
   """`qa batch`'s arguments: (the batch names, the arguments to forward to the code, None if there is no separator)"""
   for i, arg in enumerate(batch_names):
@@ -626,7 +636,7 @@ default_action_on_pending = config.get('outputs', {}).get('action_on_pending', "
     ignore_unknown_options=True,
     allow_interspersed_args=True,
 ))
-@click.option('--commit', 'on_commit', help="Have QA-Board start the batch on this commit (id, branch, tag), as from its web app: with the commit's code, artifacts and batch files. Only the --batches-file you give are sent. Doesn't wait for the runs.")
+@click.option('--commit', 'on_commit', help="Have QA-Board start the batch on this pushed commit (id, branch, tag), as from its web app, from the commit's artifacts. Batches come from the commit's inputs.batches, then your shared and private batches in QA-Board, then the --batches-file you send (read last, they win). Needs --label. Prints the batch's page and returns.")
 @click.option('--batch', '-b', 'batches', multiple=True, help="We run over all inputs+configs+database in those batches")
 @click.option('--batches-file', 'batches_files', type=PathType(),  default=default_batches_files, multiple=True, help="YAML files listing batches of inputs+configs+database.")
 @click.option('--runs-file', type=PathType(), default=None, help='Instead of batches, a JSON file listing the runs to do, e.g. to redo runs: {"runs": [{"input_path", "database", "type", "platform", "configurations", "extra_parameters", "job_options"}]}. Runs are done with the runner and job options they list, unless you give a --runner.')
@@ -656,13 +666,15 @@ default_action_on_pending = config.get('outputs', {}).get('action_on_pending', "
 def batch(ctx, on_commit, batches, batches_files, runs_file, tuning_search_dict, tuning_search_file, no_wait, list_contexts, list_output_dirs, list_inputs, runner, local_concurrency, local_timeout, lsf_max_threads, lsf_max_memory, lsf_queue, lsf_resources, lsf_priority, lsf_options, lsf_concurrency, dask_concurrency, action_on_existing, action_on_pending, prefix_outputs_path, batch_names):
   """Run on all the inputs/tests/recordings in a given batch using the LSF cluster."""
   from .runners import runners
-  if on_commit:
+  if on_commit is not None:
     from .on_server import start_on_server
     names, forwarded = split_batch_names(batch_names)
-    tuning_search, _ = load_tuning_search(tuning_search_dict, tuning_search_file)
     given_action = ctx.get_parameter_source('action_on_existing') != click.core.ParameterSource.DEFAULT
-    return start_on_server(ctx, on_commit, [*names, *batches], batches_files, tuning_search,
-                           action_on_existing if given_action else None, forwarded if forwarded is not None else ctx.obj.get("forwarded_args", []))
+    return start_on_server(ctx, on_commit, [*names, *batches], batches_files,
+                           tuning_search=(tuning_search_dict, tuning_search_file),
+                           action_on_existing=action_on_existing if given_action else None,
+                           forwarded_args=forwarded if forwarded is not None else ctx.obj.get("forwarded_args", []))
+  check_storage(ctx)
   if not batches_files and not runs_file:
     click.secho(f'WARNING: Could not find how to identify input tests.', fg='red', err=True, bold=True)
     click.secho(f'Consider adding to qaboard.yaml somelike like:\n```\ninputs:\n  batches: batches.yaml\n```', fg='red', err=True)

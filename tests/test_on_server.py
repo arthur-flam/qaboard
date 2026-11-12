@@ -189,12 +189,47 @@ class TestCli(unittest.TestCase):
 
   def test_defaults_are_the_servers(self):
     # inputs.batches are the commit's, existing runs are kept, the platform is the commit's default
-    result = self.qa('batch', '--commit', self.head, 'images', env={'QA_RUNNER': 'lsf', 'QA_BATCH_RUNNER': 'lsf'})
+    result = self.qa('batch', '--commit', self.head, 'images', env={'QA_RUNNER': 'lsf', 'QA_BATCH_RUNNER': 'lsf', 'QA_LABEL': 'sweep', 'QA_SHARE': 'true'})
     assert result.exit_code == 0, result.output
-    assert self.calls[0]["json"] == {"batch_label": "default", "selected_group": ["images"], "notify": False}
+    # not "@user| sweep" like `qa --share` would: these are the commit's results
+    assert self.calls[0]["json"] == {"batch_label": "sweep", "selected_group": ["images"], "notify": False}
+
+  def test_needs_a_label(self):
+    # else the runs would be added to the commit's CI results
+    result = self.qa('batch', '--commit', self.head, 'images')
+    assert result.exit_code == 1 and "Name the batch with --label" in result.unstyled_output and "'default'" in result.unstyled_output
+    assert self.calls == []
+
+  def test_an_empty_commit_is_refused(self):
+    # e.g. --commit "$SHA" without SHA: it must not run locally
+    result = self.qa('--label', 'x', 'batch', '--commit', '', 'images')
+    assert result.exit_code == 1 and "--commit is empty" in result.unstyled_output
+    assert self.calls == []
+
+  def test_doesnt_need_the_storage(self):
+    from qaboard.config import ci_env_variables
+    for command in (['batch', '--commit', self.head, 'images'], ['optimize', '--commit', self.head, '--batch', 'images', '--config-file', 'tuning.yaml']):
+      result = self.qa('--label', 'x', *command, env={'QA_STORAGE': '/proc/no-storage-here', 'CI': 'true'})
+      assert result.exit_code == 0, result.output
+      assert "storage" not in result.unstyled_output.lower(), result.output
+    assert 'CI' in ci_env_variables
+
+  def test_bad_tuning_searches_are_clean_errors(self):
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', '--tuning-search', '{bad')
+    assert result.exit_code == 1 and result.unstyled_output.startswith("ERROR: Invalid tuning search") and "Traceback" not in result.output
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', '--tuning-search-file', 'nope.yaml')
+    assert result.exit_code == 1 and "Could not find the tuning search file nope.yaml" in result.unstyled_output
+    assert self.calls == []
+
+  def test_files_relative_to_where_qa_was_started(self):
+    with TemporaryDirectory() as elsewhere:
+      (Path(elsewhere) / 't.yaml').write_text("parameter_search: {a: [1]}\n")
+      result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', '--tuning-search-file', 't.yaml', obj={"previous_cwd": elsewhere})
+    assert result.exit_code == 0, result.output
+    assert self.calls[0]["json"]["tuning_search"] == {"parameter_search": {"a": [1]}}
 
   def test_dryrun_only_checks(self):
-    result = self.qa('--dryrun', 'batch', '--commit', self.head, 'images')
+    result = self.qa('--dryrun', '--label', 'x', 'batch', '--commit', self.head, 'images')
     assert result.exit_code == 0, result.output
     assert [c["url"].rsplit("/", 1)[1] for c in self.calls] == ["check"]
     assert result.stdout == ""
@@ -202,36 +237,43 @@ class TestCli(unittest.TestCase):
 
   def test_refuses_options_that_dont_apply(self):
     for argv in (['batch', '--runner', 'local'], ['batch', '--list'], ['--share', 'batch'], ['-c', 'base', 'batch'], ['--tuning', '{}', 'batch']):
-      result = self.qa(*argv[:argv.index('batch') + 1], '--commit', self.head, 'images', *argv[argv.index('batch') + 1:])
+      result = self.qa('--label', 'x', *argv[:argv.index('batch') + 1], '--commit', self.head, 'images', *argv[argv.index('batch') + 1:])
       assert result.exit_code == 1, (argv, result.output)
       assert "can't be used with --commit" in result.unstyled_output, (argv, result.output)
       assert self.calls == []
-    result = self.qa('batch', '--commit', self.head, 'images', obj={"forwarded_args": ["--verbose"]})
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', obj={"forwarded_args": ["--verbose"]})
     assert result.exit_code == 1 and "can't forward arguments" in result.unstyled_output
 
   def test_says_why_the_server_refuses(self):
     error = "Unknown batch: imgs. Defined: images"
-    result = self.qa('batch', '--commit', self.head, 'imgs', check={**CHECK_OK, "errors": [error], "warnings": ["The entrypoint is not in the artifacts."]})
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'imgs', check={**CHECK_OK, "errors": [error], "warnings": ["The entrypoint is not in the artifacts."]})
     assert result.exit_code == 1
     assert f"ERROR: {error}" in result.unstyled_output and "WARNING: The entrypoint is not in the artifacts." in result.unstyled_output
     assert len(self.calls) == 1
     unknown = "QA-Board doesn't know the commit abc1234 in user/sample_project."
-    result = self.qa('batch', '--commit', self.head, 'images', check=(404, {"error": unknown, "errors": [unknown]}))
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', check=(404, {"error": unknown, "errors": [unknown]}))
     assert result.exit_code == 1 and f"ERROR: {unknown}" in result.unstyled_output
     # e.g. QA-Board asked the CI to recreate the artifacts
-    result = self.qa('batch', '--commit', self.head, 'images', started=(409, {"error": "Asked the GitLab CI job build to recreate the artifacts. Try again once it is done."}))
-    assert result.exit_code == 1 and "Try again once it is done" in result.unstyled_output
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', started=(409, {"error": "Asked the GitLab CI job build to recreate the artifacts. Try again once it is done.", "artifacts": {"status": "recreating"}}))
+    # scripts can try again later
+    assert result.exit_code == 2 and "Try again once it is done" in result.unstyled_output
     assert result.stdout == ""
 
   def test_needs_to_sign_in(self):
-    result = self.qa('batch', '--commit', self.head, 'images', check=(401, {"error": "Sign in to do this.", "reason": "sign_in_required"}))
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', check=(401, {"error": "Sign in to do this.", "reason": "sign_in_required"}))
     assert result.exit_code == 1
     assert "QA-Board refused to start the batch: Sign in to do this." in result.unstyled_output
 
   def test_missing_artifacts_are_not_started(self):
-    result = self.qa('batch', '--commit', self.head, 'images', check={**CHECK_OK, "artifacts": {"ok": False, "problems": ["The artifacts were deleted."]}})
-    assert result.exit_code == 1 and "recreate_artifacts" in result.unstyled_output
+    missing = {"ok": False, "problems": ["The artifacts were deleted."], "recreate_docs": "http://qaboard.example.com/docs/x#recreating-artifacts"}
+    warning = "The artifacts are missing: [...] When you start, QA-Board will try to restore them from the source code"
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', check={**CHECK_OK, "artifacts": missing, "warnings": [warning]})
+    assert result.exit_code == 1 and "set `recreate_artifacts` in qaboard.yaml (http://qaboard.example.com/docs/x#recreating-artifacts)" in result.unstyled_output
+    # we don't say the server would restore them: we don't start
+    assert "When you start" not in result.unstyled_output
     assert len(self.calls) == 1
+    result = self.qa('--label', 'x', 'batch', '--commit', self.head, 'images', check={**CHECK_OK, "artifacts": {**missing, "recreating": True}})
+    assert result.exit_code == 2 and "being recreated" in result.unstyled_output
 
   def test_optimize(self):
     (self.project_dir / 'optim.yaml').write_text("objective: {psnr: {}}\nevaluations: 10\n")
@@ -240,5 +282,5 @@ class TestCli(unittest.TestCase):
     assert result.exit_code == 0, result.output
     assert self.calls[1]["json"] == {"batch_label": "auto", "selected_group": ["images"], "notify": False,
                                      "tuning_search": {"search_type": "optimize", "parameter_search": "objective: {psnr: {}}\nevaluations: 10\n"}}
-    result = self.qa('optimize', '--commit', self.head, '--batch', 'images', '--config-file', 'optim.yaml', '--checkpoint', 'x.log')
+    result = self.qa('--label', 'auto', 'optimize', '--commit', self.head, '--batch', 'images', '--config-file', 'optim.yaml', '--checkpoint', 'x.log')
     assert result.exit_code == 1 and "--checkpoint can't be used with --commit" in result.unstyled_output

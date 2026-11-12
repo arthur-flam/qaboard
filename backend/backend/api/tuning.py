@@ -630,24 +630,45 @@ def find_commit(project_id, hexsha):
             .first())
 
 
-def commit_not_found(project_id, hexsha):
-    """Why we can't find the commit to start a batch on, as {error, errors, warnings}, and the HTTP status. None if we can."""
+def lookup_commit(project_id, hexsha):
+    """
+    The project's commit to start a batch on: the one with this id, else the only one whose id starts with it.
+    Returns (commit, None), or (None, ({error, errors, warnings}, HTTP status)) saying why we can't find it.
+    """
+    exact = CiCommit.query.filter(CiCommit.project_id == project_id, CiCommit.hexsha == hexsha).first()
+    if exact is not None:
+        return exact, None
     matches = (CiCommit.query
                .filter(CiCommit.project_id == project_id, CiCommit.hexsha.startswith(hexsha))
                .order_by(CiCommit.id)
                .limit(3)
                .all())
     if len(matches) == 1:
-        return None
+        return matches[0], None
     if matches:
-        message = (f"Several commits of {project_id} start with {hexsha} ({', '.join(c.hexsha[:12] for c in matches[:2])}...): "
+        shown = len(hexsha) + 6
+        message = (f"Several commits of {project_id} start with {hexsha} ({', '.join(c.hexsha[:shown] for c in matches[:2])}...): "
                    "give more of the commit id.")
         status = 400
     else:
         message = (f"QA-Board doesn't know the commit {hexsha} in {project_id}. Was it pushed, and did its CI run `qa` on it "
                    "(e.g. `qa save-artifacts`)? If the CI is still running, try again when it saved the artifacts.")
         status = 404
-    return {"error": message, "errors": [message], "warnings": []}, status
+    return None, ({"error": message, "errors": [message], "warnings": []}, status)
+
+
+# A batch can't stand for more batches than this, e.g. with aliases of aliases
+MAX_RESOLVED_BATCHES = 10_000
+
+def resolved_batches(names, aliases) -> List[str]:
+    """resolve_aliases(), with a limit: sent batch files are untrusted. Raises ValueError."""
+    try:
+        resolved = list(itertools.islice(resolve_aliases(names, aliases), MAX_RESOLVED_BATCHES + 1))
+    except RecursionError: # older qaboard packages, whose resolve_aliases didn't stop
+        raise ValueError("The aliases refer to each other.")
+    if len(resolved) > MAX_RESOLVED_BATCHES:
+        raise ValueError(f"The aliases stand for more than {MAX_RESOLVED_BATCHES} batches: check that they don't refer to each other.")
+    return resolved
 
 
 # Batch files sent with a request (`qa batch --commit --batches-file`)
@@ -670,10 +691,10 @@ def sent_batches_files(value):
     for sent in value:
         path = sent.get('path') if isinstance(sent, dict) else None
         content = sent.get('content') if isinstance(sent, dict) else None
-        if not isinstance(path, str) or not isinstance(content, str) or not batches_file_copy_parts(path) or len(path) > 512 or '\0' in path:
+        if not isinstance(path, str) or not isinstance(content, str) or not batches_file_copy_parts(path) or len(path) > 512 or '\0' in path or not is_utf8(path) or not is_utf8(content):
             errors.append(f"Invalid batch file {str(path)[:100]!r}: each of `batches_files` should be {{path, content}}, as text.")
             continue
-        if len(content.encode()) > MAX_SENT_BATCHES_FILE_SIZE:
+        if len(content.encode('utf-8')) > MAX_SENT_BATCHES_FILE_SIZE:
             errors.append(f"The batch file {path} is too large: at most {MAX_SENT_BATCHES_FILE_SIZE // 1024 // 1024} MB.")
             continue
         batches_file = {"source": "sent", "path": path, "content": content, "location": None, "exists": True}
@@ -683,6 +704,15 @@ def sent_batches_files(value):
             continue
         files.append(batches_file)
     return files, errors
+
+
+def is_utf8(text: str) -> bool:
+    """False for strings we can't write, e.g. with lone surrogates (JSON allows "\\ud800")"""
+    try:
+        text.encode('utf-8')
+        return True
+    except UnicodeEncodeError:
+        return False
 
 
 def load_batches(ci_commit, project_id, groups, sent=()):
@@ -728,7 +758,7 @@ def pipeline_batches(batches, merged_batches):
                         step_config = step.get('batch')
                         if isinstance(step_config, str): batches.append(step_config)
                         elif isinstance(step_config, list): batches = batches + [b for b in step_config if isinstance(b, str)]
-                        batches = list(resolve_aliases(batches, merged_batches['aliases']))
+                        batches = resolved_batches(batches, merged_batches['aliases'])
     return batches
 
 
@@ -740,14 +770,21 @@ def copy_batches_files(files, log_dir):
     Returns the paths of the copies.
     """
     copies = []
-    for batches_file in files:
-        copy = Path(log_dir) / "batches" / batches_file["source"] / Path(*batches_file_copy_parts(batches_file["path"]))
-        if copy in copies:
-            copy = copy.with_name(f"{len(copies)}-{copy.name}")
+    for idx, batches_file in enumerate(files):
+        parts = batches_file_copy_parts(batches_file["path"])
+        if batches_file["source"] == "sent":
+            # untrusted paths: a folder per file, so that they can't collide, and a short name
+            name = parts[-1]
+            parts = [str(idx), name if len(name.encode('utf-8')) <= 100 else f"batches{Path(name).suffix[:10]}"]
+        copy = Path(log_dir) / "batches" / batches_file["source"] / Path(*parts)
+        n = len(copies)
+        while copy in copies:
+            copy = copy.with_name(f"{n}-{Path(*parts).name}")
+            n += 1
         copy.parent.mkdir(parents=True, exist_ok=True)
         if "content" in batches_file:
             # sent with the request: we write exactly what we read when checking it
-            with copy.open("w") as f:
+            with copy.open("w", encoding="utf-8") as f:
                 f.write(batches_file["content"])
         else:
             shutil.copyfile(batches_file["location"], copy)
@@ -844,14 +881,15 @@ def check_tuning_request(ci_commit, data, user_name=None):
 
     errors.extend(check_tuning_search(data.get('tuning_search')))
 
-    artifacts = commit_artifacts_info(ci_commit)
+    # with where the docs explain how QA-Board can recreate them (the CLI says it)
+    artifacts = {**commit_artifacts_info(ci_commit), "recreate_docs": docs_link(RECREATE_ARTIFACTS_DOCS)}
     if not artifacts["ok"]:
         problems = " ".join(artifacts.get("problems", []))
         if artifacts.get("recreate") and not artifacts.get("recreate_errors"):
             warnings.append(f"The artifacts are missing: {problems} When you start, QA-Board will first ask {artifacts['recreate']} to recreate them.")
         else:
             warnings.append(f"The artifacts are missing: {problems} When you start, QA-Board will try to restore them from the source code, but not build outputs (e.g. binaries)."
-                            + ("" if artifacts.get("recreate_errors") else f" To rebuild them, QA-Board can ask your CI: set `recreate_artifacts` in qaboard.yaml ({docs_link(RECREATE_ARTIFACTS_DOCS)})."))
+                            + ("" if artifacts.get("recreate_errors") else f" To rebuild them, QA-Board can ask your CI: set `recreate_artifacts` in qaboard.yaml ({artifacts['recreate_docs']})."))
     # e.g. files listed in the manifests are missing: the runs may not need them
     warnings.extend(f"{w} Runs that need them will fail." for w in artifacts.get("warnings", []))
     for error in artifacts.get("recreate_errors", []):
@@ -873,8 +911,12 @@ def check_tuning_request(ci_commit, data, user_name=None):
     if selected:
         merged_batches, batches_errors, defined, batches_files = load_batches(ci_commit, ci_commit.project_id, groups, sent)
         warnings.extend(batches_errors)
-        batches = list(resolve_aliases(selected, merged_batches['aliases']))
-        batches = pipeline_batches(batches, merged_batches)
+        try:
+            batches = resolved_batches(selected, merged_batches['aliases'])
+            batches = pipeline_batches(batches, merged_batches)
+        except ValueError as e:
+            errors.append(str(e))
+            batches = []
         definitions, _ = definitions_of(batches, defined)
         # `qa batch` also accepts wildcards (batch-*), and input paths (semi-deprecated)
         unknown = [b for b in batches if b not in defined and not fnmatch.filter(defined, b)]
@@ -904,10 +946,13 @@ def check_tuning_request(ci_commit, data, user_name=None):
 def check_tuning(hexsha):
     """Validates a request to start a batch, without starting it. Returns {errors, warnings, artifacts}."""
     project_id = request.args["project"]
-    if not_found := commit_not_found(project_id, hexsha):
+    ci_commit, not_found = lookup_commit(project_id, hexsha)
+    if not_found:
         return jsonify(not_found[0]), not_found[1]
-    ci_commit = find_commit(project_id, hexsha)
-    check = check_tuning_request(ci_commit, request.get_json(silent=True), user_name=g.user.get('user_name'))
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send the request as a JSON object.", "errors": ["Send the request as a JSON object."], "warnings": []}), 400
+    check = check_tuning_request(ci_commit, data, user_name=g.user.get('user_name'))
     return jsonify({k: v for k, v in check.items() if k in ("errors", "warnings", "artifacts", "batches", "definitions")})
 
 
@@ -927,12 +972,15 @@ def start_tuning(hexsha):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    if not_found := commit_not_found(project_id, hexsha):
+    ci_commit, not_found = lookup_commit(project_id, hexsha)
+    if not_found:
         return jsonify(not_found[0]), not_found[1]
-    ci_commit = find_commit(project_id, hexsha)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send the request as a JSON object.", "errors": ["Send the request as a JSON object."], "warnings": []}), 400
 
     # API clients (`qa batch --commit`) get the web app's defaults
-    data = with_defaults(request.get_json(silent=True), user_name=user)
+    data = with_defaults(data, user_name=user)
     check = check_tuning_request(ci_commit, data, user_name=user)
     restored_message = None
     if not check["artifacts"]["ok"]:
