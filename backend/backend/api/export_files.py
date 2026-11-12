@@ -354,6 +354,20 @@ def export_file(source, dest, type, user=None):
     raise ValueError("Invalid type. Use 'link' or 'copy'.")
 
 
+def make_folders(path, type, user=None):
+  """
+  The export's subfolders, e.g. new/ and reference/ with "{side}/...": made by whoever writes the files in them.
+  Copies are written as the user: the server may not be able to create folders where the user can (e.g. NFS root squash,
+  a folder the user chose), and the user may not be able to write in a folder the server made (e.g. ACLs, chmod ignored).
+  """
+  if type == "copy":
+    if user is None:
+      raise Exception("Need Login")
+    as_user(user.user_name, mkdir_shared, path)
+  else:
+    mkdir_shared(path)
+
+
 def crop_box(region, width, height):
   """(left, top, right, bottom): the region in the image's pixels. Raises ValueError if it's outside the image"""
   x, y, w, h = region['x'], region['y'], region['w'], region['h']
@@ -457,7 +471,7 @@ def execute(plan, export_dir, type, user, replace):
     try:
       check_inside(dest, export_dir)
       if not dest.parent.is_dir():
-        mkdir_shared(dest.parent)
+        make_folders(dest.parent, type, user=user)
         check_inside(dest, export_dir)
       if os.path.lexists(dest):
         same = os.path.exists(dest) and os.path.samefile(dest, f['source'])

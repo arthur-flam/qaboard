@@ -1,4 +1,5 @@
 """backend/api/export_files.py: the web app says how to name files, the server lists, names and links them"""
+import os
 import re
 import sys
 import importlib.util
@@ -326,3 +327,61 @@ def test_reference_from_another_project(export_api, tmp_path, dummy_app, monkeyp
   assert f"reference={'b' * 40}" in url and 'ref_project=other%2Fproj' in url
   # in the same project, the link doesn't say it
   assert 'ref_project' not in export_api.page_url({**sides, "reference": {**sides['reference'], "project": "proj"}})
+
+
+def by_side(export_api, tmp_path):
+  """"A folder for new, one for reference": the export makes new/ and reference/ in its folder"""
+  new = stored_run(tmp_path, 1, 'scenes/a.raw')
+  ref = stored_run(tmp_path, 2, 'scenes/a.raw', hexsha='b' * 40)
+  items = [export_api.Item(new, 'new', {'side': 'new'}), export_api.Item(ref, 'reference', {'side': 'reference'})]
+  return export_api.make_plan(items, '*.png', '{side}/{input}__{file}', '_')
+
+
+def test_copies_folders_are_made_as_the_user(export_api, tmp_path, monkeypatch):
+  """Copies are written as the user, and so are the folders they go in: the server may not be able to write where the user can"""
+  calls = []
+  def as_user(user, f, *args, **kwargs):
+    calls.append((user, f.__name__, *map(str, args)))
+    return f(*args, **kwargs)
+  monkeypatch.setattr(export_api, 'as_user', as_user)
+  plan = by_side(export_api, tmp_path)
+  folder = tmp_path / 'copies'
+  folder.mkdir()
+  exported, skipped, errors = export_api.execute(plan, folder, 'copy', SimpleNamespace(user_name='alice'), replace=True)
+  assert errors == [] and skipped == [] and len(exported) == 2
+  assert [c for c in calls if c[1] == 'mkdir_shared'] == [('alice', 'mkdir_shared', str(folder / 'new')), ('alice', 'mkdir_shared', str(folder / 'reference'))]
+  assert (folder / 'new' / 'scenes_a__out.png').read_text() == 'out.png'
+  # links are made by the server, and so are their folders
+  calls.clear()
+  folder = tmp_path / 'links'
+  folder.mkdir()
+  exported, skipped, errors = export_api.execute(plan, folder, 'link', SimpleNamespace(user_name='alice'), replace=True)
+  assert errors == [] and len(exported) == 2 and calls == [] and (folder / 'reference' / 'scenes_a__out.png').is_file()
+
+
+@pytest.mark.skipif(not hasattr(os, 'geteuid') or os.geteuid() != 0, reason="acts as another user: the server runs as root")
+def test_copies_and_their_folders_belong_to_the_user(export_api, monkeypatch):
+  """For real, as another account: in a folder that belongs to the user, new/ and reference/ are theirs, like the copies"""
+  import shutil
+  import tempfile
+  uid = gid = 54321
+  import backend.fs_utils as fs_utils
+  monkeypatch.setattr(fs_utils, 'unix_identity', lambda user: (uid, gid, [gid]))
+  # the user must reach the runs and the export folder: not in pytest's tmp_path, only root's
+  base = Path(tempfile.mkdtemp())
+  try:
+    base.chmod(0o755)
+    plan = by_side(export_api, base / 'runs')
+    for path in (base / 'runs').rglob('*'):
+      path.chmod(0o755 if path.is_dir() else 0o644)
+    (base / 'runs').chmod(0o755)
+    folder = base / 'theirs'
+    folder.mkdir()
+    folder.chmod(0o755)
+    os.chown(folder, uid, gid)
+    exported, skipped, errors = export_api.execute(plan, folder, 'copy', SimpleNamespace(user_name='alice'), replace=False)
+    assert errors == [] and len(exported) == 2
+    for path in ('new', 'reference', 'new/scenes_a__out.png', 'reference/scenes_a__out.png'):
+      assert (folder / path).stat().st_uid == uid, path
+  finally:
+    shutil.rmtree(base)
