@@ -159,9 +159,10 @@ def post(path: str, project: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, 
   except requests.exceptions.RequestException as e:
     raise StartError(f"Could not reach QA-Board at {qaboard_url}: {describe_network_error(e)}")
   if r.status_code in (401, 403):
+    # it says why, and what to do (sign in, ask for a role...)
     if not print_auth_error(r, "QA-Board refused to start the batch"):
       raise StartError(f"QA-Board refused to start the batch ({r.status_code}): {describe_body(r)}")
-    raise StartError("Sign in to QA-Board with a token that can start batches in this project (`qa auth login`).")
+    raise StartError("Nothing was started.")
   data = json_body(r)
   if not data:
     raise StartError(f"Unexpected answer from QA-Board ({r.status_code}): {describe_body(r)}")
