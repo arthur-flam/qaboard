@@ -43,6 +43,7 @@ import {
 } from "../export/plan";
 import { reportUrl } from "../errors";
 import { FieldDot, NameAnatomy, NameParts } from "../export/NameParts";
+import { ExportProblems } from "../export/ExportProblems";
 import { useCrops, useShownRegionSets, DEFAULT_MAX_FOUND, MAX_FOUND } from "../export/useCrops";
 import { runs_url, python_snippet } from "./ScriptPlugin";
 
@@ -216,6 +217,29 @@ const length_fixes = (naming, picked) => {
 const Fixes = ({ fixes, onFix }) => <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, marginTop: 4 }}>
   {fixes.map((f, index) => <Button key={index} size="small" variant="outlined" icon="wrench" onClick={() => onFix(f.fix)}>{f.text}</Button>)}
 </div>;
+
+// What the user's account can do, for copies: they're made as the user (backend/api/export_files.py, check_copies)
+const CopyCheck = ({ check, folder, fixes, onFix }) => {
+  const unreadable = check.unreadable ?? [];
+  const sides = [...new Set(unreadable.map(u => u.side))];
+  const all = unreadable.length > 0 && unreadable.length === check.nb_checked;
+  const groups = check.groups_known === false && <p className={Classes.TEXT_MUTED} style={{ margin: '4px 0 0' }}>
+    QA-Board only knows your account's primary group: copies of files you can read only through another group fail. Ask your QA-Board admins to give it your groups.
+  </p>;
+  return <>
+    {check.folder_error && <Callout intent="danger" icon="lock" title="You can't write in this folder" style={{ marginBottom: 8 }}>
+      Copies are made as you, and your account ({check.user}) can't write in <code style={{ wordBreak: 'break-all' }}>{folder}</code>.
+      <Fixes fixes={fixes} onFix={onFix}/>
+    </Callout>}
+    {unreadable.length > 0 && <Callout intent={all ? 'danger' : 'warning'} icon="lock" title={`Your account can't read ${all ? "these runs' files" : "some runs' files"}`} style={{ marginBottom: 8 }}>
+      Copies are made as you: {unreadable.length} of the {plural(check.nb_checked, 'file')} checked can't be read by your account ({check.user}), from the {sides.join(' and ')} runs, e.g. <code style={{ wordBreak: 'break-all' }}>{unreadable[0].error}</code>. {all ? 'The copies would fail.' : 'Their copies would fail.'}
+      {groups}
+      <Fixes fixes={fixes.filter(f => f.fix.type)} onFix={onFix}/>
+    </Callout>}
+    {!unreadable.length && groups}
+    {check.error && <p className={Classes.TEXT_MUTED} style={{ margin: '4px 0' }}>QA-Board couldn't check what your account can copy: {check.error}</p>}
+  </>;
+};
 
 const ProblemList = ({ items, more }) => <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
   {items.map((item, index) => <li key={index}>{item}</li>)}
@@ -522,13 +546,18 @@ const ExportDialog = ({
   };
 
   const finding = crops_enabled ? crops.finding : [];
-  const can_export = can_preview && is_current && !preview.isFetching && !preview.error && p && p.nb_files > 0 && p.nb_collisions === 0 && !(p.nb_too_long > 0) && finding.length === 0;
+  // copies are made as the user: the server checks what their account can do (copy_check)
+  const copy_check = type === 'copy' ? p?.copy_check : null;
+  const can_export = can_preview && is_current && !preview.isFetching && !preview.error && p && p.nb_files > 0 && p.nb_collisions === 0 && !(p.nb_too_long > 0) && finding.length === 0 && !copy_check?.folder_error;
   const doExport = () => {
     setExporting(true);
     http.post('/api/v1/exports', body, { params: { project } })
       .then(({ data }) => {
-        track('export_start', { export_type: type, n_runs: data.nb_runs, n_files: data.nb_files_exported, layout: layout_of(naming.template, naming.separator), windows: naming.windows, crops: data.nb_crops ?? 0, crop_sources: crops_enabled ? crop_sources.join(',') : '', sides: both ? 'both' : plan.side }, { project_id: project });
-        copyWithToast(linux_to_windows(data.folder), { what: 'the export folder' });
+        track('export_start', { export_type: type, n_runs: data.nb_runs, n_files: data.nb_files_exported, n_failed: data.nb_failed ?? 0, layout: layout_of(naming.template, naming.separator), windows: naming.windows, crops: data.nb_crops ?? 0, crop_sources: crops_enabled ? crop_sources.join(',') : '', sides: both ? 'both' : plan.side }, { project_id: project });
+        if (data.nb_files_exported === 0 && data.nb_failed > 0)
+          toaster.show({ message: 'Nothing was exported: the dialog says why.', intent: Intent.DANGER });
+        else
+          copyWithToast(linux_to_windows(data.folder), { what: 'the export folder' });
         setResult({ ...data, at: new Date() });
         // the next export starts with these settings, and goes to a new folder. Which settings names say depends on
         // the runs: the next export picks what it needs (presets keep them, for scripts that expect them)
@@ -736,6 +765,10 @@ const ExportDialog = ({
       {p.errors.length > 0 && <Callout intent="danger" icon="issue" title="Errors" style={{ marginBottom: 8 }}>
         <ProblemList items={p.errors.map(e => <code key={e}>{e}</code>)}/>
       </Callout>}
+      {copy_check && <CopyCheck check={copy_check} folder={p.folder} onFix={update} fixes={[
+        !(folder_mode === 'path' && !path_is_same_fs) && { text: 'Export links instead', fix: { type: 'link' } },
+        folder_mode === 'path' && copy_check.folder_error && { text: 'Export into a new folder', fix: { folder_mode: 'new' } },
+      ].filter(Boolean)}/>}
       {p.folders_skipped > 0 && <p className={Classes.TEXT_MUTED}>{plural(p.folders_skipped, 'folder matches', 'folders match')} the pattern: QA-Board exports files, e.g. <code>folder/**/*</code>.</p>}
       {p.files.length > 0 && <div role="list" aria-label="Exported files" style={{ maxHeight: 'min(440px, 45vh)', overflow: 'auto', border: '1px solid var(--qa-border)', borderRadius: 3, padding: '4px 0', fontFamily: 'var(--bp-typography-family-mono, monospace)', fontSize: 12 }}>
         {p.files.map((f, index) => {
@@ -757,16 +790,27 @@ const ExportDialog = ({
     subject: 'Feedback on the new Export',
     body: `What worked, what's missing or confusing?\n\n\n--\nPage: ${window.location.href}`,
   });
+  // the server groups what failed (`problems`); `errors` ends with a line per problem, after the plan's own errors
+  const nb_failed = result?.nb_failed ?? 0;
+  const other_errors = result?.problems ? (result.errors ?? []).slice(0, (result.errors ?? []).length - result.problems.length) : (result?.errors ?? []);
   const result_block = result && <section aria-label="Last export" style={{ marginBottom: 12 }}>
     {result.error
       ? <Callout intent="danger" icon="error" title="The export failed">{result.error}</Callout>
-      : <Callout intent={result.errors?.length || result.nb_skipped ? 'warning' : 'success'} icon="tick" title={`${plural(result.nb_files_exported, 'file')} exported from ${plural(result.nb_runs, 'run')}`}>
+      : result.nb_files_exported === 0 && nb_failed > 0
+      ? <Callout intent="danger" icon="error" title="Nothing was exported">
+          <p style={{ margin: 0 }}>None of the {plural(nb_failed + (result.nb_not_attempted ?? 0), 'file')} could be {result.type === 'copy' ? 'copied' : 'linked'} into <code style={{ wordBreak: 'break-all' }}>{result.folder}</code>.</p>
+          <ExportProblems result={result} support_url={support_url}/>
+          {other_errors.length > 0 && <ProblemList items={other_errors.map(e => <code key={e}>{e}</code>)}/>}
+        </Callout>
+      : <Callout intent={nb_failed || other_errors.length || result.nb_skipped ? 'warning' : 'success'} icon={nb_failed ? 'warning-sign' : 'tick'}
+          title={`${plural(result.nb_files_exported, 'file')} exported from ${plural(result.nb_runs, 'run')}${nb_failed ? `, ${plural(nb_failed, 'file')} failed` : ''}`}>
           <Paths folder={result.folder}/>
           {result.mapping && <p style={{ margin: '6px 0 0' }}><code>{result.mapping}</code> in the folder lists each file and where it comes from: its run, input and settings (with the runs' configurations in <code>{result.mapping.replace(/\.csv$/, '.json')}</code>).</p>}
           {result.type === 'link' && <p style={{ margin: '4px 0 0' }} className={Classes.TEXT_MUTED}>The files are links to the runs' files, not copies: don't edit them.</p>}
           {result.export_id && <p style={{ margin: '4px 0 0' }} className={Classes.TEXT_MUTED}>Find your exports, their size, and delete them in <Link to="/storage/exports">Storage usage → Exports</Link>.</p>}
           {result.nb_skipped > 0 && <ProblemList more={result.nb_skipped - result.skipped.length} items={result.skipped.map(s => <code key={s}>{s}</code>)}/>}
-          {result.errors?.length > 0 && <ProblemList items={result.errors.map(e => <code key={e}>{e}</code>)}/>}
+          <ExportProblems result={result} support_url={support_url}/>
+          {other_errors.length > 0 && <ProblemList items={other_errors.map(e => <code key={e}>{e}</code>)}/>}
           {support_url && <p style={{ margin: '8px 0 0' }}>This export is new. Something missing, confusing, or better before? <a href={feedback_url} target="_blank" rel="noopener noreferrer">Tell us</a>: it shapes what comes next.</p>}
         </Callout>}
   </section>;
