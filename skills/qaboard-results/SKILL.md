@@ -58,6 +58,9 @@ A change is better when its runs beat the *same* runs on the reference, not when
 
 1. Run the batch the project uses in CI, shared under a label:
    `qa --share --label <topic> batch ci` (prints the results URL). Local-only: `qa batch ci` writes to `output/`.
+   On a pushed commit whose CI saved its artifacts, prefer `qa --label <topic> batch --commit <sha> ci`: QA-Board runs
+   the commit's code as from its web app, so results can't come from uncommitted changes. It prints the batch's page
+   and returns without waiting; `--batches-file` sends batch files you didn't commit.
 2. Ask the gate: `qa gate --json` compares the current commit's CI results (label `default`, once CI ran on the
    pushed commit) with the reference (`gate:` in `qaboard.yaml`, else `project.reference_branch`). Exit `0` pass, `1`
    fail, `2` can't decide (reference missing, runs still running or a batch missing: the messages say which,
@@ -98,7 +101,7 @@ Base: `$QABOARD_URL/api/v1`. Reading is anonymous unless the server restricts th
 
 Every parameter and field: `$QABOARD_URL/api/v1/openapi.json` (OpenAPI 3.1), or the guide
 https://samsung.github.io/qaboard/docs/http-api. Starting runs or batches needs a token with the `act`
-scope: prefer `qa batch` from a checkout.
+scope: prefer `qa batch` from a checkout, or `qa batch --commit <sha>` (it uses `POST /commit/<sha>/batch`).
 
 ## Don'ts
 - Don't modify or delete anything under the results storage (`/mnt/qaboard`-like paths from `output_dir`): folders

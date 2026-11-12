@@ -12,6 +12,7 @@ import datetime
 import traceback
 from shlex import quote
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 import click
 from rich.traceback import install
@@ -67,7 +68,9 @@ def qa(ctx, platform, configurations, label, tuning, tuning_filepath, dryrun, sh
   if ctx.invoked_subcommand in ('auth', 'runs'):
     return
   # Local runs save their results in output/: only some commands need the storage
-  storage_is_missing = report_missing_storage(storage_needed_by(ctx.invoked_subcommand, share, is_ci))
+  # `qa batch --commit` only talks to QA-Board
+  on_server = ctx.invoked_subcommand in ('batch', 'optimize') and any(a == '--commit' or a.startswith('--commit=') for a in ctx.args)
+  storage_is_missing = report_missing_storage(storage_needed_by(ctx.invoked_subcommand, share, is_ci)) if not on_server else False
   # We want all paths to be relative to top-most qaboard.yaml
   # it should be located at the root of the git repository
   if config_has_error and not ignore_config_errors:
@@ -592,6 +595,18 @@ default_lsf_concurrency = lsf_config.get('concurrency', 0)
 dask_config = (config.get('runners') or {}).get('dask') or {}
 default_dask_concurrency = dask_config.get('concurrency')
 
+def split_batch_names(batch_names) -> Tuple[List[str], Optional[List[str]]]:
+  """`qa batch`'s arguments: (the batch names, the arguments to forward to the code, None if there is no separator)"""
+  for i, arg in enumerate(batch_names):
+    if arg == "--": # explicit separator → everything after is forwarded args
+      return list(batch_names[:i]), list(batch_names[i + 1:])
+    # Implicit separator → everything from here is forwarded args
+    # We do this for backward compat mostly... not sure batch names should start with "-"!
+    elif arg.startswith("-"):
+      return list(batch_names[:i]), list(batch_names[i:])
+  return list(batch_names), None
+
+
 def env_number(parse, value, default):
   """A number from the environment. `qa doctor` reports invalid ones instead of failing to start."""
   from .config import is_doctor_command
@@ -611,6 +626,7 @@ default_action_on_pending = config.get('outputs', {}).get('action_on_pending', "
     ignore_unknown_options=True,
     allow_interspersed_args=True,
 ))
+@click.option('--commit', 'on_commit', help="Have QA-Board start the batch on this commit (id, branch, tag), as from its web app: with the commit's code, artifacts and batch files. Only the --batches-file you give are sent. Doesn't wait for the runs.")
 @click.option('--batch', '-b', 'batches', multiple=True, help="We run over all inputs+configs+database in those batches")
 @click.option('--batches-file', 'batches_files', type=PathType(),  default=default_batches_files, multiple=True, help="YAML files listing batches of inputs+configs+database.")
 @click.option('--runs-file', type=PathType(), default=None, help='Instead of batches, a JSON file listing the runs to do, e.g. to redo runs: {"runs": [{"input_path", "database", "type", "platform", "configurations", "extra_parameters", "job_options"}]}. Runs are done with the runner and job options they list, unless you give a --runner.')
@@ -637,28 +653,24 @@ default_action_on_pending = config.get('outputs', {}).get('action_on_pending', "
 @click.argument('batch_names', nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 @saves_logs
-def batch(ctx, batches, batches_files, runs_file, tuning_search_dict, tuning_search_file, no_wait, list_contexts, list_output_dirs, list_inputs, runner, local_concurrency, local_timeout, lsf_max_threads, lsf_max_memory, lsf_queue, lsf_resources, lsf_priority, lsf_options, lsf_concurrency, dask_concurrency, action_on_existing, action_on_pending, prefix_outputs_path, batch_names):
+def batch(ctx, on_commit, batches, batches_files, runs_file, tuning_search_dict, tuning_search_file, no_wait, list_contexts, list_output_dirs, list_inputs, runner, local_concurrency, local_timeout, lsf_max_threads, lsf_max_memory, lsf_queue, lsf_resources, lsf_priority, lsf_options, lsf_concurrency, dask_concurrency, action_on_existing, action_on_pending, prefix_outputs_path, batch_names):
   """Run on all the inputs/tests/recordings in a given batch using the LSF cluster."""
   from .runners import runners
+  if on_commit:
+    from .on_server import start_on_server
+    names, forwarded = split_batch_names(batch_names)
+    tuning_search, _ = load_tuning_search(tuning_search_dict, tuning_search_file)
+    given_action = ctx.get_parameter_source('action_on_existing') != click.core.ParameterSource.DEFAULT
+    return start_on_server(ctx, on_commit, [*names, *batches], batches_files, tuning_search,
+                           action_on_existing if given_action else None, forwarded if forwarded is not None else ctx.obj.get("forwarded_args", []))
   if not batches_files and not runs_file:
     click.secho(f'WARNING: Could not find how to identify input tests.', fg='red', err=True, bold=True)
     click.secho(f'Consider adding to qaboard.yaml somelike like:\n```\ninputs:\n  batches: batches.yaml\n```', fg='red', err=True)
     click.secho(f'Where batches.yaml is formatted like in http://qa-docs/docs/batches-running-on-multiple-inputs', fg='red', err=True)
     return
 
-  filtered_batch_names = []
-  forwarded_args = ctx.obj.get("forwarded_args", []) 
-  for i, arg in enumerate(batch_names):
-    if arg == "--": # explicit separator → everything after is forwarded args
-      forwarded_args = batch_names[i + 1 :]
-      break
-    # Implicit separator → everything from here is forwarded args
-    # We do this for backward compat mostly... not sure batch names should start with "-"!
-    elif arg.startswith("-"):
-      forwarded_args = batch_names[i:]
-      break
-    else:
-      filtered_batch_names.append(arg)
+  filtered_batch_names, forwarded = split_batch_names(batch_names)
+  forwarded_args = forwarded if forwarded is not None else ctx.obj.get("forwarded_args", [])
   batches = list(filtered_batch_names) + list(batches)
 
   if runs_file and batches:

@@ -58,6 +58,45 @@ When the batch doesn't start, the **Logs** view says why, with the end of that s
 `ModuleNotFoundError` points to the environment, an LSF report to the cluster. See
 [Logs and failed runs](/docs/user-guide/logs#batch-commands).
 
+## Start them from a terminal or a script {#from-the-command-line}
+Scripts, CI jobs and coding agents can start the same batches with `--commit`: QA-Board runs them exactly as when
+someone clicks **Start** in the web app, from the commit's artifacts, and the results show on that commit's page.
+Nothing runs on your machine, and your local changes don't matter.
+
+```bash
+qa --label nms-sweep batch --commit 3f2a91c ci --tuning-search-file nms-sweep.yaml
+qa --label int8-auto optimize --commit my-branch --batch quant-search --config-file int8-search.yaml
+```
+
+`qa` checks the request with the server, starts the batch, prints the batch's page and returns: it doesn't wait for
+the runs. Read the results later with [`qa runs`](/docs/integrating-qa-in-scripts#runs-in-scripts), or open the page.
+To only check, add `--dryrun`: `qa --dryrun batch --commit 3f2a91c ci`.
+
+**The batches are the commit's**, like in the web app: the files in its `inputs.batches`, then your shared and private
+batches from **Available Tests**. To try batches you didn't commit, send them with `--batches-file local.yaml`: they
+are read last, so they win over the commit's batches with the same name. `qa` says where each batch is defined, and
+warns when a local file listed in `inputs.batches` differs from the commit's, since that one is used.
+
+<details>
+<summary>What <code>--commit</code> accepts, and when it refuses to start</summary>
+
+- **The commit**: an id, a branch or a tag, found with your local git: run `git fetch` first. `qa` warns when the
+  commit isn't on a remote branch you fetched, or when your branch and its upstream differ.
+- **Options**: `--label`, `--platform` and `--dryrun`; for `qa batch` the batches, `--batches-file`,
+  `--tuning-search(-file)` and `--action-on-existing run|sync` (by default existing runs are kept, like in the web
+  app); for `qa optimize`, `--batch`, `--batches-file` and `--config-file`. Other options on the command line, like
+  `--runner` or `--share`, are refused: the server's settings decide where runs execute. Options from `QA_*`
+  environment variables are ignored.
+- **The commit must be known to QA-Board**, with its artifacts saved: right after a push, wait for the CI job that
+  runs `qa save-artifacts`. If the artifacts were deleted, `qa` doesn't start, unless the project lets QA-Board
+  [recreate them](/docs/storage/deleting-old-data#recreating-artifacts): it then asks your CI, and you try again
+  once it's done.
+- **Signing in**: like in the web app, with your account (`qa auth login`) or a token that can start runs in the
+  project. In CI, see [CI without stored secrets](/docs/ci-integration).
+- No emails when the runs end.
+
+</details>
+
 ## How parameters reach your code {#how-tuning-parameters-reach-your-code}
 Tuning parameters are merged into `context.params`, and appended to `context.configs` as a dict: in most cases you
 have nothing to do. The detector's `run()` lets them override its defaults and the flags each commit builds with:
