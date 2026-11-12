@@ -218,6 +218,29 @@ const Fixes = ({ fixes, onFix }) => <div style={{ display: 'flex', flexDirection
   {fixes.map((f, index) => <Button key={index} size="small" variant="outlined" icon="wrench" onClick={() => onFix(f.fix)}>{f.text}</Button>)}
 </div>;
 
+// What the user's account can do, for copies: they're made as the user (backend/api/export_files.py, check_copies)
+const CopyCheck = ({ check, folder, fixes, onFix }) => {
+  const unreadable = check.unreadable ?? [];
+  const sides = [...new Set(unreadable.map(u => u.side))];
+  const all = unreadable.length > 0 && unreadable.length === check.nb_checked;
+  const groups = check.groups_known === false && <p className={Classes.TEXT_MUTED} style={{ margin: '4px 0 0' }}>
+    QA-Board only knows your account's primary group: copies of files you can read only through another group fail. Ask your QA-Board admins to give it your groups.
+  </p>;
+  return <>
+    {check.folder_error && <Callout intent="danger" icon="lock" title="You can't write in this folder" style={{ marginBottom: 8 }}>
+      Copies are made as you, and your account ({check.user}) can't write in <code style={{ wordBreak: 'break-all' }}>{folder}</code>.
+      <Fixes fixes={fixes} onFix={onFix}/>
+    </Callout>}
+    {unreadable.length > 0 && <Callout intent={all ? 'danger' : 'warning'} icon="lock" title={`Your account can't read ${all ? "these runs' files" : "some runs' files"}`} style={{ marginBottom: 8 }}>
+      Copies are made as you: {unreadable.length} of the {plural(check.nb_checked, 'file')} checked can't be read by your account ({check.user}), from the {sides.join(' and ')} runs, e.g. <code style={{ wordBreak: 'break-all' }}>{unreadable[0].error}</code>. {all ? 'The copies would fail.' : 'Their copies would fail.'}
+      {groups}
+      <Fixes fixes={fixes.filter(f => f.fix.type)} onFix={onFix}/>
+    </Callout>}
+    {!unreadable.length && groups}
+    {check.error && <p className={Classes.TEXT_MUTED} style={{ margin: '4px 0' }}>QA-Board couldn't check what your account can copy: {check.error}</p>}
+  </>;
+};
+
 const ProblemList = ({ items, more }) => <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
   {items.map((item, index) => <li key={index}>{item}</li>)}
   {more > 0 && <li className={Classes.TEXT_MUTED}>and {more} more</li>}
@@ -523,7 +546,9 @@ const ExportDialog = ({
   };
 
   const finding = crops_enabled ? crops.finding : [];
-  const can_export = can_preview && is_current && !preview.isFetching && !preview.error && p && p.nb_files > 0 && p.nb_collisions === 0 && !(p.nb_too_long > 0) && finding.length === 0;
+  // copies are made as the user: the server checks what their account can do (copy_check)
+  const copy_check = type === 'copy' ? p?.copy_check : null;
+  const can_export = can_preview && is_current && !preview.isFetching && !preview.error && p && p.nb_files > 0 && p.nb_collisions === 0 && !(p.nb_too_long > 0) && finding.length === 0 && !copy_check?.folder_error;
   const doExport = () => {
     setExporting(true);
     http.post('/api/v1/exports', body, { params: { project } })
@@ -740,6 +765,10 @@ const ExportDialog = ({
       {p.errors.length > 0 && <Callout intent="danger" icon="issue" title="Errors" style={{ marginBottom: 8 }}>
         <ProblemList items={p.errors.map(e => <code key={e}>{e}</code>)}/>
       </Callout>}
+      {copy_check && <CopyCheck check={copy_check} folder={p.folder} onFix={update} fixes={[
+        !(folder_mode === 'path' && !path_is_same_fs) && { text: 'Export links instead', fix: { type: 'link' } },
+        folder_mode === 'path' && copy_check.folder_error && { text: 'Export into a new folder', fix: { folder_mode: 'new' } },
+      ].filter(Boolean)}/>}
       {p.folders_skipped > 0 && <p className={Classes.TEXT_MUTED}>{plural(p.folders_skipped, 'folder matches', 'folders match')} the pattern: QA-Board exports files, e.g. <code>folder/**/*</code>.</p>}
       {p.files.length > 0 && <div role="list" aria-label="Exported files" style={{ maxHeight: 'min(440px, 45vh)', overflow: 'auto', border: '1px solid var(--qa-border)', borderRadius: 3, padding: '4px 0', fontFamily: 'var(--bp-typography-family-mono, monospace)', fontSize: 12 }}>
         {p.files.map((f, index) => {

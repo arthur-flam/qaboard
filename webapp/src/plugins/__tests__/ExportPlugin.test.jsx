@@ -128,6 +128,27 @@ describe('ExportPlugin', () => {
     expect(screen.queryByText(/Copied the export folder/)).not.toBeInTheDocument();
   });
 
+  it("checks what the user's account can do before copying, and offers links instead", async () => {
+    const fetch = server({ preview: body => body.type === 'copy'
+      ? plan({ type: 'copy', copy_check: { user: 'alice', groups_known: false, nb_checked: 4, error: null, folder_error: "Permission denied: '/exports/alice/p/2026-11-05-abcd1234'",
+          unreadable: [{ side: 'reference', error: "Permission denied: '/runs/ref/out.png'" }] } })
+      : plan() });
+    open();
+    moreOptions();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Copies' }));
+    expect(await screen.findByText("You can't write in this folder")).toBeInTheDocument();
+    expect(screen.getByText("Your account can't read some runs' files")).toBeInTheDocument();
+    expect(screen.getByText(/1 of the 4 files checked can't be read by your account \(alice\), from the reference runs/)).toBeInTheDocument();
+    expect(screen.getByText(/QA-Board only knows your account's primary group/)).toBeInTheDocument();
+    // the copies would fail: no export
+    expect(screen.getByRole('button', { name: 'Export 4 files' })).toBeDisabled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Export links instead' })[0]);
+    expect(screen.getByRole('radio', { name: 'Links' })).toBeChecked();
+    expect(previews(fetch).some(body => body.type === 'copy')).toBe(true);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export 4 files' })).toBeEnabled());
+    expect(screen.queryByText("You can't write in this folder")).not.toBeInTheDocument();
+  });
+
   it('says how many files failed when others were exported', async () => {
     server({ exported: { ...plan(), nb_files_exported: 3, export_id: 7, mapping: '0.export.csv', skipped: [], nb_skipped: 0, nb_failed: 1, nb_not_attempted: 0,
       reference: 'abcdefabcdef', errors: ['The storage is full. E.g. scenes_b__out__new.png: No space left on device'],

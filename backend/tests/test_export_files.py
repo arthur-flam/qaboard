@@ -447,6 +447,8 @@ def test_failed_exports_are_reported_once(export_api, tmp_path, dummy_app, monke
   monkeypatch.setattr(export_api, 'check_folder', lambda export_dir: (not export_dir.exists(), True))
   monkeypatch.setattr(export_api, 'require_project_access', lambda *args, **kwargs: None)
   monkeypatch.setattr(export_api, 'unix_identity', lambda name: (1000, 100, [100]))
+  # what users can do is checked in test_copies_check_what_the_user_can_do
+  monkeypatch.setattr(export_api, 'check_copies', lambda *args: {"folder_error": None, "unreadable": []})
   failing(export_api, monkeypatch)
   events = []
   scope = SimpleNamespace(tags={}, contexts={}, fingerprint=None)
@@ -473,10 +475,57 @@ def test_failed_exports_are_reported_once(export_api, tmp_path, dummy_app, monke
   assert scope.tags == {'export.reference': result['reference'], 'export.step': 'copy', 'export.by': 'user', 'export.error': 'EACCES'}
   assert scope.fingerprint == ['qaboard-export-failed', 'copy', 'user', 'EACCES', 'destination']
   context = scope.contexts['export']
-  assert context['nb_failed'] == 3 and context['copies_as'] == {"user": "alice", "uid": 1000, "gid": 100, "groups": [100]}
+  assert context["nb_failed"] == 3 and {k: v for k, v in context["copies_as"].items() if k != "groups_known"} == {"user": "alice", "uid": 1000, "gid": 100, "groups": [100]}
   assert context['folder_stat']['mode'] and context['server']['uid'] == os.geteuid()
 
 
 def json_text(data):
   import json
   return json.dumps(data)
+
+
+@pytest.mark.skipif(not hasattr(os, 'geteuid') or os.geteuid() != 0, reason="acts as another user: the server runs as root")
+def test_copies_check_what_the_user_can_do(export_api, dummy_app, monkeypatch):
+  """Before copying, as the user: can they write in the folder, read the runs' files? Not one error per file after"""
+  import shutil
+  import tempfile
+  from flask import g
+  uid = gid = 54321
+  import backend.fs_utils as fs_utils
+  monkeypatch.setattr(fs_utils, 'unix_identity', lambda user: (uid, gid, [gid]))
+  monkeypatch.setattr(export_api, 'unix_identity', lambda user: (uid, gid, [gid]))
+  monkeypatch.setattr(export_api, 'groups_known', lambda user: False)
+  monkeypatch.setattr(export_api, 'check_folder', lambda export_dir: (not export_dir.exists(), False))
+  base = Path(tempfile.mkdtemp())
+  try:
+    base.chmod(0o755)
+    new = stored_run(base / 'runs', 1, 'scenes/a.raw')
+    ref = stored_run(base / 'runs', 2, 'scenes/a.raw', hexsha='b' * 40)
+    for path in [base / 'runs', *(base / 'runs').rglob('*')]:
+      path.chmod(0o755 if path.is_dir() else 0o644)
+    # the reference's files: only their owner reads them
+    (ref.output_dir / 'out.png').chmod(0o600)
+    items = [export_api.Item(new, 'new', {'side': 'new'}), export_api.Item(ref, 'reference', {'side': 'reference'})]
+    # the server can write there, the user can't
+    folder = base / 'servers'
+    folder.mkdir()
+    folder.chmod(0o755)
+    def run(dry_run):
+      with dummy_app.test_request_context('/api/v1/exports', method='POST'):
+        g.user = {"user_name": "alice"}
+        g.actor = SimpleNamespace(user=SimpleNamespace(user_name='alice'))
+        return export_api.run_export(items, project_id='proj', pattern='*.png', template='{side}/{input}__{file}', separator='_', windows=True,
+                                     export_type='copy', export_dir=folder, key='0123abcd', dry_run=dry_run, details={}, sides={})
+    check = run(dry_run=True)['copy_check']
+    assert check['user'] == 'alice' and check['groups_known'] is False and check['nb_checked'] == 2
+    assert check['folder_error'] == f"Permission denied: '{folder}'"
+    assert check['unreadable'] == [{"side": "reference", "error": f"Permission denied: '{ref.output_dir / 'out.png'}'"}]
+    with pytest.raises(export_api.ExportError, match="your account \\(alice\\) can't write in") as e:
+      run(dry_run=False)
+    assert e.value.status == 403 and list(folder.iterdir()) == []
+    # in a folder they can write in, only the files they can't read fail
+    folder.chmod(0o777)
+    check = run(dry_run=True)['copy_check']
+    assert check['folder_error'] is None and len(check['unreadable']) == 1
+  finally:
+    shutil.rmtree(base)

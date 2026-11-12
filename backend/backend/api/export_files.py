@@ -26,6 +26,11 @@ The request: {project, runs: [{id, side, fields, regions}], files (a pattern), t
 The preview's files say which entry of `runs` they come from (`item`), and their `region` (null for whole files).
 0.export.csv has the crops' region and where they are in the source's pixels ("x,y,w,h").
 
+Copies are made as the user (fs_utils.as_user), so that they own them. Before copying, preview and export check, as
+the user, that they can write in the folder (if it exists) and read a few runs' files of each side: `copy_check`
+{user, groups_known, nb_checked, folder_error, unreadable: [{side, error}]}. The export refuses a folder they can't
+write in. `groups_known`: false when QA-Board only knows the user's primary group (accounts.groups_known).
+
 Files that fail are grouped by kind of problem (backend/export_problems.py): `problems` [{step, actor, code, about,
 count, examples, message, hint}], `nb_failed`, `nb_not_attempted` (when the first files all fail, we stop), and a
 `reference` that admins find in the server's logs and in Sentry, with the tracebacks. `errors` has one line per problem.
@@ -43,6 +48,7 @@ import json
 import math
 import shutil
 import datetime
+import traceback
 from pathlib import Path
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -58,7 +64,8 @@ from backend import app, db_session
 
 from backend.fs_utils import as_user, mkdir_shared, unix_identity, UnknownAccountError
 from backend.storage import check_storage_path, check_inside, UnsafePathError
-from backend.export_problems import Problems, what_about
+from backend.export_problems import Problems, what_about, user_error
+from backend.accounts import groups_known
 from ..models import Batch, Output
 from ..config import qaboard_url
 from .auth import login_required, require_project_access
@@ -72,6 +79,8 @@ MAX_REGIONS = 500
 MAX_CROPS = 50_000
 # files that fail before any is exported: the others would fail too, we stop
 GIVE_UP_AFTER = 50
+# before copies, the runs of each side whose files we check the user can read
+COPY_CHECKS = 3
 # images Pillow can open, crop and write again in the same format
 CROPPABLE = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp')
 # Windows' MAX_PATH is 260 characters with the final NUL: Explorer and many apps can't open longer paths
@@ -469,6 +478,55 @@ def check_can_copy(user):
                       "Export links instead, or ask your QA-Board admins to check the server's accounts.", 403)
 
 
+def copy_samples(plan, items, per_side=COPY_CHECKS):
+  """A file from each of the first runs of each side: what users can't read in one run, they usually can't in the others"""
+  samples, seen = {}, set()
+  for f in plan['files']:
+    item = items[f['item']]
+    if (item.side, item.output.id) in seen:
+      continue
+    picked = samples.setdefault(item.side, [])
+    if len(picked) < per_side:
+      picked.append(str(f['source']))
+      seen.add((item.side, item.output.id))
+  return samples
+
+
+def can_copy(folder, samples):
+  """Run as the user: can they write in the folder (if it exists), and read the runs' files"""
+  folder_error = None
+  # what the user's account can do, not the server's (the real uid): with ACLs too, e.g. on NFS
+  if folder is not None and not os.access(folder, os.W_OK | os.X_OK, effective_ids=True):
+    folder_error = f"Permission denied: '{folder}'"
+  unreadable = []
+  for side, paths in samples.items():
+    for path in paths:
+      try:
+        with open(path, 'rb') as file:
+          file.read(1)
+      except OSError as e:
+        unreadable.append({"side": side, "error": user_error(e)})
+  return {"folder_error": folder_error, "unreadable": unreadable}
+
+
+def check_copies(user, folder, plan, items):
+  """
+  Copies are made as the user: before exporting, we check what their account can do, instead of failing file after
+  file. `folder`: the export's folder if it exists (else the server creates it, writable by all). One child process.
+  """
+  samples = copy_samples(plan, items)
+  try:
+    found = as_user(user.user_name, can_copy, folder, samples)
+  except Exception as e:
+    print(f"WARNING: could not check what {user.user_name} can copy: {''.join(traceback.format_exception(e))}", flush=True)
+    found = {"folder_error": None, "unreadable": [], "error": str(e)}
+  try:
+    known = groups_known(user.user_name)
+  except Exception:
+    known = None
+  return {"user": user.user_name, "groups_known": known, "nb_checked": sum(len(paths) for paths in samples.values()), **found}
+
+
 def execute(plan, export_dir, type, user, replace, items=None):
   """
   Links or copies the files, and writes the crops. What's there is only replaced if it's a file, and `replace`.
@@ -661,8 +719,12 @@ def run_export(items, *, project_id, pattern, template, separator, windows, expo
   result["windows"] = windows
   if export_type == 'copy':
     check_can_copy(g.actor.user)
+    result["copy_check"] = check_copies(g.actor.user, None if created else export_dir, plan, items)
   if dry_run:
     return result
+  if export_type == 'copy' and result["copy_check"]["folder_error"]:
+    raise ExportError(f"Copies are made as you, and your account ({g.actor.user.user_name}) can't write in {export_dir}. "
+                      "Export links, or into a folder you can write in.", 403)
   if plan['collisions']:
     raise ExportError(f"{len(plan['collisions'])} names are used by several files, e.g. {plan['collisions'][0][0]['to']}: change how files are named", 409)
   if plan['too_long']:
@@ -722,7 +784,7 @@ def debug_context(export_dir, export_type, user, **context):
   if export_type == 'copy' and user is not None:
     try:
       uid, gid, groups = unix_identity(user.user_name)
-      identity = {"user": user.user_name, "uid": uid, "gid": gid, "groups": groups}
+      identity = {"user": user.user_name, "uid": uid, "gid": gid, "groups": groups, "groups_known": groups_known(user.user_name)}
     except Exception as e:
       identity = {"user": user.user_name, "error": str(e)}
   return {
