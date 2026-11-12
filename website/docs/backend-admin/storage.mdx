@@ -162,6 +162,8 @@ Exports of **copies** are made as the user who exports, so that they own the cop
 and `reference/` with a folder per side): the backend needs to run as root (or with
 the `SETUID`/`SETGID` capabilities), and to know the user's account, see [users' accounts](/docs/backend-admin/user-management#users-accounts).
 Users it doesn't know can only export links: the preview tells them.
+When files fail, users see what went wrong, and a reference to find the details in the logs and Sentry: see
+[monitoring exports](/docs/backend-admin/monitoring#exports).
 
 <details>
 <summary>The export APIs</summary>

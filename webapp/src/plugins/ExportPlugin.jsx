@@ -43,6 +43,7 @@ import {
 } from "../export/plan";
 import { reportUrl } from "../errors";
 import { FieldDot, NameAnatomy, NameParts } from "../export/NameParts";
+import { ExportProblems } from "../export/ExportProblems";
 import { useCrops, useShownRegionSets, DEFAULT_MAX_FOUND, MAX_FOUND } from "../export/useCrops";
 import { runs_url, python_snippet } from "./ScriptPlugin";
 
@@ -527,8 +528,11 @@ const ExportDialog = ({
     setExporting(true);
     http.post('/api/v1/exports', body, { params: { project } })
       .then(({ data }) => {
-        track('export_start', { export_type: type, n_runs: data.nb_runs, n_files: data.nb_files_exported, layout: layout_of(naming.template, naming.separator), windows: naming.windows, crops: data.nb_crops ?? 0, crop_sources: crops_enabled ? crop_sources.join(',') : '', sides: both ? 'both' : plan.side }, { project_id: project });
-        copyWithToast(linux_to_windows(data.folder), { what: 'the export folder' });
+        track('export_start', { export_type: type, n_runs: data.nb_runs, n_files: data.nb_files_exported, n_failed: data.nb_failed ?? 0, layout: layout_of(naming.template, naming.separator), windows: naming.windows, crops: data.nb_crops ?? 0, crop_sources: crops_enabled ? crop_sources.join(',') : '', sides: both ? 'both' : plan.side }, { project_id: project });
+        if (data.nb_files_exported === 0 && data.nb_failed > 0)
+          toaster.show({ message: 'Nothing was exported: the dialog says why.', intent: Intent.DANGER });
+        else
+          copyWithToast(linux_to_windows(data.folder), { what: 'the export folder' });
         setResult({ ...data, at: new Date() });
         // the next export starts with these settings, and goes to a new folder. Which settings names say depends on
         // the runs: the next export picks what it needs (presets keep them, for scripts that expect them)
@@ -757,16 +761,27 @@ const ExportDialog = ({
     subject: 'Feedback on the new Export',
     body: `What worked, what's missing or confusing?\n\n\n--\nPage: ${window.location.href}`,
   });
+  // the server groups what failed (`problems`); `errors` ends with a line per problem, after the plan's own errors
+  const nb_failed = result?.nb_failed ?? 0;
+  const other_errors = result?.problems ? (result.errors ?? []).slice(0, (result.errors ?? []).length - result.problems.length) : (result?.errors ?? []);
   const result_block = result && <section aria-label="Last export" style={{ marginBottom: 12 }}>
     {result.error
       ? <Callout intent="danger" icon="error" title="The export failed">{result.error}</Callout>
-      : <Callout intent={result.errors?.length || result.nb_skipped ? 'warning' : 'success'} icon="tick" title={`${plural(result.nb_files_exported, 'file')} exported from ${plural(result.nb_runs, 'run')}`}>
+      : result.nb_files_exported === 0 && nb_failed > 0
+      ? <Callout intent="danger" icon="error" title="Nothing was exported">
+          <p style={{ margin: 0 }}>None of the {plural(nb_failed + (result.nb_not_attempted ?? 0), 'file')} could be {result.type === 'copy' ? 'copied' : 'linked'} into <code style={{ wordBreak: 'break-all' }}>{result.folder}</code>.</p>
+          <ExportProblems result={result} support_url={support_url}/>
+          {other_errors.length > 0 && <ProblemList items={other_errors.map(e => <code key={e}>{e}</code>)}/>}
+        </Callout>
+      : <Callout intent={nb_failed || other_errors.length || result.nb_skipped ? 'warning' : 'success'} icon={nb_failed ? 'warning-sign' : 'tick'}
+          title={`${plural(result.nb_files_exported, 'file')} exported from ${plural(result.nb_runs, 'run')}${nb_failed ? `, ${plural(nb_failed, 'file')} failed` : ''}`}>
           <Paths folder={result.folder}/>
           {result.mapping && <p style={{ margin: '6px 0 0' }}><code>{result.mapping}</code> in the folder lists each file and where it comes from: its run, input and settings (with the runs' configurations in <code>{result.mapping.replace(/\.csv$/, '.json')}</code>).</p>}
           {result.type === 'link' && <p style={{ margin: '4px 0 0' }} className={Classes.TEXT_MUTED}>The files are links to the runs' files, not copies: don't edit them.</p>}
           {result.export_id && <p style={{ margin: '4px 0 0' }} className={Classes.TEXT_MUTED}>Find your exports, their size, and delete them in <Link to="/storage/exports">Storage usage → Exports</Link>.</p>}
           {result.nb_skipped > 0 && <ProblemList more={result.nb_skipped - result.skipped.length} items={result.skipped.map(s => <code key={s}>{s}</code>)}/>}
-          {result.errors?.length > 0 && <ProblemList items={result.errors.map(e => <code key={e}>{e}</code>)}/>}
+          <ExportProblems result={result} support_url={support_url}/>
+          {other_errors.length > 0 && <ProblemList items={other_errors.map(e => <code key={e}>{e}</code>)}/>}
           {support_url && <p style={{ margin: '8px 0 0' }}>This export is new. Something missing, confusing, or better before? <a href={feedback_url} target="_blank" rel="noopener noreferrer">Tell us</a>: it shapes what comes next.</p>}
         </Callout>}
   </section>;

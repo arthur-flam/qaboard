@@ -26,6 +26,10 @@ The request: {project, runs: [{id, side, fields, regions}], files (a pattern), t
 The preview's files say which entry of `runs` they come from (`item`), and their `region` (null for whole files).
 0.export.csv has the crops' region and where they are in the source's pixels ("x,y,w,h").
 
+Files that fail are grouped by kind of problem (backend/export_problems.py): `problems` [{step, actor, code, about,
+count, examples, message, hint}], `nb_failed`, `nb_not_attempted` (when the first files all fail, we stop), and a
+`reference` that admins find in the server's logs and in Sentry, with the tracebacks. `errors` has one line per problem.
+
 The older API, /api/v1/export (backend/api/export_to_folder.py), is deprecated but unchanged, for scripts.
 
 In folders that were there before, we only add files: they're someone's, maybe not the user's.
@@ -54,6 +58,7 @@ from backend import app, db_session
 
 from backend.fs_utils import as_user, mkdir_shared, unix_identity, UnknownAccountError
 from backend.storage import check_storage_path, check_inside, UnsafePathError
+from backend.export_problems import Problems, what_about
 from ..models import Batch, Output
 from ..config import qaboard_url
 from .auth import login_required, require_project_access
@@ -65,6 +70,8 @@ LISTED_PROBLEMS = 50
 MAX_RUNS = 50_000
 MAX_REGIONS = 500
 MAX_CROPS = 50_000
+# files that fail before any is exported: the others would fail too, we stop
+GIVE_UP_AFTER = 50
 # images Pillow can open, crop and write again in the same format
 CROPPABLE = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp')
 # Windows' MAX_PATH is 260 characters with the final NUL: Explorer and many apps can't open longer paths
@@ -462,12 +469,23 @@ def check_can_copy(user):
                       "Export links instead, or ask your QA-Board admins to check the server's accounts.", 403)
 
 
-def execute(plan, export_dir, type, user, replace):
-  """Links or copies the files, and writes the crops. What's there is only replaced if it's a file, and `replace`. Returns (exported, skipped, errors)"""
-  exported, skipped, errors = [], [], []
+def execute(plan, export_dir, type, user, replace, items=None):
+  """
+  Links or copies the files, and writes the crops. What's there is only replaced if it's a file, and `replace`.
+  Returns (exported, skipped, problems): what failed, grouped (backend/export_problems.py). When the first
+  GIVE_UP_AFTER files all fail, the others would too: we stop (`problems.not_attempted`).
+  """
+  exported, skipped = [], []
+  problems = Problems()
+  # who writes: copies are made as the user, links by the server
+  writer = user.user_name if type == 'copy' and user is not None else 'server'
   images = OpenImages()
-  for f in plan['files']:
+  for index, f in enumerate(plan['files']):
+    if not exported and problems.count >= GIVE_UP_AFTER:
+      problems.not_attempted = len(plan['files']) - index
+      break
     dest = export_dir / f['to']
+    step, actor = 'folder', writer
     try:
       check_inside(dest, export_dir)
       if not dest.parent.is_dir():
@@ -484,16 +502,23 @@ def execute(plan, export_dir, type, user, replace):
         if not replace or (dest.is_dir() and not dest.is_symlink()):
           skipped.append(f"{f['to']} already exists, QA-Board doesn't replace it")
           continue
+        step, actor = 'replace', 'server'
         dest.unlink()
       if f['region']:
+        step, actor = 'crop', writer
         export_crop(f, dest, type, user=user, images=images)
       else:
+        step, actor = type, writer
         export_file(f['source'], dest, type, user=user)
       exported.append(f)
     except Exception as e:
-      errors.append(f"Error when exporting {f['file']} as {f['to']}: {e}")
+      # the server reads the images it crops
+      if step == 'crop' and what_about(e, f['source']) != 'destination':
+        actor = 'server'
+      side = items[f['item']].side if items is not None else None
+      problems.add(e, step=step, actor=actor, source=f['source'], f=f, side=side)
   images.close()
-  return exported, skipped, errors
+  return exported, skipped, problems
 
 
 def write_new(path, text, replace=False):
@@ -646,7 +671,10 @@ def run_export(items, *, project_id, pattern, template, separator, windows, expo
                       "shorten the names, or turn off Windows-compatible names", 409)
   if created:
     create_folder(export_dir)
-  exported, skipped, errors = execute(plan, export_dir, export_type, g.actor.user, replace=ours)
+  exported, skipped, problems = execute(plan, export_dir, export_type, g.actor.user, replace=ours, items=items)
+  # admins get the tracebacks, in the logs and Sentry, users a reference
+  reference = problems.report(debug_context(export_dir, export_type, g.actor.user, project_id=project_id, template=template,
+                                            nb_files=len(plan['files']), nb_exported=len(exported), not_attempted=problems.not_attempted)) if problems.count else None
   url = page_url(sides)
   write_link_to_the_page(export_dir, url, replace=ours)
   details = {**details, "qaboard": url, "folder": str(export_dir), "file_in_names": plan['file_in_names'], "nb_crops": plan['nb_crops']}
@@ -672,8 +700,39 @@ def run_export(items, *, project_id, pattern, template, separator, windows, expo
     "nb_files_exported": len(exported),
     "skipped": skipped[:LISTED_PROBLEMS],
     "nb_skipped": len(skipped),
-    "errors": [*result['errors'], *errors[:LISTED_PROBLEMS]],
+    # one line per kind of problem; `problems` says more: what it means, what to do, examples
+    "errors": [*result['errors'], *problems.as_errors(export_dir)[:LISTED_PROBLEMS]],
+    "problems": problems.describe(export_dir)[:LISTED_PROBLEMS],
+    "nb_failed": problems.count,
+    "nb_not_attempted": problems.not_attempted,
+    "reference": reference,
     "mapping": mapping,
+  }
+
+
+def debug_context(export_dir, export_type, user, **context):
+  """What admins need to understand failures, e.g. permissions: who the server and the user are, who owns the folder"""
+  def stat(path):
+    try:
+      s = os.stat(path)
+      return {"uid": s.st_uid, "gid": s.st_gid, "mode": oct(s.st_mode & 0o7777)}
+    except OSError as e:
+      return {"error": str(e)}
+  identity = None
+  if export_type == 'copy' and user is not None:
+    try:
+      uid, gid, groups = unix_identity(user.user_name)
+      identity = {"user": user.user_name, "uid": uid, "gid": gid, "groups": groups}
+    except Exception as e:
+      identity = {"user": user.user_name, "error": str(e)}
+  return {
+    **context,
+    "folder": str(export_dir),
+    "type": export_type,
+    "folder_stat": stat(export_dir),
+    "parent_stat": stat(export_dir.parent),
+    "server": {"uid": os.geteuid(), "gid": os.getegid()} if hasattr(os, 'geteuid') else None,
+    "copies_as": identity,
   }
 
 
