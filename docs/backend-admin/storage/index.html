@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.a0fe5e86.css">
-<script src="/qaboard/assets/js/runtime~main.cb33d86a.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.779dcd49.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.c19c7fc1.js" defer="defer"></script>
 </head>
 <body>
@@ -152,9 +152,15 @@ to the commit&#x27;s results, which is hard to find among the results. Put them 
 in one place with the <code>storage.exports_root</code> setting (<strong>Admin → Settings</strong>, or <code>QABOARD_EXPORTS_ROOT</code>):
 <code>&lt;root&gt;/&lt;user&gt;/&lt;project&gt;/&lt;date&gt;-&lt;name&gt;-&lt;id&gt;</code>. The folder must be on the same file system as the results for hard links, and
 under <code>QABOARD_STORAGE_ROOTS</code>.</p>
-<p>Exports of <strong>copies</strong> are made as the user who exports, so that they own the copies: the backend needs to run as root (or with
-the <code>SETUID</code>/<code>SETGID</code> capabilities), and to know the user&#x27;s account, see <a class="" href="/qaboard/docs/backend-admin/user-management#users-accounts">users&#x27; accounts</a>.
-Users it doesn&#x27;t know can only export links: the preview tells them.</p>
+<p>Exports of <strong>copies</strong> are made as the user who exports, so that they own the copies, and the folders they go in (e.g. <code>new/</code>
+and <code>reference/</code> with a folder per side): the backend needs to run as root (or with
+the <code>SETUID</code>/<code>SETGID</code> capabilities), and to know the user&#x27;s account and groups (<code>QABOARD_GROUPS_COMMAND</code>, or the server&#x27;s
+<code>/etc/group</code>), see <a class="" href="/qaboard/docs/backend-admin/user-management#users-accounts">users&#x27; accounts</a>. Without their groups, copies
+only have the user&#x27;s primary group, and fail for files they read through other groups.
+Users it doesn&#x27;t know can only export links. Before copying, the preview checks, as the user, that they can write in
+the folder and read the runs&#x27; files, and says what they can&#x27;t, and when QA-Board only knows their primary group.
+When files fail, users see what went wrong, and a reference to find the details in the logs and Sentry: see
+<a class="" href="/qaboard/docs/backend-admin/monitoring#exports">monitoring exports</a>.</p>
 <details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>The export APIs</summary><div><div class="collapsibleContent_i85q"><p>The web app previews and exports with <code>POST /api/v1/exports/preview</code> and <code>POST /api/v1/exports</code>: it sends the runs, and
 how to name their files (a template, and fields per run); the server lists the files and checks the names. The older
 <code>/api/v1/export</code> (query parameters), which scripts call, is deprecated but works as before, with its own names and

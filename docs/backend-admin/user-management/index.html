@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.a0fe5e86.css">
-<script src="/qaboard/assets/js/runtime~main.cb33d86a.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.779dcd49.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.c19c7fc1.js" defer="defer"></script>
 </head>
 <body>
@@ -241,6 +241,7 @@ For example for the following &quot;namespace/project&quot;, you can restrict th
 <li class="">If a command fails, or prints less than half of the accounts it printed last time, the backend keeps the previous accounts, and tries again 10 minutes later. Errors show in its logs (<code>[accounts]</code>).</li>
 <li class="">Only lines in the right format count: ssh banners (sent to stderr) and messages printed by shell startup files are ignored.</li>
 <li class="">Accounts the commands don&#x27;t know are looked up in <code>/etc/passwd</code> and <code>/etc/group</code>. Owners that neither knows show as <code>uid 2041</code>.</li>
+<li class="">Users whose groups neither knows only have their primary group when the backend acts as them: export copies of files they read through another group fail. The export preview says so.</li>
 <li class="">Storage scans wait for the accounts before they start. Owners that earlier scans saved as <code>uid 2041</code> get their names once the accounts know them.</li>
 <li class="">With SSSD, <code>getent passwd</code> alone only lists all users if enumeration is enabled (<code>enumerate = true</code>), which is often not the case. Check the number of lines, or use a command that queries the directory itself, e.g. <code>ldapsearch</code>, formatted as <code>name:x:uid:gid:gecos:home:shell</code>.</li>
 <li class="">The command runs with the backend&#x27;s environment, e.g. the ssh key used for the LSF bridge, and its own user&#x27;s permissions.</li>
