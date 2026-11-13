@@ -18,7 +18,7 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.a0fe5e86.css">
-<script src="/qaboard/assets/js/runtime~main.779dcd49.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.b61e7f2d.js" defer="defer"></script>
 <script src="/qaboard/assets/js/main.c19c7fc1.js" defer="defer"></script>
 </head>
 <body>
@@ -76,7 +76,9 @@ runs, new and reference, into a new folder, and shows you every file&#x27;s name
 <li class="">Filter the runs you want, e.g. <code>low-light</code> (see <a class="" href="/qaboard/docs/user-guide/finding-results#filter-syntax">Filter the runs</a>).</li>
 <li class="">Click <strong>Export</strong> at the right of the view&#x27;s title.</li>
 <li class="">Under <strong>Which files</strong>, type a pattern, like <code>*.png</code>, <code>*.txt</code> or <code>**/*.jpg</code> (<code>**/</code> matches any number of folders),
-or click one of the visualizations under it.</li>
+or click one of the visualizations under it. A pattern that matches a folder, like <code>dma_out</code>, exports the folder
+with its files: it&#x27;s named like a file, e.g. <code>night_street__dma_out__new</code>, and its files keep their names and
+subfolders. <strong>Only files</strong> in the preview skips folders.</li>
 <li class="">Check the names: the dialog shows an example, each part in its color with its name under it, and what each part
 says. The <strong>Preview</strong> lists every file&#x27;s name in the same colors, and says if two files would get the same name, if
 paths are too long for Windows, or if files are already there.</li>
@@ -95,14 +97,18 @@ Only the runs that need them say them: if one image ran twice, with and without 
 names. Without a reference, you export one version, and names don&#x27;t say it.</li>
 </ul>
 <p>To export one side only, pick <strong>Only new</strong> or <strong>Only</strong> the reference under the pattern: names don&#x27;t say new or
-reference then. If the page compares with several references, the export takes the one shown.</p>
+reference then, unless you click <strong>Name them</strong>, e.g. to end names with the tuning batch&#x27;s name in one click:
+<code>night_street__tuning-gain.png</code>. The same works for a batch without a reference. If the page compares with several
+references, the export takes the one shown.</p>
 <p>Click <strong>Change</strong> next to the settings to pick them. Click <strong>Rename</strong> next to new or reference to call them something
 else, only for this export (the page and its milestones keep their names), and to choose what&#x27;s before them, e.g. <code>@</code>:
 <code>night_street@new.png</code>. Each export goes to a new folder: give it a name to find it later in
 <a class="" href="/qaboard/docs/user-guide/storage-usage#exports">Storage usage</a>. In the folder, <code>0.export.csv</code> lists each file and where it
 comes from (run, input, settings, region), and <code>0.export.json</code> adds the runs&#x27; configurations, for scripts.</p>
 <p>By default, the exported files are <strong>links</strong> to the original files: nothing is copied, so it&#x27;s fast. Don&#x27;t edit them:
-you&#x27;d edit the runs&#x27; files. To copy them, or export into a folder you choose, open <strong>More options</strong>.</p>
+you&#x27;d edit the runs&#x27; files. To copy them, or export into a folder you choose, open <strong>More options</strong>. Links are hard
+links, that open on Windows too. When the runs&#x27; files are on another filesystem, they can only be symbolic links, which
+Windows often can&#x27;t open (&quot;Disk read error&quot;): the export says so, export copies then.</p>
 <p>Copies are made as you: you need to read the runs&#x27; files, and to write in the folder. The preview checks it, and says
 what your account can&#x27;t do, e.g. read the reference&#x27;s files: export links instead. If files fail, the dialog says why,
 once per kind of problem, with what to do. To ask your QA-Board admins, <strong>Copy the details</strong>: the reference in them leads
