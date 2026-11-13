@@ -220,6 +220,9 @@ server's `PATCH /api/v1/output/<id>/progress`, the web app's series viewer (`web
     identity table says. `data.dirty` and `data.diff_sha256` are recorded; the web app doesn't show them yet.
 
 ### Left out of this version
+What to do next, a run-centric view of a project, the docs' missing screenshots and the gaps against a hosted
+tracker are in `docs/rfcs/python-sdk-runs-follow-ups.md`.
+
 - **Curves of runs from several batches or commits on one plot.** The runs of one batch are plotted together in
   the Summary view (`webapp/src/viewers/SeriesComparison.jsx`): up to 40, shown and hidden from a legend, colored
   per run or per value of a parameter, with their reference runs on demand. Grouping the History page by a

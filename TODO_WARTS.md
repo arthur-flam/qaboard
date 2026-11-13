@@ -82,7 +82,8 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
 
 ## Runs created from code (`qaboard.start_run()`, November 2026)
 
-Experimental: `qaboard/active_run.py`, `qaboard/series.py`. Design: `docs/rfcs/python-sdk-runs.md`.
+Experimental: `qaboard/active_run.py`, `qaboard/series.py`. Design: `docs/rfcs/python-sdk-runs.md`. Follow-ups (a
+run-centric page, screenshots for the docs, gaps against experiment trackers): `docs/rfcs/python-sdk-runs-follow-ups.md`.
 
 - Not verified against a real server and database end to end: the SDK's tests use an HTTP server that records
   requests, the backend's tests mock the database, the web app's a mocked API. Nor on Windows, in Jupyter, or with a
