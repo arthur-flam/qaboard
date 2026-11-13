@@ -75,8 +75,10 @@ def current_data(output) -> dict:
 
 def invalid_added_metrics(metrics, max_metrics=MAX_ADDED_METRICS, allow_empty=False) -> Optional[str]:
   """Why scripts can't add these metrics: values must be finite numbers, booleans, short texts or null, with sane keys."""
-  if not isinstance(metrics, dict) or not (metrics or allow_empty):
-    return '`metrics` must be an object with at least one metric: {"metrics": {"sharpness": 0.4}}' if not allow_empty else '`metrics` must be an object: {"metrics": {"loss": 0.4}}'
+  if not isinstance(metrics, dict):
+    return '`metrics` must be an object: {"metrics": {"sharpness": 0.4}}'
+  if not metrics and not allow_empty:
+    return '`metrics` must be an object with at least one metric: {"metrics": {"sharpness": 0.4}}'
   if len(metrics) > max_metrics:
     return f"at most {max_metrics} metrics per request"
   for key, value in metrics.items():
@@ -258,8 +260,7 @@ def report_output_progress(output_id):
   """
   project_id = None
   try:
-    output = Output.query.filter(Output.id==output_id).with_for_update().one()
-    project_id = output.batch.ci_commit.project_id
+    project_id = Output.query.filter(Output.id==output_id).one().batch.ci_commit.project_id
   except NoResultFound:
     pass
   # who can't see the project doesn't learn whether the run exists
@@ -277,6 +278,11 @@ def report_output_progress(output_id):
   params = data.get('params')
   if params is not None and (not isinstance(params, dict) or len(json.dumps(params)) > MAX_PROGRESS_PARAMS_SIZE):
     return jsonify({"error": f"`params` must be an object, of at most {MAX_PROGRESS_PARAMS_SIZE} characters as JSON"}), 400
+  # only now the lock: callers we refuse don't hold up the run's own updates
+  try:
+    output = Output.query.filter(Output.id==output_id).with_for_update().one()
+  except NoResultFound:
+    return jsonify({"error": f"Cannot find output {output_id}"}), 404
   if not (output.is_pending and output.is_running):
     return jsonify({"error": "The run isn't running: only running runs report their progress", "reason": "not_running"}), 409
 
@@ -295,7 +301,8 @@ def report_output_progress(output_id):
   if isinstance(definitions, dict) and definitions:
     ci_commit = output.batch.ci_commit
     definitions = {k: v for k, v in definitions.items() if k in metrics}
-    project_config = (ci_commit.project.data or {}).get('qatools_config') if isinstance(getattr(ci_commit.project, 'data', None), dict) else None
+    project_data = getattr(ci_commit.project, 'data', None)
+    project_config = project_data.get('qatools_config') if isinstance(project_data, dict) else None
     try:
       save_metrics_definitions(db_session, ci_commit, {'metrics_definitions': definitions, 'commit_branch': ci_commit.branch, 'qaboard_config': project_config})
     except Exception as e:

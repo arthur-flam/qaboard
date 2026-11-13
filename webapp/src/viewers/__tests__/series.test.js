@@ -101,24 +101,27 @@ describe('helpers', () => {
 
 describe('with_logged_series', () => {
   const views = [{ name: 'Output', path: 'out.png' }];
+  const from_code = { data: { sdk: { script: 'train.py' } } };
 
   it("shows a run's series first, without anything in qaboard.yaml", () => {
-    expect(with_logged_series(views, { 'series.json': {}, 'series.jsonl': {}, 'out.png': {} })).toEqual([
+    expect(with_logged_series(views, { 'series.json': {}, 'series.jsonl': {}, 'out.png': {} }, from_code)).toEqual([
       { name: 'Logged series', path: 'series.json', type: 'series', logged_series: true }, ...views,
     ]);
     // written by another program: only the history
-    expect(with_logged_series([], { 'series.jsonl': {} })[0].path).toBe('series.jsonl');
+    expect(with_logged_series([], { 'series.jsonl': {} }, from_code)[0].path).toBe('series.jsonl');
+    // a `qa run`'s own series.json isn't ours to show
+    expect(with_logged_series(views, { 'series.json': {} }, { data: {} })).toBe(views);
   });
 
   it('changes nothing for runs without series, or before their files are known', () => {
-    expect(with_logged_series(views, { 'out.png': {} })).toBe(views);
-    expect(with_logged_series(views, undefined)).toBe(views);
+    expect(with_logged_series(views, { 'out.png': {} }, from_code)).toBe(views);
+    expect(with_logged_series(views, undefined, from_code)).toBe(views);
   });
 
   it("leaves it to the project when its visualizations list the series", () => {
     const listed = [...views, { name: 'Curves', path: 'series.json', default_hidden: true }];
-    expect(with_logged_series(listed, { 'series.json': {} })).toBe(listed);
+    expect(with_logged_series(listed, { 'series.json': {} }, from_code)).toBe(listed);
     const typed = [{ name: 'Curves', path: 'logs/history.jsonl', type: 'series' }];
-    expect(with_logged_series(typed, { 'series.json': {} })).toBe(typed);
+    expect(with_logged_series(typed, { 'series.json': {} }, from_code)).toBe(typed);
   });
 });

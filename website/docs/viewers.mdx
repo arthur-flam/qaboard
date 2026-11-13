@@ -232,9 +232,9 @@ The harnesses' commands, `benchmark_metrics` to make each benchmark a metric, an
 **Files:** *series.json* and *series.jsonl*, written by [`run.log()`](/docs/log-from-code#series) in runs started
 from Python; files named *\*.series.json* or *\*.series.jsonl*; or any file with `type: series`.
 
-The viewer plots each series against the reference run's, and follows runs that are running. **A run's own
-*series.json* shows on its card without a visualization in *qaboard.yaml***, before the project's visualizations.
-List it yourself to place it elsewhere or to hide it by default:
+The viewer plots each series against the reference run's, and follows runs that are running. **For runs started from Python, it
+shows on the card without a visualization in *qaboard.yaml***, before the project's visualizations. List it yourself
+to place it elsewhere, to hide it by default, or to show the file another program wrote:
 
 ```yaml title="qaboard.yaml"
 outputs:

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -176,11 +177,11 @@ class TestSharedRuns(ActiveRunTestCase):
 
   def test_the_web_app_sees_the_metrics_while_the_run_goes_on(self):
     server = self.server()
-    result = self.python(server=server, code="""
+    result = self.python(server=server, QA_SYNC_INTERVAL='0.1', code="""
 import time
 import qaboard as qb
 from qaboard import Metric
-run = qb.start_run(input="train/coco-mini", sync_interval=0.1)
+run = qb.start_run(input="train/coco-mini")
 run.log({"loss": Metric(1.0, smaller_is_better=True)})
 time.sleep(1)
 run.log({"loss": 0.5})
@@ -201,10 +202,10 @@ run.finish()
 
   def test_older_servers_get_the_metrics_at_the_end(self):
     server = self.server(progress_status=404)
-    result = self.python(server=server, code="""
+    result = self.python(server=server, QA_SYNC_INTERVAL='0.1', code="""
 import time
 import qaboard as qb
-with qb.start_run(input="train/coco-mini", sync_interval=0.1) as run:
+with qb.start_run(input="train/coco-mini") as run:
   for step in range(3):
     run.log({"loss": 1.0 / (1 + step)})
     time.sleep(0.4)
@@ -255,10 +256,10 @@ class TestWhenTheServerIsAway(ActiveRunTestCase):
 
   def test_refused_runs_keep_logging_and_ask_once_more_at_the_end(self):
     server = self.server(output_status=403, output_error={'error': 'You need the developer role to send results to kitefin/detector.', 'reason': 'missing_role'})
-    result = self.python(server=server, code="""
+    result = self.python(server=server, QA_SYNC_INTERVAL='0.1', code="""
 import time
 import qaboard as qb
-with qb.start_run(input="train/coco-mini", sync_interval=0.1) as run:
+with qb.start_run(input="train/coco-mini") as run:
   for step in range(3):
     run.log({"loss": 1.0})
     time.sleep(0.3)
@@ -277,21 +278,28 @@ with qb.start_run(input="train/coco-mini", sync_interval=0.1) as run:
     (self.project / 'late.py').write_text("""
 import sys, time
 import qaboard as qb
-with qb.start_run(input="train/coco-mini", sync_interval=0.1) as run:
+import qaboard.active_run
+qaboard.active_run.MAX_SYNC_INTERVAL = 0.2   # the run asks again later and later while the server is away
+with qb.start_run(input="train/coco-mini") as run:
   run.log({"loss": 1.0})
   print("logged", flush=True)
   sys.stdin.readline()   # the test starts the server
-  time.sleep(4)   # the run asks again a bit later each time the server is away
+  sys.stdin.readline()   # and saw the run's progress
 """)
     from qaboard.config import ci_env_variables
     environ = {k: v for k, v in os.environ.items() if not k.startswith(('QA', 'CI_', 'GITHUB_')) and k not in ci_env_variables}
-    environ.update({'PYTHONPATH': str(ROOT), 'HOME': str(self.home), 'QABOARD_IGNORE_SITE': '1', 'QA_USER': 'alice', 'QABOARD_URL': f"http://127.0.0.1:{port}"})
+    environ.update({'PYTHONPATH': str(ROOT), 'HOME': str(self.home), 'QABOARD_IGNORE_SITE': '1', 'QA_USER': 'alice', 'QABOARD_URL': f"http://127.0.0.1:{port}", 'QA_SYNC_INTERVAL': '0.1'})
     process = subprocess.Popen([sys.executable, 'late.py'], cwd=self.project, env=environ, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     self.addCleanup(process.kill)
     self.assertEqual(process.stdout.readline().strip(), 'logged')
     server = FakeServer(port=port)
     self.addCleanup(server.close)
-    _, stderr = process.communicate('go\n', timeout=60)
+    process.stdin.write('go\n')
+    process.stdin.flush()
+    deadline = time.time() + 30
+    while not server.progress() and time.time() < deadline:
+      time.sleep(0.05)
+    _, stderr = process.communicate('done\n', timeout=60)
     self.assertEqual(process.returncode, 0, stderr)
     started, finished = server.outputs()
     self.assertEqual((started['is_running'], finished['is_pending'], finished['metrics']['loss']), (True, False, 1.0))
@@ -358,14 +366,14 @@ run.fail("the loss diverged")
 run.finish()
 assert qb.current_run() is None
 assert run.is_failed and run.state == 'finished' and run.error == 'the loss diverged'
-try:
-  run.log({"loss": 1.0})
-except RuntimeError as e:
-  assert 'finished' in str(e)
-else:
-  raise AssertionError('logged to a finished run')
+# callbacks that fire while a framework shuts down don't end the program: said once, not logged
+assert run.log({"loss": 1.0}) == -1
+run.log({"loss": 0.5}); run.log_metrics({"x": 1}); run.log_params({"y": 2})
+assert run.log_artifact("late.txt", b"x") is None
+assert dict(run.metrics) == {}, run.metrics
 """)
     self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertEqual(result.stderr.count('the run is finished, not logged'), 1)
     self.assertEqual(len(server.outputs()), 2)
     self.assertIn('the loss diverged', (Path(server.outputs()[-1]['output_directory']) / 'log.txt').read_text())
 
@@ -420,10 +428,18 @@ assert run.log({"loss": 1.0}) == 0 and run.log({"loss": 0.5}) == 1 and run.log({
 assert run.log({"loss": math.nan}) == 11          # kept in the series, not in the metric
 assert dict(run.metrics) == {"loss": 0.25}, run.metrics
 assert [p.step for p in run.series("loss")] == [0, 1, 10, 11]
-assert 'Series are numbers' in raises(TypeError, run.log, {"loss": "high"})
+# the call's shape is checked: mistakes show the first time
 assert 'mapping' in raises(TypeError, run.log, 1.0)
 assert 'integer' in raises(TypeError, run.log, {"loss": 1}, step="first")
+assert 'integer' in raises(TypeError, run.log, {"loss": 1}, step=1.7)
 raises(ValueError, run.log, {"_step": 1})
+raises(ValueError, run.log, {"x" * 201: 1})
+# like log_metrics: the run sets them, and the server would refuse everything sent with them
+for name in ("is_failed", "compute_time"):
+  assert "the run's own" in raises(ValueError, run.log, {name: 1})
+# values are not: hours into a training, a text or a missing value is skipped, the rest is logged
+assert run.log({"loss": "high", "lr": None, "ok": 2.0}, step=12.0) == 12
+assert [p.step for p in run.series("ok")] == [12] and run.series("lr") == [] and len(run.series("loss")) == 4
 assert 'run.fail()' in raises(ValueError, run.log_metrics, {"is_failed": True})
 raises(TypeError, run.log_metrics, {"x": [1, 2]})
 raises(ValueError, run.log_artifact, "../outside.txt", b"x")
@@ -431,11 +447,15 @@ raises(ValueError, run.log_artifact, "report.txt", "not-a-file")
 run.log_metrics({"mAP": 0.41, "verdict": "good", "nan": math.nan, "loss": 0.2})
 run.log_params({"model": {"depth": 50}})
 run.log_params({"model": {"width": 2}, "lr": 0.2})
-assert dict(run.metrics) == {"loss": 0.2, "mAP": 0.41, "verdict": "good"}, run.metrics
+run.log_metrics({"long": "x" * 600})
+assert dict(run.metrics) == {"loss": 0.2, "ok": 2.0, "mAP": 0.41, "verdict": "good", "long": "x" * 500}, run.metrics
 assert run.params == {"lr": 0.2, "model": {"depth": 50, "width": 2}}, run.params
 # saving the same name again replaces the file: it is the run's own
 run.log_artifact("checkpoints/last.pt", b"1")
 assert run.log_artifact("checkpoints/last.pt", b"22").read_bytes() == b"22"
+# a file alone keeps its name
+(run.output_dir.parent / "report.html").write_text("<p>ok</p>")
+assert run.log_artifact(run.output_dir.parent / "report.html") == run.output_dir / "report.html"
 # the same Run as qaboard.runs(url) gives
 picture = run.run
 assert type(picture) is Run and picture.state == 'running' and picture.input == 'eval' and picture.metrics == run.metrics
@@ -450,6 +470,151 @@ raises(ValueError, qb.start_run, summary="median")
 raises(ValueError, qb.start_run, project="another/project")
 """)
     self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertEqual(result.stderr.count('not logging loss'), 1)
+
+  def test_summaries_by_pattern(self):
+    result = self.python(QA_OFFLINE='1', code="""
+import qaboard as qb
+run = qb.start_run(summary={"val/*": "min", "system/*": "none", "val/top1": "max"})
+for value in (3.0, 1.0, 2.0):
+  run.log({"val/loss": value, "val/top1": value, "system/gpu": value, "train/loss": value})
+assert dict(run.metrics) == {"val/loss": 1.0, "val/top1": 3.0, "train/loss": 2.0}, run.metrics
+run.finish()
+""")
+    self.assertEqual(result.returncode, 0, result.stderr)
+
+  def test_starting_a_run_again_while_it_goes_on_ends_the_first(self):
+    # a notebook's cell run twice
+    server = self.server()
+    result = self.python(server=server, code="""
+import sys
+import qaboard as qb
+first = qb.start_run(input="notebook")
+first.log({"loss": 1.0})
+print("from the first")
+second = qb.start_run(input="notebook")
+assert first.state == 'finished' and qb.current_run() is second
+second.log({"loss": 0.1})
+print("from the second")
+other = qb.start_run(input="another")   # another run: both go on
+assert second.state == 'running'
+other.finish()
+second.finish()
+assert sys.stdout is sys.__stdout__ and sys.stderr is sys.__stderr__
+""")
+    self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertIn('was not finished: finishing it', result.stderr)
+    last = [o for o in server.outputs() if o['input_path'] == 'notebook'][-1]
+    # the server ends on the second run: its folder, its metrics
+    self.assertTrue(last['output_directory'].endswith('_attempt2'), last['output_directory'])
+    self.assertEqual((last['is_pending'], last['metrics']['loss']), (False, 0.1))
+    log = (Path(last['output_directory']) / 'log.txt').read_text()
+    self.assertIn('from the second', log)
+    self.assertNotIn('from the first', log)
+
+  def test_overlapping_runs_give_the_streams_back(self):
+    result = self.python(QA_OFFLINE='1', code="""
+import sys
+import qaboard as qb
+a = qb.start_run(input="a")
+b = qb.start_run(input="b")
+a.finish()
+print("only for b")
+b.finish()
+assert sys.stdout is sys.__stdout__ and sys.stderr is sys.__stderr__, sys.stdout
+assert "only for b" in (b.output_dir / "log.txt").read_text()
+assert "only for b" not in (a.output_dir / "log.txt").read_text()
+""")
+    self.assertEqual(result.returncode, 0, result.stderr)
+
+  def test_resume_keeps_what_was_logged_even_after_a_kill(self):
+    code = """
+import os, signal, sys, time
+import qaboard as qb
+import qaboard.active_run
+qaboard.active_run.FLUSH_INTERVAL = 0.1
+run = qb.start_run(input="train/coco-mini", resume=True)
+if sys.argv[1] == 'first':
+  run.log({"loss": 1.0})
+  run.log_metrics({"best_epoch": 3})
+  run.log_params({"device": "cuda:0"})
+  time.sleep(1)
+  os.kill(os.getpid(), signal.SIGKILL)   # nothing is saved on the way out
+assert run.log({"loss": 0.5}) == 1
+assert dict(run.metrics) == {"loss": 0.5, "best_epoch": 3}, run.metrics
+assert run.params == {"device": "cuda:0"}, run.params
+before = run._previous_time
+assert before > 0, before   # how long it ran before counts
+run.finish()
+assert run.run.metrics["compute_time"] >= before
+"""
+    (self.project / 'resume.py').write_text(code)
+    first = self.python(code="import sys; sys.argv = ['resume.py', 'first']; exec(open('resume.py').read())", QA_OFFLINE='1')
+    self.assertNotEqual(first.returncode, 0)
+    second = self.python(code="import sys; sys.argv = ['resume.py', 'second']; exec(open('resume.py').read())", QA_OFFLINE='1')
+    self.assertEqual(second.returncode, 0, second.stderr)
+
+  def test_a_killed_job_fails_its_run(self):
+    # schedulers end jobs with SIGTERM: without a `with` block too, the run doesn't stay "running"
+    server = self.server()
+    (self.project / 'killed.py').write_text("""
+import sys, time
+import qaboard as qb
+run = qb.start_run(input="train/coco-mini")
+run.log({"loss": 1.0})
+print("started", flush=True)
+time.sleep(60)
+""")
+    from qaboard.config import ci_env_variables
+    environ = {k: v for k, v in os.environ.items() if not k.startswith(('QA', 'CI_', 'GITHUB_')) and k not in ci_env_variables}
+    environ.update({'PYTHONPATH': str(ROOT), 'HOME': str(self.home), 'QABOARD_IGNORE_SITE': '1', 'QA_USER': 'alice', 'QABOARD_URL': server.url})
+    process = subprocess.Popen([sys.executable, 'killed.py'], cwd=self.project, env=environ, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    self.addCleanup(process.kill)
+    self.assertEqual(process.stdout.readline().strip(), 'started')
+    process.terminate()
+    process.communicate(timeout=60)
+    self.assertNotEqual(process.returncode, 0)
+    self.assertEqual([(o['is_pending'], o.get('is_failed')) for o in server.outputs()], [(True, None), (False, True)])
+
+  @unittest.skipUnless(hasattr(os, 'fork'), 'needs fork')
+  def test_forked_workers_dont_log(self):
+    result = self.python(QA_OFFLINE='1', code="""
+import os
+import qaboard as qb
+run = qb.start_run(input="train/coco-mini", capture_output=False)
+run.log({"loss": 1.0})
+pid = os.fork()
+if pid == 0:
+  assert run.log({"loss": 0.0}) == -1
+  os._exit(0)
+assert os.waitpid(pid, 0)[1] == 0
+assert [p.value for p in run.series("loss")] == [1.0]
+run.finish()
+""")
+    self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertIn('in another process than the run', result.stderr)
+
+  def test_long_lived_processes_use_the_commit_of_now(self):
+    # a notebook that commits between two runs
+    server = self.server()
+    result = self.python(server=server, code="""
+import subprocess
+import qaboard as qb
+qb.start_run(input="a").finish()
+open("notes.txt", "w").write("more")
+subprocess.run(["git", "add", "notes.txt"], check=True)
+subprocess.run(["git", "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "Notes"], check=True)
+run = qb.start_run(input="b")
+print(run.commit)
+run.finish()
+""")
+    self.assertEqual(result.returncode, 0, result.stderr)
+    head = git(self.project, 'rev-parse', 'HEAD')
+    self.assertNotEqual(head, self.commit)
+    last = server.outputs()[-1]
+    self.assertEqual((last['commit_sha'], last['commit_message'].strip()), (head, 'Notes'))
+    self.assertNotIn('dirty', last['data'])
+    self.assertIn(f"/{head[:2]}/{head[2:16]}/", last['output_directory'])
 
 
 class TestWithoutAProject(ActiveRunTestCase):

@@ -161,6 +161,10 @@ class Downsampled:
     return series
 
 
+def _not_json(constant: str) -> float:
+  raise ValueError(f"{constant} is not JSON")
+
+
 def read_history(path: Union[str, Path]) -> Iterator[Tuple[int, float, Dict[str, float]]]:
   """
   The lines of a series.jsonl: (step, time, {key: value}). Lines that aren't objects are skipped, like a last line
@@ -177,13 +181,18 @@ def read_history(path: Union[str, Path]) -> Iterator[Tuple[int, float, Dict[str,
       if not line:
         continue
       try:
-        row = json.loads(line)
+        # NaN and Infinity as bare words are not JSON: browsers refuse the line, so do we
+        row = json.loads(line, parse_constant=_not_json)
       except ValueError:
         continue
       if not isinstance(row, dict):
         continue
       row_step = row.get(STEP)
-      step = row_step if isinstance(row_step, int) and not isinstance(row_step, bool) else step + 1
+      # 5 or 5.0, like JavaScript, where they are the same number
+      if isinstance(row_step, (int, float)) and not isinstance(row_step, bool) and row_step == int(row_step):
+        step = int(row_step)
+      else:
+        step += 1
       row_time = row.get(TIME)
       values = {}
       for key, value in row.items():
@@ -310,7 +319,7 @@ class SeriesWriter:
     if self._file is not None:
       self._file.flush()
     # atomic: the web app reads the file while the run goes on
-    temporary = self.output_dir / f"{SUMMARY}.{uuid.uuid4().hex}.tmp"
+    temporary = self.output_dir / f".{SUMMARY}.{uuid.uuid4().hex}.tmp"
     try:
       temporary.write_text(json.dumps(self.summary(), separators=(',', ':')), encoding='utf-8')
       os.replace(temporary, self.output_dir / SUMMARY)

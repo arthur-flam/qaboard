@@ -33,6 +33,7 @@ from .compat import url_to_dir
 from .credentials import resolve_token, refusal, default_server, same_server, read_hosts, find_login, ENV_TOKENS
 from .filters import filter_runs, run_params
 from .metrics import split_metrics, declared_metrics
+from .series import Point
 from .site_config import site_config, as_requests_verify
 
 
@@ -348,7 +349,7 @@ class Run:
         print(f"WARNING: {target} is written, but the web app may not list it yet: {e}", file=sys.stderr)
     return target
 
-  def series(self, key: str) -> List[Any]:
+  def series(self, key: str) -> 'List[Point]':
     """
     What the run logged for `key` while it ran, with `run.log({key: value}, step=...)`: `(step, value, time)` rows,
     read from the series.jsonl of its folder (qaboard/series.py). Empty when it logged no such series.

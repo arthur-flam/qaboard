@@ -3,30 +3,24 @@
 // them with their reference runs. A run's card has the same series against its reference alone (series.jsx).
 import { useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { Button, Callout, Card, Classes, HTMLSelect, InputGroup, Slider, Spinner, Switch, Tag } from "@blueprintjs/core";
+import { Button, Callout, Card, Classes, HTMLSelect, InputGroup, Spinner, Switch, Tag } from "@blueprintjs/core";
 
 import Plot from "../components/Plot";
 import { fileQuery } from "../api/queries";
-import { parse_series, sorted_keys } from "./series/series";
+import { sorted_keys } from "./series/series";
+import { REFRESH_INTERVAL, SeriesOptions, parse_file, plot_config, plot_layout, useSeriesOptions } from "./series/SeriesOptions";
 import { comparison_traces, run_labels, run_styles, series_counts, varying_params } from "./series/comparison";
 import { started_from_code } from "./runView";
 
 // More lines than that can't be told apart, and each run is a request: people filter the runs
 export const MAX_RUNS = 40;
 const SHOWN_AT_FIRST = 8;
-const REFRESH_INTERVAL = 10 * 1000;
 const SERIES_FILE = 'series.json';
 const PLOT_WIDTH = 460;
 const PLOT_HEIGHT = 300;
-const default_options = { smoothing: 0, log: false, x: 'step' };
 
-const parse = text => {
-  try {
-    return parse_series(text);
-  } catch {
-    return null;
-  }
-};
+// runs whose file isn't series are left out
+const parse = text => parse_file(text).model;
 
 const series_query = output => ({
   ...fileQuery(output?.output_dir_url ? `${output.output_dir_url}/${SERIES_FILE}` : undefined, { is_running: output?.is_running, responseType: 'text' }),
@@ -36,20 +30,12 @@ const series_query = output => ({
   refetchInterval: output?.is_running ? REFRESH_INTERVAL : false,
 });
 
-const ComparisonPlot = ({ name, traces, options, many }) => {
-  const layout = {
-    width: PLOT_WIDTH,
-    height: PLOT_HEIGHT,
-    margin: { l: 50, r: 10, t: 30, b: 35 },
-    title: { text: name, font: { size: 13 }, x: 0.02, xanchor: 'left' },
-    showlegend: false,
-    // with many runs, a label with every run's value hides the plot
-    hovermode: many ? 'closest' : 'x unified',
-    xaxis: { automargin: true, title: options.x === 'time' ? { text: 'seconds', font: { size: 11 } } : undefined },
-    yaxis: { automargin: true, type: options.log ? 'log' : 'linear' },
-  };
-  return <Plot data={traces} layout={layout} config={{ displayModeBar: false }}/>;
-};
+// with many runs, a label with every run's value hides the plot: only the closest
+const ComparisonPlot = ({ name, traces, options, many }) => <Plot
+  data={traces}
+  layout={plot_layout(name, options, { width: PLOT_WIDTH, height: PLOT_HEIGHT, hovermode: many ? 'closest' : 'x unified' })}
+  config={plot_config}
+/>;
 
 const swatch_style = (style, shown) => ({
   display: 'inline-block', flex: 'none', width: 18, height: 0, marginRight: 8,
@@ -64,20 +50,13 @@ const toolbar_style = { display: 'flex', alignItems: 'center', gap: 14, flexWrap
 // - new_batch, ref_batch: the batches compared, with the runs the page's filters keep (.filtered.outputs)
 // - controls.series: the options shared with the runs' cards (smoothing, log scale, by step or time), in the URL
 const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, labels }) => {
-  const [local, setLocal] = useState({});
+  const [options, setOptions, preview] = useSeriesOptions(controls?.series, onControlsChange);
   const [hidden, setHidden] = useState(() => new Set());
   const [highlighted, setHighlighted] = useState(null);
   const [color_by, setColorBy] = useState('');
   const [filter, setFilter] = useState('');
   const [show_all, setShowAll] = useState(false);
   const [with_reference, setWithReference] = useState(false);
-  const options = { ...default_options, ...controls?.series, ...local };
-  const setOptions = change => {
-    if (!onControlsChange)
-      return setLocal(local => ({ ...local, ...change }));
-    setLocal({});
-    onControlsChange({ series: { ...controls?.series, ...change } });
-  };
 
   // Only the runs started from code can have series: for the others we would ask for files that don't exist
   const candidates = useMemo(() => (new_batch?.filtered?.outputs ?? [])
@@ -163,26 +142,7 @@ const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, la
       Showing the first {MAX_RUNS} of {candidates.length} runs. Filter the runs at the top of the page to compare others.
     </Callout>}
     <div style={toolbar_style}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
-        Smoothing
-        <span style={{ width: 110, display: 'inline-block', marginRight: 10 }}>
-          <Slider
-            min={0} max={0.99} stepSize={0.01} labelRenderer={false}
-            value={options.smoothing}
-            onChange={smoothing => setLocal(local => ({ ...local, smoothing }))}
-            onRelease={smoothing => setOptions({ smoothing })}
-            handleHtmlProps={{ 'aria-label': 'Smoothing' }}
-          />
-        </span>
-      </span>
-      <Switch checked={!!options.log} label="Log scale" onChange={e => setOptions({ log: e.target.checked })} style={{ marginBottom: 0, fontSize: 12 }}/>
-      <HTMLSelect
-        minimal
-        aria-label="Horizontal axis"
-        value={options.x}
-        onChange={e => setOptions({ x: e.target.value })}
-        options={[{ value: 'step', label: 'By step' }, { value: 'time', label: 'By time' }]}
-      />
+      <SeriesOptions options={options} setOptions={setOptions} preview={preview}/>
       {params.length > 0 && <HTMLSelect
         minimal
         aria-label="Color the runs by"

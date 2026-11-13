@@ -397,7 +397,7 @@ const OutputCard = memo(function OutputCard(props) {
   const configured_views = config_visualizations(config?.outputs);
   // Runs that logged series (run.log() in Python) show them without anything in qaboard.yaml, before the project's
   // visualizations. Projects that list the file themselves choose where it goes, and whether it starts hidden.
-  const views = with_logged_series(configured_views, manifest_new);
+  const views = with_logged_series(configured_views, manifest_new, output_new);
   // what users chose in the view options, else what the run asks to show (its `view`), else the project's defaults
   const shown_by_run = run_shown(output_new, views);
   // the logged series aren't one of the project's visualizations: what runs ask to show doesn't hide them

@@ -158,6 +158,7 @@ def added_metrics_env(outputs_api, monkeypatch):
   output.batch.ci_commit.project.data = {"qatools_config": {"project": {"reference_branch": "main"}}}
   output.to_dict = lambda: {"metrics": output.metrics, "data": output.data}
   outputs_api.Output.query.filter.return_value.with_for_update.return_value.one.return_value = output
+  outputs_api.Output.query.filter.return_value.one.return_value = output
   return output
 
 
@@ -442,6 +443,8 @@ def test_progress_needs_access_to_the_project(outputs_api, dummy_app, running_ru
   monkeypatch.setattr(auth.is_authorized_user, "return_value", False)
   _, status = report_progress(outputs_api, dummy_app, {"metrics": {"x": 1}})
   assert status == 403
-  outputs_api.Output.query.filter.return_value.with_for_update.return_value.one.side_effect = outputs_api.NoResultFound
+  # refused callers take no lock on the run
+  outputs_api.Output.query.filter.return_value.with_for_update.assert_not_called()
+  outputs_api.Output.query.filter.return_value.one.side_effect = outputs_api.NoResultFound
   _, status = report_progress(outputs_api, dummy_app, {"metrics": {"x": 1}})
   assert status == 404

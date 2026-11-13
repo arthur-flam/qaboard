@@ -27,8 +27,6 @@ import { BatchesEditor } from "./components/tuning/BatchesEditor";
 import TuningExploration from "./components/tuning/TuningExploration";
 import { useViewerControls, controls_changes, controls_defaults, config_visualizations } from "./viewers/controls";
 import { started_from_code } from "./viewers/runView";
-
-const SeriesComparison = lazy(() => import("./viewers/SeriesComparison"));
 import { ExportPlugin } from "./plugins/ExportPlugin";
 import { LegacyExportPlugin } from "./plugins/LegacyExportPlugin";
 import { ScriptPlugin } from "./plugins/ScriptPlugin";
@@ -46,6 +44,9 @@ import { shared_configuration, reference_pairs, changes_in_all_runs } from "./co
 import { useCommitTab } from "./pageTitle";
 import { RunOriginsContext, useRunOriginsValue } from "./components/runNames";
 import { OutputCardDensityControl } from "./components/DensityControl";
+
+// what the runs logged while they ran, all on the same plots: Plotly is only loaded for batches that have some
+const SeriesComparison = lazy(() => import("./viewers/SeriesComparison"));
 
 
 // Every view of the commit: its title (and maybe a few muted details) on one row above its content

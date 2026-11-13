@@ -69,11 +69,13 @@ run.log({"train/loss": 0.31, "lr": 1e-3}, step=120)
 run.log({"val": {"loss": 0.42, "top1": 0.71}}, step=120)   # nested mappings: val/loss, val/top1
 ```
 
-- Values are numbers, including numpy and PyTorch scalars. Without `step`, steps count the calls.
+- Values are numbers, including numpy and PyTorch scalars. Without `step`, steps count the calls. A value that
+  isn't a number is skipped, with a warning the first time, and `None` silently: a training doesn't end for that.
 - Each series is plotted on the run's card, grouped by what comes before the `/` of its name.
 - **Each series' last value is also a metric of the run**, shown in the tables and on the **History** page, while the
   run goes on and after. Choose another summary with `start_run(summary={"val/loss": "min"})`: `last`, `min`,
-  `max`, `mean`, or `none` to keep a series out of the metrics. `"*"` sets the default.
+  `max`, `mean`, or `none` to keep a series out of the metrics. Names can be patterns:
+  `{"val/*": "min", "system/*": "none"}`, and `"*"` sets the default.
 - `NaN` and infinities are kept in the series, where they show as gaps, and never become the metric.
 - `run.log()` never waits for the server: it writes to memory, and a background thread writes the files every 2
   seconds.
@@ -102,9 +104,11 @@ for what you chose, and `log_params()` for what the run found out.
 Write the run's files in `run.output_dir`, or copy them there with `run.log_artifact()`:
 
 ```python
+(run.output_dir / "checkpoints").mkdir(exist_ok=True)
 torch.save(checkpoint, run.output_dir / "checkpoints" / "last.pt")       # big files: write in place
 run.log_artifact("predictions.json", predictions_path)                   # copies a file
 run.log_artifact("report.html", html.encode())                           # or writes bytes
+run.log_artifact(confusion_matrix_path)                                  # a file alone keeps its name
 ```
 
 The web app lists them in **Output Files** and opens them with the viewer their name picks: images, plots, text...
@@ -134,8 +138,9 @@ run: it gets its own folder, the web app shows the latest attempt with an **atte
 attempts' logs and metrics ([When a run is done again](/docs/storage/where-is-the-data#reruns)). The earlier
 attempt's other files are removed.
 
-To continue a run instead, after a preemption or to train longer, pass `resume=True`: the run keeps its folder and
-files, and its steps go on from the last one logged.
+To continue a run instead, after a preemption or to train longer, pass `resume=True`: the run keeps its folder,
+its files, the metrics and parameters it logged, and its steps go on from the last one logged. Without a previous
+run, it starts one.
 
 ```python
 run = qb.start_run(input="train/coco-mini", configs=configs, resume=True)
@@ -151,12 +156,15 @@ run.log({"loss": 0.3})
 run.finish()          # or run.fail("the loss diverged")
 ```
 
-- **Runs nobody finished end with the process**: as failed when it dies from an exception.
+- **Runs nobody finished end with the process**: as failed when it dies from an exception, or when the job is
+  killed with SIGTERM, as schedulers do at a time limit.
+- **Starting the same run again while it goes on**, like a notebook's cell run twice, finishes the first one.
+- **Logging to a finished run** is skipped, with a warning the first time.
 - **`qb.current_run()`** gives the run started last, for code deep inside a library: `if run := qb.current_run(): run.log(...)`.
 - **Outside a project**, give `project=`. Without a git repository, the run is attached to a placeholder commit
   with your name. Sharing then needs to know the storage: set `QA_STORAGE`, or install your site's package.
 - **With several processes** (one per GPU), call `start_run()` in one of them only, e.g. on rank 0: each call
-  starts a run.
+  starts a run. A forked worker that logs to its parent's run is ignored, with a warning.
 - **`commit=`** attaches the run to another commit than the code's, e.g. the commit that trained the model you
   evaluate.
 
@@ -171,14 +179,13 @@ run.finish()          # or run.fail("the loss diverged")
 | `project` | The *qaboard.yaml*'s | Required without a *qaboard.yaml*. |
 | `commit` | The git `HEAD`, or the CI's | A full commit id, or a branch, tag or short id of the folder's repository. |
 | `share` | In the CI, or with a server and storage | `False` keeps the run local. `QA_OFFLINE=1` does it for a whole process. |
-| `output_dir` | From QA-Board's conventions | Your own folder for the run's files. Nothing in it is removed. |
+| `output_dir` | From QA-Board's conventions | Your own folder for the run's files. Only a previous run's series are removed from it. |
 | `resume` | `False` | Continue the previous run of the same identity. |
 | `summary` | `"last"` | Which value of each series is the run's metric: `last`, `min`, `max`, `mean`, `none`, or a mapping by series. |
 | `database` | The project's | The inputs' database, when `input` is a path under another one. |
 | `platform` | This machine's | `linux` or `windows`. |
 | `capture_output` | `True` | Save what the process prints in the run's *log.txt*. |
 | `server`, `token` | Those `qa` uses | Another server, or a token. |
-| `sync_interval` | `10` | How often, in seconds, the server is told about the run's metrics. |
 
 </details>
 

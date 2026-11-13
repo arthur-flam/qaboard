@@ -32,11 +32,11 @@ import sys
 import threading
 import time
 import traceback
-from contextlib import contextmanager
 from importlib import import_module
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+from fnmatch import fnmatchcase
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from . import attempts
 from .conventions import run_dir_in_commit, slugify, get_settings
@@ -55,6 +55,9 @@ TIMEOUT = (5.0, 30.0)
 SUMMARIES = ('last', 'min', 'max', 'mean', 'none')
 # Only the run sets them, like for `qa run`
 RESERVED_METRICS = ('is_failed', 'compute_time')
+# What the server accepts (backend/api/outputs.py): longer names and texts would be refused with everything sent with them
+MAX_NAME_LENGTH = 200
+MAX_TEXT_LENGTH = 500
 OFFLINE_VALUES = ('1', 'true', 'yes', 'on')
 
 # The runs started and not finished, the latest last
@@ -77,7 +80,10 @@ def _jsonable(value: Any) -> Any:
   """What we send or save as JSON: plain data, paths as texts, numpy scalars as numbers, no NaN"""
   if isinstance(value, Mapping):
     return {str(k): _jsonable(v) for k, v in value.items()}
-  if isinstance(value, (list, tuple, set, frozenset)):
+  if isinstance(value, (set, frozenset)):
+    # in a stable order: configurations make the run's identity and its folder
+    return sorted((_jsonable(v) for v in value), key=lambda v: json.dumps(v, sort_keys=True))
+  if isinstance(value, (list, tuple)):
     return [_jsonable(v) for v in value]
   if isinstance(value, Path):
     return _path(value)
@@ -120,14 +126,31 @@ def _metric_value(key: str, value: Any) -> Any:
   return number
 
 
-@contextmanager
-def _open_umask() -> Iterator[None]:
-  """The run's folders are shared: the server lists them, and people delete them from the web app"""
-  previous = os.umask(0)
+def _open(path: Path, mode: int) -> None:
+  if os.name == 'nt':
+    return
   try:
-    yield
-  finally:
-    os.umask(previous)
+    current = os.stat(path).st_mode
+    if current & mode != mode:
+      os.chmod(path, current | mode)
+  except OSError:
+    pass
+
+
+def _mkdir_shared(directory: Path) -> None:
+  """
+  Creates a folder of the run, and its missing parents, open to others: the server lists the run's files, and people
+  delete runs from the web app. `qa` sets the process's umask to 0 for that; a library doesn't change the umask of
+  the program that imports it, where other threads create files too.
+  """
+  missing = []
+  for parent in (directory, *directory.parents):
+    if parent.exists():
+      break
+    missing.append(parent)
+  directory.mkdir(parents=True, exist_ok=True)
+  for created in missing:
+    _open(created, 0o777)
 
 
 def _share_permissions(directory: Path) -> None:
@@ -143,6 +166,13 @@ def _share_permissions(directory: Path) -> None:
           os.chmod(path, mode | bits)
       except OSError:
         pass
+
+
+def _same_run(run_dir: Path) -> List['ActiveRun']:
+  """The active runs of this process whose folder is `run_dir`, or another attempt of the same run"""
+  first_dir, _ = attempts.split(run_dir)
+  with _active_lock:
+    return [run for run in _active if attempts.split(run.output_dir)[0] == first_dir and run._pid == os.getpid()]
 
 
 def _git(repo_root: Path, *args: str) -> Optional[str]:
@@ -233,11 +263,27 @@ class _Setup:
     }
     self.artifacts_commit: Optional[Path] = artifacts_commit
     self.outputs_commit: Optional[Path] = c.outputs_commit if self.has_qaboard_yaml and outputs_project_root else None
-    if commit and commit != self.commit:
+    # qaboard.config read the HEAD when it was imported: a notebook, or any process that lives long, has moved since
+    head = self._head() if not commit else None
+    if head and head[1] != self.commit:
+      self._use_commit(head[1], outputs_project_root)
+      self.commit_data['commit_branch'] = head[0]
+    elif commit and commit != self.commit:
       self._use_commit(commit, outputs_project_root)
     elif not self.has_qaboard_yaml and outputs_project_root:
       self.outputs_commit = outputs_project_root / self._commit_dir(self.commit)
     self.is_default_commit = not commit or commit == c.commit_id
+
+  def _head(self) -> Optional[Tuple[str, str]]:
+    """The repository's (branch, commit) now, outside the CI, which says which commit it tests"""
+    if self.is_ci or self.repo_root is None:
+      return None
+    from .git import git_head
+    try:
+      branch, head = git_head(self.repo_root)
+    except (OSError, ValueError):
+      return None
+    return (branch, head) if re.fullmatch(r'[0-9a-f]{40}', head) else None
 
   def _commit_dir(self, commit: str) -> Path:
     if re.fullmatch(r'[0-9a-f]{40}', commit):
@@ -271,7 +317,7 @@ def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] =
               project: Optional[str] = None, commit: Optional[str] = None, output_dir: Union[str, Path, None] = None,
               share: Optional[bool] = None, resume: bool = False, summary: Union[str, Mapping[str, str]] = 'last',
               database: Union[str, Path, None] = None, platform: Optional[str] = None, capture_output: bool = True,
-              server: Optional[str] = None, token: Optional[str] = None, sync_interval: float = SYNC_INTERVAL) -> 'ActiveRun':
+              server: Optional[str] = None, token: Optional[str] = None) -> 'ActiveRun':
   """
   Starts a run from your code, and returns it: log to it, then `finish()` it, or use it as a context manager.
 
@@ -287,10 +333,11 @@ def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] =
   - `share`: save the files in the shared storage and show the run in the web app. Default: in the CI, and when a
     server and the storage are configured. `share=False`, or `QA_OFFLINE=1`, keeps everything in `output/`.
   - `output_dir`: your own folder for the run's files, instead of the one QA-Board's conventions give.
-  - `resume=True`: continue the previous run of the same identity: its files are kept, and steps go on from its last.
+  - `resume=True`: continue the previous run of the same identity: its files, metrics and parameters are kept, and
+    steps go on from its last. Without a previous run, it starts one.
     Otherwise, starting a run again is a new attempt: the web app shows the latest, and remembers the earlier ones.
   - `summary`: which value of each logged series is the run's metric: "last" (default), "min", "max", "mean", or
-    "none"; or a mapping by series, `{"val/loss": "min", "*": "last"}`.
+    "none"; or a mapping by series, with `*` patterns: `{"val/loss": "min", "system/*": "none", "*": "last"}`.
   - `capture_output`: also save what the process prints in the run's log.txt, shown in the web app's Logs.
   - `server`, `token`: by default those `qa` uses (QABOARD_URL..., `qa auth login`).
   """
@@ -346,21 +393,25 @@ def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] =
       run_dir = attempts.latest_dir(run_dir)
       if not resume:
         new_attempt = True
-        with _open_umask():
-          run_dir = attempts.reserve_or_keep(run_dir)
+  # Starting the same run again while it goes on, e.g. a notebook's cell run twice: the first ends here. Else both
+  # would write in the same folder, or the new attempt would remove the files of a run that still logs
+  for active in _same_run(run_dir):
+    _say(f"the run in {active.output_dir} was not finished: finishing it before starting it again")
+    active.finish()
+  if new_attempt:
+    run_dir = attempts.reserve_or_keep(run_dir)
   if not resume and not custom_output and run_dir.exists():
     from .utils import clean_output_dir
     clean_output_dir(run_dir)
-  with _open_umask():
-    run_dir.mkdir(parents=True, exist_ok=True)
-    if new_attempt:
-      attempts.remove_previous(run_dir)
+  _mkdir_shared(run_dir)
+  if new_attempt:
+    attempts.remove_previous(run_dir)
+    _open(run_dir, 0o777)
 
   run = ActiveRun(
     setup=setup, input=input_name, database=database_path, configurations=configurations, batch=batch_label,
     raw_batch=raw_batch, platform=platform, output_dir=run_dir, share=bool(share), offline=offline or not share,
-    resume=resume, summaries=summaries, server=server_url, token=token, sync_interval=sync_interval,
-    capture_output=capture_output,
+    resume=resume, summaries=summaries, server=server_url, token=token, capture_output=capture_output,
   )
   run._start()
   return run
@@ -376,7 +427,7 @@ class ActiveRun:
   """
   def __init__(self, *, setup: _Setup, input: str, database: Path, configurations: List[Any], batch: str, raw_batch: str,
                platform: str, output_dir: Path, share: bool, offline: bool, resume: bool, summaries: Dict[str, str],
-               server: str, token: Optional[str], sync_interval: float, capture_output: bool):
+               server: str, token: Optional[str], capture_output: bool):
     self._setup = setup
     self.project = setup.project
     self.commit = setup.commit
@@ -397,7 +448,11 @@ class ActiveRun:
     self._resume = resume
     self._summaries = summaries
     self._token = token
-    self._sync_interval = max(0.1, float(sync_interval))
+    # how often the server is told about the run: not an argument, the default suits servers with thousands of runs
+    try:
+      self._sync_interval = max(0.1, float(os.environ.get('QA_SYNC_INTERVAL') or SYNC_INTERVAL))
+    except ValueError:
+      self._sync_interval = SYNC_INTERVAL
     self._capture_output = capture_output and not os.environ.get('QA_NO_STREAM_REDIRECT')
 
     # what the run logged: guarded by _lock, written and sent by the background thread
@@ -410,6 +465,10 @@ class ActiveRun:
     self._changed = False                          # since the server was told
     self._finished = False
     self._started_at = time.time()
+    self._ended_at: Optional[float] = None
+    self._previous_time = 0.0                      # resume=True: how long the run ran before
+    self._saved_logged: Any = None                 # what run.json has of the metrics and parameters logged
+    self._warned: Set[str] = set()
     self._pid = os.getpid()
 
     self._thread: Optional[threading.Thread] = None
@@ -483,20 +542,27 @@ class ActiveRun:
       raise TypeError("run.log() takes a mapping, e.g. run.log({'loss': 0.3}, step=10)")
     if step is not None and (isinstance(step, bool) or not isinstance(step, int)):
       try:
-        step = int(as_number(step))
+        number = as_number(step)
       except TypeError:
         raise TypeError(f"run.log(step=...) is an integer, not {step!r}") from None
+      if number != int(number):
+        raise TypeError(f"run.log(step=...) is an integer, not {step!r}")
+      step = int(number)
     flat, definitions = split_metrics(flatten(values))
     numbers: Dict[str, float] = {}
     for key, value in flat.items():
-      if not key or key.startswith('_'):
-        raise ValueError(f"run.log(): series' names are not empty and don't start with '_': {key!r}")
+      if not key or key.startswith('_') or len(key) > MAX_NAME_LENGTH or key in RESERVED_METRICS:
+        raise ValueError(f"run.log(): {key!r} can't name a series: names are 1 to {MAX_NAME_LENGTH} characters, don't start with '_', and {' and '.join(RESERVED_METRICS)} are the run's own")
+      if value is None:
+        continue  # e.g. a scheduler without a learning rate yet
       try:
         numbers[key] = as_number(value)
       except TypeError as e:
-        raise TypeError(f"run.log(): {key}: {e}. Series are numbers; use log_metrics() for texts, log_artifact() for files.") from None
+        # hours into a training, a value of the wrong type is not worth the run: said once, skipped
+        self._warn_once(f"value:{key}", f"WARNING: run.log(): not logging {key}: {e}. Series are numbers; use log_metrics() for texts, log_artifact() for files.")
+    if not self._can_log('log'):
+      return -1
     with self._lock:
-      self._check_active('log')
       assert self._series is not None
       logged_step = self._series.append(numbers, step=step)
       for key, definition in definitions.items():
@@ -519,13 +585,19 @@ class ActiveRun:
         raise ValueError("run.log_metrics(): metrics' names are not empty")
       if key in RESERVED_METRICS:
         raise ValueError(f"run.log_metrics(): the run sets {key} itself: use run.fail() to say it failed")
+      if len(key) > MAX_NAME_LENGTH:
+        raise ValueError(f"run.log_metrics(): metrics' names have at most {MAX_NAME_LENGTH} characters: {key[:40]!r}...")
       value = _metric_value(key, value)
+      if isinstance(value, str) and len(value) > MAX_TEXT_LENGTH:
+        self._warn_once(f"text:{key}", f"WARNING: the metric {key} is cut to {MAX_TEXT_LENGTH} characters: save long texts as files, with log_artifact()")
+        value = value[:MAX_TEXT_LENGTH]
       if isinstance(value, float) and not math.isfinite(value):
         _say(f"WARNING: not saving the metric {key}: NaN and infinity can't be saved")
         continue
       cleaned[key] = value
+    if not self._can_log('log_metrics'):
+      return
     with self._lock:
-      self._check_active('log_metrics')
       self._metrics.update(cleaned)
       for key, definition in definitions.items():
         self._definitions[key] = {**self._definitions.get(key, {}), **definition}
@@ -540,27 +612,31 @@ class ActiveRun:
     if not isinstance(params, Mapping):
       raise TypeError("run.log_params() takes a mapping, e.g. run.log_params({'optimizer': 'adamw'})")
     cleaned = _jsonable(params)
+    if not self._can_log('log_params'):
+      return
     with self._lock:
-      self._check_active('log_params')
       from .utils import merge
       self._params = merge(cleaned, self._params)
       self._changed = True
 
-  def log_artifact(self, name: Union[str, Path], source: Union[str, Path, bytes]) -> Path:
+  def log_artifact(self, name: Union[str, Path], source: Union[str, Path, bytes, None] = None) -> Optional[Path]:
     """
     Saves a file of the run: `run.log_artifact("checkpoints/last.pt", path)`. `name` is its path in the run's folder,
-    `source` a file to copy, or `bytes` to write. Saving the same name again replaces the file: they are the run's own.
+    `source` a file to copy, or `bytes` to write. `run.log_artifact(path)` alone copies the file under its own name.
+    Saving the same name again replaces the file: they are the run's own.
     For big files, write in `run.output_dir` directly instead of copying. Returns the file's path.
     """
+    if source is None:
+      name, source = Path(name).name, name
     relative = Path(name)
     if relative.is_absolute() or '..' in relative.parts or not relative.name:
       raise ValueError(f"log_artifact() takes a path inside the run's folder, like 'checkpoints/last.pt', not {str(name)!r}")
     if not isinstance(source, bytes) and not Path(source).is_file():
       raise ValueError(f"{source!r} is not a file to copy. To write text, pass bytes: log_artifact(name, text.encode())")
-    self._check_active('log_artifact')
+    if not self._can_log('log_artifact'):
+      return None
     target = self.output_dir / relative
-    with _open_umask():
-      target.parent.mkdir(parents=True, exist_ok=True)
+    _mkdir_shared(target.parent)
     # atomic: the web app may read the previous file
     temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
     try:
@@ -610,12 +686,28 @@ class ActiveRun:
         self._entered_sigterm = None
 
   # --- internals ---------------------------------------------------------------------------------------------------
-  def _check_active(self, method: str) -> None:
+  def _can_log(self, method: str) -> bool:
+    """
+    False, with a warning the first time, when what is logged can't be kept: the run is finished (callbacks that
+    fire while a framework shuts down), or we are in a process forked from the run's (a data loader's worker), whose
+    copy of the run the parent never sees. Not an error: logging doesn't end trainings.
+    """
+    if os.getpid() != self._pid:
+      self._warn_once(f"fork:{os.getpid()}", f"WARNING: run.{method}() in another process than the run's ({os.getpid()}): not logged. Log from the process that called start_run().")
+      return False
     if self._finished:
-      raise RuntimeError(f"run.{method}(): the run is finished. Start another with start_run(), or continue this one with start_run(..., resume=True).")
+      self._warn_once('finished', f"WARNING: run.{method}(): the run is finished, not logged. Start another with start_run(), or continue this one with start_run(..., resume=True).")
+      return False
+    return True
 
   def _summary_of(self, key: str) -> str:
-    return self._summaries.get(key, self._summaries.get('*', 'last'))
+    """The summary of a series: its own, else the first pattern that matches its name ("val/*"), else "*"'s"""
+    if key in self._summaries:
+      return self._summaries[key]
+    for pattern, how in self._summaries.items():
+      if pattern != '*' and fnmatchcase(key, pattern):
+        return how
+    return self._summaries.get('*', 'last')
 
   def _current_metrics(self, final: bool = False) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {}
@@ -630,7 +722,7 @@ class ActiveRun:
     metrics.update(self._metrics)
     if final:
       metrics['is_failed'] = self.is_failed
-      metrics['compute_time'] = round((self._ended_at if self._finished else time.time()) - self._started_at, 3)
+      metrics['compute_time'] = round(self._elapsed(), 3)
     return metrics
 
   def _metrics_definitions(self, metrics: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -652,28 +744,18 @@ class ActiveRun:
     if not setup.is_ci and setup.repo_root is not None and setup.is_default_commit:
       self._data.update(_dirty(setup.repo_root) or {})
     self._data['sdk'] = {k: v for k, v in _script_source().items() if k in ('script', 'script_sha256', 'qaboard_version')}
-    with _open_umask():
-      (self.output_dir / 'run.json').write_text(json.dumps({
-        'database': str(self.database),
-        'input_path': self.input,
-        'input_type': setup.input_type,
-        'configurations': list(self.configs),
-        'extra_parameters': {},
-        'platform': self.platform,
-        # what `qa run` doesn't write: enough to know the run without the server
-        'project': self.project,
-        'commit': self.commit,
-        'batch': self.batch,
-        'started_with': 'qaboard.start_run',
-      }, sort_keys=True, indent=2, separators=(',', ': ')))
-      if self._capture_output:
-        self._capture()
+    if self._resume:
+      self._restore()
+    self._write_run_json()
+    if self._capture_output:
+      self._capture()
     with _active_lock:
       _active.append(self)
       if not _hooks_installed:
         _hooks_installed = True
         atexit.register(_finish_at_exit)
         _watch_uncaught_exceptions()
+        _watch_sigterm()
     _say(f"run files: {self.output_dir}")
     if self._offline:
       if self.share:
@@ -685,6 +767,55 @@ class ActiveRun:
         _say(f"results: {self.url}")
     self._thread = threading.Thread(target=self._loop, name='qaboard-run', daemon=True)
     self._thread.start()
+
+  def _write_run_json(self) -> None:
+    """
+    What `qa run` writes when it starts, then what it doesn't: enough to know the run without the server, and what it
+    logged that isn't in its series, so that `resume=True` finds it after the process was killed.
+    """
+    with self._lock:
+      content = {
+        'database': str(self.database),
+        'input_path': self.input,
+        'input_type': self._setup.input_type,
+        'configurations': list(self.configs),
+        'extra_parameters': {},
+        'platform': self.platform,
+        'project': self.project,
+        'commit': self.commit,
+        'batch': self.batch,
+        'started_with': 'qaboard.start_run',
+        'logged': {'metrics': _jsonable(self._metrics), 'params': _jsonable(self._params), 'compute_time': round(self._elapsed(), 3)},
+      }
+      self._saved_logged = (dict(self._metrics), json.dumps(_jsonable(self._params), sort_keys=True))
+    path = self.output_dir / 'run.json'
+    temporary = path.with_name(f".run.json.{os.getpid()}.tmp")
+    try:
+      temporary.write_text(json.dumps(content, sort_keys=True, indent=2, separators=(',', ': ')))
+      os.replace(temporary, path)
+    except OSError:
+      try:
+        temporary.unlink()
+      except OSError:
+        pass
+      raise
+
+  def _restore(self) -> None:
+    """resume=True: the metrics and parameters the run logged before, and how long it ran"""
+    try:
+      logged = json.loads((self.output_dir / 'run.json').read_text()).get('logged') or {}
+    except (OSError, ValueError, AttributeError):
+      return
+    if isinstance(logged.get('metrics'), dict):
+      self._metrics.update(logged['metrics'])
+    if isinstance(logged.get('params'), dict):
+      self._params.update(logged['params'])
+    if isinstance(logged.get('compute_time'), (int, float)):
+      self._previous_time = float(logged['compute_time'])
+
+  def _elapsed(self) -> float:
+    """How long the run ran, with what it ran before it was resumed"""
+    return self._previous_time + (self._ended_at or time.time()) - self._started_at
 
   def _capture(self) -> None:
     from .utils import TeeStream
@@ -700,10 +831,19 @@ class ActiveRun:
       self._tees.append((name, tee, stream))
 
   def _release_output(self) -> None:
-    # in the reverse order, in case they wrap each other. Streams something else replaced since stay
+    from .utils import TeeStream
     for name, tee, stream in reversed(self._tees):
-      if getattr(sys, name) is tee:
-        setattr(sys, name, stream)
+      current = getattr(sys, name)
+      if current is tee:
+        # tee.stream, not `stream`: a run we wrapped may have stepped out since
+        setattr(sys, name, tee.stream)
+        continue
+      # another run started after us wraps our stream: we step out of the chain. What else replaced the streams stays
+      while isinstance(current, TeeStream):
+        if current.stream is tee:
+          current.stream = tee.stream
+          break
+        current = current.stream
     self._tees = []
     if self._log_file is not None:
       try:
@@ -714,6 +854,7 @@ class ActiveRun:
 
   def _loop(self) -> None:
     last_flush = 0.0
+    last_saved = time.time()
     while not self._stop.wait(min(FLUSH_INTERVAL, self._sync_interval)):
       now = time.time()
       try:
@@ -722,16 +863,19 @@ class ActiveRun:
           with self._lock:
             if self._series is not None:
               self._series.flush()
+            unsaved = self._saved_logged != (self._metrics, json.dumps(_jsonable(self._params), sort_keys=True))
+          # also now and then for how long the run ran, that a resumed run adds to
+          if unsaved or now - last_saved >= 15 * FLUSH_INTERVAL:
+            last_saved = now
+            self._write_run_json()
       except OSError as e:
         self._warn_once('files', f"WARNING: could not write the run's series: {e}")
       if not self._offline and now >= self._next_sync:
         self._sync()
 
-  _warned: Tuple[str, ...] = ()
-
   def _warn_once(self, kind: str, message: str) -> None:
     if kind not in self._warned:
-      self._warned = (*self._warned, kind)
+      self._warned.add(kind)
       _say(message)
 
   def _payload(self, final: bool) -> Dict[str, Any]:
@@ -743,8 +887,8 @@ class ActiveRun:
       definitions = with_default_direction(self._metrics_definitions(metrics), setup.available_metrics)
       if final:
         self._changed = False
-      # else: the server keeps a starting run's metrics for its end. What was logged before it knew the run (it was
-      # away) goes with the next progress report
+      # else: the server doesn't save the metrics sent with a run that starts. What was logged before it knew the run
+      # (it was away) goes with the next progress report
     payload: Dict[str, Any] = {
       'job_type': 'ci' if setup.is_ci else 'local',
       'run_context': setup.run_context,
@@ -874,12 +1018,12 @@ class ActiveRun:
           self._series.close()
         metrics = self._current_metrics(final=True)
         definitions = self._metrics_definitions(metrics)
-      with _open_umask():
-        (self.output_dir / 'metrics.json').write_text(json.dumps(_jsonable(metrics), sort_keys=True, indent=2, separators=(',', ': ')))
-        if definitions or (self.output_dir / DEFINITIONS_FILE).exists():
-          (self.output_dir / DEFINITIONS_FILE).write_text(json.dumps(definitions, sort_keys=True, indent=2, separators=(',', ': ')))
-        from .utils import save_outputs_manifest, total_storage
-        manifest = save_outputs_manifest(self.output_dir, config=self._setup.config)
+      self._write_run_json()
+      (self.output_dir / 'metrics.json').write_text(json.dumps(_jsonable(metrics), sort_keys=True, indent=2, separators=(',', ': ')))
+      if definitions or (self.output_dir / DEFINITIONS_FILE).exists():
+        (self.output_dir / DEFINITIONS_FILE).write_text(json.dumps(definitions, sort_keys=True, indent=2, separators=(',', ': ')))
+      from .utils import save_outputs_manifest, total_storage
+      manifest = save_outputs_manifest(self.output_dir, config=self._setup.config)
       self._data['storage'] = total_storage(manifest)
       if self.share:
         _share_permissions(self.output_dir)
@@ -921,3 +1065,28 @@ def _watch_uncaught_exceptions() -> None:
     previous(exc_type, exc, tb)
 
   sys.excepthook = hook
+
+
+def _watch_sigterm() -> None:
+  """
+  A job that is killed politely (a scheduler's time limit, a preempted node, `kill`) gets SIGTERM, which ends Python
+  without running what we registered: its runs would stay "running" in the web app. While runs are active, SIGTERM
+  raises KeyboardInterrupt like Ctrl+C does, so that they end as failed. Only when the program handles SIGTERM the
+  default way, and from the main thread, where Python lets us.
+  """
+  import signal
+  if threading.current_thread() is not threading.main_thread():
+    return
+  try:
+    if signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL:
+      return
+
+    def on_sigterm(signo: int, frame: Any) -> None:
+      if _active:
+        raise KeyboardInterrupt
+      signal.signal(signal.SIGTERM, signal.SIG_DFL)
+      os.kill(os.getpid(), signal.SIGTERM)
+
+    signal.signal(signal.SIGTERM, on_sigterm)
+  except (ValueError, OSError):
+    pass

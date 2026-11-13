@@ -2,7 +2,7 @@
 // one plot per series, the reference run's on the same axes, dashed. While the run goes on, the plots follow it.
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Callout, Classes, HTMLSelect, InputGroup, Slider, Switch, Tag } from "@blueprintjs/core";
+import { Button, Callout, Classes, InputGroup, Tag } from "@blueprintjs/core";
 
 import Plot from "../components/Plot";
 import { fileQuery } from "../api/queries";
@@ -10,27 +10,15 @@ import { ViewerError, ViewerLoading } from "./ViewerStates";
 import { plot_color } from "../sideColors";
 import { useIsDark } from "../theme";
 import { useLabels } from "../hooks";
-import { format_duration, parse_series, smooth, sorted_keys } from "./series/series";
+import { format_duration, smooth, sorted_keys } from "./series/series";
+import { REFRESH_INTERVAL, SeriesOptions, parse_file, plot_config, plot_layout, useSeriesOptions } from "./series/SeriesOptions";
 
 const LoadableTextViewer = lazy(() => import('./textViewer'));
 
-// Running runs write their series every few seconds
-const REFRESH_INTERVAL = 10 * 1000;
 // Plots are drawn one after the other: runs with hundreds of series show the first ones, and the others on demand
 const SHOWN_AT_FIRST = 12;
 const PLOT_WIDTH = 400;
 const PLOT_HEIGHT = 250;
-const default_options = { smoothing: 0, log: false, x: 'step' };
-
-const parse = text => {
-  if (text === undefined || text === null) return { model: null };
-  try {
-    return { model: parse_series(text) };
-  } catch (error) {
-    return { model: null, error };
-  }
-};
-
 const x_values = (series, x) => x === 'time' ? series.time : series.step;
 
 // The traces of one series: the reference's under the new run's. Downsampled series show the range of the values
@@ -65,19 +53,8 @@ export const series_traces = (key, { model_new, model_ref, options, names, color
   return traces;
 };
 
-const SeriesPlot = ({ name, traces, options }) => {
-  const layout = {
-    width: PLOT_WIDTH,
-    height: PLOT_HEIGHT,
-    margin: { l: 50, r: 10, t: 30, b: 35 },
-    title: { text: name, font: { size: 13 }, x: 0.02, xanchor: 'left' },
-    showlegend: false,
-    hovermode: 'x unified',
-    xaxis: { automargin: true, title: options.x === 'time' ? { text: 'seconds', font: { size: 11 } } : undefined },
-    yaxis: { automargin: true, type: options.log ? 'log' : 'linear' },
-  };
-  return <Plot data={traces} layout={layout} config={{ displayModeBar: false }}/>;
-};
+const SeriesPlot = ({ name, traces, options }) =>
+  <Plot data={traces} layout={plot_layout(name, options, { width: PLOT_WIDTH, height: PLOT_HEIGHT })} config={plot_config}/>;
 
 const toolbar_style = { display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', margin: '6px 0' };
 const grid_style = { display: 'flex', flexWrap: 'wrap', gap: 4 };
@@ -88,17 +65,9 @@ const grid_style = { display: 'flex', flexWrap: 'wrap', gap: 4 };
 const SeriesViewer = ({ output_new, output_ref, path, path_ref, labels: labels_, series: chosen, onControlsChange, fallback_to_text, style, ...props }) => {
   const labels = useLabels(labels_);
   const is_dark = useIsDark();
-  const [local, setLocal] = useState({});
+  const [options, setOptions, preview] = useSeriesOptions(chosen, onControlsChange);
   const [filter, setFilter] = useState('');
   const [show_all, setShowAll] = useState(false);
-  const options = { ...default_options, ...chosen, ...local };
-  const setOptions = change => {
-    if (!onControlsChange)
-      return setLocal(local => ({ ...local, ...change }));
-    // all the cards follow, and the page's address keeps the choice
-    setLocal({});
-    onControlsChange({ series: { ...chosen, ...change } });
-  };
 
   const url_new = output_new?.output_dir_url && path ? `${output_new.output_dir_url}/${path}` : undefined;
   const url_ref = url_new && output_ref?.output_dir_url ? `${output_ref.output_dir_url}/${path_ref ?? path}` : undefined;
@@ -111,8 +80,8 @@ const SeriesViewer = ({ output_new, output_ref, path, path_ref, labels: labels_,
     ...fileQuery(url_ref, { is_running: output_ref?.is_running, responseType: 'text' }),
     refetchInterval: output_ref?.is_running ? REFRESH_INTERVAL : false,
   });
-  const parsed_new = useMemo(() => parse(query_new.data), [query_new.data]);
-  const parsed_ref = useMemo(() => parse(query_ref.isSuccess ? query_ref.data : undefined), [query_ref.isSuccess, query_ref.data]);
+  const parsed_new = useMemo(() => parse_file(query_new.data), [query_new.data]);
+  const parsed_ref = useMemo(() => parse_file(query_ref.isSuccess ? query_ref.data : undefined), [query_ref.isSuccess, query_ref.data]);
 
   if (query_new.isError) return <ViewerError path={path} error={query_new.error}/>;
   if (!url_new || query_new.isPending || (url_ref && query_ref.isPending)) return <ViewerLoading height={style?.height}/>;
@@ -156,26 +125,7 @@ const SeriesViewer = ({ output_new, output_ref, path, path_ref, labels: labels_,
         <span style={{ color: colors.new, fontWeight: 600 }}>— {names.new}</span>{' '}
         <span style={{ color: colors.ref, fontWeight: 600 }}>- - {names.ref}</span>
       </span>}
-      <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
-        Smoothing
-        <span style={{ width: 110, display: 'inline-block', marginRight: 10 }}>
-          <Slider
-            min={0} max={0.99} stepSize={0.01} labelRenderer={false}
-            value={options.smoothing}
-            onChange={smoothing => setLocal(local => ({ ...local, smoothing }))}
-            onRelease={smoothing => setOptions({ smoothing })}
-            handleHtmlProps={{ 'aria-label': 'Smoothing' }}
-          />
-        </span>
-      </span>
-      <Switch checked={!!options.log} label="Log scale" onChange={e => setOptions({ log: e.target.checked })} style={{ marginBottom: 0, fontSize: 12 }}/>
-      <HTMLSelect
-        minimal
-        aria-label="Horizontal axis"
-        value={options.x}
-        onChange={e => setOptions({ x: e.target.value })}
-        options={[{ value: 'step', label: 'By step' }, { value: 'time', label: 'By time' }]}
-      />
+      <SeriesOptions options={options} setOptions={setOptions} preview={preview}/>
       {keys.length > 6 && <InputGroup size="small" leftIcon="search" placeholder="Filter series" value={filter} onChange={e => setFilter(e.target.value)} style={{ width: 160 }}/>}
     </div>
     <div style={grid_style}>

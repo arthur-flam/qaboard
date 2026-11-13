@@ -210,12 +210,18 @@ server's `PATCH /api/v1/output/<id>/progress`, the web app's series viewer (`web
 10. **Without a qaboard.yaml, no configuration is sent**, so a notebook can't replace the project's visualizations
     and metrics on the server. Without git, results go under `local/<user>` in the storage, not in the working
     directory, which the server may not read.
-11. **Permissions without changing the process's umask.** `qa` sets `umask(0)`; a library shouldn't. The run's
-    directories are created open, and at `finish()` what the run wrote in its folder is opened to others, so the
+11. **Permissions without changing the process's umask.** `qa` sets `umask(0)`; a library shouldn't, not even for
+    a moment: other threads create files. The run's directories are opened to others when created, and at `finish()` what the run wrote in its folder is opened to others, so the
     server can list it and people can delete it from the web app.
 12. **The console is saved in `log.txt`** (`capture_output`), with the traceback of what failed the run, so the
-    web app's Logs view works; SIGTERM in a `with` block fails the run, like `qa run`, and runs nobody finished end
-    with the process.
+    web app's Logs view works; SIGTERM fails the run, like `qa run`, and runs nobody finished end with the process.
+14. **Logging is lenient on values, strict on the call.** A value that isn't a number, a `None`, logging after
+    `finish()` or from a forked worker are skipped with one warning: goal 4. A wrong argument (not a mapping, a
+    step that isn't an integer, a reserved name) raises the first time it runs.
+15. **Starting a run that is still active finishes it first** (a notebook's cell run twice), instead of two runs
+    writing in one folder or the new attempt removing the first one's files.
+16. **`resume=True` restores what isn't in the series**: the metrics and parameters logged, and the time the run
+    ran, saved in `run.json` as the run goes, so that it survives a kill.
 13. **`data.tags` and `data.notes` are not sent**: the web app doesn't show or filter them, contrary to what the
     identity table says. `data.dirty` and `data.diff_sha256` are recorded; the web app doesn't show them yet.
 
@@ -239,5 +245,9 @@ Unit tests: `tests/test_series.py` (fixtures shared with the web app's parser, `
 `tests/test_active_run.py` (real scripts against an HTTP server that records what they send: sharing, progress,
 old servers, no server, refusals, failures, attempts, resume, no project), `backend/tests/test_outputs.py`,
 `webapp/src/viewers/__tests__/series*.test.*` (the comparison too), and `webapp/e2e/series.spec.js` in a browser with a mocked API.
+An independent review after the first version found 11 problems (stale commit in long-lived processes, a rerun
+in the same process, resume losing metrics, reserved names stopping live updates, SIGTERM outside `with`, the
+parsers disagreeing on other programs' files, the process-wide umask...): fixed, each with a test, except what is
+listed in `TODO_WARTS.md`.
 Not tested: against a real server and database end to end, on Windows, from Jupyter, or with forked data loader
 workers logging.

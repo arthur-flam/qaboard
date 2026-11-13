@@ -91,8 +91,22 @@ run-centric page, screenshots for the docs, gaps against experiment trackers): `
 - A process killed without warning (SIGKILL, out of memory, a node that dies) leaves its run "running" in the web
   app, like `qa run`. `resume=True` or a new attempt fixes the row. [M, behaviour]
 - Distributed trainings that start the script once per GPU must call `start_run()` in one process only: each call is
-  a new attempt, that removes the previous one's files. Forked workers that log write to the parent's
-  `series.jsonl` with their own copy of the state. [M, behaviour]
+  a new attempt, that removes the previous one's files. Forked workers that log are ignored, with a warning: their
+  values never reach the run. [M, behaviour]
+- `log()` writes under the run's lock, which the background thread also holds while it writes `series.json` and
+  reads the attempts' logs and `metrics_definitions.json`: on a slow NFS, `log()` can wait for those. Snapshot under
+  the lock, write outside. [S, no change]
+- `_Setup` (active_run.py) computes the project, commit and folders again on top of `qaboard/config.py`'s import-time
+  state, and `_payload` builds what `api.notify_qa_database` builds: one function for each, used by `qa` and the
+  SDK, would stop them from drifting. A process that changes directory to another project keeps the first one's
+  settings (the commit is read again each time). [M, no change]
+- `capture_output` saves what Python prints, not what C libraries write to the file descriptors, unlike `qa run`. [S, behaviour]
+- `ActiveRun.run` is a `Run`, whose `log_metrics()` is the script route, refused for running runs: two
+  `log_metrics` that look alike. [S, behaviour]
+- Hovering a run in the Summary's comparison rebuilds every plot's traces (`SeriesComparison.jsx`): with 40 runs
+  and 8 plots it is slow. Restyle the traces instead. The card's implicit "Logged series" can't be hidden: a batch
+  of 200 such runs polls 200 files. [M, behaviour]
+- Python's and the web app's series parsers round times differently on exact halves of a millisecond. [S, no change]
 - `finish()` hashes every file of the run's folder for the manifest, like `qa run`: slow with tens of GB of
   checkpoints. [S, behaviour]
 - A run whose every message to the server failed isn't sent later: `qa sync` doesn't know about series or about

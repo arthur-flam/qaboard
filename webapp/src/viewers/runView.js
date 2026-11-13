@@ -76,12 +76,13 @@ export const is_visualization_shown = (view, controls, shown_by_run) => {
 };
 
 // The series a run logged (run.log() in Python, qaboard/series.py): the file made for plots, else the full history.
-// Runs that have one show it without anything in qaboard.yaml, before the project's visualizations. Projects that
-// list the file themselves choose where it goes, and whether it starts hidden.
+// Runs started from code show it without anything in qaboard.yaml, before the project's visualizations. Projects
+// that list the file themselves choose where it goes, and whether it starts hidden.
 const SERIES_FILES = ['series.json', 'series.jsonl'];
 export const SERIES_VIEW_NAME = 'Logged series';
-export const with_logged_series = (views, manifest) => {
-  const path = SERIES_FILES.find(file => manifest?.[file]);
+export const with_logged_series = (views, manifest, output) => {
+  // other projects' runs can have a series.json of their own, that isn't ours
+  const path = started_from_code(output) ? SERIES_FILES.find(file => manifest?.[file]) : undefined;
   if (!path || views.some(view => view.type === 'series' || SERIES_FILES.includes(view.path)))
     return views;
   return [{ name: SERIES_VIEW_NAME, path, type: 'series', logged_series: true }, ...views];
