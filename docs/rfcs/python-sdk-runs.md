@@ -1,6 +1,7 @@
 # RFC: creating runs from Python (`start_run`), logging during training
 
-Status: draft for discussion, November 2026. Not implemented. Owner: the maintainers, with the MLOps team.
+Status: a first version is implemented, November 2026, as experimental: see "What ships" at the end, with what
+changed from the proposal below and what was left out. Owner: the maintainers, with the MLOps team.
 Related: the roadmap's "Log from your code" section; `qaboard/results.py` (what shipped: `runs(url)`,
 `run.log_metrics()`, `run.log_artifact()`); `docs/dag-pipelines-proposal.md`.
 
@@ -165,3 +166,73 @@ the ones users mention first. Each is a decision: build, defer, or say no.
 
 A reasonable first release: the API above with the series viewer, overlay and smoothing, `log_image()`, the dirty-tree
 record and the notebook path. System metrics and alerts after feedback. A registry only if asked twice.
+
+## What ships
+The first version: `qaboard.start_run()` (`qaboard/active_run.py`), the series' files (`qaboard/series.py`), the
+server's `PATCH /api/v1/output/<id>/progress`, the web app's series viewer (`webapp/src/viewers/series.jsx`,
+`series/series.js`), shown on run cards without configuration. User docs:
+[Log from your code](../../website/docs/logging-from-code.mdx).
+
+### What changed from the proposal, and why
+1. **One file of series per run, not one per key.** `series.jsonl` has one line per `log()` call, with the values
+   logged together: one append per call instead of one per key, and the web app makes one request per run, not one
+   per series. (Open question 2: JSON lines.)
+2. **A second, bounded file for plots: `series.json`.** The proposal had the viewer poll files that grow for days
+   (open question 5). Instead the SDK keeps 500 to 1000 buckets per series, merging neighbors when a series
+   doubles, each with the mean, minimum and maximum of its values, and rewrites `series.json` atomically every 2
+   seconds. The viewer downloads tens of kilobytes whatever the run's length, never reads a file being appended,
+   and a spike between two plotted points still shows. `series.jsonl` stays the full record, for `run.series()`.
+   The viewer reads a bare `series.jsonl` the same way, for programs in other languages.
+3. **The run sends its state, not its events.** The proposal had a queue of batched payloads, retried, then
+   dropped. The background thread instead tells the server what the run looks like now (all its metrics and
+   parameters, a few kilobytes) when something changed. Nothing has to arrive, or arrive in order: the next message
+   says everything, and `finish()` alone creates the run on the server if no earlier message got through. No queue
+   to bound, nothing to drop.
+4. **A light endpoint for progress.** `PATCH /output/<id>/metrics` refuses running runs and records provenance:
+   it is for scripts that add to finished runs. Posting to `/output/` every few seconds would look up the commit
+   and the batch each time and send the project's configuration. `PATCH /output/<id>/progress` only replaces a
+   running run's metrics and reported parameters. Servers without it answer 404: the SDK stops asking, and they
+   get the metrics when the run ends.
+5. **`log()` and `log_metrics()` both stay (open question 1), and series have a summary.** `log()` is a point in
+   time, `log_metrics()` a result. Each series' last value is a metric, as proposed; `summary=` picks `min`,
+   `max`, `mean` or `none` per series, since the best validation loss is rarely the last.
+6. **`resume=True` (open question 3).** A run started again is a new attempt, as decided: its directory is reserved
+   with `qaboard/attempts.py` and the previous attempt's files are removed. Trainings that were preempted need the
+   opposite, their checkpoints: `resume=True` continues in the latest attempt's directory, and steps go on.
+7. **Runs without an input are named after their script (open question 4)**: stable from a commit to the next, so
+   they compare. The inputs table still lists the name.
+8. **Outside the CI, runs go to the user's own batch**, `@user| <batch>`, like `qa --share`. The proposal's default,
+   the batch as named, would have put laptop runs in the commit's CI batch. A training and the `qa --share batch`
+   that evaluates it land in the same batch.
+9. **`log_artifact()` replaces files in an active run.** The proposal's own example saves `checkpoints/last.pt`
+   every 1000 steps, which "never overwrites" would refuse the second time. The files are the run's own; the rule
+   stays for scripts adding to other people's finished runs.
+10. **Without a qaboard.yaml, no configuration is sent**, so a notebook can't replace the project's visualizations
+    and metrics on the server. Without git, results go under `local/<user>` in the storage, not in the working
+    directory, which the server may not read.
+11. **Permissions without changing the process's umask.** `qa` sets `umask(0)`; a library shouldn't. The run's
+    directories are created open, and at `finish()` what the run wrote in its folder is opened to others, so the
+    server can list it and people can delete it from the web app.
+12. **The console is saved in `log.txt`** (`capture_output`), with the traceback of what failed the run, so the
+    web app's Logs view works; SIGTERM in a `with` block fails the run, like `qa run`, and runs nobody finished end
+    with the process.
+13. **`data.tags` and `data.notes` are not sent**: the web app doesn't show or filter them, contrary to what the
+    identity table says. `data.dirty` and `data.diff_sha256` are recorded; the web app doesn't show them yet.
+
+### Left out of this version
+- **Curves of many runs on one plot** (the gap table's first row, beyond new and reference), and grouping the
+  History page by a parameter.
+- **`log_image()`**: without a place on the card for per-step images, it would only be `log_artifact()`.
+- **`qaboard.compat.wandb`**: `qaboard/compat.py` is a module; the shim needs it to become a package, or another
+  name.
+- **`qa sync` for series and runs logged offline**: a run whose every message failed stays on disk. Its folder has
+  what a later `sync` needs (`run.json` has the project, commit and batch).
+- **System metrics, alerts, sweeps, a registry**, as planned.
+
+### Tested
+Unit tests: `tests/test_series.py` (fixtures shared with the web app's parser, `tests/fixtures/series/`),
+`tests/test_active_run.py` (real scripts against an HTTP server that records what they send: sharing, progress,
+old servers, no server, refusals, failures, attempts, resume, no project), `backend/tests/test_outputs.py`,
+`webapp/src/viewers/__tests__/series*.test.*`, and `webapp/e2e/series.spec.js` in a browser with a mocked API.
+Not tested: against a real server and database end to end, on Windows, from Jupyter, or with forked data loader
+workers logging.

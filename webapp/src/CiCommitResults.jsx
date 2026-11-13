@@ -26,6 +26,7 @@ import { TuningForm } from "./components/tuning/forms";
 import { BatchesEditor } from "./components/tuning/BatchesEditor";
 import TuningExploration from "./components/tuning/TuningExploration";
 import { useViewerControls, controls_changes, controls_defaults, config_visualizations } from "./viewers/controls";
+import { started_from_code } from "./viewers/runView";
 import { ExportPlugin } from "./plugins/ExportPlugin";
 import { LegacyExportPlugin } from "./plugins/LegacyExportPlugin";
 import { ScriptPlugin } from "./plugins/ScriptPlugin";
@@ -192,6 +193,8 @@ const CiCommitResults = () => {
   const config_outputs = config.outputs || {};
   const controls_extra = config_outputs.controls || []
   const visualizations = config_visualizations(config_outputs);
+  // Runs started from code (qaboard.start_run()) show the series they logged without any visualization in qaboard.yaml
+  const has_cards = visualizations.length > 0 || new_batch.filtered.outputs.some(id => started_from_code(new_batch.outputs[id]));
   const tuned_params = new_batch.sorted_extra_parameters.filter(p => new_batch.extra_parameters[p].size > 1)
   const has_tuning = tuned_params.length > 0
   const show_ref_navbar = shows_reference_bar(selected_views)
@@ -458,8 +461,8 @@ const CiCommitResults = () => {
              </ViewSection>}
 
             {views.includes('output-list') && <ViewSection>
-              <ViewTitle title="Visualizations" actions={visualizations.length > 0 ? cards_actions : script_plugin}/>
-              {visualizations.length === 0
+              <ViewTitle title="Visualizations" actions={has_cards ? cards_actions : script_plugin}/>
+              {!has_cards
                 ? <NonIdealState
                     icon="heatmap"
                     title="Visualizations are not configured yet."

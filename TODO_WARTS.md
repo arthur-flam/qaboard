@@ -80,6 +80,31 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
 - `api/tuning.py` and `qaboard/runners/celeryconfig.py` default to `pyamqp://guest:guest@qaboard:5672//`: read
   `CELERY_BROKER_URL` only, and fail clearly when it's unset with `QABOARD_TUNING_RUNNER=celery`. [S, behaviour]
 
+## Runs created from code (`qaboard.start_run()`, November 2026)
+
+Experimental: `qaboard/active_run.py`, `qaboard/series.py`. Design: `docs/rfcs/python-sdk-runs.md`.
+
+- Not verified against a real server and database end to end: the SDK's tests use an HTTP server that records
+  requests, the backend's tests mock the database, the web app's a mocked API. Nor on Windows, in Jupyter, or with a
+  site package. [M, no change]
+- A process killed without warning (SIGKILL, out of memory, a node that dies) leaves its run "running" in the web
+  app, like `qa run`. `resume=True` or a new attempt fixes the row. [M, behaviour]
+- Distributed trainings that start the script once per GPU must call `start_run()` in one process only: each call is
+  a new attempt, that removes the previous one's files. Forked workers that log write to the parent's
+  `series.jsonl` with their own copy of the state. [M, behaviour]
+- `finish()` hashes every file of the run's folder for the manifest, like `qa run`: slow with tens of GB of
+  checkpoints. [S, behaviour]
+- A run whose every message to the server failed isn't sent later: `qa sync` doesn't know about series or about
+  runs it didn't start. [M, behaviour]
+- Every logged series is a metric by default (its last value), the learning rate too: projects with hundreds of
+  series get hundreds of metrics (`summary="none"`, or per series). [S, behaviour]
+- The web app shows cards in **Visualizations** for projects without visualizations only when a run of the batch
+  was started from code (`data.sdk`): a `series.jsonl` written by another program needs an `outputs.visualizations`
+  entry. `data.dirty` is recorded, not shown. The implicit "Logged series" view isn't in the View options. [S, behaviour]
+- In notebooks, `capture_output` wraps `sys.stdout` and `sys.stderr` until `finish()`. [S, behaviour]
+- `Run._new` (qaboard/results.py) was the placeholder for this: `ActiveRun.run` builds its `Run` itself, and only
+  tests use `_new`. [S, no change]
+
 ## Runners (Kubernetes, Dask on any scheduler, `qa doctor`, November 2026)
 
 Design and follow-ups: [docs/design/kubernetes-runner.md](docs/design/kubernetes-runner.md). Security boundaries are
