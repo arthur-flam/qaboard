@@ -34,7 +34,8 @@ with qb.start_run(input="train/coco-mini", configs=["resnet50", {"lr": 1e-3}], b
 
 Run it with `python train.py`. It prints where the run's files are and its address in the web app. Open it: in the
 **Visualizations** view, the run's card plots `train/loss` and `lr` as they are logged, with the reference run's
-curves dashed on the same axes ([Logged series](/docs/user-guide/other-viewers#logged-series) in the user guide).
+curves dashed on the same axes. The **Summary** view plots all the runs of the batch together, one color per run
+([Logged series](/docs/user-guide/other-viewers#logged-series) in the user guide).
 Leaving the `with` block ends the run; an exception ends it as failed, with the error in its log.
 
 You need what `qa --share` needs: the `qaboard` package, a server (`QABOARD_URL`, or your site's package), the shared
@@ -182,8 +183,8 @@ run.finish()          # or run.fail("the loss diverged")
 </details>
 
 ## What it doesn't do yet {#limits}
-- **Compare many runs' curves on one plot.** A card shows a run against its reference. To compare the runs of a
-  batch, use their metrics in the **Metrics Table**.
+- **Compare runs across batches or commits on one plot.** The **Summary** view plots the runs of one batch
+  together, up to 40, and each with its reference run.
 - **Images per step, system metrics (GPU, memory), alerts, a model registry.** Save images as files of the run;
   link to your registry with [badges](/docs/deep-learning#workflows).
 - **Sweeps.** Loop over configurations in your script, or use [automated tuning](/docs/auto-optimization) with

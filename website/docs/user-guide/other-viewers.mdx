@@ -100,6 +100,26 @@ Your choices apply to every card, and stay in the page's address when you share 
 - **With many series**, the first 12 show; filter them by name, or show the others with the button under the plots.
 - **A gap in a curve** is a value that wasn't a number: a loss that became NaN.
 
+### Compare all the runs on the same plots {#compare-logged-series}
+The **Summary** view has a **Logged series** card when runs of the batch logged series: one plot per series, one
+line per run, each run in its color. Use it to compare the trainings of an experiment: learning rates, model sizes,
+seeds.
+
+1. **Find a run**: the list on the left names each run by what tells it apart from the others, e.g. `lr=0.01`.
+   Hover a run to bring its curves forward in every plot; the others fade.
+2. **Show and hide runs**: click a run to hide it, click again to show it. **only** shows that run alone; **Show
+   all** and **Hide all** are at the top of the list.
+3. **Color by a parameter**: pick **Color by lr** (any parameter that differs between the runs) to give the runs
+   that share a value the same color, and show a group alone with its **only**.
+4. **Add the reference**: **With the reference's runs, dashed** draws each run's reference run in the same color,
+   dashed.
+
+- Smoothing, the logarithmic scale and **By step** / **By time** are the same as on the cards, and shared with them.
+- The plots follow the page's filter: filter the runs at the top of the page to compare some of them. Past 40 runs,
+  the first 40 show.
+- A plot's title says when only some of the runs logged its series.
+- Past 12 runs, colors repeat with dotted lines.
+
 Integrators: see [Log from your code](/docs/log-from-code) to log series from Python, and
 [the file format](/docs/viewers#series) for other languages.
 

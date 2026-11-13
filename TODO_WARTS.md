@@ -101,6 +101,9 @@ Experimental: `qaboard/active_run.py`, `qaboard/series.py`. Design: `docs/rfcs/p
 - The web app shows cards in **Visualizations** for projects without visualizations only when a run of the batch
   was started from code (`data.sdk`): a `series.jsonl` written by another program needs an `outputs.visualizations`
   entry. `data.dirty` is recorded, not shown. The implicit "Logged series" view isn't in the View options. [S, behaviour]
+- The Summary's comparison of runs' series (`SeriesComparison.jsx`) downloads one `series.json` per run, up to 40,
+  only for runs started from code; which runs are hidden and the color-by parameter aren't in the URL; averaging
+  the runs of a group (mean and spread over seeds) isn't done. [M, behaviour]
 - In notebooks, `capture_output` wraps `sys.stdout` and `sys.stderr` until `finish()`. [S, behaviour]
 - `Run._new` (qaboard/results.py) was the placeholder for this: `ActiveRun.run` builds its `Run` itself, and only
   tests use `_new`. [S, no change]

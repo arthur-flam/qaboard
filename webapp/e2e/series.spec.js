@@ -104,3 +104,55 @@ test('a running run is marked as live', async ({ page }) => {
   await expect(viewer.getByText('Live')).toBeVisible();
   await expect(viewer.locator('.js-plotly-plot')).toHaveCount(3);
 });
+
+// The Summary view: all the runs' series on the same plots
+const sweep = async page => {
+  const lrs = [0.1, 0.01, 0.001];
+  const run = (id, lr, i) => ({
+    ...output(id, 'new'), id, configurations: ['resnet50', { lr, optimizer: i < 2 ? 'adamw' : 'sgd' }], output_dir_url: `/s/mnt/qaboard/sweep-${i}/output`,
+  });
+  const batch = { id: 1, label: 'default', data: {}, valid_outputs: 3, pending_outputs: 0, running_outputs: 0, failed_outputs: 0, deleted_outputs: 0,
+                  outputs: Object.fromEntries(lrs.map((lr, i) => [10 + i, run(10 + i, lr, i)])) };
+  const api = {
+    '/api/v1/config': {},
+    '/api/v1/user/me/': { is_authenticated: true, user_id: 1, user_name: 'alice', full_name: 'Alice', email: 'alice@example.com', login_type: 'local' },
+    '/api/v1/projects': { [project]: { data: { qatools_config }, latest_commit_datetime: '2026-09-01T10:00:00Z', total_commits: 1 } },
+    '/api/v1/project': { qatools_config },
+    '/api/v1/project/branches': ['master'],
+    '/api/v1/commit': { ...commit('new', 1, 'Learning rate sweep', false), batches: { default: batch } },
+  };
+  await page.addInitScript(() => localStorage.setItem('qaboard.release-notes.last-seen', '9999-12-31'));
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    const key = Object.keys(api).sort((a, b) => b.length - a.length).find(k => pathname.startsWith(k));
+    return route.fulfill({ json: key ? api[key] : {} });
+  });
+  await page.route('**/s/**', route => {
+    const { pathname } = new URL(route.request().url());
+    const index = Number(pathname.split('/')[4].split('-')[1]);
+    if (!pathname.endsWith('/series.json')) return route.fulfill({ status: 404 });
+    return route.fulfill({ json: { format: 'qaboard-series', version: 1, started_at: 1700000000, series: {
+      'train/loss': curve(200, 2 + index), 'val/loss': curve(20, 2.2 + index),
+    } } });
+  });
+  await page.goto(`/${project}/commit/new?selected_views=summary`);
+};
+
+test("the Summary plots all the runs' series together, and people pick the runs", async ({ page }) => {
+  await sweep(page);
+  const comparison = page.getByTestId('series-comparison');
+  await expect(comparison.getByText('3 runs, 2 series')).toBeVisible();
+  const loss = comparison.locator('.js-plotly-plot').filter({ has: page.locator('.gtitle', { hasText: 'train/loss' }) });
+  await expect(loss.locator('.scatterlayer .trace')).toHaveCount(3);
+  // runs are named by what tells them apart
+  await expect(comparison.getByRole('button', { name: 'Hide lr=0.1 · optimizer=adamw' })).toBeVisible();
+
+  await comparison.getByRole('button', { name: 'Hide lr=0.1 · optimizer=adamw' }).click();
+  await expect(loss.locator('.scatterlayer .trace')).toHaveCount(2);
+  await expect(comparison.getByText('2 of 3 runs, 2 series')).toBeVisible();
+  await comparison.getByRole('button', { name: 'Show all' }).click();
+
+  await comparison.getByLabel('Color the runs by').selectOption('optimizer');
+  await comparison.getByRole('button', { name: 'Show only optimizer = sgd' }).click();
+  await expect(loss.locator('.scatterlayer .trace')).toHaveCount(1);
+});

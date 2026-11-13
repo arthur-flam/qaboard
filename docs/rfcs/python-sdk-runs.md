@@ -220,8 +220,10 @@ server's `PATCH /api/v1/output/<id>/progress`, the web app's series viewer (`web
     identity table says. `data.dirty` and `data.diff_sha256` are recorded; the web app doesn't show them yet.
 
 ### Left out of this version
-- **Curves of many runs on one plot** (the gap table's first row, beyond new and reference), and grouping the
-  History page by a parameter.
+- **Curves of runs from several batches or commits on one plot.** The runs of one batch are plotted together in
+  the Summary view (`webapp/src/viewers/SeriesComparison.jsx`): up to 40, shown and hidden from a legend, colored
+  per run or per value of a parameter, with their reference runs on demand. Grouping the History page by a
+  parameter is not done.
 - **`log_image()`**: without a place on the card for per-step images, it would only be `log_artifact()`.
 - **`qaboard.compat.wandb`**: `qaboard/compat.py` is a module; the shim needs it to become a package, or another
   name.
@@ -233,6 +235,6 @@ server's `PATCH /api/v1/output/<id>/progress`, the web app's series viewer (`web
 Unit tests: `tests/test_series.py` (fixtures shared with the web app's parser, `tests/fixtures/series/`),
 `tests/test_active_run.py` (real scripts against an HTTP server that records what they send: sharing, progress,
 old servers, no server, refusals, failures, attempts, resume, no project), `backend/tests/test_outputs.py`,
-`webapp/src/viewers/__tests__/series*.test.*`, and `webapp/e2e/series.spec.js` in a browser with a mocked API.
+`webapp/src/viewers/__tests__/series*.test.*` (the comparison too), and `webapp/e2e/series.spec.js` in a browser with a mocked API.
 Not tested: against a real server and database end to end, on Windows, from Jupyter, or with forked data loader
 workers logging.

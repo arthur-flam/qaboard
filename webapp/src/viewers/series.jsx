@@ -158,7 +158,7 @@ const SeriesViewer = ({ output_new, output_ref, path, path_ref, labels: labels_,
       </span>}
       <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
         Smoothing
-        <span style={{ width: 110, display: 'inline-block' }}>
+        <span style={{ width: 110, display: 'inline-block', marginRight: 10 }}>
           <Slider
             min={0} max={0.99} stepSize={0.01} labelRenderer={false}
             value={options.smoothing}

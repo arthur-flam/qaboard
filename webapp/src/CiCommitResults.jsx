@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import styled from "styled-components";
 
 import {
@@ -27,6 +27,8 @@ import { BatchesEditor } from "./components/tuning/BatchesEditor";
 import TuningExploration from "./components/tuning/TuningExploration";
 import { useViewerControls, controls_changes, controls_defaults, config_visualizations } from "./viewers/controls";
 import { started_from_code } from "./viewers/runView";
+
+const SeriesComparison = lazy(() => import("./viewers/SeriesComparison"));
 import { ExportPlugin } from "./plugins/ExportPlugin";
 import { LegacyExportPlugin } from "./plugins/LegacyExportPlugin";
 import { ScriptPlugin } from "./plugins/ScriptPlugin";
@@ -194,7 +196,8 @@ const CiCommitResults = () => {
   const controls_extra = config_outputs.controls || []
   const visualizations = config_visualizations(config_outputs);
   // Runs started from code (qaboard.start_run()) show the series they logged without any visualization in qaboard.yaml
-  const has_cards = visualizations.length > 0 || new_batch.filtered.outputs.some(id => started_from_code(new_batch.outputs[id]));
+  const has_logged_runs = new_batch.filtered.outputs.some(id => started_from_code(new_batch.outputs[id]));
+  const has_cards = visualizations.length > 0 || has_logged_runs;
   const tuned_params = new_batch.sorted_extra_parameters.filter(p => new_batch.extra_parameters[p].size > 1)
   const has_tuning = tuned_params.length > 0
   const show_ref_navbar = shows_reference_bar(selected_views)
@@ -364,6 +367,10 @@ const CiCommitResults = () => {
                   labels={comparison.labels}
                 />
               </Card>
+              {/* what the runs logged while they ran (qaboard.start_run()): all the runs on the same plots */}
+              {has_logged_runs && <Suspense fallback={null}>
+                <SeriesComparison new_batch={new_batch} ref_batch={ref_batch} controls={controls} onControlsChange={updateControls} labels={comparison.labels}/>
+              </Suspense>}
              </ViewSection>}
 
             {views.includes('parameters') && <ViewSection>
