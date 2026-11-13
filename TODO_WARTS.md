@@ -96,16 +96,14 @@ run-centric page, screenshots for the docs, gaps against experiment trackers): `
 - `log()` writes under the run's lock, which the background thread also holds while it writes `series.json` and
   reads the attempts' logs and `metrics_definitions.json`: on a slow NFS, `log()` can wait for those. Snapshot under
   the lock, write outside. [S, no change]
-- `_Setup` (active_run.py) computes the project, commit and folders again on top of `qaboard/config.py`'s import-time
-  state, and `_payload` builds what `api.notify_qa_database` builds: one function for each, used by `qa` and the
-  SDK, would stop them from drifting. A process that changes directory to another project keeps the first one's
-  settings (the commit is read again each time). [M, no change]
+- A process that changes directory to another project keeps the first one's settings: `qaboard/config.py` reads the
+  project once, when imported (the commit is read again for each run). The SDK shares `qa`'s definitions of what is
+  sent and where runs are saved (`qaboard/payloads.py`, `config.commit_data`, `read_commit`, `commit_outputs_dir`). [S, behaviour]
 - `capture_output` saves what Python prints, not what C libraries write to the file descriptors, unlike `qa run`. [S, behaviour]
 - `ActiveRun.run` is a `Run`, whose `log_metrics()` is the script route, refused for running runs: two
   `log_metrics` that look alike. [S, behaviour]
-- Hovering a run in the Summary's comparison rebuilds every plot's traces (`SeriesComparison.jsx`): with 40 runs
-  and 8 plots it is slow. Restyle the traces instead. The card's implicit "Logged series" can't be hidden: a batch
-  of 200 such runs polls 200 files. [M, behaviour]
+- The card's implicit "Logged series" can't be hidden: a batch of 200 such runs polls 200 files. In the Summary's
+  comparison, a highlight is lost when the plots are drawn again while the pointer is on a run (a live refresh). [S, behaviour]
 - Python's and the web app's series parsers round times differently on exact halves of a millisecond. [S, no change]
 - `finish()` hashes every file of the run's folder for the manifest, like `qa run`: slow with tens of GB of
   checkpoints. [S, behaviour]

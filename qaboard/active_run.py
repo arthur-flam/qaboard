@@ -42,6 +42,7 @@ from . import attempts
 from .conventions import run_dir_in_commit, slugify, get_settings
 from .credentials import default_server
 from .metrics import DEFINITIONS_FILE, clean_definition, declared_metrics, read_definitions_file, split_metrics, with_default_direction
+from .payloads import results_payload, serialize_path
 from .results import ResultsError, Run, _request, _script_source
 from .series import Point, SeriesWriter, as_number, flatten, read_series
 
@@ -86,7 +87,7 @@ def _jsonable(value: Any) -> Any:
   if isinstance(value, (list, tuple)):
     return [_jsonable(v) for v in value]
   if isinstance(value, Path):
-    return _path(value)
+    return serialize_path(value)
   if isinstance(value, float):
     return value if math.isfinite(value) else None
   if value is None or isinstance(value, (str, bool, int)):
@@ -102,17 +103,6 @@ def _jsonable(value: Any) -> Any:
     except Exception:
       pass
   return str(value)
-
-
-def _path(path: Path) -> str:
-  """Paths as the server expects them: linux-style"""
-  if os.name == 'nt':
-    from .compat import windows_to_linux_path
-    try:
-      return windows_to_linux_path(path).as_posix()
-    except Exception:
-      return path.as_posix()
-  return str(path)
 
 
 def _metric_value(key: str, value: Any) -> Any:
@@ -250,17 +240,9 @@ class _Setup:
         except (KeyError, ValueError, TypeError):
           pass
 
+    self._config = c
     self.commit: str = c.commit_id
-    self.commit_data: Dict[str, Any] = {
-      'commit_branch': c.commit_branch,
-      'commit_tag': c.commit_tag,
-      'commit_committer_name': c.commit_committer_name,
-      'commit_committer_email': c.commit_committer_email,
-      'commit_author_email': c.commit_author_email,
-      'commit_authored_datetime': c.commit_authored_datetime,
-      'commit_parents': c.commit_parents,
-      'commit_message': c.commit_message,
-    }
+    self.commit_data: Dict[str, Any] = c.commit_data()
     self.artifacts_commit: Optional[Path] = artifacts_commit
     self.outputs_commit: Optional[Path] = c.outputs_commit if self.has_qaboard_yaml and outputs_project_root else None
     # qaboard.config read the HEAD when it was imported: a notebook, or any process that lives long, has moved since
@@ -271,7 +253,7 @@ class _Setup:
     elif commit and commit != self.commit:
       self._use_commit(commit, outputs_project_root)
     elif not self.has_qaboard_yaml and outputs_project_root:
-      self.outputs_commit = outputs_project_root / self._commit_dir(self.commit)
+      self.outputs_commit = self._outputs_dir(self.commit, outputs_project_root)
     self.is_default_commit = not commit or commit == c.commit_id
 
   def _head(self) -> Optional[Tuple[str, str]]:
@@ -285,11 +267,12 @@ class _Setup:
       return None
     return (branch, head) if re.fullmatch(r'[0-9a-f]{40}', head) else None
 
-  def _commit_dir(self, commit: str) -> Path:
+  def _outputs_dir(self, commit: str, outputs_project_root: Path) -> Path:
+    """Where the commit's runs are saved, like `qa` (config.commit_outputs_dir)"""
     if re.fullmatch(r'[0-9a-f]{40}', commit):
-      return Path(commit[:2]) / commit[2:16]
-    # no git: results of code that isn't in a commit, per user
-    return Path('local') / (slugify(self.user) or 'user')
+      return self._config.commit_outputs_dir(commit, outputs_project_root, self.subproject)
+    # no git: `qa` saves in the working directory, which the server may not read. Here, in the storage, per user
+    return outputs_project_root / 'local' / (slugify(self.user) or 'user') / self.subproject
 
   def _use_commit(self, commit: str, outputs_project_root: Optional[Path]) -> None:
     """The run is attached to another commit than the code's, e.g. the commit that trained a model"""
@@ -302,15 +285,14 @@ class _Setup:
     self.commit = resolved
     # only the date is required: the server knows the rest if it knows the commit
     self.commit_data = {'commit_authored_datetime': datetime.datetime.now(datetime.timezone.utc).isoformat()}
-    described = _git(self.repo_root, 'show', '-s', '--format=%cn%n%ce%n%ae%n%aI%n%P%n%B', resolved) if self.repo_root else None
-    if described:
-      committer_name, committer_email, author_email, authored, parents, message = described.split('\n', maxsplit=5)
-      self.commit_data = {
-        'commit_committer_name': committer_name, 'commit_committer_email': committer_email, 'commit_author_email': author_email,
-        'commit_authored_datetime': authored, 'commit_parents': parents.split(), 'commit_message': message.strip(),
-      }
+    if self.repo_root:
+      try:
+        self.commit_data = {f"commit_{key}": value for key, value in self._config.read_commit(resolved).items()}
+        self.commit_data['commit_message'] = self.commit_data['commit_message'].strip()
+      except Exception: # the repository doesn't have the commit
+        pass
     self.artifacts_commit = None
-    self.outputs_commit = outputs_project_root / self._commit_dir(resolved) / self.subproject if outputs_project_root else None
+    self.outputs_commit = self._outputs_dir(resolved, outputs_project_root) if outputs_project_root else None
 
 
 def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] = None, batch: Optional[str] = None,
@@ -889,39 +871,34 @@ class ActiveRun:
         self._changed = False
       # else: the server doesn't save the metrics sent with a run that starts. What was logged before it knew the run
       # (it was away) goes with the next progress report
-    payload: Dict[str, Any] = {
-      'job_type': 'ci' if setup.is_ci else 'local',
-      'run_context': setup.run_context,
-      'commit_sha': self.commit,
-      'git_commit_sha': self.commit,
+    payload = results_payload({
       'project': self.project,
       'project_root': setup.project_root,
-      'subproject': _path(setup.subproject),
+      'subproject': setup.subproject,
       'user': setup.user,
       'share': True,
       'batch_label': self.batch,
       'raw_batch_label': self._raw_batch,
       'platform': self.platform,
       'input_type': setup.input_type,
-      'database': _path(self.database),
+      'database': self.database,
       'input_path': self.input,
       'rel_input_path': self.input,
+      # not `configuration`, their legacy text: the server would parse it instead of the list
       'configurations': list(self.configs),
       'extra_parameters': {},
-      'output_directory': _path(self.output_dir),
+      'output_directory': self.output_dir,
       'is_pending': not final,
       'is_running': not final,
       'metrics': _jsonable(metrics),
       'data': _jsonable(data),
-      **_jsonable(setup.commit_data),
-    }
+    }, is_ci=setup.is_ci, run_context=setup.run_context, commit_id=self.commit, commit=_jsonable(setup.commit_data),
+       # without a qaboard.yaml we send no configuration: the project keeps the one it has
+       config=setup.config if setup.has_qaboard_yaml else None, metrics_file=_jsonable(setup.metrics_file))
     if setup.artifacts_commit is not None:
-      payload['artifacts_commit'] = _path(setup.artifacts_commit)
+      payload['artifacts_commit'] = serialize_path(setup.artifacts_commit)
     if definitions:
       payload['metrics_definitions'] = definitions
-    if setup.has_qaboard_yaml:
-      payload['qaboard_config'] = _jsonable(setup.config)
-      payload['qaboard_metrics'] = _jsonable(setup.metrics_file)
     if final:
       payload['is_failed'] = self.is_failed
     return payload

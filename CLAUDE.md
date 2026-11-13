@@ -91,7 +91,8 @@ uv sync --extra dev     # Install with dev dependencies
 `qaboard.start_run()` creates runs from code that starts by itself (training loops, notebooks), without `qa run`:
 `qaboard/active_run.py`, with the series it logs in `qaboard/series.py` (standalone, the web app's
 `viewers/series/series.js` reads the same files: both are tested on `tests/fixtures/series/`). Design and what's left
-out: `docs/rfcs/python-sdk-runs.md`; user docs: `website/docs/logging-from-code.mdx`.
+out: `docs/rfcs/python-sdk-runs.md` (next steps: `python-sdk-runs-follow-ups.md`); user docs: `website/docs/logging-from-code.mdx`.
+What `qa` and the SDK send with results is built in one place, `qaboard/payloads.py`.
 
 ### Runners
 `qa batch` starts runs with a runner (`qaboard/runners/`): local, lsf, celery, dask (workers on LSF, Slurm, PBS, SGE,

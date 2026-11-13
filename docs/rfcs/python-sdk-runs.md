@@ -222,6 +222,10 @@ server's `PATCH /api/v1/output/<id>/progress`, the web app's series viewer (`web
     writing in one folder or the new attempt removing the first one's files.
 16. **`resume=True` restores what isn't in the series**: the metrics and parameters logged, and the time the run
     ran, saved in `run.json` as the run goes, so that it survives a kill.
+17. **One definition of what is sent and where runs are saved, for `qa` and the SDK**: `qaboard/payloads.py`
+    (`results_payload`, used by `api.notify_qa_database` and the SDK), and in `qaboard/config.py` `commit_data()`,
+    `read_commit()` and `commit_outputs_dir()`. The SDK only adds what differs on purpose: no configuration without
+    a qaboard.yaml, and `local/<user>` without git.
 13. **`data.tags` and `data.notes` are not sent**: the web app doesn't show or filter them, contrary to what the
     identity table says. `data.dirty` and `data.diff_sha256` are recorded; the web app doesn't show them yet.
 

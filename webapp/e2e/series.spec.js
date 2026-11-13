@@ -147,6 +147,13 @@ test("the Summary plots all the runs' series together, and people pick the runs"
   // runs are named by what tells them apart
   await expect(comparison.getByRole('button', { name: 'Hide lr=0.1 · optimizer=adamw' })).toBeVisible();
 
+  // hovering a run brings its line forward: the others fade, without the plots being drawn again
+  await comparison.getByRole('button', { name: 'Hide lr=0.01 · optimizer=adamw' }).hover();
+  await expect(loss.locator('.scatterlayer .trace').first()).toHaveCSS('opacity', '0.12');
+  await expect(loss.locator('.scatterlayer .trace').nth(1)).toHaveCSS('opacity', '1');
+  await page.mouse.move(0, 0);
+  await expect(loss.locator('.scatterlayer .trace').first()).toHaveCSS('opacity', '1');
+
   await comparison.getByRole('button', { name: 'Hide lr=0.1 · optimizer=adamw' }).click();
   await expect(loss.locator('.scatterlayer .trace')).toHaveCount(2);
   await expect(comparison.getByText('2 of 3 runs, 2 series')).toBeVisible();

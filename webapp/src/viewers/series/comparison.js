@@ -94,13 +94,12 @@ export const series_counts = models => {
 };
 
 // The traces of one series: a line per run that logged it, in the run's color; its reference run's dashed and
-// thinner, in the same color. Hidden runs are left out; with a highlighted run, the others fade.
+// thinner, in the same color. Hidden runs are left out.
 // runs: [{ id, label, style, model, ref_model? }]
-export const comparison_traces = (key, { runs, hidden, highlighted, options, reference_name = 'reference' }) => {
+export const comparison_traces = (key, { runs, hidden, options, reference_name = 'reference' }) => {
   const traces = [];
   for (const run of runs) {
     if (hidden?.has(run.id)) continue;
-    const faded = highlighted !== undefined && highlighted !== null && highlighted !== run.id;
     for (const [side, model] of [['ref', run.ref_model], ['new', run.model]]) {
       const series = model?.series?.[key];
       if (!series) continue;
@@ -112,15 +111,29 @@ export const comparison_traces = (key, { runs, hidden, highlighted, options, ref
         type: 'scatter',
         mode: series.step.length > 1 ? 'lines' : 'markers',
         name,
+        // ours, for highlight_update
         run: run.id,
-        opacity: faded ? 0.12 : (is_ref ? 0.7 : 1),
-        line: { color: run.style.color, width: is_ref ? 1.5 : (highlighted === run.id ? 3 : 2), dash: is_ref ? 'dash' : run.style.dash },
+        is_ref,
+        opacity: is_ref ? REF_OPACITY : 1,
+        line: { color: run.style.color, width: is_ref ? REF_WIDTH : WIDTH, dash: is_ref ? 'dash' : run.style.dash },
         marker: { color: run.style.color, size: 6 },
         hovertemplate: `%{y:.5g}<extra>${name}</extra>`,
-        hoverinfo: faded ? 'skip' : undefined,
       });
     }
   }
-  // the highlighted run on top
-  return traces.sort((a, b) => (a.run === highlighted) - (b.run === highlighted));
+  return traces;
+};
+
+const WIDTH = 2;
+const REF_WIDTH = 1.5;
+const REF_OPACITY = 0.7;
+
+// What changes in a plot's traces when a run is highlighted: its lines are thicker, the others fade. null: as drawn.
+// For Plotly.restyle: a plot isn't drawn again when the pointer moves over the runs' list.
+export const highlight_update = (traces, highlighted) => {
+  const none = highlighted === null || highlighted === undefined;
+  return {
+    opacity: traces.map(trace => !none && trace.run !== highlighted ? 0.12 : (trace.is_ref ? REF_OPACITY : 1)),
+    'line.width': traces.map(trace => trace.is_ref ? REF_WIDTH : (!none && trace.run === highlighted ? 3 : WIDTH)),
+  };
 };

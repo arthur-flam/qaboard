@@ -35,31 +35,81 @@ done over three days on three commits is three pages. Runs outside the CI also l
 - Filters (`qaboard/filters.py`, shared with the web app) already match runs by input, configuration, parameters,
   status and id.
 
-### Proposal: a **Runs** page per project
-A fourth way into a project, next to **Commits**, **History** and **Milestones**: `/<project>/runs`.
+### Decided in discussion (November 2026)
+- **A separate page**, not a mode of the commits list. A project then has three ways in, by what you look for:
+  **Commits** (what did a change do), **Batches** (what did I run, today's "Yours"), **Runs** (my experiments).
+- **Shown when the project has runs started from code, and put forward for projects that train**: for those, the
+  sidebar has **Runs** above **Commits**, and the project opens on it. Other projects don't see it.
+- **Experiments are a hierarchy, by their name.** People name things with slashes
+  (`detector/backbone/lr-sweep`) and expect to open a level, see everything under it, and delete from there.
+- **The commit stays.** It matters less than on the commit page, but teams that train from clean commits rely on
+  it: it is a column, a filter and a link, never hidden.
+- **A run opens like any run**: its visualizations and output files, with every viewer, as on the commit page.
 
-1. **A table of runs, the latest first, across commits and batches.** One row per run: status, name (input and
-   what differs in its configuration), who, when, duration, commit and batch (links to the commit page, where the
-   run's files and its reference are), then one column per parameter that varies and per chosen metric. Scope tabs
-   like the commits list: **Yours**, **Everyone's**, with the CI's runs off by default (a training team's project
-   can have thousands of evaluation runs per day).
-2. **Group and filter by what people think in.** A filter box with the existing syntax, plus quick filters: batch
-   (the experiment), branch, user, origin (code, `qa`, CI, web app), status, a time range. "Group by" a parameter,
-   the batch or the user turns the table into sections with the count and the best/median of each metric.
-   *Experiment* is the natural word for this audience: show the batch's name without the `@user|` prefix, with the
-   user as its own column, so that a team's experiment is one group whoever ran each run.
-3. **Select runs, compare them.** Checkboxes, then:
-   - their logged series on the same plots (the existing comparison component, fed with the selection);
-   - their parameters and metrics side by side, differences highlighted (the Metrics Table, by run instead of by
-     input);
-   - **two** runs: open them as new and reference on the commit page, with every viewer the product has. That is
-     QA-Board's strength and trackers' weak spot; the link is `/<project>/commit/<a>?reference=<b>&filter=id:…`,
-     which works today.
-   The selection lives in the URL, so a comparison can be shared.
-4. **Pin a selection.** A milestone today is a commit and a batch (and a filter). Let a milestone hold a set of runs
-   ("the candidates for 1.5"), so that the selection has a name, notes and a link, and can be a reference.
-5. **Live.** Running runs first, with their last logged step and how long they have run; the table refreshes
-   while any is running.
+### Naming: one project, experiments with slashes
+Today a QA-Board project is a repository, or a subfolder of one: `group/repo/subproject`, each a row in the
+database with its own storage folder, access rules and settings. That hierarchy is about code. Experiments are
+another hierarchy, and should not become projects: a project per experiment would scatter access, settings and
+references, and thousands of rows.
+
+- **The project is the umbrella**: the repository (`kitefin/detector`), as today. `start_run()` finds it from the
+  *qaboard.yaml*, or takes `project=`.
+- **The experiment is the batch**, as today (`start_run(batch=...)`), and **its name can have slashes**:
+  `batch="backbone/lr-sweep"`. Nothing new is stored: batches are already free text, and their folder name is a
+  slug of the label (`conventions.batch_folder_name`), so slashes are safe on disk. To check before promising it:
+  every place the web app puts a batch's label in a URL or splits it, and the `@user| ` prefix (below).
+- **In `start_run()`, call it what users call it.** Add `experiment=` as the documented name, keep `batch=` as its
+  alias: "batch" means nothing to someone who trains, and the docs' table already has to translate it.
+- **Who ran it is not part of the name.** Outside the CI, runs go to `@user| <batch>` so that people don't write in
+  the CI's batch. For the tree, the experiment is the label without that prefix, and the user is a column and a
+  filter: `backbone/lr-sweep` is one node whoever ran each run. The stored label doesn't change.
+- **Encourage the hierarchy in the docs**: `<area>/<question>` (`backbone/lr-sweep`, `quantization/int8-calibration`),
+  with the seed or trial in `configs`, not in the name.
+
+### Proposal: a **Runs** page per project
+`/<project>/runs`, and `/<project>/runs/<experiment path>` for a level of the tree, so that every level has an
+address to share.
+
+1. **On the left, the experiments as a tree**, folded by the slashes of their names, each node with its number of
+   runs, how many are running or failed, and when it last ran. Clicking a node shows its runs and everything under
+   it: the most natural filter there is. A node's menu has what people do to a whole experiment: copy its link,
+   export, and **delete its runs' files** (the existing deletion of batches, with its confirmation and storage
+   numbers, applied to the batches under the node, for who has the role).
+2. **On the right, the runs of the selected node, the latest first, across commits.** One row per run: status,
+   name (what differs in its configuration, as in the Summary's comparison), experiment (the part of the path below
+   the node), who, when, duration, commit (short id, a mark when the code differed from it, link to the commit
+   page), then one column per parameter that varies and per chosen metric. Scope tabs like the commits list:
+   **Yours**, **Everyone's**; the CI's runs off by default.
+3. **Above the table, the runs' series on the same plots**: the comparison of the Summary view, fed with the rows
+   shown, so that opening an experiment answers "how did these trainings go" before any click. One plot per
+   series, a few at first (the project's main metrics, else the first logged), the others on demand.
+4. **The table drives the plots, so that people see what they work on.** This is where the page succeeds or
+   fails:
+   - every row has an eye, like the comparison's list: hidden runs leave the plots and gray out in the table;
+   - **selecting rows shows only those**, in the plots and in the table's metrics columns' highlights; clearing the
+     selection brings back everything visible;
+   - hovering a row brings its curves forward (the restyle the comparison already does);
+   - filters (text, status, user, a time range, a parameter's value) and "group by" a parameter fold the rest away;
+     grouped, a group is one line with a band (the mean and spread over seeds, gap table below);
+   - "only running", "only mine" and "hide failed" as one-click chips, since they are most of what people hide.
+   The eye, the selection, the filters and the grouping live in the URL.
+5. **A run opens in place.** Clicking a row opens a panel (or the page `/<project>/runs/<id>`) with what the commit
+   page's card has: its metrics, its series against its reference, its visualizations and output files with every
+   viewer, its logs, its parameters, its attempts. It is the same card component, with the same view options. From
+   there, **Open on the commit page** goes to the commit's batch with the run filtered, and **Compare with…** picks
+   another run as its reference: two runs as new and reference, with every viewer the product has, is QA-Board's
+   strength and a link that works today (`/<project>/commit/<a>?reference=<b>&filter=id:…`).
+6. **Pin a selection.** A milestone today is a commit and a batch (and a filter). Let a milestone hold a set of
+   runs, or an experiment node ("the candidates for 1.5"), so that it has a name, notes and a link, and can be a
+   reference.
+7. **Live.** Running runs first, with their last logged step and how long they have run; the table and the plots
+   refresh while any is running.
+
+How hosted trackers lay this out, from general knowledge and to check before copying anything: a runs table next
+to a workspace of panels, where the table's visibility toggles and grouping drive the panels (Weights & Biases),
+or a table with compare and chart views, runs grouped by a namespace-like path and custom views saved (Neptune).
+The proposal keeps that coupling, table drives plots, and adds what they don't have: the tree from names, and a run
+that opens with its outputs in full viewers and against a reference.
 
 ### What it needs
 - **Server**: `GET /api/v1/runs?project=&scope=&origin=&batch=&branch=&filter=&since=&limit=&offset=`, returning
@@ -76,29 +126,33 @@ A fourth way into a project, next to **Commits**, **History** and **Milestones**
 - **Docs**: a user guide page, and the deep learning page rewritten around it.
 
 ### Open questions
-1. **Is it a new page, or a mode of the commits list?** The commits list already has **Yours** / **Everyone's** and
-   a batches feed. A third unit (runs) in the same page keeps one place to look, and may be one toggle too many.
-   A separate page is clearer for training teams, and invisible to the others if the sidebar only shows it for
-   projects with runs started from code. Lean: separate page, shown when the project has such runs.
-2. **Should training runs have a commit at all in the UI?** For a run from a dirty tree or a notebook, the commit is
-   a detail, sometimes a placeholder. The Runs page can show it as a column and never require it; the commit page
-   stays the place for "this run against its reference".
+1. **Which projects "train"?** The page shows when a project has runs started from code. Putting it first in the
+   sidebar and opening the project on it needs a stronger signal: a share of recent runs started from code, or a
+   project setting (`project.home: runs` in *qaboard.yaml*, or in the project's admin page). Lean: automatic for
+   showing it, a setting for making it the home.
+2. **Three units in one sidebar.** Commits, batches and runs are three lists of the same results. The home and
+   project pages already mix commits and batches (`docs/home-and-project-pages-proposal.md`): decide whether
+   **Batches** stays a tab of the commits list while **Runs** is its own page, and say in one sentence each what
+   they are for.
 3. **Which reference does a training run have?** The reference bar compares with a commit's batch. For a training,
    the useful references are "the same configuration at the release", "my previous attempt" (kept in
    `data.previous_attempts`, without its files) and "the best run so far". The last two need product decisions:
    keep an earlier attempt's series (small) when a run is done again, and let a milestone be a run.
-4. **Per-user batches.** Keep `@user| <batch>` for outside the CI (it protects the CI batch and powers "Yours"),
-   and treat the raw label as the experiment's name in the Runs page? Or let the SDK share a batch by name
-   (`start_run(batch=..., personal=False)`)? The first changes nothing on disk.
-5. **Scale.** Samsung's server has more than 40 million runs: the page must never scan a project's runs. Start with
-   a time window (the last 30 days) and explicit paging.
+4. **Slashes in existing batch names.** Some projects already have labels with slashes or with `|`: the tree must
+   not surprise them. Fold only on `/`, show names as they are, and keep the flat list one click away.
+5. **Deleting from a node** removes many batches at once, on several commits: it needs the storage numbers first,
+   the roles of batch deletion, and probably the retention rules' dry run (`website/docs/storage/deleting-old-data`).
+6. **Scale.** Samsung's server has more than 40 million runs: the page must never scan a project's runs. The tree
+   is a query on batches (labels, counts, dates), cheap and cacheable; the table is paged within a node and a time
+   window; the plots take the first 40 visible rows, as today.
 
 ### A possible order
-1. The endpoint, with scope, origin, batch, dates and paging, and `qaboard.runs(project=, since=)`. Useful alone,
-   for scripts and agents.
-2. The Runs page: table, quick filters, links to commit pages. No selection yet.
-3. Selection and comparison (series, parameters and metrics, open two as new and reference).
-4. Group by, then milestones that hold runs.
+1. The endpoints: runs with scope, origin, experiment prefix, dates and paging; the experiments of a project with
+   their counts. With `qaboard.runs(project=, experiment=, since=)`. Useful alone, for scripts and agents.
+2. `experiment=` in `start_run()`, slashes checked end to end, the naming advice in the docs.
+3. The Runs page: tree, table, quick filters, a run opening in place with its card. No plots yet.
+4. The plots above the table, driven by visibility, selection and hover; the URL state.
+5. Group by with mean and band; delete from a node; milestones that hold runs; the page as a project's home.
 
 ## B. Screenshots the docs miss
 
@@ -142,7 +196,7 @@ against their current documentation: check it before publishing any of it in `we
 
 | What they have | QA-Board today | Gap | Next step |
 |---|---|---|---|
-| A runs table across a project: sort, filter, group, columns per config and summary | Runs per commit and batch; batches across commits | **The main gap**: no run-centric view | Part A. L |
+| A runs table across a project: sort, filter, group, columns per config and summary; runs organized by a namespace or path | Runs per commit and batch; batches across commits; experiment names are flat | **The main gap**: no run-centric view, no hierarchy of experiments | Part A. L |
 | A workspace of panels: any metrics, any runs, saved per user and shared | One plot per series, on a card or in the Summary; options in the URL | No custom panels (two series on one plot, a chosen x axis such as epoch, pinned plots) | Let people pick the x axis from a logged series, and put several series on one plot, in the comparison. M |
 | Hundreds of runs on one plot, grouped with mean and spread over seeds | 40 runs of one batch, colored by a parameter | No averaging over a group; no runs from several batches | Mean and min/max band per color group (the files already have what it needs). S. Several batches: with part A |
 | Two lines to start, anywhere, hosted | `start_run()` in a project with a server and shared storage | Setup: a server to run, a storage the server reads, a *qaboard.yaml* | Decide: uploads over HTTP (`docs/design/http-upload.md`) would remove the shared storage for small files; a hosted service is out of scope |

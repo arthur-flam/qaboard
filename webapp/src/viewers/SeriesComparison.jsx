@@ -1,15 +1,15 @@
 // The series of all the runs shown, on the same plots: one plot per series, one line per run (run.log() in Python,
 // see qaboard/series.py). In the Summary view. People show and hide runs, color them by a parameter, and compare
 // them with their reference runs. A run's card has the same series against its reference alone (series.jsx).
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Button, Callout, Card, Classes, HTMLSelect, InputGroup, Spinner, Switch, Tag } from "@blueprintjs/core";
 
-import Plot from "../components/Plot";
+import Plot, { restylePlot } from "../components/Plot";
 import { fileQuery } from "../api/queries";
 import { sorted_keys } from "./series/series";
 import { REFRESH_INTERVAL, SeriesOptions, parse_file, plot_config, plot_layout, useSeriesOptions } from "./series/SeriesOptions";
-import { comparison_traces, run_labels, run_styles, series_counts, varying_params } from "./series/comparison";
+import { comparison_traces, highlight_update, run_labels, run_styles, series_counts, varying_params } from "./series/comparison";
 import { started_from_code } from "./runView";
 
 // More lines than that can't be told apart, and each run is a request: people filter the runs
@@ -31,10 +31,13 @@ const series_query = output => ({
 });
 
 // with many runs, a label with every run's value hides the plot: only the closest
-const ComparisonPlot = ({ name, traces, options, many }) => <Plot
+// register: tells the comparison the plot's element once Plotly drew it, null when it is removed
+const ComparisonPlot = ({ name, traces, options, many, register }) => <Plot
   data={traces}
   layout={plot_layout(name, options, { width: PLOT_WIDTH, height: PLOT_HEIGHT, hovermode: many ? 'closest' : 'x unified' })}
   config={plot_config}
+  onInitialized={(_, element) => register(element)}
+  onPurge={() => register(null)}
 />;
 
 const swatch_style = (style, shown) => ({
@@ -52,7 +55,11 @@ const toolbar_style = { display: 'flex', alignItems: 'center', gap: 14, flexWrap
 const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, labels }) => {
   const [options, setOptions, preview] = useSeriesOptions(controls?.series, onControlsChange);
   const [hidden, setHidden] = useState(() => new Set());
-  const [highlighted, setHighlighted] = useState(null);
+  // The run under the pointer, in the list: its lines come forward in every plot. Not React state: Plotly restyles
+  // the plots that are drawn, instead of React drawing them all again each time the pointer moves over the list
+  const plots = useRef(new Map());
+  const highlight = id => plots.current.forEach(element => restylePlot(element, highlight_update(element.data, id)));
+  const register = key => element => element ? plots.current.set(key, element) : plots.current.delete(key);
   const [color_by, setColorBy] = useState('');
   const [filter, setFilter] = useState('');
   const [show_all, setShowAll] = useState(false);
@@ -107,10 +114,10 @@ const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, la
 
   const legend_row = run => {
     const is_shown = !hidden.has(run.id);
-    return <div key={run.id} style={{ display: 'flex', alignItems: 'center' }} onMouseEnter={() => is_shown && setHighlighted(run.id)} onMouseLeave={() => setHighlighted(null)}>
+    return <div key={run.id} className="qa-series-run" style={{ display: 'flex', alignItems: 'center' }} onMouseEnter={() => is_shown && highlight(run.id)} onMouseLeave={() => highlight(null)}>
       <button
         type="button"
-        style={{ ...row_style, background: highlighted === run.id ? 'var(--qa-hover)' : 'none' }}
+        style={row_style}
         aria-pressed={is_shown}
         aria-label={`${is_shown ? 'Hide' : 'Show'} ${run.label}`}
         title={`${run.label}: click to ${is_shown ? 'hide' : 'show'}`}
@@ -131,6 +138,7 @@ const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, la
   };
 
   return <Card style={{ marginTop: 12 }} data-testid="series-comparison">
+    <style>{'.qa-series-run:hover { background: var(--qa-hover); border-radius: 3px; }'}</style>
     <h4 className={Classes.HEADING} style={{ marginBottom: 10 }}>
       Logged series
       <span className={Classes.TEXT_MUTED} style={{ fontSize: 12, fontWeight: 'normal', marginLeft: 10 }}>
@@ -186,7 +194,8 @@ const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, la
             name={counts[key] < runs.length ? `${key} (${counts[key]} of ${runs.length} runs)` : key}
             options={options}
             many={visible.length > 6}
-            traces={comparison_traces(key, { runs, hidden, highlighted, options, reference_name: labels?.reference ?? 'reference' })}
+            register={register(key)}
+            traces={comparison_traces(key, { runs, hidden, options, reference_name: labels?.reference ?? 'reference' })}
           />)}
         </div>
         {matching.length > shown.length && <Button size="small" variant="minimal" icon="chevron-down" onClick={() => setShowAll(true)}>

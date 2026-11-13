@@ -5,12 +5,16 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 
 import SeriesComparison from '../SeriesComparison';
-import { RUN_COLORS, comparison_traces, run_labels, run_params, run_style, run_styles, series_counts, varying_params } from '../series/comparison';
+import { RUN_COLORS, comparison_traces, highlight_update, run_labels, run_params, run_style, run_styles, series_counts, varying_params } from '../series/comparison';
 import { renderWithProviders } from '../../test-utils';
 
 // Plotly doesn't run in jsdom: we only check what would be plotted
+const restylePlot = vi.hoisted(() => vi.fn());
+let drawn = 0;
 vi.mock('../../components/Plot', () => ({
-  default: ({ data, layout }) => <div
+  restylePlot,
+  default: ({ data, layout, onInitialized }) => <div
+    ref={element => { if (element) { drawn += 1; onInitialized?.({}, { data, title: layout.title.text }); } }}
     data-testid="plot"
     data-title={layout.title.text}
     data-hovermode={layout.hovermode}
@@ -71,16 +75,21 @@ describe('comparison_traces', () => {
   ];
 
   it('draws a line per run that logged the series, its reference dashed in the same color', () => {
-    const traces = comparison_traces('loss', { runs, hidden: new Set(), highlighted: null, options, reference_name: 'release' });
+    const traces = comparison_traces('loss', { runs, hidden: new Set(), options, reference_name: 'release' });
     expect(traces.map(t => [t.name, t.line.color, t.line.dash])).toEqual([
       ['lr=0.1 (release)', RUN_COLORS[0], 'dash'], ['lr=0.1', RUN_COLORS[0], 'solid'], ['lr=0.01', RUN_COLORS[1], 'solid'],
     ]);
   });
 
-  it('leaves hidden runs out, and fades the others behind the highlighted run', () => {
-    expect(comparison_traces('loss', { runs, hidden: new Set([1]), highlighted: null, options }).map(t => t.name)).toEqual(['lr=0.01']);
-    const traces = comparison_traces('loss', { runs: [runs[0], runs[1]].map(r => ({ ...r, ref_model: null })), hidden: new Set(), highlighted: 1, options });
-    expect(traces.map(t => [t.name, t.opacity, t.line.width])).toEqual([['lr=0.01', 0.12, 2], ['lr=0.1', 1, 3]]);
+  it('leaves hidden runs out', () => {
+    expect(comparison_traces('loss', { runs, hidden: new Set([1]), options }).map(t => t.name)).toEqual(['lr=0.01']);
+  });
+
+  it('says how the traces change when a run is highlighted, and back', () => {
+    const traces = comparison_traces('loss', { runs, hidden: new Set(), options });
+    // the run's reference and its own line stay, thicker; the other run fades
+    expect(highlight_update(traces, 1)).toEqual({ opacity: [0.7, 1, 0.12], 'line.width': [1.5, 3, 2] });
+    expect(highlight_update(traces, null)).toEqual({ opacity: traces.map(t => t.opacity), 'line.width': traces.map(t => t.line.width) });
   });
 
   it('counts the runs that logged each series', () => {
@@ -135,11 +144,19 @@ describe('SeriesComparison', () => {
     expect(names(await plot('train/loss'))).toEqual(['lr=0.1', 'lr=0.01']);
   });
 
-  it('highlights the run under the pointer', async () => {
+  it('highlights the run under the pointer without drawing the plots again', async () => {
     render();
     await plot('train/loss');
+    restylePlot.mockClear();
+    const drawn_before = drawn;
     fireEvent.mouseEnter(screen.getByRole('button', { name: 'Hide lr=0.01' }).parentElement);
-    expect((await plot('train/loss')).dataset.traces).toContain(`lr=0.1|${RUN_COLORS[0]}|solid|0.12|`);
+    // each drawn plot is restyled: in train/loss, the first run fades and the second gets thicker
+    const [element, update] = restylePlot.mock.calls.find(([element]) => element.title === 'train/loss');
+    expect(element.data.map(t => t.name)).toEqual(['lr=0.1', 'lr=0.01']);
+    expect(update).toEqual({ opacity: [0.12, 1], 'line.width': [2, 3] });
+    fireEvent.mouseLeave(screen.getByRole('button', { name: 'Hide lr=0.01' }).parentElement);
+    expect(restylePlot.mock.calls.at(-1)[1].opacity.every(o => o === 1)).toBe(true);
+    expect(drawn).toBe(drawn_before);
   });
 
   it("adds the reference's runs on demand, dashed", async () => {
