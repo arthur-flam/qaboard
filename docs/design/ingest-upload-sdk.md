@@ -1,311 +1,298 @@
-# Sending results without `qa run`: `qa upload`, HTTP upload, an SDK, and where the bytes live
+# Sending results without `qa run`: `start_run()`, `qa upload`, HTTP upload, and where the bytes live
 
-Status: proposal v1 (2026-10-26), for review. Revises the phasing of `docs/design/http-upload.md` (v1, 2026-10-12)
-and places it in a larger picture: three ways to create runs (`qa run`, `qa upload`, an SDK), one client, and
-storage that can live on the server, on shared storage, or in the user's own bucket.
+Status: proposal v2 (2026-11-14), for review. v1 (2026-10-26) proposed a new run client and an SDK on top of it;
+since then `qaboard.start_run()` was written (branch `ccr-e581e9cd-w19rhx`, about to merge;
+`docs/rfcs/python-sdk-runs.md`), and the benchmark and flame graph viewers shipped with their Python readers. v2
+builds on them instead: it drops v1's client and SDK milestones, and reviews how the pieces fit (§2).
+Revises the phasing of `docs/design/http-upload.md`.
 
 ## TL;DR
-- **One run client, three front-ends.** A small Python client (`qaboard.ingest.Run`: start, add files, log,
-  finish) is the only code that talks to the server and to storage. `qa upload` (new), the SDK (later) and
-  eventually `qa run` all use it. The transport behind it (copy to shared storage, HTTP upload, a bucket) is
-  a detail of the client, so every front-end gets every transport.
-- **Milestone 1 is `qa upload`, on today's shared storage.** No entry point, no `run()`:
-  `qa --label unit-tests upload --each 'build/test-results/*.xml'` makes one run per test suite, with metrics
-  read from the JUnit reports. It writes the same folders, manifests and database rows as `qa run`, so every
-  viewer, the history, the gate and bit-accuracy work unchanged. No server change.
-- **Milestone 2 is HTTP upload, cut down to option A of the current design:** one `PUT` per file (≤ 256 MiB),
-  sha256-verified, token-required, written by the server at the paths `qa run` would use, plus the live log
-  endpoint. That covers test reports, benchmarks, logs, metrics and most images. Parts, packs, the content
-  store with hardlinks, sessions and async commits wait for a project that actually has huge outputs and no
-  shared storage (milestone 5).
-- **Live results are "upload early", not a new mechanism.** `log.txt` streams; files matching `outputs.live`
-  globs (and files the SDK saves) upload as soon as they're stable; everything else at the end. A run killed
-  mid-way keeps what was uploaded, and its logs: that's what people need to debug it.
-- **The server owns the index, storage owns the bytes.** Metrics, manifests (with sha256), logs, small files
-  and derived data (thumbnails, test summaries) always live on the server. Bulk files can live in a bucket the
-  project pays for. Analysis keeps working even when the bucket's retention deleted the bulk.
-- **Bring-your-own bucket** (milestone 6): per-project storage profiles (S3-compatible, GCS, Azure), credentials
-  by role assumption or workload identity federation rather than stored keys, presigned uploads, reads through
-  `/s/` with `X-Accel-Redirect`. A storage library (Apache OpenDAL or obstore) gives the backends.
+- **`start_run()` is the one way to create a run from outside `qa run`.** `qa upload` is its command line: about
+  a hundred lines that call `start_run()`, `log_artifact()` and `log_metrics()`. No second client, no second
+  vocabulary. v1's `qaboard/ingest.py` is dropped.
+- **Milestone 1, `qa upload` on shared storage, got smaller (S)** and more useful: the branch already handles
+  projects without a qaboard.yaml, attempts, permissions and metric definitions; `qaboard.benchmarks` already
+  turns six harnesses' files into metrics. What's left: the command, a JUnit reader in the package, and run cards
+  that show recognized files (test reports, benchmarks, flame graphs) without anything in qaboard.yaml.
+- **What it gives:** the three steps that the test, benchmark and profile docs each ask for today (write a
+  `run()` that calls a subprocess, save the file, list it in `outputs.visualizations`) become one CI line:
+  `qa upload junit.xml pytest.benchmarks.json cpu.folded`.
+- **Milestone 2, HTTP upload of small files, is one seam under `start_run()` and `qa run`:** a folder syncer.
+  A run's folder becomes a local staging folder, and a background thread sends what changed. It follows the
+  SDK's rule, "the run sends its state, not its events", so nothing new has to arrive in order.
+- **The `start_run()` branch can merge as it is.** Nothing in its API assumes shared storage in a way upload
+  would break. Five things to settle soon after, before more surfaces copy them: one word for batch/experiment,
+  the project's name in CI without a qaboard.yaml, runs nested in runs, recognized files on cards, and one
+  mechanism for runs that stopped reporting (§2.3).
+- **Storage** (server-managed, or a bucket the project pays for): unchanged from v1, in §6.
 
 ---
 
-## 1. What changes from the current HTTP upload proposal
-The current proposal (`http-upload.md`) is sound on paths, security and readers, and most of it stays. What changes:
+## 1. Where things stand (November 2026)
 
-| Topic | `http-upload.md` v1 | This proposal |
+| Piece | State | Where |
 |---|---|---|
-| Who creates runs | `qa run` / `qa batch` only | `qa run`, `qa upload`, an SDK, through one client (§2) |
-| First deliverable | Security baseline (M), then upload core (L) | `qa upload` on shared storage (S-M), no server change. Most of the security baseline has shipped since (§6) |
-| Protocol, first version | Sessions, content-addressed blobs, parts, packs, commit | One `PUT` per file, a `finish` call, the log endpoint (§4). Same paths, same tokens |
-| Dedupe, hardlink content store, async commit, ingest pool | Phase 2b | Milestone 5, when a project needs it |
-| Live files | Non-goal: only `log.txt` | `log.txt` plus opt-in globs and SDK saves (§5) |
-| Object storage | Server-managed bucket (phase 3) | Server-managed or the project's own bucket, behind one resolver (§7) |
+| Runs created by `qa run` / `qa batch` | Shipped | `qaboard/qa.py` |
+| Add metrics and files to finished runs: `qaboard.runs(url)`, `run.log_metrics()`, `run.log_artifact()`, `qa runs` | Shipped | `qaboard/results.py` |
+| Create runs from Python: `qaboard.start_run()`, `run.log()` series, `PATCH /output/<id>/progress`, the series viewer | Branch, experimental | `qaboard/active_run.py`, `qaboard/series.py`, `qaboard/payloads.py` |
+| Benchmark files as metrics and a comparison table (pytest-benchmark, Google Benchmark, hyperfine, Criterion, JMH, `go test`) | Shipped | `qaboard/benchmarks.py`, `webapp/src/viewers/benchmarks/` |
+| Differential flame graphs (folded stacks, speedscope, `.cpuprofile`; `perf script` and pprof through a helper) | Shipped | `qaboard/flamegraphs.py`, `webapp/src/viewers/flame-graph.jsx` |
+| Test reports (JUnit XML) compared with the reference's | Viewer shipped; the reader of metrics is only in an example | `webapp/src/viewers/junit/`, `examples/software-quality/qa/junit.py` |
+| Metric definitions saved with the run (`Metric(...)`) | Shipped | `qaboard/metrics.py` |
+| Reruns as attempts (`<run>_attempt2`, `latest_attempt.txt`) | Shipped | `qaboard/attempts.py` |
+| Scoped tokens, `ingest.auth`, service accounts, CI jobs exchanging their OIDC token | Shipped | `backend/backend/tokens.py`, `backend/backend/api/auth.py` |
+| Kubernetes Job runner | Shipped | `docs/design/kubernetes-runner.md` |
+| `qa upload` | This proposal, milestone 1 | |
+| HTTP upload | Designed (`http-upload.md`), not built | |
 
-Why cut the protocol: the projects asking for upload first send JUnit reports, benchmark JSON, logs, metrics
-and a few images, from a few KB to tens of MB per run. Parts, packs and dedupe matter for 600 MB TIFFs and 8 GB
-videos from bit-accurate ISP runs, and those projects have shared storage today. Option A's endpoint is a strict
-subset of the full protocol: we can add parts and "which hashes do you have" later without breaking clients.
+What v1 planned and no longer needs building: the run client and its config refactor for projects without a
+qaboard.yaml (the branch's `_Setup`), the SDK (milestone 3), benchmark readers (milestone 4), `metrics.jsonl`
+(the branch's `series.jsonl` / `series.json`), OIDC tokens for CI.
 
 ---
 
-## 2. One model, one client
+## 2. Coherence review of the `start_run()` branch
 
-### 2.1 What a run is, whoever creates it
-- **Identity:** project, commit, batch label, input (the test's name), configurations, platform. Same as today:
-  `POST /api/v1/output/` already gets-or-creates the `Output` from these (`backend/backend/api/outputs.py:129-249`).
-- **Lifecycle:** running, then finished or failed. A re-run with the same identity replaces the previous one.
-- **Content:** metrics (a dict, final), files (a folder with `manifest.outputs.json`), `log.txt`.
+### 2.1 What fits, and should be kept as the base
+- **One identity** `(project, commit, batch, input, configs, platform)` for `qa run`, `start_run()` and so for
+  `qa upload`: a test report uploaded from CI compares with the reference like any run.
+- **One payload definition** (`qaboard/payloads.py`) and one place for folders (`config.commit_outputs_dir()`,
+  `conventions.run_dir_in_commit()`, `attempts`): `qa upload` writes what `qa run` writes without knowing how.
+- **`run.output_dir` is a local path people write into.** That is exactly what an upload transport needs: with
+  HTTP upload it becomes a staging folder, and user code doesn't change.
+- **State, not events.** The background thread says what the run looks like now. File sync can follow the same
+  rule (§4.1): no queue, no replay, a final `finish()` that makes it exact.
+- **Without a qaboard.yaml, no configuration is sent**, so a one-line upload from another repository can't
+  replace a project's visualizations and metrics.
+- **Readers return `Metric`s** (`benchmark_metrics`): direction and unit travel with the run, so uploaded
+  results are colored and gated correctly with no metrics file.
 
-Nothing here is specific to `qa run`: `qa run` is one way to fill it in.
+### 2.2 What `qa upload` and HTTP upload need from it (no API change)
+| Today on the branch | Needed | When |
+|---|---|---|
+| `share` needs a storage path (`can_share = outputs_commit is not None`, else `ValueError`) | Also true when the server accepts uploads (`GET /api/v1/config`) | Milestone 2 |
+| Files are written in the storage by the process | Behind a seam: the run folder is local, a syncer sends it (§4.1) | Milestone 2 |
+| `series.json` rewritten every 2 s, `series.jsonl` and `log.txt` appended | In upload mode: `series.json` sent with the 10 s sync; the two append-only files through one append endpoint | Milestone 2 |
+| A new attempt reserves `<run>_attemptN` on the filesystem | In upload mode the server reserves it when the run is created | Milestone 2 |
+| `capture_output` saves this process's output | `qa upload -- <command>` tees a child's output to the same `log.txt` | Milestone 1b |
 
-### 2.2 The client
-A new module, `qaboard/ingest.py`, internal in milestone 1 and public with the SDK:
-```python
-from qaboard.ingest import Run
+### 2.3 To settle soon after the merge
+None blocks the merge: the feature is marked experimental. Each gets more expensive once `qa upload` and the
+docs repeat it.
 
-run = Run.start(batch="unit-tests", input="codec", configurations=["debug"])  # project, commit, platform: resolved
-run.add_file("build/test-results/codec.xml", as_="junit.xml")
-run.add_dir("build/bench/", prefix="bench")
-run.log_metrics({"tests": 249, "failed": 3})
-run.finish()          # writes the manifest, sends the final metrics and status
-```
-- **Resolution of the identity**, in order: arguments, environment (`QA_BATCH_LABEL`, …), qaboard.yaml, CI
-  variables (`GITHUB_SHA`, `CI_COMMIT_SHA`, … as `qaboard/config.py` already does), git.
-- **The transport** is chosen once, by the existing and planned storage settings: `direct` (copy into the shared
-  storage, milestone 1), `upload` (HTTP, milestone 2), later a bucket (milestone 6). Front-ends never see it.
-- **Nesting:** `Run.start` exports `QABOARD_RUN_ID` (the output id) and `QABOARD_RUN_DIR`. A `Run.start()` in a
-  child process with `QABOARD_RUN_ID` set attaches to that run instead of creating one, like `WANDB_RUN_ID`. So
-  `qa upload -- pytest` with the SDK inside the tests, or the SDK inside a `qa run` entry point, make one run.
-- **`qa run` moves onto it later** (milestone 2, when it needs the upload transport anyway), not in milestone 1:
-  `qa run` has years of behaviours (tuning, redo, `--keep-previous`, Windows paths) we shouldn't risk for a new command.
+1. **One word for the batch.** The CLI says `--label` (and `QA_BATCH_LABEL`), `start_run()` says `batch=`, the
+   web app says batch, and the follow-ups propose `experiment=` as the documented name. `qa upload` would be a
+   fourth surface. Proposal: `batch` is the word in every API (`qa --batch` as an alias of `--label`);
+   "experiment" stays a translation in the training docs' table, not a second argument. If `experiment=` is
+   wanted anyway, add `--experiment` to `qa` the same day.
+2. **The project's name without a qaboard.yaml.** `start_run()` requires `project=`. In CI the name is known:
+   `GITHUB_REPOSITORY`, `CI_PROJECT_PATH`, else the `origin` remote's path. Resolve it in `_Setup` so the SDK
+   and `qa upload` (`--project`) behave the same. Without it, the one-liner needs an argument that every CI
+   already knows.
+3. **Runs inside runs.** `start_run()` called from code that `qa run` started, or from tests that
+   `qa upload -- pytest` wraps, creates a second run. Proposal: whoever starts a run exports
+   `QABOARD_RUN_DIR` (and the output id once known); `start_run()` under it, with no explicit identity,
+   attaches: it logs to that run and `finish()` leaves the ending to the owner. An explicit `input=` still
+   starts a separate run. This is what makes "a `qa run` that also logs series" and "tests that log metrics" work.
+4. **Recognized files on cards without configuration.** The branch does it for series, for runs started from
+   code (`with_logged_series`, `webapp/src/viewers/runView.js`). `qa upload junit.xml` in a project that lists no
+   visualization shows nothing on the card: the first experience fails. Generalize the rule: for runs started
+   from code or uploaded, files whose names a viewer recognizes (test reports, benchmarks, flame graphs, series)
+   are shown, unless the project's `outputs.visualizations` already covers them. One function, the same
+   precedence the branch chose.
+5. **Runs that stopped reporting, and runs that never reached the server.** The follow-ups list a heartbeat for
+   stale runs and `qa sync <run folder>`; v1 of this document had a "lost runs" sweep and `qa upload --pending`.
+   They are the same two mechanisms: build them once, under the follow-ups' names. `PATCH /progress` is the
+   heartbeat; `qa sync <run folder>` sends a finished folder later, files included in upload mode.
+6. **A JUnit reader in the package.** `benchmark_metrics(path)` is in `qaboard/`; the JUnit reader is in
+   `examples/software-quality/qa/junit.py`, to copy. Move it to `qaboard/junit.py` as `junit_metrics(path)`
+   (`tests`, `passed`, `failed`, `errors`, `skipped`, `flaky`, `time`), tested on fixtures shared with the web
+   app's parser, as benchmarks are.
 
 ---
 
 ## 3. Milestone 1: `qa upload` on shared storage
 
-### 3.1 Commands
+### 3.1 The command
 ```bash
-# one run: files and folders keep their relative paths
-qa --label unit-tests upload --input core build/test-results/core.xml build/coverage/
+# CI, after the tests and benchmarks ran: one run, named after the CI job
+pytest --junitxml=junit.xml --benchmark-json=pytest.benchmarks.json
+qa upload junit.xml pytest.benchmarks.json
 
-# one run per suite: the input is the file name without its extension (or the folder's name)
+# one run per suite: the input is each file's name without its extensions
 qa --label unit-tests upload --each 'build/test-results/*.xml'
 
-# micro-benchmarks, with metrics
-qa --label bench -c O3 upload --input varint bench.json -m throughput_mbps=812.5 --metrics extra.json
+# a profile and a number, in a configuration
+qa -c O3 upload --input codec cpu.folded -m throughput_mbps=812.5
 
-# rename a file, mark the run failed
-qa upload --input smoke out.xml --as junit.xml --failed
+# milestone 1b: wrap the command, with its output as the run's log
+qa upload --input codec junit.xml -- ctest --output-junit junit.xml
 ```
 | Option | Meaning |
 |---|---|
-| `PATHS…` | Files, folders (recursive) or globs. Stored relative to the common parent, or to `--root` |
-| `--input/-i NAME` | The run's name, as in `qa run -i`. Default: the single path's stem |
-| `--each` | One run per path; the input is each path's stem. With `{dir}` / `{stem}` patterns later if needed |
-| `--as NAME` | Store a single file under this name, e.g. `junit.xml` so the viewer and its docs apply as-is |
-| `-m key=value`, `--metrics FILE` | Metrics; JSON numbers, booleans and strings |
-| `--failed` | The run failed (couldn't produce results), as `is_failed` |
-| `--append` | Add files to an existing run instead of replacing it (e.g. coverage from a later job) |
-| Global options | `qa --label`, `-c/--configurations`, `--platform` keep their meaning. `qa upload` always shares, like CI |
+| `PATHS…` | Files, folders (recursive) or globs, stored relative to their common parent, or to `--root` |
+| `--input/-i NAME` | The run's name, as in `qa run -i`. Default: the single path's stem, else the CI job's name |
+| `--each` | One run per path |
+| `--as NAME` | Store a single file under this name, so that a viewer recognizes it (`--as junit.xml`) |
+| `-m key=value`, `--metrics FILE` | Metrics. They win over those read from files |
+| `--no-read` | Don't read metrics from recognized files |
+| `--failed` | The run couldn't produce its results (`is_failed`) |
+| `--append` | Add to the latest run of that identity instead of starting a new attempt |
+| `--project`, `--commit` | As `start_run()`'s; needed outside a project and outside CI |
+| `-- COMMAND` (1b) | Run it first; its output is the run's `log.txt`, its exit code is `qa upload`'s |
+| Global options | `qa --label`, `-c`, `--platform` keep their meaning. `qa upload` always shares |
 
-### 3.2 Built-in readers, no configuration
-When an uploaded file is a JUnit XML report (by name, as the viewer recognizes them, or by sniffing the root
-element), `qa upload` reads it and adds metrics: `tests`, `passed`, `failed`, `errors`, `skipped`, `flaky`,
-`time_s`. Explicit `-m` wins. That's the whole value for the first use case: history, dashboards and the gate on
-test counts with zero code. Reader code is ~50 lines over `xml.etree`, shared with `examples/software-quality/qa/junit.py`.
+### 3.2 What it does
+```python
+with qaboard.start_run(input=name, configs=configs, batch=label, project=project, commit=commit,
+                       capture_output=False) as run:
+    for source, relative in files:
+        run.log_artifact(relative, source)
+    run.log_metrics({**read_metrics(files), **given_metrics})
+```
+- **Metrics from recognized files:** `junit_metrics` and `benchmark_metrics` (with a prefix per file when there
+  are several). A failing test doesn't fail the run: it returns `failed: 3`, as the software-quality docs say.
+- **Replace or add:** by default a new attempt, like running again. `--append` is
+  `qaboard.runs(...)` + `log_artifact()` / `log_metrics()` on the finished run, which already exists
+  (`qaboard/results.py`): coverage from a later CI job joins the tests' run.
+- **Conversions at upload,** only where the web app can't read the file: `perf script` text and pprof `.pb.gz`
+  go through `save_flame_graph`, a Criterion directory through `write_benchmarks`. Later, when asked for.
+- **Machines without the shared storage** get a clear refusal until milestone 2; the command doesn't change then.
 
-Benchmark formats (Google Benchmark JSON, pytest-benchmark, hyperfine, criterion) come later, one small reader
-each, when someone uploads them: a reader is a function from a file to metrics, registered by name. Not in
-milestone 1 beyond the registry.
+### 3.3 What it opens up
+- **Unit tests of existing projects**, with no entry point: the test viewer against the reference, counts in
+  History, and the gate catching "12 tests disappeared".
+- **Microbenchmarks and profiles from a dedicated runner**: the benchmark table and flame graph diffs. The
+  viewer already warns when the two files come from different CPUs.
+- **Anything a CI job already writes**: coverage reports, binary sizes (`-m size_bytes=…`), lint counts.
+- **Other languages and build systems**: a C++, Rust, Go or Java repository uploads its harness's files without
+  writing Python.
+- `qa run` stays the tool when QA-Board should start the code on each input: batches, tuning, redo from the web
+  app. `qa upload` runs can't be started again from the web app, and the docs should say so.
 
-### 3.3 What it writes
-Exactly what `qa run` writes, at the same place:
-`<storage>/<project>/<sha[:2]>/<sha[2:16]>/<subproject>/output/<batch>/<config hash>/<input>/`, with the
-files, `metrics.json`, `manifest.outputs.json` (`qaboard/utils.py` `save_outputs_manifest`), a `log.txt` that
-records the command line, and `POST /api/v1/output/` with `is_running: false`. So:
-- the file browser, viewers, Cantaloupe, comparisons with the reference run, the history, the gate, `qa check-bit-accuracy` work;
-- `qa batch` and `qa upload` runs mix in one batch.
-
-### 3.4 Project setup
-- **With a qaboard.yaml** (SIRC projects): nothing to add; the site package gives the storage.
-- **Without one**: `qa upload --project group/repo` or `QA_PROJECT`, else the git remote's path
-  (`origin` → `group/repo`) or `GITHUB_REPOSITORY` / `CI_PROJECT_PATH`; storage from the site package or `QA_STORAGE`.
-  This needs `qaboard/config.py` to tolerate a missing qaboard.yaml for this command (it exits at import today,
-  `config.py:63-75`): that refactor is the riskiest part of milestone 1, and the reason it's S-M rather than S.
-
-### 3.5 What milestone 1 doesn't do
-- Machines without the shared storage: `qa upload` fails with "this machine doesn't see the storage at X:
-  needs HTTP upload (QA-Board ≥ …)". Milestone 2 removes the limit with no change to the command.
-- Wrapping a command (`qa upload -- ctest …`): milestone 2, with the live log (§5), because that's where it pays off.
-
-### 3.6 Size: S-M
-`qaboard/ingest.py` (direct transport only), `qa upload` in `qaboard/qa.py`, the JUnit reader, the config
-refactor for projects without qaboard.yaml, tests in `tests/` (green) including a run whose output is
-byte-identical to a `qa run`'s, a docs page ("Upload results without an entry point" in Project integration,
-linked from the test viewer and software-quality pages), a release note.
+### 3.4 Size: S, after the branch merges
+The command and its tests (a run whose folder matches `start_run()`'s), `qaboard/junit.py`, recognized files on
+cards (§2.3.4), the project's name in CI (§2.3.2). Docs: a page in Project integration, and a "from your CI,
+without code" variant at the top of the benchmark, flame graph and test report pages; a release note.
+Milestone 1b (`-- COMMAND`, nesting §2.3.3): S.
 
 ---
 
-## 4. Milestone 2: HTTP upload, small files first
+## 4. Milestone 2: HTTP upload of small files
 
-### 4.1 Endpoints
-All need a token with the `ingest` scope for the project (exists: `backend/backend/api/auth.py:344` `ingest_access`).
-| Request | Body | Server |
-|---|---|---|
-| `POST /api/v1/output/` | today's payload, `"storage": "upload"`, the **relative** run path | Builds the absolute path under `QABOARD_UPLOAD_ROOT`; moves the previous run's folder to trash; returns `id` and upload limits |
-| `PUT /api/v1/output/<id>/files/<rel path>` | the file, `Repr-Digest: sha-256=…`, optional `Content-Encoding: gzip` | Validates the path (rules of `http-upload.md` §6.4), streams to a temp file in the run folder, checks size and sha256, renames into place. Same path and hash again: `200`, nothing written |
-| `POST /api/v1/output/<id>/log?offset=n` | log bytes | Appends at `offset` (`http-upload.md` §4.3) |
-| `POST /api/v1/output/<id>/finish` | metrics, status, the manifest (`path → size, sha256, md5…`) | Checks every manifest file is present with its hash, deletes files not in it, writes `manifest.outputs.json`, sets the status |
-| `GET /api/v1/config` | | Adds `uploads: {enabled, max_file, encodings}` |
+### 4.1 One seam: a folder syncer
+`qaboard/upload.py`: given a run's id and its local folder, a thread that every 10 s lists the folder and sends
+what differs from what it sent last (path, size, mtime, then sha256), and at the end sends the rest and the
+manifest. `ActiveRun` starts it next to its progress thread; `qa run` starts it around `run()`. Like
+`payloads.py`, one definition for both, and `qa run` doesn't have to become an `ActiveRun`.
 
-- **Limits:** 256 MiB per file (nginx `client_max_body_size` on that location only), 10 GiB and 100k files per run,
-  per-token `429`. Larger files get `413` with "needs shared storage or QA-Board ≥ M5". Projects hitting it are
-  the signal to build milestone 5.
-- **Visibility:** files appear as they arrive, in a run marked running. There's no folder swap: readers already
-  handle running runs, and seeing files early is the live feature (§5). A run is *finished* only at `finish`, after
-  verification.
-- **Idempotency** comes from the path and the hash: a retried `PUT` or `finish` is harmless. No session table.
-- **Lost runs:** a running upload-mode run with no request for 30 min (log appends are the heartbeat) is marked
-  failed with `data.error = "lost: the client stopped sending"`, by the existing cleanup schedule.
+- **Which files go early** (the others at the end):
 
-### 4.2 CLI
-- `storage: upload` / `upload: auto|always|never` and `QA_UPLOAD`, as in `http-upload.md` §3.1, including the
-  marker file for `auto`. The client's `upload` transport implements them; `qa upload` gets HTTP for free.
-- `qa run` moves onto the client here: staging folder (`http-upload.md` §3.2), log streamer, finish.
-- `qa upload -- <command>`: starts the run, tees the command's output to `log.txt` (streamed), uploads the paths
-  given (globs evaluated after the command), finishes; exit code = the command's, `--failed` when it crashed
-  without writing the paths. That's `qa run` without an entry point, for test runners and benchmarks.
-- 4 upload threads, retries with backoff, `QA_UPLOAD_ERRORS=fail|warn` (fail in CI).
+  | File | When |
+  |---|---|
+  | `log.txt`, `series.jsonl` | appended every few seconds, by offset |
+  | `series.json`, `run.json`, `metrics.json` | each sync, when changed |
+  | Files matching `outputs.live` globs, files saved with `log_artifact()` | once stable for two polls; again if they change |
+  | Everything else | at `finish()` |
 
-### 4.3 Entry criteria: the rest of the security baseline
-Since `http-upload.md`, scoped and project-limited tokens, `ingest.auth = off|warn|token` and the sandboxed
-HTML viewer have shipped. Before uploads face the internet, check what's still open from its §1.3 and §6.4;
-in this tree: `/iiif/` has no `auth_request`, `/s/` sends no `X-Content-Type-Options: nosniff` nor a sandbox CSP
-for HTML/SVG, plus the image APIs' path checks and the manifest `?refresh` rewrite. These are M-sized together
-and part of milestone 2.
+  `outputs.live` defaults to nothing: logs, series and metrics are live, other files are opt-in.
+- **Staging:** the run's folder is under `$QA_STAGING` (`http-upload.md` §3.2). Shared storage needs none of
+  this: files are visible as written.
+- **A run that dies** keeps what was sent and its log; the heartbeat (§2.3.5) marks it failed.
+
+### 4.2 Endpoints
+All need a token with the `ingest` scope for the project (`ingest_access`).
+| Request | Server |
+|---|---|
+| `POST /api/v1/output/` with `"storage": "upload"` and the relative run path | Builds the path under `QABOARD_UPLOAD_ROOT`, reserves the attempt's folder, returns the id and the limits |
+| `PUT /api/v1/output/<id>/files/<rel path>` with `Repr-Digest: sha-256=…` | Validates the path (`http-upload.md` §6.4), writes to a temporary file, checks size and hash, renames. Same path and hash again: nothing written |
+| `POST /api/v1/output/<id>/files/<rel path>?offset=n` | Appends, for `log.txt` and `series.jsonl` (`http-upload.md` §4.3's log endpoint, for two files) |
+| `POST /api/v1/output/<id>/finish` with metrics, status and the manifest | Checks every file and hash, deletes files not in the manifest, writes `manifest.outputs.json`, ends the run |
+| `GET /api/v1/config` | Adds `uploads: {enabled, max_file, encodings}` |
+
+Limits: 256 MiB per file, 10 GiB and 100k files per run, `429` per token. Larger files get `413` naming shared
+storage as the way, until milestone 4. Idempotency comes from paths and hashes: no session table.
+
+### 4.3 Before uploads face the internet
+Shipped since `http-upload.md`: scoped tokens, `ingest.auth`, CI token exchange (GitHub-hosted runners need no
+stored secret), the sandboxed HTML viewer, a `Content-Security-Policy` on served files. Still open in this tree:
+`/iiif/` has no `auth_request` (`services/nginx/conf.d/qaboard.conf`), `/s/` sends no
+`X-Content-Type-Options: nosniff`; and to check again: the image APIs' path checks and the manifest `?refresh`
+rewrite (`http-upload.md` §1.3). Part of this milestone.
 
 ### 4.4 Size: M-L
-Endpoints and tests (path validation, digests, limits, idempotency, lost runs), the upload transport, `qa run` on
-the client, `qa upload -- cmd`, nginx location, compose overlay, the CI e2e from `http-upload.md` §11 (a `qa`
-container without the volume), docs: the GitHub-hosted-runner tutorial step.
+The syncer, the endpoints and their tests, `storage: upload|auto` in `config.py` and `_Setup`, the nginx
+location, a compose overlay, the CI end-to-end test with a `qa` container that doesn't mount the volume, docs
+(the GitHub-hosted runner tutorial; `start_run()` "two lines, no shared storage"). It also removes the RWX volume
+from Kubernetes runner pods, as a later option.
 
 ---
 
-## 5. Live results
-What people want while a run runs: its log, its progress metrics, and sometimes a plot or a first image. What
-they need when it dies: whatever it produced up to then. One rule covers both: **upload early what's useful
-early; the end-of-run sync makes it exact.**
-
-| What | When | How |
-|---|---|---|
-| `log.txt` | every 2 s or 1 MiB | the log endpoint, as today's web app polls it with Range (`webapp/src/components/logs/useLogTail.js`) |
-| Running metrics | on `run.log_metrics()` / every 10 s | `POST /api/v1/output/` with `is_running: true` and the metrics, as today |
-| Step metrics (SDK `run.log({...}, step=)`) | buffered, every 10 s | appended to `metrics.jsonl` like the log; a plot viewer reads it. No schema change |
-| Files matching `outputs.live` globs (qaboard.yaml) or saved with `run.save(path)` | once stable: same size and mtime for two 2-s polls | `PUT`, re-sent if the hash changes |
-| Everything else | at `finish` | `PUT` of what's missing, then `finish` deletes what the final manifest doesn't list |
-
-- **Default `outputs.live`: none.** Logs and metrics are live by default, files are opt-in: re-uploading a file
-  the code rewrites every minute costs bandwidth nobody asked for. Projects add `["*.json", "plots/*.png"]`.
-- **Shared storage needs none of this:** files are visible as written, as today. The rules only matter in upload mode.
-- **Crash or kill:** the run keeps its live files and log; `qa`'s exit handler sends `is_failed` when it can, and
-  the lost-run sweep does otherwise. `qa upload --pending` (milestone 2) resumes runs whose final sync failed
-  from the local staging folder.
-
----
-
-## 6. Milestone 3: the SDK
-```python
-import qaboard
-
-run = qaboard.init(batch="training", input="resnet50-imagenet", config={"lr": 3e-4})  # attaches to QABOARD_RUN_ID if set
-for step in range(n):
-    run.log({"loss": loss, "acc": acc}, step=step)
-run.log_image("confusion.png", fig)           # saved into the run folder, uploaded when stable
-run.save("checkpoints/best.onnx")             # any file
-run.finish()                                  # also atexit, failed on an uncaught exception
-```
-- A thin public layer over `qaboard.ingest.Run`; nothing new on the server beyond milestone 2.
-- `config=` maps to QA-Board's configurations (`extra_parameters` for dicts), so tuning and comparisons keep working.
-- `qaboard.init()` without `QABOARD_RUN_ID` and without CI behaves like `qa run` locally: writes `./output/`
-  and doesn't share, unless `share=True` or `QA_SHARE=1`. Same rule as today, no surprise uploads from laptops.
-- Later, separately: a `pytest` plugin (`--qaboard`) that uploads the JUnit report and per-test durations, and a
-  `wandb.log` shim. Not part of milestone 3.
-- **Size: M.** The hard design work (identity, nesting, transport) is done in milestones 1-2.
-
----
-
-## 7. Where the bytes live, and who pays
-
-### 7.1 The principle: the server owns the index
-Whatever the storage, the server keeps: the database (metrics, statuses), every run's manifest with sha256,
-`log.txt`, files under `QABOARD_INLINE_MAX` (default 1 MiB: JUnit reports, metrics, small JSON and text), and
-derived data (thumbnails, Cantaloupe's cache, parsed test summaries). Only bulk files go to the project's
-storage. Consequences:
-- history, dashboards, the gate, the test viewer's comparisons, and bit-accuracy checks (manifest against manifest,
-  `http-upload.md` §7) work without touching the project's bucket, and keep working after its retention deletes the bulk;
-- the web app shows "file expired from the project's storage" rather than broken runs;
-- the server's own disk stays small and predictable: the operator pays for the index, projects for their bulk.
-
-### 7.2 Options for project-paid storage
-| Option | How | For | Against | Verdict |
-|---|---|---|---|---|
-| **A. Bring-your-own bucket** (S3-compatible, GCS, Azure Blob) | A project admin registers a storage profile: provider, bucket, prefix, and credentials. Uploads get presigned `PUT` URLs; reads go through `/s/` (§7.3) | Standard, fast, Range reads, lifecycle rules for retention, Cantaloupe has an `S3Source` | Credentials management; egress costs land on the project when files are read | **Recommended** (milestone 6) |
-| A's credentials | **Role assumption** (AWS `AssumeRole` with an external id), **workload identity federation** (GCP), **federated credentials** (Azure): the project grants QA-Board's identity access; no secret stored. Static keys, encrypted at rest, only for on-prem S3 | No long-lived secrets in our database | Per-cloud code paths | Federation first, keys as fallback |
-| **B. CI artifact stores** | Store a pointer per run (job id, path); fetch on read, cache | Zero setup, retention is the CI's | GitLab can serve one file of a job's artifacts (`GET /projects/:id/jobs/:job_id/artifacts/*path`); GitHub Actions artifacts download as a whole zip. Needs a CI token per project; slow first reads; files vanish with CI retention | Not as storage. Possibly as an import ("link this job's report") later |
-| **C. OCI registry** (ORAS: GHCR, Harbor, Artifactory) | Each run's files pushed as an OCI artifact; blobs by sha256 | Content-addressed and deduped; enterprises already run and pay for a registry; their auth and retention | Range reads and browsing vary by registry; every read needs our manifest; images go through a fetch-and-cache | Worth a spike where Artifactory is the only sanctioned store. Not first |
-| **D. Server-managed storage** (filesystem, or a bucket the operator owns) | Today, and milestone 5's object store | Simplest for users | The operator pays for everything | The default; A is opt-in per project |
-
-S3's "Requester Pays" is about who pays for downloads, not storage: it doesn't help here.
-
-### 7.3 Serving files from anywhere: one resolver
-- Every run records where its bulk lives: `Output.data.storage = {profile, prefix}`; absent means today's filesystem.
-- `/s/<path>` keeps its URLs. nginx's existing `auth_request` asks the backend, which answers with
-  `X-Accel-Redirect` to: the local alias (today), or an internal location that proxies to a presigned URL of the
-  right bucket (same origin, Range works, no CORS). This is `http-upload.md` §10.2, generalized to many buckets.
-- Large videos can be answered with a `302` to the presigned URL instead, so the project's bucket serves the bandwidth.
-- Cantaloupe: `S3Source` with a delegate script mapping the identifier to the profile's bucket and key, for
-  S3-compatible profiles; other providers go through a fetch into its source cache. The backend's pixel and ROI
-  APIs read through the same cache.
-
-### 7.4 Open source to build on
-| Need | Pick | Alternatives and notes |
-|---|---|---|
-| One API over many storages in the backend (put, ranged get, delete, list, presign) | **Apache OpenDAL** (Python bindings; S3-compatible, GCS, Azure, local, WebDAV, SFTP, HDFS and more) | **obstore** (Python over Rust's `object_store`: S3, GCS, Azure, local, HTTP; fast, signing built in) if the cloud object stores are enough; **fsspec** (s3fs, gcsfs, adlfs) is the Python ecosystem's standard but slower and presigning is per-backend. Check presign support per service before committing to OpenDAL. Keep our `BlobStore` interface to five calls so the library stays swappable |
-| Self-hosted S3 for the quickstart, Kubernetes and on-prem | **Garage** (small, simple) or **SeaweedFS**; **Ceph RGW** where Ceph exists | **MinIO** community edition stopped shipping binaries and images in Oct 2025 and its repository is no longer maintained (2026): don't make it the default (`http-upload.md` question 11) |
-| S3 API over an existing NFS (one code path for SIRC) | **Versity S3 Gateway** (S3 over a POSIX filesystem) | Lets the bucket transport serve shared-storage sites too, if we ever want to drop the direct transport. Not needed before milestone 6 |
-| Exotic storages without code (SharePoint, SMB, Google Drive, SFTP) | **rclone** `serve s3` / `serve webdav` in front of them, operated by the site | Zero code for us; the site runs one more service |
-| Resumable uploads | Our own parts (milestone 5) | **tus/tusd**: rejected in `http-upload.md` §4.2 (no dedupe, a new service); still true |
-| Versioned data lakes (lakeFS, DVC, git-annex) | None | They version datasets; we need an index of run outputs, which we already have |
-
----
-
-## 8. Milestones
+## 5. Milestones
 S ≤ 2 days, M ≈ 1 week, L 2-3 weeks, for one engineer or agent workstream with review.
 
 | # | Milestone | Content | Size | Unlocks |
 |---|---|---|---|---|
-| 1 | **`qa upload` on shared storage** | `qaboard/ingest.py` (direct transport), `qa upload` with `--each`, `--as`, metrics, `--append`; JUnit reader; projects without qaboard.yaml | S-M | Test reports, benchmarks, any files from existing projects, from any machine that sees the storage |
-| 2 | **HTTP upload, small files** | §4: per-file `PUT`, `finish`, log endpoint, lost runs, `storage: upload\|auto`, `qa run` on the client, `qa upload -- cmd`, live log and live globs (§5), remaining security baseline | M-L | GitHub-hosted runners, laptops, pods without a shared volume |
-| 3 | **SDK** | §6: `qaboard.init/log/log_image/save/finish`, `QABOARD_RUN_ID` nesting, `metrics.jsonl` plot | M | Training loops, notebooks, tests calling QA-Board from inside |
-| 4 | **More readers** (as asked) | Google Benchmark, pytest-benchmark, hyperfine, criterion; a pytest plugin | S each | Benchmarks and tests with zero code |
-| 5 | **Large outputs over HTTP** | `http-upload.md` parts, "which hashes do you have" dedupe, content store, bit-accuracy references via the API, ingest uwsgi pool | L | Bit-accurate image/video projects without shared storage |
-| 6 | **Object storage and BYO buckets** | `BlobStore` on OpenDAL/obstore, server-managed bucket first, then per-project profiles with federated credentials, the `/s/` resolver, Cantaloupe `S3Source`, inline small files on the server | XL | Kubernetes without RWX volumes; projects paying for their own bulk storage |
+| 0 | **`start_run()` merges** | The branch, as it is | — | Runs from Python, series |
+| 1 | **`qa upload` on shared storage** | §3: the command, `qaboard/junit.py`, recognized files on cards, the project's name in CI | S | Test reports, benchmarks, profiles from any CI job that sees the storage |
+| 1b | **Wrap a command, nest runs** | `qa upload -- cmd`, `QABOARD_RUN_DIR` (§2.3.3), one word for batches (§2.3.1) | S | `qa run` without an entry point; SDK calls inside `qa run` |
+| 2 | **HTTP upload, small files** | §4, with the heartbeat and `qa sync <run folder>` (§2.3.5) | M-L | GitHub-hosted runners, laptops, notebooks, pods without the volume |
+| 3 | **Large outputs over HTTP** | `http-upload.md`'s parts, dedupe, content store, bit-accuracy references through the API | L | Image and video projects without shared storage |
+| 4 | **Object storage, project-paid buckets** | §6 | XL | Kubernetes without RWX volumes; projects paying for their bulk |
 
-Milestones 1 → 2 → 3 is the path; 4 runs alongside whenever a format is asked for; 5 and 6 wait for a real
-project that needs them. Milestone 1 can ship this month and is useful on its own.
+1 → 1b → 2 is the path. 3 and 4 wait for a project that needs them. The SDK's own follow-ups (the Runs page,
+`log_image()`, system metrics) are in `docs/rfcs/python-sdk-runs-follow-ups.md` and independent of these, except
+where §2.3 joins them.
 
 ---
 
-## 9. Open questions
-1. **`qa upload` replaces or merges by default?** Proposed: replace (like a re-run), `--append` to merge.
-   Merging by default would hide stale files from a previous upload.
-2. **Run name for `--each`:** file stem, or the parent folder for `TEST-*.xml` (Surefire, Gradle) where stems
-   are class names? Proposed: stem, with `--input '{parent}'`-style patterns if people ask.
-3. **Per-file limit for milestone 2:** 256 MiB enough for your non-ISP projects, or 1 GiB?
-4. **`outputs.live` default:** none (proposed), or small text files under 1 MiB?
-5. **Inline threshold** (§7.1): which files always stay on the server once buckets exist? 1 MiB, plus every
-   file a viewer needs for comparisons (test reports, manifests)?
-6. **First BYO provider:** S3-compatible (covers AWS, R2, Ceph, Garage, SeaweedFS) is the obvious first; is
-   GCS or Azure needed for an actual user?
-7. **OCI registries (§7.2 C):** is Artifactory the only store some teams may use? If so, a spike before milestone 6.
+## 6. Where the bytes live, and who pays
+Unchanged from v1.
+
+### 6.1 The principle: the server owns the index
+Whatever the storage, the server keeps: the database (metrics, statuses), every run's manifest with sha256,
+`log.txt`, the series, files under `QABOARD_INLINE_MAX` (default 1 MiB: test reports, benchmark files, folded
+stacks, small JSON and text), and derived data (thumbnails, Cantaloupe's cache). Only bulk files go to the
+project's storage. So history, the gate, the test and benchmark viewers' comparisons and bit-accuracy checks
+(manifest against manifest) work without the project's bucket, and after its retention deleted the bulk; the
+operator pays for a small, predictable index, projects for their bulk.
+
+### 6.2 Options for project-paid storage
+| Option | How | Against | Verdict |
+|---|---|---|---|
+| **A. Bring-your-own bucket** (S3-compatible, GCS, Azure Blob) | A project admin registers a storage profile. Uploads get presigned `PUT` URLs; reads go through `/s/` (§6.3). Credentials by role assumption (AWS), workload identity federation (GCP) or federated credentials (Azure); static keys, encrypted, only for on-prem S3 | Per-cloud credential code; egress is the project's when files are read | **Recommended** |
+| **B. CI artifact stores** | A pointer per run, fetched on read | GitHub serves whole zips; needs a CI token per project; files vanish with CI retention | Not as storage. Maybe an import later |
+| **C. OCI registry** (ORAS: GHCR, Harbor, Artifactory) | A run's files as an OCI artifact, blobs by sha256 | Range reads and browsing vary by registry | A spike where Artifactory is the only sanctioned store |
+| **D. Server-managed** (filesystem, or the operator's bucket) | Today | The operator pays for everything | The default; A is opt-in per project |
+
+S3's "Requester Pays" is about who pays for downloads, not storage: it doesn't help here.
+
+### 6.3 Serving files from anywhere: one resolver
+- A run records where its bulk lives: `Output.data.storage = {profile, prefix}`; absent means the filesystem.
+- `/s/<path>` keeps its URLs. nginx's `auth_request` asks the backend, which answers with `X-Accel-Redirect` to
+  the local alias, or to an internal location proxying a presigned URL of the right bucket (same origin, Range
+  works, no CORS). Large videos can get a `302` to the presigned URL.
+- Cantaloupe: `S3Source` with a delegate script mapping the identifier to the profile's bucket and key.
+
+### 6.4 Open source to build on
+| Need | Pick | Notes |
+|---|---|---|
+| One API over many storages (put, ranged get, delete, list, presign) | **Apache OpenDAL** (Python bindings; S3-compatible, GCS, Azure, local, WebDAV, SFTP, HDFS…) | **obstore** if the cloud object stores are enough; **fsspec** is slower and presigns per backend. Check presign support per service first. Keep our `BlobStore` to five calls so the library stays swappable |
+| Self-hosted S3 for the quickstart, Kubernetes, on-prem | **Garage** or **SeaweedFS**; **Ceph RGW** where Ceph exists | **MinIO**'s community edition stopped shipping binaries in Oct 2025 and is no longer maintained (2026): not the default (`http-upload.md` question 11; the public roadmap still names it) |
+| S3 API over an existing NFS | **Versity S3 Gateway** | One code path for shared-storage sites, if ever wanted |
+| Exotic storages without code (SharePoint, SMB, SFTP) | **rclone** `serve s3` / `serve webdav`, run by the site | |
+| Resumable uploads | Our own parts (milestone 3) | tus: rejected in `http-upload.md` §4.2, still true |
+
+---
+
+## 7. Open questions
+1. **Batch, label or experiment** (§2.3.1): one word in the APIs, and which?
+2. **Nesting** (§2.3.3): attach when `QABOARD_RUN_DIR` is set and no identity is given. Is "an explicit
+   `input=` starts a separate run" the right rule, or should attaching be explicit (`qb.current_run()` only)?
+3. **Recognized files on cards** (§2.3.4): for uploaded and SDK runs only (proposed), or for every run whose
+   project lists no visualization for the file?
+4. **`qa upload` default:** a new attempt (proposed), `--append` to add.
+5. **Default input with several paths:** the CI job's name (proposed), or require `--input`?
+6. **Per-file limit for milestone 2:** 256 MiB, or 1 GiB?
+7. **`outputs.live` default:** nothing (proposed), or small text files?
+8. **First project-paid provider:** S3-compatible first; is GCS or Azure needed for an actual user?
