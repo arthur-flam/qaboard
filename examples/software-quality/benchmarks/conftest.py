@@ -10,7 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_sdk import _flags  # noqa: E402
+from fleet_sdk.client import registry  # noqa: E402
 from fleet_sdk.codec import varint  # noqa: E402
 
 FLAGS = _flags.flags()
-varint.flags = lambda: FLAGS
+for module in (varint, registry):
+    module.flags = lambda: FLAGS

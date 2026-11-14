@@ -127,7 +127,7 @@ commits:
     branch: main
     at: -20d 03:30
     author: kaito
-    message: "registry: parse() in dispatch, the offset is unused (-4% CPU/frame)"
+    message: "registry: parse() in dispatch, the offset is unused"
     flags: {client_legacy_parse: true}
 
   - id: legacy-parse-fix

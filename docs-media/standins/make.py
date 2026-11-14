@@ -12,7 +12,7 @@ story, then takes pictures of the web app's playground for the viewer on the two
   uv run docs-media/standins/make.py --reuse             # only the pictures, from the last measurements
 
 - commit/benchmarks: the fleet SDK's benchmarks (examples/software-quality/benchmarks/, pytest-benchmark), at the
-  varint fast path and at the commit before.
+  commit that decodes frames with the deprecated parse() and at the commit before.
 - commit/flame-top-functions: the gateway's CPU profile on steady-high (examples/serving-latency, needs Rust), with
   the shared cache and at its parent.
 
@@ -25,10 +25,11 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -43,8 +44,8 @@ PORT = 5199
 
 STANDINS = {
   'commit/benchmarks': dict(
-    project='software-quality', new='varint-fast-path', ref='grid-docs',
-    page='benchmark-viewer.html', file='pytest.benchmarks.json', title='codec · pytest.benchmarks.json',
+    project='software-quality', new='legacy-parse', ref='reserve-tests',
+    page='benchmark-viewer.html', file='pytest.benchmarks.json', title='pytest.benchmarks.json',
     width=1212, max_height=648,
   ),
   'commit/flame-top-functions': dict(
@@ -68,6 +69,7 @@ def with_flags(example: Path, flags: dict, measure):
   """Runs measure() on the example's code as of a commit: its flags in build/flags.json, as the seeder writes them"""
   path = example / 'build' / 'flags.json'
   before = path.read_text() if path.exists() else None
+  had_build = path.parent.exists()
   path.parent.mkdir(exist_ok=True)
   path.write_text(json.dumps(flags, indent=2, sort_keys=True) + '\n')
   try:
@@ -75,6 +77,8 @@ def with_flags(example: Path, flags: dict, measure):
   finally:
     if before is None:
       path.unlink()
+      if not had_build and not any(path.parent.iterdir()):
+        path.parent.rmdir()
     else:
       path.write_text(before)
 
@@ -109,7 +113,7 @@ def measure_flame_graph(example: Path, output: Path):
 
 MEASURES = {'commit/benchmarks': measure_benchmarks, 'commit/flame-top-functions': measure_flame_graph}
 
-# Runs in webapp/, for its Playwright: a picture of the playground's content, down to max_height
+# Runs with webapp/'s Playwright: a picture of the playground's content, down to max_height
 SCREENSHOT = """
 const { chromium } = require('@playwright/test');
 const [url, path, width, max_height] = process.argv.slice(2);
@@ -140,13 +144,15 @@ def pictures(shot_id: str, standin: dict, labels: dict):
   public.mkdir(parents=True)
   script = OUT / 'screenshot.cjs'
   script.write_text(SCREENSHOT)
-  vite = subprocess.Popen(['npx', 'vite', '--port', str(PORT), '--strictPort'], cwd=WEBAPP, stdout=subprocess.DEVNULL)
+  # in its own process group: vite starts children, which must stop with it
+  vite = subprocess.Popen([str(WEBAPP / 'node_modules' / '.bin' / 'vite'), '--port', str(PORT), '--strictPort'], cwd=WEBAPP,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
   try:
     for side in ('new', 'ref'):
       shutil.copyfile(OUT / shot_id / f"{side}-{standin['file']}", public / f"{side}-{standin['file']}")
     for _ in range(60):
       try:
-        urllib.request.urlopen(f"http://localhost:{PORT}/{standin['page']}")
+        socket.create_connection(('localhost', PORT), timeout=1).close()
         break
       except OSError:
         time.sleep(1)
@@ -159,14 +165,15 @@ def pictures(shot_id: str, standin: dict, labels: dict):
     for theme in ('', '-dark'):
       png = OUT / shot_id / f"picture{theme}.png"
       url = f"http://localhost:{PORT}/{standin['page']}?{query}{'&dark' if theme else ''}"
-      subprocess.run(['node', str(script), url, str(png), str(standin['width']), str(standin['max_height'])], cwd=WEBAPP, check=True)
+      subprocess.run(['node', str(script), url, str(png), str(standin['width']), str(standin['max_height'])], check=True,
+                     env={**os.environ, 'NODE_PATH': str(WEBAPP / 'node_modules')})
       webp = HERE / f"{shot_id}{theme}.webp"
       webp.parent.mkdir(parents=True, exist_ok=True)
       image = Image.open(png).convert('RGB')
       image.save(webp, quality=90, method=6)
       print(f"{webp.relative_to(REPO)}: width {image.width // 2}, height {image.height // 2}, {webp.stat().st_size // 1000} kB")
   finally:
-    vite.terminate()
+    os.killpg(vite.pid, signal.SIGTERM)
     shutil.rmtree(public, ignore_errors=True)
 
 
