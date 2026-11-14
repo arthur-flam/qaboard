@@ -40,8 +40,9 @@ The shot list is `docs-media/shots.yaml`, how to capture is `docs-media/README.m
 - **Release notes**: publish November's note at the start of December (see `website/release-notes/_template.md`).
 
 ## Product, small
-- **Analysis view** (tuning): the frontier and plots only use the metrics selected in its tag picker; with another
-  metric, the points are null and the plot is empty. (`webapp/src/components/tuning/`)
+- **Analysis view** (tuning): before its rewrite (November 2026, `TuningReport.jsx`), the frontier and plots only
+  used the metrics selected in its tag picker; with another metric, the points were null and the plot empty. Check
+  that the new report doesn't, then delete this.
 - **Commits page**: `from=2026-09-17` showed 9/18 while `from=2026-09-10` showed 9/10: a time zone off-by-one?
   Not reproduced by reading the code. A lead: the date picker parses what `toLocaleDateString()` wrote with
   `new Date(str)` (`CommitsListNavbar` in `webapp/src/AppNavbar.jsx`), which depends on the browser's locale.
