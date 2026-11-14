@@ -944,7 +944,7 @@ shots:
   - id: tuning/launch-to-analysis
     kind: clip
     project: detection-eval
-    shows: The manual-form grid (8 runs) is sent, its int8-nms batch picked in the batch selector once its runs are done, and its Tuning Analysis opened: the best of its 4 parameter sets, then every set in parallel coordinates.
+    shows: The manual-form grid (8 runs) is sent, its int8-nms batch picked in the batch selector once its runs are done, and its Tuning Analysis opened, with the best of its 4 parameter sets, then every set in parallel coordinates.
     pages: [tuning-from-the-webapp, user-guide/running-from-the-webapp, landing, tutorials/tuning]
     features: [tuning-analysis]
     needs: int8-percentile

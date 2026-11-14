@@ -126,8 +126,7 @@ const GetStarted = ({ batch, commit, project, commit_id, available_metrics, filt
             where they lose, and what to try next.
           </p>
           <div className="qa-tuning-step-actions">
-            <a href={`${docs_root}docs/user-guide/running-from-the-webapp`} target="_blank" rel="noopener noreferrer">Tuning from the web app</a>
-            <a href={`${docs_root}docs/user-guide/automated-tuning`} target="_blank" rel="noopener noreferrer">Automated tuning</a>
+            <a href={`${docs_root}docs/user-guide/tuning`} target="_blank" rel="noopener noreferrer">Tuning, step by step</a>
           </div>
         </Card>
       </Steps>
