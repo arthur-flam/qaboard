@@ -1,7 +1,7 @@
 import datetime
 
 from flask_login import UserMixin
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, LargeBinary
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -25,8 +25,12 @@ class User(Base, UserMixin):
   login_type = Column(String())
   data = Column(JSONB(), nullable=False, default=dict, server_default='{}')
 
-  # human, or service (bots that only use tokens, from M4)
+  # human, or service (bots that only use tokens, see backend/service_accounts.py)
   kind = Column(String(), nullable=False, default='human', server_default='human')
+  # who manages a service account: the instance's admins (owner_type "instance"), or a project's owners ("project",
+  # owner_id is the project). Its tokens can't reach outside of its project. None for people.
+  owner_type = Column(String(), nullable=True)
+  owner_id = Column(String(), nullable=True, index=True)
   # active, pending (waiting for an admin), disabled (can't sign in, their tokens stop working)
   status = Column(String(), nullable=False, default='active', server_default='active')
   # admins from $QABOARD_ADMINS are admins whatever this says, see backend/admins.py
@@ -35,6 +39,9 @@ class User(Base, UserMixin):
   # the web app's preferences that follow users from browser to browser
   preferences = Column(JSONB(), nullable=False, default=dict, server_default='{}')
   preferences_updated_at = Column(DateTime(), nullable=True)
+  # what the sign-in methods say about them, refreshed at each sign-in and daily (backend/sign_in/profiles.py):
+  # {title, department, organization, source, updated_at, picture: {sha256, source, updated_at}}
+  profile = Column(JSONB(), nullable=False, default=dict, server_default='{}')
 
 
   def __repr__(self):
@@ -73,6 +80,23 @@ class User(Base, UserMixin):
 
 
 
+class UserPicture(Base):
+  """A user's picture, from their sign-in method (an OIDC claim or photo URL, LDAP's thumbnailPhoto, a SAML attribute)"""
+  __tablename__ = 'user_pictures'
+
+  user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+  # image/jpeg, image/png, image/gif or image/webp: never SVG (scripts)
+  content_type = Column(String(), nullable=False)
+  data = Column(LargeBinary(), nullable=False)
+  sha256 = Column(String(64), nullable=False)
+  # the provider it came from, e.g. sso, ldap, saml
+  source = Column(String(), nullable=True)
+  # where we downloaded it, to download it again only when it changes
+  source_url = Column(Text(), nullable=True)
+  updated_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+
+
 class Token(Base):
     """
     API tokens. We only store a hash of the secret, see backend/tokens.py for the format.
@@ -86,7 +110,7 @@ class Token(Base):
     token_hash = Column(String(64), unique=True, nullable=True, index=True)
     # shown to recognize the token, e.g. "qab_pat_Xk3f"
     prefix = Column(String(), nullable=False, default='', server_default='')
-    # personal, cli (created by `qa auth login`), legacy (created before scopes)
+    # personal, cli (created by `qa auth login`), service (a service account's), legacy (created before scopes)
     kind = Column(String(), nullable=False, default='personal', server_default='personal')
     name = Column(String(), nullable=False, default='', server_default='')
 

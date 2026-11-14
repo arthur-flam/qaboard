@@ -21,11 +21,14 @@ import { LoginMenuItem } from "./authentication/login";
 import { linux_to_windows } from '../utils'
 import { folder_url, hasPathMappings } from '../utils/paths'
 import { toaster } from "../toaster"
+import { track } from "../analytics"
 import { copyDirectory } from "./logs/DirectoryActions"
 import { hidden_keys } from "../configurations/tokens"
 import { ConfigurationsTags, ConfigurationDiff } from "../configurations/ConfigurationsTags"
-import { runName } from "./logs/RunLogs"
-import { RunHistoryMenuItem } from "./RunInfoMenu"
+import { RunInfoMenuItems } from "./RunInfoMenu"
+import { AttemptTag } from "./AttemptTag"
+import { LazyPopover } from "./LazyPopover"
+import { runName } from "../utils/runName"
 
 
 const style_skeleton = {
@@ -169,11 +172,16 @@ const RunActionsMenu = ({ output, project, commit, children }) => {
         intent={Intent.WARNING}
         minimal
         disabled={waiting || !is_logged}
-        onClick={() => act(
-          () => http.post(`/api/v1/output/redo/${id}/`, {is_pending: false, is_running: false}),
-          `Starting ${name} again…`,
-          `Redoing ${name}`,
-        )}
+        onClick={() => {
+          act(
+            () => http.post(`/api/v1/output/redo/${id}/`, {is_pending: false, is_running: false}).then(response => {
+              track('batch_start', { kind: 'redo', commit_id: commit?.id, n_runs: 1 }, { project_id: project })
+              return response
+            }),
+            `Starting ${name} again…`,
+            `Redoing ${name}`,
+          )
+        }}
       />}
       {id && !deleted && <MenuItem
         icon="trash"
@@ -247,7 +255,18 @@ const open_in_webcde = async ({ output, commit, cde_sh }) => {
   }
 }
 
-const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, type, style }) => {
+// The run's menu: what we know about it (what hovering its name shows, see RunName), then what users can do with it.
+// The same in the run cards, the logs and the tables. Lists have 100s of runs: the menu is only created when opened.
+const RunMenuButton = ({ output, project, commit, type, style }) => <LazyPopover placement="bottom-end" content={
+  <RunActionsMenu output={output} project={project} commit={commit}>
+    <RunInfoMenuItems project={project} commit={commit} output={output} type={type} />
+  </RunActionsMenu>
+}>
+  <Button size="small" variant="minimal" icon="more" className={Classes.TEXT_MUTED} style={style} aria-label="Run actions" title="Run info, history and actions"/>
+</LazyPopover>
+
+// configuration: whether to show the platform and configuration tags (compact cards have them as text)
+const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, type, style, configuration = true }) => {
   const [waiting, setWaiting] = useState(false)
   const refreshCommit = useRefreshCommit()
   // where users install WebCDE, from QABOARD_WEBCDE_INSTALLER
@@ -257,17 +276,13 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
   const cde_shs = !deleted ? Object.keys(manifests?.new ?? []).filter(path => path.endsWith("cde.sh")) : []
   return <span style={style}>
     {deleted && <Tag icon="trash">deleted</Tag>}
-    <PlatformTag platform={platform} />
-    <ConfigurationsTags configurations={configurations} tuning={output.extra_parameters} mismatch={mismatch} />
+    {configuration && <>
+      <PlatformTag platform={platform} />
+      <ConfigurationsTags configurations={configurations} tuning={output.extra_parameters} mismatch={mismatch} />
+    </>}
+    <AttemptTag data={output.data} style={{ marginLeft: "5px" }}/>
 
-    {output_type !== "batch" &&
-    <PopoverNext placement="bottom" content={
-      <RunActionsMenu output={output} project={project} commit={commit}>
-        {!!output.test_input_path && !!commit?.branch && <RunHistoryMenuItem project={project} commit={commit} output={output} type={type} />}
-      </RunActionsMenu>
-    }>
-      <Button size="small" variant="minimal" icon="menu" className={Classes.TEXT_MUTED} style={{ marginLeft: "5px" }} aria-label="Run actions"/>
-    </PopoverNext>}
+    {output_type !== "batch" && <RunMenuButton output={output} project={project} commit={commit} type={type} style={{ marginLeft: "5px" }}/>}
 
     {/* The menus open on click: their buttons only act directly when there is nothing to choose from */}
     {output_ref ? <PopoverNext placement="bottom" content={
@@ -362,4 +377,4 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
 }
 
 
-export { hidden_keys, RunActionsMenu, StatusTag, PlatformTag, ConfigurationsTags, MismatchTags, OutputTags, RunBadge, RunBadges, style_skeleton };
+export { hidden_keys, RunActionsMenu, RunMenuButton, StatusTag, PlatformTag, ConfigurationsTags, MismatchTags, OutputTags, RunBadge, RunBadges, runName, style_skeleton };

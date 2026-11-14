@@ -23,13 +23,15 @@ Every command has its help: `qa --help`, `qa batch --help`...
 | `qa init` | Adds *qaboard.yaml* and `qa/` to your project. | [Project setup](/docs/project-init) |
 | `qa run --input <input>` | Runs your code on one input. | [Running your code](/docs/running-your-code) |
 | `qa batch <batch>` | Runs the inputs and configurations of a batch. | [Batches](/docs/batches-running-on-multiple-inputs) |
+| `qa doctor` | Checks *qaboard.yaml*, the server, the storage and the runner, and says how to fix problems. | [Check your setup](/docs/doctor) |
 | `qa postprocess --input <input>` | Redoes only your `postprocess()` function, on a run's files. | [Postprocessing](/docs/running-your-code#postprocess) |
 | `qa sync --input <input>` | Sends a run's *metrics.json* to QA-Board again, with `--share` or in CI. | |
 | `qa get <setting>` | Prints a setting, e.g. `qa get config`, `qa get --input A.jpg output_dir`. | [API](/docs/apis) |
+| `qa runs <url>` | Lists the runs a web app page shows: their folders, or everything with `--json`. | [Runs in scripts](/docs/apis#runs-in-scripts) |
 | `qa save-artifacts` | Saves what your runs need to be redone from the web app, e.g. your build. | [Artifacts](/docs/storage/artifacts) |
 | `qa check-bit-accuracy` | Compares a commit's output files with a reference's, byte for byte. | [Bit accuracy](/docs/bit-accuracy) |
 | `qa gate` | Experimental: fails the CI when metrics regress. | [Quality gate](/docs/quality-gate) |
-| `qa optimize` | Experimental: searches for the best parameters. | [Automated tuning](/docs/auto-optimization) |
+| `qa optimize` | Searches for the best parameters, and continues a search it saved. | [Automated tuning](/docs/auto-optimization) |
 
 ## See results in the web app: `--share` {#qa---share}
 From your computer, `qa run` and `qa batch` save results in `output/`, in your project: the web app doesn't see them.
@@ -70,7 +72,8 @@ your name and 🏠.
 
 :::tip
 To keep the previous output files of a run, e.g. when your code caches intermediate results while you debug a long
-run, use `qa run --keep-previous` (or `export QABOARD_RUN_KEEP=true`).
+run, use `qa run --keep-previous` (or `export QABOARD_RUN_KEEP=true`). Otherwise a local run starts from an empty
+folder, and a shared or CI run that is done again gets a [new folder](/docs/storage/where-is-the-data#reruns).
 :::
 
 ## Preview: `--dryrun` {#qa---dryrun}
@@ -91,21 +94,16 @@ For `qa --dryrun run`, `run()` is called with `context.dryrun` set to `True`: it
 anything, e.g. print the command it would run.
 
 ## Choose where batches run: runners {#batch-runners}
-`qa run` runs on your machine. `qa batch` hands its runs to a *runner*:
-- `local`: [runs on this machine](/docs/local-multiprocessing), one at a time unless you set a concurrency:
-  `--local-concurrency`, `QA_BATCH_CONCURRENCY` or `runners.local.concurrency` in *qaboard.yaml* (`-1`: one run per
-  CPU). It's the default when no other runner is configured, and on Windows instead of `lsf`.
-- `lsf`: one [LSF](/docs/lsf-integration) job per run. Limit how many run at the same time with `--lsf-concurrency`
-  or `runners.lsf.concurrency`.
-- `dask`: a pool of long-lived [Dask workers](/docs/dask-integration), started as LSF jobs or on an existing Dask
-  cluster. Best for many short runs. Set the concurrency with `--dask-concurrency` or `runners.dask.concurrency`.
-- `celery`: [Celery](/docs/celery-integration) workers.
-- `windows`: runs sent to Windows hosts via [Jenkins](/docs/jenkins-integration).
+`qa run` runs on your machine. `qa batch` hands its runs to a *runner*: `local` (this machine, the default), `lsf`,
+`dask` (workers on Slurm, PBS, SGE, LSF, Kubernetes...), `kubernetes`, `celery` or `windows`. To pick one, and know
+what it needs, see [Choose where runs execute](/docs/runners).
 
 Choose the runner with `--runner`, e.g. `qa batch --runner local ci`, and set a default with `runners.default` in
 *qaboard.yaml*. Without `runners.default`, `qa batch` uses the first runner configured under `runners` other than
-`local`, else `local`. Batches can change their runs' settings, like LSF's memory: see
-[runner settings per batch](/docs/batches-running-on-multiple-inputs#runner-settings-per-batch).
+`local`, else `local`. Options like `--local-concurrency`, `--lsf-concurrency` or `--dask-concurrency` change the
+runner's settings for one command. Batches can change their runs' settings, like LSF's memory: see
+[runner settings per batch](/docs/batches-running-on-multiple-inputs#runner-settings-per-batch). To check that the
+runner works, run [`qa doctor`](/docs/doctor).
 
 ## Runs that already ran {#dealing-with-existing-results}
 By default, `qa batch` runs everything again. `--action-on-existing` changes what it does with runs that already
@@ -149,6 +147,10 @@ run ends.
 ## Work without a server: `--offline` {#qa---offline}
 With `qa --offline`, `qa` never contacts QA-Board: results are only saved on disk. To use another server, see
 [Connect to your server](/docs/installation#connecting-to-a-custom-qa-board-server).
+
+Outside CI, `qa` also tells the server which command ran, so that admins see how QA-Board is used
+([what it sends](/docs/installation#connecting-to-a-custom-qa-board-server)). `QA_NO_ANALYTICS=1` or `--offline` keep
+it quiet.
 
 ## Options as environment variables {#options-as-environment-variables}
 Every option can be set in the environment: `QA_<OPTION>` for `qa`'s own options, `QA_<COMMAND>_<OPTION>` for a

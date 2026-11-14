@@ -1,8 +1,8 @@
 // /<project>/access: who can see and change the project (design/user-management.md, Appendix D.6).
 // Everyone sees their role and why. Owners (and admins) change the visibility, the members and decide requests,
-// the others see the owners and can request a role. Members given on a folder of projects, or on all projects,
+// the others see the owners and can request a role. Owners also manage the project's service accounts (CI bots). Members given on a folder of projects, or on all projects,
 // are shown read-only: they're changed where they were given.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert, AnchorButton, Button, Callout, Card, Classes, Dialog, DialogBody, DialogFooter, FormGroup, HTMLSelect, HTMLTable,
@@ -21,12 +21,15 @@ import { Time, formatDate } from "../settings/format";
 import { Loading, QueryError } from "../settings/states";
 import { RequestMessage } from "../admin/AccessRequests";
 import { SubjectPicker } from "./SubjectPicker";
+import { ServiceAccounts } from "./ServiceAccounts";
 import { isNoAccessError } from "./NoProjectAccess";
 import {
   roles, roleLabel, roleRank, role_options, RoleTag, visibilities, visibilityLabel, visibilityIcon, visibilityDescription,
   visibilityRank, viaText, SubjectName, subjectText,
 } from "./roles";
 import { projectAccessQuery, setVisibility, saveGrant, deleteGrant, requestAccess, decideRequest } from "./api";
+import { usePageTitle, join_title, project_name } from "../pageTitle";
+import { ProjectAdminTabs } from "../projectAdmin/ProjectAdminTabs";
 
 
 // Below the fixed navbar, like the other project pages
@@ -400,8 +403,8 @@ export const Owners = ({ owners }) => <section aria-label="Owners">
   <h4 className={Classes.HEADING}>Owners</h4>
   {owners.length === 0
     ? <p className={Classes.TEXT_MUTED} style={{ margin: 0 }}>This project has no owners yet: ask a QA-Board admin.</p>
-    : <ul style={{ margin: 0, paddingLeft: 20 }}>
-      {owners.map(owner => <li key={`${owner.type}:${owner.id}`}><SubjectName subject={owner}/></li>)}
+    : <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+      {owners.map(owner => <li key={`${owner.type}:${owner.id}`} style={{ padding: '2px 0' }}><SubjectName subject={owner}/></li>)}
     </ul>}
 </section>;
 
@@ -492,6 +495,7 @@ const ProjectAccess = ({ project }) => {
         <Requests access={data}/>
         <Members access={data} onAdd={() => setAdding(true)}/>
         <AddMemberDialog access={data} isOpen={adding} onClose={() => setAdding(false)}/>
+        <ServiceAccounts project={project}/>
       </>
       : <>
         <Owners owners={data.owners}/>
@@ -504,10 +508,9 @@ const ProjectAccess = ({ project }) => {
 export const AccessPage = () => {
   const { project } = useSelected();
   const { data: user = logged_out_user, isPending } = useQuery(userQuery);
-  useEffect(() => {
-    document.title = `Access - ${project.split('/').slice(-1)[0]}`;
-  }, [project]);
+  usePageTitle(join_title('Access', project_name(project)));
   return <Page>
+    <ProjectAdminTabs project={project} current="access"/>
     <h2 className={Classes.HEADING} style={{ marginBottom: 4 }}>Access</h2>
     <p className={`${Classes.TEXT_MUTED} qa-muted-line`} style={{ overflowWrap: 'anywhere' }}>
       Who can see <strong>{project}</strong>, upload runs and act on them.

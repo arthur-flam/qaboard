@@ -5,6 +5,7 @@ import { Button, Callout, Intent, NonIdealState } from "@blueprintjs/core";
 import { useSelected, useUrlText, updateSelected } from "../hooks";
 import { BitAccuracyForm, bit_accuracy_url_defaults } from "./bit_accuracy/utils";
 import { OutputCard } from "./OutputCard";
+import { useOutputCardDensity } from "../stores/prefs";
 
 
 // Cards are light until they scroll into view: they only then fetch their files and render viewers.
@@ -23,6 +24,7 @@ function OutputCardsList({ type, project, config, metrics, new_commit, new_batch
   const [files_filter, onFilesFilterChange] = useUrlText(query.files_filter || '', value => save('files_filter', value));
   const update = name => name === 'files_filter' ? onFilesFilterChange : e => save(name, e?.target?.value ?? e);
   const toggle = name => () => save(name, !flag(name));
+  const compact = useOutputCardDensity() === 'compact';
 
   const outputs = useMemo(() => (new_batch?.filtered?.outputs ?? [])
     .map(id => [id, new_batch.outputs[id]])
@@ -53,7 +55,7 @@ function OutputCardsList({ type, project, config, metrics, new_commit, new_batch
         <p>
           {outputs.length} runs: more cards are shown as you scroll, so the browser's search (Ctrl+F) doesn't find them all yet.
           Filter runs from the navbar, or{" "}
-          <Button small onClick={() => setNbShown(outputs.length)}>show all {outputs.length} runs</Button>
+          <Button size="small" onClick={() => setNbShown(outputs.length)}>show all {outputs.length} runs</Button>
         </p>
       </Callout>}
       {type === 'bit_accuracy' && <BitAccuracyForm
@@ -71,7 +73,7 @@ function OutputCardsList({ type, project, config, metrics, new_commit, new_batch
         style={{
           display: "flex",
           justifyContent: "flex-start",
-          columnGap: "15px",
+          columnGap: compact ? "8px" : "15px",
           flexFlow: "row wrap",
         }}
       >

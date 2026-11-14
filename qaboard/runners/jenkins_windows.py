@@ -19,7 +19,7 @@ my-batch:
 ```yaml
 runners:
   jenkins:
-    build_url: http://jenmaster1:8080/job/ALGO/job/WindowsExecutor
+    build_url: http://jenkins.example.com/job/WindowsExecutor
     token: "1234"
 ``` 
 - This Jenkins build job needs to be configured like this:
@@ -40,19 +40,21 @@ net use \\mars\raid
 """
 import math
 import os
+import sys
 import re
 import time
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Iterable
 
 from click import secho
 
 from .base import BaseRunner
 from .job import Job
 from ..run import RunContext
+from ..checks import Check
 from ..compat import linux_to_windows, linux_to_windows_path
 from ..config import config
 
-from ..api import api_prefix, api_verify
+from ..api import api_prefix, api_verify, api_timeout, headers as api_headers, project_name
 
 # Valid values for PowerShell's $ErrorActionPreference (case-insensitive)
 ERROR_ACTION_PREFERENCES = frozenset({"continue", "stop", "silentlycontinue", "inquire", "ignore"})
@@ -150,6 +152,7 @@ def get_jenkins_config():
 
 def trigger_run(task: str) -> Dict:
     import requests
+    from ..config import commit_id
     jenkins_config = get_jenkins_config()
     data = {
         "build_url": jenkins_config["build_url"],
@@ -157,9 +160,12 @@ def trigger_run(task: str) -> Dict:
         "cause": "Triggered by QA-Board",
         "params": {
             "task": task,
-        }
+        },
+        # Without a token (QABOARD_TOKEN, `qa auth login`), the server only starts the jobs of the project's qaboard.yaml
+        "project": project_name(),
+        "commit": commit_id,
     }
-    r = requests.post(f"{api_prefix}/jenkins/build/trigger/", json=data, verify=api_verify)
+    r = requests.post(f"{api_prefix}/jenkins/build/trigger/", json=data, headers=api_headers, verify=api_verify, timeout=api_timeout)
     try:
         r.raise_for_status()
         if r.json().get('error'):
@@ -169,7 +175,7 @@ def trigger_run(task: str) -> Dict:
         secho(str(r.headers), fg='red', dim=True)
         secho(r.text, fg='red')
         secho(f"[ERROR] Could not start the Jenkins job running on Windows {task}", fg='red', bold=True)
-        exit(1)
+        sys.exit(1)
     job_url = f"{r.json()['web_url']}console" if 'web_url' in r.json() else r.json()['url']
     secho(f"[TRIGGER] A Jenkins job is now running on Windows. To check the status (and possible errors!):", fg='blue', bold=True)
     secho(f"          {job_url}", fg='blue')
@@ -213,7 +219,7 @@ def build_status(build_info):
   )
   session.mount('https://', adapter)
   session.mount('http://', adapter)
-  r = session.post(f"{api_prefix}/jenkins/build/", json=build_info, verify=api_verify)
+  r = session.post(f"{api_prefix}/jenkins/build/", json=build_info, headers=api_headers, verify=api_verify, timeout=api_timeout)
   try:
       r.raise_for_status()
       if r.json().get('error'):
@@ -223,7 +229,7 @@ def build_status(build_info):
       secho(str(r.headers), fg='red', dim=True)
       secho(r.text, fg='red')
       secho("[ERROR] The Jenkins job failed", fg='red', bold=True)
-      exit(1)
+      sys.exit(1)
   return r.json()['status']
 
 
@@ -264,7 +270,7 @@ def wait_for_build(build_info, should_print_log=True):
 def print_log(log_url):
     import requests
     try:
-        r = requests.get(log_url)
+        r = requests.get(log_url, timeout=api_timeout)
         result = r.text
         secho(f"JENKINS LOG:", fg='blue', bold=True)
         print(result)
@@ -347,3 +353,137 @@ class JenkinsWindowsRunner(BaseRunner):
   @staticmethod
   def stop_jobs(jobs: List[Job], job_options: Dict[str, Any]):
     return NotImplementedError
+
+
+  @classmethod
+  def doctor(cls, job_options: Dict[str, Any], test_job: bool = False) -> Iterable[Check]:
+    """
+    The Jenkins job is configured and exists, and the Windows hosts get Windows paths. QA-Board starts the builds
+    with its own Jenkins credentials (JENKINS_AUTH): only a test build (test_job) checks them.
+    """
+    import requests
+    from urllib.parse import urlsplit
+    from ..checks import OK, WARNING, ERROR
+    from ..doctor import docs, describe_error, mask_url_password, TIMEOUT
+    from ..compat import mappings
+    page = docs('jenkins-integration')
+    snippet = ("runners:\n  default: local   # the runner is named windows: qa batch --runner windows <batch>\n  jenkins:\n"
+               "    build_url: https://jenkins.example.com/job/my-team/job/WindowsExecutor\n    token: \"<the job's 'Trigger builds remotely' token>\"")
+    # Like get_jenkins_config: with one of the environment variables, qaboard.yaml's settings are ignored
+    env = {key: os.environ[name] for key, name in (('build_url', 'QA_RUNNERS_JENKINS_BUILD_URL'), ('token', 'QA_RUNNERS_JENKINS_TOKEN')) if name in os.environ}
+    settings = env if env else {key: job_options[key] for key in ('build_url', 'token') if job_options.get(key)}
+    source = "QA_RUNNERS_JENKINS_BUILD_URL" if env else "runners.jenkins in qaboard.yaml"
+    build_url = settings.get('build_url')
+    if not build_url:
+      ignored = " QA_RUNNERS_JENKINS_TOKEN is set without QA_RUNNERS_JENKINS_BUILD_URL: then qa ignores qaboard.yaml." if env else ''
+      yield Check("Jenkins job", ERROR, f"No Jenkins job to send the runs to: runners.jenkins.build_url isn't set.{ignored}",
+                  fix=f"In qaboard.yaml:\n{snippet}\nOr set QA_RUNNERS_JENKINS_BUILD_URL and QA_RUNNERS_JENKINS_TOKEN.\nDocs: {page}")
+      return
+    # build_url may have credentials (user:token@)
+    shown_url = mask_url_password(str(build_url))
+    parts = urlsplit(str(build_url))
+    if parts.scheme not in ('http', 'https') or not parts.hostname:
+      yield Check("Jenkins job", ERROR, f"build_url isn't a Jenkins job's URL: {shown_url} (from {source})", fix=f"{snippet}\nDocs: {page}")
+      return
+    yield Check("Jenkins job", OK, f"{shown_url} (from {source})")
+    if not settings.get('token'):
+      yield Check("Jenkins token", WARNING, "No token for the job's \"Trigger builds remotely\": QA-Board uses its own (JENKINS_BUILD_TOKEN), if its admins set one.",
+                  fix=f"Give the job's token in runners.jenkins.token (or QA_RUNNERS_JENKINS_TOKEN).\nDocs: {page}#creating-a-build-job-that-qa-will-use")
+
+    # qa prints the builds' logs from there
+    try:
+      r = requests.get(f"{str(build_url).rstrip('/')}/api/json", timeout=TIMEOUT)
+      if r.status_code == 404:
+        yield Check("Jenkins", ERROR, f"Jenkins answered 404 for {shown_url}: there is no such job.",
+                    fix="Copy the job's URL from Jenkins. Jobs in folders look like https://jenkins.example.com/job/folder/job/name")
+      elif r.status_code in (200, 401, 403):
+        yield Check("Jenkins", OK, f"{parts.hostname} answers" + (" (it needs credentials: QA-Board uses its own)" if r.status_code != 200 else ''))
+      else:
+        yield Check("Jenkins", WARNING, f"Jenkins answered {r.status_code} for {shown_url}.", fix=f"Check that you can open {shown_url} in your browser.")
+    except requests.RequestException as e:
+      yield Check("Jenkins", WARNING, f"Can't reach {parts.hostname} from here ({describe_error(e)}): QA-Board starts the builds, but qa prints their logs from there.",
+                  fix=f"Check that you can open {shown_url} from this machine (proxy, VPN...).")
+
+    # Without a token, QA-Board only starts the jobs listed in the project's qaboard.yaml
+    from ..api import qa_token
+    if env and env.get('build_url') and env['build_url'] != job_options.get('build_url') and not qa_token:
+      yield Check("Jenkins permissions", WARNING, "QA_RUNNERS_JENKINS_BUILD_URL isn't the job in qaboard.yaml: without a token, QA-Board only starts the jobs listed there.",
+                  fix=f"Sign in: qa auth login (in CI: set QABOARD_TOKEN), or put the job in runners.jenkins.build_url.\nDocs: {page}")
+
+    # The runs' commands and logs use Windows paths
+    cwd = str(job_options.get('cwd') or os.getcwd())
+    if os.name != 'nt':
+      windows_cwd = linux_to_windows(cwd)
+      if not any(cwd.startswith(linux) for _, linux in mappings) and windows_cwd == cwd.replace('/', '\\'):
+        yield Check("Windows paths", WARNING, f"qa doesn't know the Windows path of {cwd}: the Windows hosts would get {windows_cwd}.",
+                    fix=("Run qa batch from a shared drive the Windows hosts see, and ask your QA-Board admins for its path mapping:\n"
+                         "QABOARD_PATH_MAPPINGS is a JSON list of [Windows prefix, Linux prefix], e.g.\n"
+                         "  export QABOARD_PATH_MAPPINGS='[[\"\\\\\\\\server\\\\share\", \"/mnt/share\"]]'\n"
+                         "Your organization's site package can set it."))
+      else:
+        yield Check("Windows paths", OK, f"{cwd} is {windows_cwd} on Windows")
+
+    if test_job:
+      yield from cls.doctor_test_job(job_options)
+
+
+  @classmethod
+  def doctor_test_job(cls, job_options: Dict[str, Any]) -> Iterable[Check]:
+    """Starts a build that says where it runs, as who, if it sees the batch's folder and `qa`. Waits 10 minutes at most."""
+    from ..checks import OK, WARNING, ERROR
+    from ..doctor import docs, make_test_dir, remove_test_dir
+    name = "Jenkins test build"
+    try:
+      test_dir, existing = make_test_dir(job_options)
+    except OSError as e:
+      yield Check(name, ERROR, f"Can't create the test build's folder: {e}", fix="Fix the storage first (see above).")
+      return
+    try: # the build writes there
+      test_dir.chmod(0o777)
+    except OSError:
+      pass
+    result = test_dir / 'result.txt'
+    keep = False
+    try:
+      windows_result = linux_to_windows_path(result)
+      with (test_dir / 'run.bat').open('w', newline='\r\n') as f:
+        f.write("\n".join([
+          "@echo off",
+          f'echo user: %USERNAME%> "{windows_result}"',
+          f'echo host: %COMPUTERNAME%>> "{windows_result}"',
+          f'where qa >nul 2>&1 && (echo qa: found>> "{windows_result}") || (echo qa: not found>> "{windows_result}")',
+        ]))
+      try:
+        build_info = trigger_run(task=str(linux_to_windows_path(test_dir / 'run.bat')))
+      except SystemExit:
+        yield Check(name, ERROR, "QA-Board couldn't start the test build: see why above.",
+                    fix=f"QA-Board starts builds with its Jenkins credentials (JENKINS_AUTH): if they are refused, tell your QA-Board admins.\nDocs: {docs('jenkins-integration')}")
+        return
+      url = build_info.get('web_url') or build_info.get('url')
+      try:
+        status = _poll_jenkins_status(build_info, timeout_seconds=600, interval_seconds=10)
+      except SystemExit:
+        status = 'unknown'
+      if status in ACTIVE_BUILD_STATUSES:
+        # qa can't stop Jenkins builds: we keep its folder, so that it doesn't fail on a missing folder
+        keep = True
+        yield Check(name, WARNING, f"The test build is still {status} after 10 minutes: {url}",
+                    fix=f"Stop it in Jenkins if it's stuck: {url}\nThen delete its folder: rm -r {test_dir}")
+        return
+      if status != 'success':
+        yield Check(name, ERROR, f"The test build ended as {status}: {url}", fix=f"See its console: {url}console" if url else "See the build's console in Jenkins.")
+        return
+      if not result.exists():
+        yield Check(name, ERROR, f"The test build ran, but {result} isn't there: the Windows host doesn't see {test_dir} as {linux_to_windows_path(test_dir)}.",
+                    fix=f"The build's command must mount the shared drives (net use \\\\server\\share), and QABOARD_PATH_MAPPINGS must map them.\nSee the build's console: {url}console")
+        return
+      found = dict(line.strip().split(': ', 1) for line in result.read_text(errors='replace').splitlines() if ': ' in line)
+      where = f"on {found.get('host', '?')} as {found.get('user', '?')}"
+      if found.get('qa') != 'found':
+        yield Check(name, ERROR, f"A test build ran {where}, but `qa` isn't on its PATH: the runs would fail.",
+                    fix="Install qaboard on the Windows hosts (pip install qaboard), for the user that runs the builds.")
+        return
+      yield Check(name, OK, f"A test build ran {where}, and found qa")
+    finally:
+      if not keep:
+        remove_test_dir(test_dir, existing)

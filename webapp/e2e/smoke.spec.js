@@ -53,10 +53,28 @@ for (const { name, path, text } of pages) {
     await page.goto(path);
     await expect(page.getByText('Alice').first()).toBeVisible();
     await expect(page.getByText(text).first()).toBeVisible();
-    await expect(page.getByText('Sorry, something went wrong')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /crashed/ })).toHaveCount(0);
     await page.waitForLoadState('networkidle');
   });
 }
+
+// A page that crashes, here on a commit whose batches aren't an object, shows an error page instead of a blank app,
+// and the app works again on the next page
+test('crashes are caught, and users get back', async ({ page }, testInfo) => {
+  await page.route(url => /^\/api\/v1\/commit\/?$/.test(url.pathname), route => route.fulfill({ json: { ...commit, batches: 'not an object' } }));
+  await page.goto(`/${project}/commit/abc123?token=secret`);
+  await expect(page.getByRole('heading', { name: 'This page crashed' })).toBeVisible();
+  // without Sentry, users report it themselves, without the URL's secrets
+  const report = page.getByRole('button', { name: 'Report the problem' });
+  expect(decodeURIComponent(await report.getAttribute('href'))).toContain('token=[Filtered]');
+  await page.getByRole('button', { name: 'All projects' }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByRole('heading', { name: 'This page crashed' })).toHaveCount(0);
+  await expect(page.getByPlaceholder('Filter projects...')).toBeVisible();
+  // React logs the errors that boundaries catch
+  // (#520: React rendered again synchronously before the boundary caught it)
+  testInfo.errors_seen = testInfo.errors_seen.filter(message => !/reading 'match'|React error #520|able to recover/.test(message));
+});
 
 // Explore: groups, subprojects, quiet ones, and the sparklines, at phone width too
 test('explore', async ({ page }) => {
@@ -77,6 +95,30 @@ test('explore', async ({ page }) => {
     await page.evaluate(() => localStorage.clear());
   }
   await page.waitForLoadState('networkidle');
+});
+
+// URLs of projects that don't exist (e.g. typos) get a 404 page, at phone width too, not an empty project
+test('page not found', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('qaboard.release-notes.last-seen', '9999-12-31'));
+  await page.route('**/api/v1/project?**', route => new URL(route.request().url()).searchParams.get('project') === project
+    ? route.fallback()
+    : route.fulfill({ status: 404, json: { error: 'There is no project.' } }));
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/${project}/typo/commits`);
+    await expect(page.getByRole('heading', { name: '404 Page not found' })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Open ${project}` })).toBeVisible();
+    // the wipe's divider follows the pointer
+    const stage = page.getByRole('separator', { name: 'Wipe' }).locator('..');
+    const box = await stage.boundingBox();
+    await page.mouse.click(box.x + box.width / 4, box.y + box.height / 2);
+    await expect(page.getByRole('separator', { name: 'Wipe' })).toHaveAttribute('aria-valuenow', '25');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `width ${width}`).toBeLessThanOrEqual(0);
+  }
+  await page.waitForLoadState('networkidle');
+  // the browser logs the API's 404s
+  testInfo.errors_seen = testInfo.errors_seen.filter(error => !error.includes('status of 404'));
 });
 
 // Home, for signed-in users: their batches and projects, in three columns, two, or one at phone width
@@ -165,11 +207,13 @@ test('switch to a branch seen in a previous session', async ({ page }) => {
   await page.getByRole('link', { name: 'master', exact: true }).first().click();
   await expect(page).toHaveURL(new RegExp(`/${project}/commits/master`));
   await expect(page.getByText('Hello world').first()).toBeVisible();
-  await expect(page.getByText('Sorry, something went wrong')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /crashed/ })).toHaveCount(0);
 });
 
 // The History page has the project's navigation too, and the sidebar navigates without reloading the app
 test('history page navigation', async ({ page }) => {
+  // the "What's new" dialog would cover the sidebar
+  await page.addInitScript(() => localStorage.setItem('qaboard.release-notes.last-seen', '9999-12-31'));
   await page.goto(`/${project}/commits/master`);
   await expect(page.getByText('Hello world').first()).toBeVisible();
   await page.evaluate(() => { window.not_reloaded = true; });
@@ -289,6 +333,16 @@ const user_management_api = {
     ],
     requests: [{ id: 3, user: { id: 2, user_name: 'bob', full_name: 'Bob' }, role: 'developer', message: 'I run the benchmarks.', status: 'pending', created_at: '2026-09-01T10:00:00Z' }],
   },
+  '/api/v1/project/settings': {
+    project, can_manage: true,
+    gate: { rules: [{ metric: 'latency_p99', max_regression: '10%' }], max_failed_runs: 0, require_bit_accuracy: false, on_looser_rules: 'warn' },
+    gate_updated: { at: '2026-09-01T10:00:00Z', by: 'alice' },
+    reference: {
+      exists: true, branch: 'master', has_config: true, has_gate: true, error: null, reference: 'master', batches: ['default'],
+      rules: [{ metric: 'psnr', kind: 'max_regression', limit: 0.01, aggregate: 'median' }],
+      max_failed_runs: 0, require_bit_accuracy: false,
+    },
+  },
   '/api/v1/directory': { users: [{ id: 2, user_name: 'bob', full_name: 'Bob' }], groups: [{ id: 7, name: 'camera-team' }] },
   '/api/v1/admin/groups': { groups: [{ id: 7, name: 'camera-team', description: 'Camera algorithms', member_count: 4, rule_count: 1 }] },
   '/api/v1/admin/grants': { grants: [{ id: 4, subject: { type: 'group', id: 8, name: 'qa' }, role: 'viewer', granted_at: '2026-09-01T10:00:00Z' }] },
@@ -326,11 +380,30 @@ test.describe('user management pages', () => {
   test('project access', async ({ page }) => {
     await page.goto(`/${project}/access`);
     await expect(page.getByRole('table', { name: 'Members' }).getByText('camera-team')).toBeVisible();
-    await expect(page.getByRole('navigation').getByRole('menuitem', { name: 'Access' })).toHaveClass(/active/);
+    // Access is one of the project's Admin pages: the sidebar highlights Admin, the page's tabs say which one
+    await expect(page.getByRole('navigation', { name: 'Navigation' }).getByRole('menuitem', { name: /^Admin/ }).locator('a')).toHaveClass(/active/);
+    await expect(page.getByRole('navigation', { name: 'Project admin' }).getByRole('link', { name: 'Access' })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByText('I run the benchmarks.')).toBeVisible();
     await page.getByRole('button', { name: 'Add member' }).click();
     await page.getByRole('dialog').getByLabel('User or group').fill('bo');
     await expect(page.getByRole('option', { name: /Bob/ })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+  });
+
+  test('project quality gate', async ({ page }) => {
+    await page.goto(`/${project}/access`);
+    // from the sidebar's Admin menu
+    await page.getByRole('navigation', { name: 'Navigation' }).getByRole('menuitem', { name: /^Admin/ }).hover();
+    await page.getByRole('menuitem', { name: 'Quality gate' }).click();
+    await expect(page).toHaveURL(new RegExp(`/${project}/admin/gate$`));
+    await expect(page.getByRole('navigation', { name: 'Project admin' }).getByRole('link', { name: 'Quality gate' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('table', { name: 'Rules in qaboard.yaml' }).getByText('median may get worse by at most')).toBeVisible();
+    // owners edit the project rules
+    const rule = page.getByRole('group', { name: 'Rule 1' });
+    await expect(rule.getByLabel('Metric')).toHaveValue('latency_p99');
+    await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await rule.getByLabel('Limit').fill('20%');
+    await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
     await page.waitForLoadState('networkidle');
   });
 
@@ -344,7 +417,7 @@ test.describe('user management pages', () => {
 
   test('narrow screens: no sideways scrolling', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const path of ['/settings/tokens', '/admin/users', '/admin/groups', '/admin', '/', `/${project}/access`]) {
+    for (const path of ['/settings/tokens', '/admin/users', '/admin/groups', '/admin', '/', `/${project}/access`, `/${project}/admin/gate`]) {
       await page.goto(path);
       await page.waitForLoadState('networkidle');
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

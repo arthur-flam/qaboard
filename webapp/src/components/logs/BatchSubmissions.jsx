@@ -8,10 +8,11 @@ import { LogViewer } from "./LogViewer";
 import { LsfReport, withCode } from "./LsfReport";
 import { lsfHint, lsfKilled, lsfReason } from "./lsf";
 import { RunList, Header, Content, INTERACTIVE } from "./RunLogs";
-import { batchSubmissions, is_final, useSubmissionStatus } from "./submissions";
+import { batchSubmissions, is_final, useSubmissionStatus, whereItRuns } from "./submissions";
 import { DirectoryActions } from "./DirectoryActions";
 import { copyWithToast } from "../../utils/clipboard";
-import { BatchDefinitions, definitionsFiles } from "../tuning/BatchReport";
+import { BatchDefinitions, batchFileInfo, definitionsFiles } from "../tuning/BatchReport";
+import { openInAvailableTests, SHARED_BATCHES_FILE } from "../tuning/availableTests";
 
 
 const Meta = styled.span`
@@ -75,6 +76,8 @@ export const StateTag = ({ state }) => {
       return <Tag intent={Intent.DANGER} icon="cross">Failed</Tag>
     case 'done':
       return <Tag minimal intent={Intent.SUCCESS} icon="tick">Done</Tag>
+    case 'stopped':
+      return <Tag minimal icon="stop">Stopped</Tag>
     default:
       return null
   }
@@ -83,6 +86,9 @@ export const StateTag = ({ state }) => {
 
 // Why `qa batch` failed, in a few words
 export function failureSummary(submission, status) {
+  // e.g. qa batch was killed on the server
+  if (status.error && submission.pid)
+    return status.error
   if (status.error)
     return `Could not start qa batch: ${status.error}`
   if (lsfKilled(status.report))
@@ -94,18 +100,30 @@ export function failureSummary(submission, status) {
   return 'qa batch failed.'
 }
 
-const waitingHint = submission => submission.runner === 'lsf'
+// Why `qa batch` didn't write logs yet: what its runner said (e.g. why its pod is pending, from the server), else a guess
+export const waitingHint = (submission, status = null) => (status?.pending || submission.pending_note)
+  ? (status?.pending || submission.pending_note)
+  : submission.runner === 'lsf'
   ? "LSF hasn't started the job yet. The cluster may be busy."
+  : submission.runner === 'kubernetes'
+  ? "Kubernetes hasn't started the pod yet. The cluster may be busy."
   : "qa batch hasn't written logs yet."
 
-// The batch files the batch came from, in a few words
-const fromFiles = submission => {
-  const files = definitionsFiles(submission.definitions)
-  if (!files.length) return null
-  return files.length === 1 ? `from ${files[0]}` : `from ${files.length} batch files`
-}
+// Where the batch files of a submission are, see BatchDefinitions
+const filesContext = (submission, available_tests_files, repo_file_url) => ({
+  shared: available_tests_files?.gr ?? SHARED_BATCHES_FILE,
+  user: available_tests_files?.usr,
+  owner: submission.user,
+  repoFileUrl: repo_file_url,
+  onOpen: openInAvailableTests,
+})
 
-const lsfJob = submission => submission.lsf_job_id ? `LSF job ${submission.lsf_job_id}${submission.queue ? ` (${submission.queue})` : ''}` : null
+// The batch files the batch came from, in a few words
+const fromFiles = (submission, context) => {
+  const files = definitionsFiles(submission.definitions, context)
+  if (!files.length) return null
+  return files.length === 1 ? `from ${batchFileInfo(files[0], context).short}` : `from ${files.length} batch files`
+}
 
 
 // The requests to show a submission that we scrolled to: rows that mount again don't scroll again
@@ -115,7 +133,8 @@ const scrolled = new WeakSet()
  * A batch started from QA-Board: the status of `qa batch`, and its logs.
  * `focus` changes when users ask to see this submission: we scroll to it.
  */
-const SubmissionRow = ({ submission, expanded, onToggle, focus }) => {
+const SubmissionRow = ({ submission, expanded, onToggle, focus, available_tests_files, repo_file_url }) => {
+  const files_context = filesContext(submission, available_tests_files, repo_file_url)
   const status = useSubmissionStatus(submission)
   const ref = useRef(null)
   useEffect(() => {
@@ -128,6 +147,8 @@ const SubmissionRow = ({ submission, expanded, onToggle, focus }) => {
   const files = [
     { name: 'log.txt', url: `${base}/log.txt` },
     ...(submission.runner === 'lsf' ? [{ name: 'log.lsf.txt', url: `${base}/log.lsf.txt` }] : []),
+    // why the driver pod was pending
+    ...(submission.runner === 'kubernetes' ? [{ name: 'log.pending.txt', url: `${base}/log.pending.txt` }] : []),
   ]
   const failed = status.state === 'failed'
   const toggle = event => {
@@ -152,8 +173,8 @@ const SubmissionRow = ({ submission, expanded, onToggle, focus }) => {
           {[
             submission.user && `by ${submission.user}`,
             relative(submission.created_at),
-            lsfJob(submission),
-            fromFiles(submission),
+            whereItRuns(submission),
+            fromFiles(submission, files_context),
           ].filter(Boolean).map((text, index) => <React.Fragment key={index}>
             {index > 0 && ' · '}
             {index === 1 ? <Tooltip content={absolute(submission.created_at)}>{text}</Tooltip> : text}
@@ -172,7 +193,7 @@ const SubmissionRow = ({ submission, expanded, onToggle, focus }) => {
               {!!status.last_error && <LastError>{status.last_error}</LastError>}
             </Callout>
         )}
-        <BatchDefinitions definitions={submission.definitions} style={{ margin: '0 0 6px 0' }} />
+        <BatchDefinitions definitions={submission.definitions} context={files_context} style={{ margin: '0 0 8px 0' }} />
         {!!submission.command && <Command className={Classes.MONOSPACE_TEXT}>
           <code>{submission.command}</code>
           <Tooltip content="Copy the command">
@@ -180,7 +201,8 @@ const SubmissionRow = ({ submission, expanded, onToggle, focus }) => {
           </Tooltip>
         </Command>}
         {base
-          ? <LogViewer files={files} file={file} onFileChange={setFile} live={!is_final(status.state)} waitingHint={waitingHint(submission)} />
+          ? <LogViewer files={files} file={file} onFileChange={setFile} live={!is_final(status.state)} waitingHint={waitingHint(submission, status)}
+                       emptyHint={{ 'log.pending.txt': "Kubernetes started the pod without making it wait." }} />
           : <span className={Classes.TEXT_MUTED}>No logs.</span>}
       </Content>
     </Collapse>
@@ -195,7 +217,7 @@ const SHOWN = 3
  * If the batch has no runs yet, we open the most recent: it's likely why.
  * `focus` ({id}, a new object each time) opens a submission's logs and scrolls to it. We ignore the requests made before we rendered.
  */
-export const BatchSubmissions = ({ batch, has_runs, focus }) => {
+export const BatchSubmissions = ({ batch, has_runs, focus, available_tests_files, repo_file_url }) => {
   const submissions = batchSubmissions(batch)
   const [expanded, setExpanded] = useState(() => new Set(!has_runs && submissions.length ? [submissions[0].id] : []))
   const [show_all, setShowAll] = useState(false)
@@ -226,6 +248,8 @@ export const BatchSubmissions = ({ batch, has_runs, focus }) => {
         expanded={expanded.has(submission.id)}
         onToggle={() => toggle(submission.id)}
         focus={focused?.id === submission.id ? focused : null}
+        available_tests_files={available_tests_files}
+        repo_file_url={repo_file_url}
       />)}
     </RunList>
     {submissions.length > SHOWN && <Button style={{ marginTop: 6 }} size="small" variant="minimal" onClick={() => setShowAll(!show_all)}>
@@ -256,7 +280,7 @@ const LatestSubmissionCallout = ({ submission, has_runs, onFinished }) => {
     Show the logs
   </Button>
   const when = <Tooltip content={absolute(submission.created_at)}>{relative(submission.created_at)}</Tooltip>
-  const job = lsfJob(submission)
+  const job = whereItRuns(submission)
 
   if (status.state === 'failed')
     return <Callout intent={Intent.DANGER} icon="error" title="The batch you started from QA-Board failed">
@@ -267,11 +291,19 @@ const LatestSubmissionCallout = ({ submission, has_runs, onFinished }) => {
     </Callout>
   if (has_runs)
     return null
-  if (status.state === 'queued')
-    return <Callout intent={Intent.WARNING} icon="time" title="Your batch is waiting for LSF">
-      <p><code className={Classes.CODE}>qa batch</code> was submitted {when}{job ? ` as ${job}` : ''}, but LSF didn't start it yet. The cluster may be busy.</p>
+  if (status.state === 'stopped')
+    return <Callout icon="stop" title="This batch was stopped">
+      <p><code className={Classes.CODE}>qa batch</code> was stopped before it started any run.</p>
       {show_logs}
     </Callout>
+  if (status.state === 'queued') {
+    const cluster = submission.runner === 'kubernetes' ? 'Kubernetes' : 'LSF'
+    return <Callout intent={Intent.WARNING} icon="time" title={`Your batch is waiting for ${cluster}`}>
+      <p><code className={Classes.CODE}>qa batch</code> was submitted {when}{job ? ` as ${job}` : ''}, but {cluster} didn't start it yet. The cluster may be busy.</p>
+      {!!status.pending && <p><LastError>{status.pending}</LastError></p>}
+      {show_logs}
+    </Callout>
+  }
   if (status.state === 'running')
     return <Callout intent={Intent.PRIMARY} icon={<Spinner size={16} />} title="Starting your batch…">
       <p><code className={Classes.CODE}>qa batch</code> started {when}. Its runs will show up here.</p>

@@ -8,17 +8,18 @@ import json
 from pathlib import Path
 from copy import deepcopy
 from functools import lru_cache
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, urlparse
 from typing import Any, Dict, Optional, List
 
 import click
 
-from .config import project, commit_id, is_ci, available_metrics
+from .config import project, commit_id, is_ci, available_metrics, is_doctor_command
 from .run import RunContext
 
 from .site_config import site_config, as_requests_verify
 from .credentials import resolve_token, default_server, refusal, fix_for
 from .auth import print_server_warning, first_time
+from .compat import url_to_dir # noqa: F401 (qaboard.api.url_to_dir is used across qa)
 
 qaboard_protocol = site_config('QABOARD_PROTOCOL', 'http')
 qaboard_hostname = site_config('QABOARD_HOSTNAME')
@@ -27,8 +28,8 @@ qaboard_host = site_config('QABOARD_HOST')
 # What gives the URL, e.g. "$QABOARD_URL", None for the default
 qaboard_url, qaboard_url_source = default_server()
 # Only when nothing says where the server is: QABOARD_URL=http://localhost:5151 is fine.
-# `qa auth status` says it too.
-if not qaboard_url_source and sys.argv[1:2] != ['auth']:
+# `qa auth status` and `qa doctor` say it too.
+if not qaboard_url_source and sys.argv[1:2] not in (['auth'], ['runs']) and not is_doctor_command:
   click.secho("WARNING: We are not sure where to find your QA-Board server.", fg='yellow', bold=True, err=True)
   click.secho(f"         We will default to {qaboard_url}", fg='yellow', bold=True, err=True)
   click.secho("         To remove this warning provide it as an environment variable (via QABOARD_HOST, e.g. 'qaboard-srv', 'qaboard-srv:443').", fg='yellow', err=True)
@@ -104,14 +105,6 @@ def exit_if_results_refused():
     fix = f"Set {env_name} to a valid token with the ingest scope{f' for {project}' if project else ''}."
   click.secho(f"ERROR: QA-Board refused the results ({results_refused['reason']}): they were not saved. {fix}", fg='red', bold=True, err=True)
   sys.exit(1)
-
-def url_to_dir(url: str) -> Path:
-  from .compat import linux_to_windows
-  path = unquote(url)[2:]
-  if os.name == 'nt':
-    path = linux_to_windows(path)
-  return Path(path)  
-
 
 def dir_to_url(path: Path) -> str:
   if not path.is_absolute():
@@ -231,8 +224,8 @@ def notify_qa_database(object_type='output', **kwargs):
 
   try:
     import simplejson
-    data = simplejson.dumps(data, ignore_nan=True, cls=makeNumpyEncoder())
-    r = requests.post(url, data=data, headers=headers, verify=api_verify, timeout=api_timeout)
+    payload = simplejson.dumps(data, ignore_nan=True, cls=makeNumpyEncoder())
+    r = requests.post(url, data=payload, headers=headers, verify=api_verify, timeout=api_timeout)
     if 'QA_VERBOSE' in os.environ:
       click.secho(r.text, fg='cyan', dim=True, err=True)
     print_server_warning(r)
@@ -246,10 +239,8 @@ def notify_qa_database(object_type='output', **kwargs):
   except Exception as e:
     click.secho(f'WARNING: [{e}] Failed to update QA-Board.', fg='yellow', bold=True, err=True)
     click.secho(url, fg='yellow', err=True)
-    data = json.loads(data)
-    for k in ['qaboard_config', 'qaboard_metrics', 'inputs_settings']:
-      if k in data:
-        del data[k]
+    # what we sent (or failed to serialize), without the big fields
+    data = {k: v for k, v in data.items() if k not in ['qaboard_config', 'qaboard_metrics', 'inputs_settings']}
     click.secho(str(data), fg='yellow', err=True)
     try:
       request_headers = {k: '<redacted>' if k.lower() == 'authorization' else v for k, v in r.request.headers.items()}

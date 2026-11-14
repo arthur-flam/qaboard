@@ -1,5 +1,5 @@
 // The viewer's panels: the values under the pointer, histograms, adjustments, regions of interest, legends.
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ADJUSTMENT_SLIDERS, CHANNELS, DEFAULT_ADJUSTMENTS, FALSE_COLORS, changedAdjustments, normalizeAdjustments } from './adjustments';
 import { cssGradient } from './colormaps';
@@ -8,7 +8,7 @@ import { CHANNELS as HISTOGRAM_CHANNELS, LABELLED_TICKS, TICKS, dragRange, forma
 import { formatNumber, formatSigned } from './pixels';
 import { clipRegion } from './regions';
 import { imageKey, thumbnailUrl } from './sources';
-import { Button, MenuDivider, MenuItem, Popover, Segmented, Select, Spinner } from './ui';
+import { Button, Icon, MenuDivider, MenuItem, Popover, Segmented, Select, Spinner } from './ui';
 
 
 // --- Values under the pointer ---
@@ -72,14 +72,15 @@ const ImageValues = ({ label, pixel, display, image, base, intent }) => {
 // The pixel under the pointer, in the order the images show (order: ['a', 'b'] or ['b', 'a']), named by `names`, e.g.
 // A and B during a blind test (neutral: no colors that tell new from reference).
 // unavailable: why the image's own values aren't shown, if the app says so
-export const Readout = ({ controller, tiles, images, comparing, names, order, neutral, diff, base, onToggleBase, sizes, unavailable }) => {
+export const Readout = ({ controller, tiles, images, comparing, names, order, neutral, diff, base, onToggleBase, sizes, unavailable, pinHint = 'click a pixel to pin it' }) => {
   // It reads the viewers (what's under the pointer, the colors drawn) as it renders: nothing to memoize
   'use no memo';
   const pointer = useSyncExternalStore(controller.subscribePointer, controller.getPointer);
   // the displayed values change as tiles load
   const [, redraw] = useState(0);
   useEffect(() => controller.onDraw(() => redraw(n => n + 1)), [controller]);
-  // The values stay once the pointer leaves the image, e.g. to switch them to hexadecimal
+  // The values stay once the pointer leaves the image, e.g. to switch them to hexadecimal. Users pin a pixel by clicking
+  // it: its values stay while the mouse moves over the images, e.g. to select them
   const [last, setLast] = useState(null);
   const hovering = pointer && !pointer.remote ? pointer.point : null;
   if (hovering && hovering !== last) setLast(hovering);
@@ -104,7 +105,7 @@ export const Readout = ({ controller, tiles, images, comparing, names, order, ne
     const size = s => s?.width ? `${s.width}×${s.height}` : '…';
     return <div className="qiv-readout qiv-muted">
       <span>{shown.map(name => comparing ? `${names[name]} ${size(sizes[name])}` : size(sizes[name])).join(' · ')}</span>
-      <span className="qiv-readout-hint">Hover a pixel for its values · scroll to zoom · drag to pan{unavailable && <> · <span className="qiv-warning-text">{unavailable}</span></>}</span>
+      <span className="qiv-readout-hint">Hover a pixel for its values · {pinHint} · scroll to zoom · drag to pan{unavailable && <> · <span className="qiv-warning-text">{unavailable}</span></>}</span>
     </div>;
   }
   const { method } = normalizeDiff(diff);
@@ -118,12 +119,13 @@ export const Readout = ({ controller, tiles, images, comparing, names, order, ne
     ? value_first.map((v, i) => v === null || value_second[i] === null ? null : v - value_second[i]) : null;
   const coordinates = pixel[first] ?? pixel[second];
   const moved = pixel[first] && pixel[second] && (pixel[second].x !== pixel[first].x || pixel[second].y !== pixel[first].y);
-  return <button
-    type="button"
-    className={`qiv-readout ${hovering ? '' : 'qiv-stale'}`}
-    onClick={onToggleBase}
-    title={`The pixel under the pointer. Click to show the values in ${base === 10 ? 'hexadecimal' : 'decimal'}`}
-  >
+  const pinned = !!pointer?.pinned;
+  return <div className={`qiv-readout-row ${pinned ? 'qiv-pinned' : ''}`}>
+    {pinned && <PinnedTag onUnpin={() => controller.unpin()} />}
+    <div
+      className={`qiv-readout qiv-readout-values ${hovering ? '' : 'qiv-stale'}`}
+      title={pinned ? 'The pixel you pinned: select its values to copy them' : `The pixel under the pointer: ${pinHint}, to keep its values and select them`}
+    >
     {coordinates && <span className="qiv-coordinates">x {coordinates.x} y {coordinates.y} </span>}
     {moved && <span className="qiv-coordinates qiv-muted">({names[second]} x {pixel[second].x} y {pixel[second].y}) </span>}
     {shown.map(name => <ImageValues key={name} label={names[name]} intent={intent(name)} pixel={pixel[name]} display={display[name]} image={value[name]} base={base} />)}
@@ -136,8 +138,25 @@ export const Readout = ({ controller, tiles, images, comparing, names, order, ne
         {' '}{method === 'perceptual' ? 'perceptual ' : ''}{formatDiffValue(method, delta.value)}
       </span>}
     </span>}
-  </button>;
+    </div>
+    <BaseToggle base={base} onToggle={onToggleBase} />
+  </div>;
 };
+
+// Starts the values' line while a pixel is pinned: a click follows the pointer again
+export const PinnedTag = ({ onUnpin, what = 'image' }) => <button
+  type="button"
+  className="qiv-pin-chip"
+  onClick={onUnpin}
+  title={`These values stay while you move the mouse away, e.g. to select them or switch modes. Click here, press Esc, click the pixel again, or leave the ${what} viewer and come back, to follow the pointer again`}
+>
+  <Icon icon="pin" size={12} />Pinned<span className="qiv-pin-chip-action"> · follow the pointer</span><span className="qiv-pin-chip-x" aria-hidden="true">×</span>
+</button>;
+
+// Ends the values' line: decimal or hexadecimal
+export const BaseToggle = ({ base, onToggle }) => <button type="button" className="qiv-base-toggle" onClick={onToggle} title={`Show the values in ${base === 10 ? 'hexadecimal' : 'decimal'}`}>
+  {base === 10 ? 'dec' : 'hex'}
+</button>;
 
 
 // Which values are written on the pixels
@@ -557,6 +576,8 @@ export const AdjustmentsPanel = ({ adjustments, onChange }) => {
     </div>
     {ADJUSTMENT_SLIDERS.map(slider => {
       const changed = normalized[slider.name] !== DEFAULT_ADJUSTMENTS[slider.name];
+      // double-clicking is a shortcut: the Reset button does it with the keyboard
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
       return <label key={slider.name} className={`qiv-slider ${changed ? 'qiv-changed' : ''}`} onDoubleClick={() => set(slider.name, DEFAULT_ADJUSTMENTS[slider.name])} title="Double-click to reset">
         <span className="qiv-slider-label">{slider.label}</span>
         <input
@@ -598,45 +619,87 @@ export const AdjustmentsPanel = ({ adjustments, onChange }) => {
 
 // --- Regions of interest ---
 
-// actions: the app's, e.g. finding the regions of other images too: [{ id, label, icon?, title?, onClick }]
-export const RegionsMenu = ({ sets, selected, actions = [], onSelect, onCopy, close }) => <div className="qiv-menu" role="menu">
-  <MenuItem text="Full image" icon="zoom-to-fit" active={!selected} onClick={() => { onSelect(null); close(); }} />
-  {sets.length > 0 && <MenuDivider title="Regions of interest" />}
-  {sets.map(set => <MenuItem
-    key={set.id}
-    text={set.label}
-    title={set.description}
-    active={selected === set.id}
-    icon={selected === set.id ? 'tick' : undefined}
-    label={set.loading ? <Spinner size={12} /> : set.regions ? `${set.regions.length}` : set.load ? 'find' : ''}
-    onClick={() => { onSelect(set.id); close(); }}
-  />)}
-  {actions.length > 0 && <MenuDivider />}
-  {actions.map(action => <MenuItem
-    key={action.id}
-    text={action.label}
-    title={action.title}
-    icon={action.icon}
-    onClick={() => { action.onClick(); close(); }}
-  />)}
-  <MenuDivider />
-  <MenuItem text="Copy the view as a region" icon="clipboard" onClick={() => { onCopy(); close(); }} />
-</div>;
+// The sets by section, e.g. "Annotations", then the regions of interest
+const REGIONS_SECTION = 'Regions of interest';
 
-export const RegionsStrip = ({ set, index, image, size, onSelect, onRetry }) => {
+// actions: the app's, e.g. finding the regions of other images too: [{ id, label, icon?, title?, onClick }]
+export const RegionsMenu = ({ sets, selected, actions = [], onSelect, onCopy, close }) => {
+  const sections = [...new Set(sets.map(set => set.section ?? REGIONS_SECTION))];
+  return <div className="qiv-menu" role="menu">
+    <MenuItem text="Full image" icon="zoom-to-fit" active={!selected} onClick={() => { onSelect(null); close(); }} />
+    {sections.map(section => <Fragment key={section}>
+      <MenuDivider title={section} />
+      {sets.filter(set => (set.section ?? REGIONS_SECTION) === section).map(set => <MenuItem
+        key={set.id}
+        text={set.label}
+        title={set.error ?? set.description}
+        active={selected === set.id}
+        icon={selected === set.id ? 'tick' : undefined}
+        label={set.loading ? <Spinner size={12} /> : set.error && !set.load ? <Icon icon="warning-sign" size={12} /> : set.regions ? `${set.regions.length}` : set.load ? 'find' : ''}
+        onClick={() => { onSelect(set.id); close(); }}
+      />)}
+    </Fragment>)}
+    {actions.length > 0 && <MenuDivider />}
+    {actions.map(action => <MenuItem
+      key={action.id}
+      text={action.label}
+      title={action.title}
+      icon={action.icon}
+      onClick={() => { action.onClick(); close(); }}
+    />)}
+    <MenuDivider />
+    <MenuItem text="Copy the view as a region" icon="clipboard" onClick={() => { onCopy(); close(); }} />
+  </div>;
+};
+
+// What a region says about itself, e.g. an annotation: { detail?, tags?, fields?, href?, hrefLabel? }
+export const RegionDetails = ({ region }) => {
+  const fields = Object.entries(region.fields ?? {});
+  if (!region.detail && !region.tags?.length && fields.length === 0 && !region.href) return null;
+  return <div className="qiv-region-details">
+    <span className="qiv-region-details-label">
+      {region.color && <span className="qiv-swatch" style={{ background: region.color }} />}
+      {region.label}
+    </span>
+    {fields.map(([name, value]) => <span key={name} className="qiv-region-field"><span className="qiv-muted">{name}</span> {typeof value === 'number' ? formatNumber(value) : String(value)}</span>)}
+    {region.tags?.map(tag => <span key={tag} className="qiv-chip">{tag}</span>)}
+    {region.detail && <span className="qiv-muted">{region.detail}</span>}
+    {region.href && <a href={region.href} target="_blank" rel="noopener noreferrer" className="qiv-region-link"><Icon icon="link" size={12} /> {region.hrefLabel ?? 'Open'}</a>}
+  </div>;
+};
+
+// index: the region shown, null: all of them, on the whole image (sets with `overview`)
+export const RegionsStrip = ({ set, index, image, size, onSelect, onRetry, outlines, onOutlinesChange }) => {
   const regions = set.regions ?? [];
   const strip = useRef(null);
   useEffect(() => {
     strip.current?.querySelector('.qiv-active')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [index]);
-  return <div className="qiv-regions">
+  const step = delta => onSelect(index === null ? (delta > 0 ? 0 : regions.length - 1) : (index + delta + regions.length) % regions.length);
+  const active = index !== null ? regions[index] : null;
+  return <>
+  <div className="qiv-regions">
     <span className="qiv-regions-title" title={set.description}>{set.label}</span>
+    {set.settings}
     {set.loading && <span className="qiv-muted"><Spinner size={12} /> Finding regions…</span>}
     {set.error && <span className="qiv-error">{set.error} {set.load && <Button text="Retry" onClick={onRetry} />}</span>}
     {!set.loading && !set.error && regions.length === 0 && <span className="qiv-muted">
       {set.regions ? set.empty ?? 'No regions' : set.load ? <Button text="Find regions" onClick={onRetry} /> : null}
     </span>}
-    {regions.length > 1 && <Button icon="chevron-left" title="Previous region" onClick={() => onSelect((index - 1 + regions.length) % regions.length)} />}
+    {regions.length > 0 && <Button
+      icon={outlines ? 'eye-open' : 'eye-off'}
+      title={`${outlines ? 'Hide' : 'Show'} the outlines of the regions on the images (o)`}
+      active={outlines}
+      aria-pressed={outlines}
+      onClick={() => onOutlinesChange(!outlines)}
+    />}
+    {set.overview && regions.length > 0 && <Button
+      text="All"
+      title={`All the ${regions.length} regions, on the whole image`}
+      className={index === null ? 'qiv-active' : ''}
+      onClick={() => onSelect(null)}
+    />}
+    {regions.length > 1 && <Button icon="chevron-left" title="Previous region ([)" onClick={() => step(-1)} />}
     <div className="qiv-regions-list" ref={strip}>
       {regions.map((region, i) => {
         const clipped = size?.width ? clipRegion(region, size) : region;
@@ -657,8 +720,10 @@ export const RegionsStrip = ({ set, index, image, size, onSelect, onRetry }) => 
         </button>;
       })}
     </div>
-    {regions.length > 1 && <Button icon="chevron-right" title="Next region" onClick={() => onSelect((index + 1) % regions.length)} />}
-  </div>;
+    {regions.length > 1 && <Button icon="chevron-right" title="Next region (])" onClick={() => step(1)} />}
+  </div>
+  {active && <RegionDetails region={active} />}
+  </>;
 };
 
 
@@ -670,12 +735,14 @@ export const SHORTCUTS = [
   ['+ − 0', 'Zoom in / out / fit'],
   ['Wheel, pinch', 'Zoom'],
   ['Drag', 'Pan (drag the divider to wipe)'],
+  ['Click', 'Pin the pixel: its values stay while you move the mouse away, to select them or switch modes (Shift+click in single mode). Esc, or leaving the viewer and coming back, follows the pointer again'],
   ['Double-click', 'Zoom in'],
   ['p', 'Show / hide the pixel values when zoomed in'],
   ['a', 'Show / hide the analysis of the view: histogram, row and column profiles, statistics'],
   ['c', 'Compare with the reference, or with the image picked last (from the vs menu)'],
   ['h', 'Blind test: the images in a random order, called A and B. h again reveals them, then ends it'],
   ['[ ]', 'Previous / next region of interest'],
+  ['o', 'Show / hide the outlines of the regions on the images'],
   ['f', 'Full screen, Esc or f again to leave'],
 ];
 

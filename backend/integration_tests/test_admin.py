@@ -77,14 +77,20 @@ def test_admins_from_env(logged_in, monkeypatch, admins, directory):
 
 
 @pytest.mark.parametrize('user_name, email, admins', [
-  # local sign-up could create "ALICE" next to the admin "alice"
+  # local sign-up could create "ALICE" next to the admin "alice" (and "alice" before they sign in: test_access_policy.py)
   ('ALICE', 'a@example.com', 'alice'),
   # local sign-up doesn't verify emails
   ('mallory', 'boss@example.com', 'boss@example.com'),
 ])
-def test_local_accounts_cant_pass_for_env_admins(client, monkeypatch, user_name, email, admins):
+def test_local_accounts_cant_pass_for_env_admins(client, make_user, monkeypatch, user_name, email, admins):
   monkeypatch.setenv('QABOARD_ADMINS', admins)
-  assert client.post('/api/v1/user/signup/', data={"user_name": user_name, "password": "pw", "email": email}).status_code == 200
+  response = client.post('/api/v1/user/signup/', data={"user_name": user_name, "password": "pw", "email": email})
+  if user_name.casefold() in admins:
+    # sign-up refuses the names in QABOARD_ADMINS, whatever their case
+    assert response.status_code == 409
+    make_user(user_name, password='pw', email=email)
+  else:
+    assert response.status_code == 200
   login(client, user_name, 'pw')
   assert client.get('/api/v1/user/me/').get_json()["is_admin"] is False
   assert client.get('/api/v1/admin/overview').status_code == 403
@@ -501,11 +507,20 @@ def test_settings_list(admin):
   settings = settings_by_key(admin)
   assert set(settings) == {
     'auth.require_sign_in', 'auth.local_signup', 'auth.allowed_origins', 'ingest.auth',
-    'tokens.default_lifetime_days', 'tokens.max_lifetime_days', 'tokens.cli_idle_expiry_days', 'audit.retention_days',
-    'auth.access_policy', 'auth.allowed_email_domains', 'auth.access_request_webhook', 'auth.sso_auto_redirect',
+    'tokens.default_lifetime_days', 'tokens.max_lifetime_days', 'tokens.cli_idle_expiry_days', 'tokens.ci_lifetime_minutes', 'audit.retention_days',
+    'auth.access_policy', 'auth.allowed_email_domains', 'auth.access_request_webhook', 'auth.provider_order', 'auth.sso_auto_redirect',
     'sessions.idle_days', 'sessions.max_days', 'projects.default_visibility', 'projects.signed_in_role',
     'storage.exports_root', 'storage.others_visible_to', 'jobs.failure_emails', 'jobs.failure_email_to',
+    'jenkins.anonymous_jobs', 'analytics.enabled',
+    'auth.login_hint', 'git.hosts', 'git.webhook_secret', 'git.gitlab_web_logins', 'jenkins.servers', 'jenkins.build_token',
+    'email.smtp_host', 'email.smtp_security', 'email.smtp_port', 'email.smtp_user', 'email.smtp_password', 'email.smtp_timeout',
+    'email.from', 'email.reply_to', 'email.domain', 'email.timezone', 'web.support_url', 'web.docs_root', 'web.avatar_url',
+    'web.cli_requirements', 'web.webcde_installer', 'web.proxy_hosts', 'analytics.posthog_api_key', 'analytics.posthog_host',
+    'storage.image_cache_gb', 'metrics.skip_aggregation',
   }
+  groups = {g["id"] for g in admin.get('/api/v1/admin/settings').get_json()["groups"]}
+  assert {s["group"] for s in settings.values()} <= groups
+  assert all(s["label"] != s["key"] for s in settings.values())
   assert all(s["source"] == "default" and s["editable"] and s["description"] for s in settings.values())
   assert settings["auth.require_sign_in"]["value"] is False and settings["auth.require_sign_in"]["env"] == "QABOARD_LOGIN_REQUIRED"
   assert settings["ingest.auth"]["value"] == "off" and settings["ingest.auth"]["choices"] == ["off", "warn", "token"]
@@ -600,8 +615,9 @@ def test_settings_from_env_are_read_only(admin, monkeypatch):
   response = admin.post('/api/v1/admin/settings', json={"ingest.auth": "off"})
   assert response.status_code == 400
   assert "$QABOARD_INGEST_AUTH" in response.get_json()["error"]
+  # null deletes what's saved here, if anything: the environment still wins
   response = admin.post('/api/v1/admin/settings', json={"ingest.auth": None})
-  assert response.status_code == 400
+  assert response.status_code == 200
   from backend.models import Setting
   assert Setting.query.count() == 0
 
@@ -666,6 +682,68 @@ def test_overview(people, make_client):
   assert checklist["secret_key"]["ok"] is True
   assert checklist["legacy_tokens"]["ok"] is True
   assert checklist["local_signup"]["ok"] is True
+  # the test server has no webhook secret
+  assert checklist["webhook_secret"]["ok"] is False and "Admin → Settings → Git hosts" in checklist["webhook_secret"]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Usage analytics: POST /api/v1/events, Admin > Usage, users' own usage
+# ---------------------------------------------------------------------------
+
+def test_usage_events_and_dashboard(people, make_client, logged_in):
+  admin = people
+  alice = login(make_client(), 'alice')
+  # the web app, signed in: who did it comes from the session, never from the body
+  response = alice.post('/api/v1/events', json={"source": "webapp", "user_name": "root", "events": [
+    {"event": "page_view", "project_id": "group/repo", "properties": {"route": "commit", "commit_id": "abc123", "has_reference": True}},
+    {"event": "batch_start", "project_id": "group/repo", "properties": {"kind": "tuning", "n_runs": 4}},
+    {"event": "not a name", "properties": {}},
+  ]})
+  assert response.status_code == 204
+  # a beacon: text/plain
+  response = alice.post('/api/v1/events', data='{"events": [{"event": "output_open", "project_id": "group/repo", "properties": {"viewer": "images"}}]}', content_type='text/plain')
+  assert response.status_code == 204
+  # the CLI without a token: recorded under the name it runs as, unverified, matched to the account
+  response = make_client().post('/api/v1/events', json={"source": "cli", "user_name": "bob", "events": [
+    {"event": "cli_command", "project_id": "group/repo", "properties": {"command": "batch", "runner": "local", "exit_code": 0}},
+  ]})
+  assert response.status_code == 204
+  assert make_client().post('/api/v1/events', json={"events": "nope"}).status_code == 400
+
+  summary = admin.get('/api/v1/admin/usage/summary?project=group').get_json()
+  assert summary["counts"]["web_users"] == 1 and summary["counts"]["cli_users"] == 1 and summary["counts"]["users"] == 2
+  assert summary["counts"]["commits_viewed"] == 1 and summary["counts"]["outputs_opened"] == 1
+  assert summary["counts"]["batches_started"] == 2 and summary["counts"]["batches_started_by_kind"]["tuning"] == 1
+  assert summary["counts"]["unverified_cli_users"] == 0
+  users = {u["user_name"]: u for u in admin.get('/api/v1/admin/usage/users').get_json()["users"]}
+  assert users["alice"]["verified"] is True and users["alice"]["commits_viewed"] == 1
+  assert users["bob"]["verified"] is False and users["bob"]["cli_commands"] == 1 and users["bob"]["user_id"] == user_id("bob")
+  projects = admin.get('/api/v1/admin/usage/projects').get_json()["projects"]
+  assert [p["project_id"] for p in projects] == ["group/repo"] and projects[0]["product"] == "group"
+  csv = admin.get('/api/v1/admin/usage/users?format=csv')
+  assert csv.status_code == 200 and csv.mimetype == 'text/csv' and 'alice' in csv.get_data(as_text=True)
+  buckets = admin.get('/api/v1/admin/usage/timeseries?bucket=day').get_json()["buckets"]
+  assert sum(b["web_users"] for b in buckets) == 1
+  assert admin.get('/api/v1/admin/usage/summary?since=2026-02-01&until=2026-01-01').status_code == 400
+  # users see their own usage, nobody else's
+  mine = alice.get('/api/v1/user/usage').get_json()
+  assert mine["total"] == 3 and mine["by_project"] == [{"project_id": "group/repo", "count": 3}]
+  assert alice.get('/api/v1/admin/usage/summary').status_code == 403
+  overview = admin.get('/api/v1/admin/overview').get_json()
+  assert {item["id"] for item in overview["value_checklist"]} >= {"email_notifications", "single_sign_on", "sentry"}
+  assert overview["counts"]["active_30d"] == 3
+  # the usage-based items come apart: the overview doesn't wait for them
+  usage_items = admin.get('/api/v1/admin/overview/usage').get_json()["items"]
+  assert {item["id"] for item in usage_items} == {"ci_only_projects", "web_only_users", "tuning_products"}
+  assert alice.get('/api/v1/admin/overview/usage').status_code == 403
+
+
+def test_usage_can_be_turned_off(admin, make_client):
+  assert make_client().get('/api/v1/config').get_json()["analytics_enabled"] is True
+  assert admin.post('/api/v1/admin/settings', json={"analytics.enabled": False}).status_code == 200
+  assert make_client().get('/api/v1/config').get_json()["analytics_enabled"] is False
+  assert make_client().post('/api/v1/events', json={"source": "cli", "user_name": "bob", "events": [{"event": "cli_command"}]}).status_code == 204
+  assert admin.get('/api/v1/admin/usage/summary').get_json()["counts"]["events"] == 0
 
 
 def test_overview_checklist_follows_settings(admin, monkeypatch):
@@ -711,3 +789,28 @@ def test_overview_legacy_tokens(admin):
   db_session.commit()
   checklist = {item["id"]: item for item in admin.get('/api/v1/admin/overview').get_json()["checklist"]}
   assert checklist["legacy_tokens"]["ok"] is False and "1 legacy token" in checklist["legacy_tokens"]["title"]
+
+
+def test_pgadmin_signs_admins_in(admin, logged_in, monkeypatch):
+  """nginx asks before proxying /pgadmin4/ (services/nginx/snippets/pgadmin.conf), and passes the account to pgAdmin"""
+  # Flower and other admin services (services/nginx/snippets/qaboard-admins-only.conf)
+  assert admin.get('/api/v1/admin/authorize').status_code == 204
+  assert logged_in('carol').get('/api/v1/admin/authorize').status_code == 403
+  monkeypatch.delenv('QABOARD_PGADMIN_USER', raising=False)
+  monkeypatch.delenv('PGADMIN_DEFAULT_EMAIL', raising=False)
+  assert admin.get('/api/v1/admin/pgadmin/authorize').status_code == 404
+  monkeypatch.setenv('PGADMIN_DEFAULT_EMAIL', 'pgadmin@example.com')
+  response = admin.get('/api/v1/admin/pgadmin/authorize')
+  assert response.status_code == 204 and response.headers['X-Pgadmin-User'] == 'pgadmin@example.com'
+  response = logged_in('bob').get('/api/v1/admin/pgadmin/authorize')
+  assert response.status_code == 403 and 'X-Pgadmin-User' not in response.headers
+
+
+def test_sandbox_html_is_off_until_admins_turn_it_on(make_client, monkeypatch):
+  """The web app's HTML viewers follow QABOARD_SANDBOX_HTML, like the proxy (services/nginx/configure.sh)"""
+  monkeypatch.delenv('QABOARD_SANDBOX_HTML', raising=False)
+  assert make_client().get('/api/v1/config').get_json()["sandbox_html"] is False
+  monkeypatch.setenv('QABOARD_SANDBOX_HTML', '0')
+  assert make_client().get('/api/v1/config').get_json()["sandbox_html"] is False
+  monkeypatch.setenv('QABOARD_SANDBOX_HTML', 'true')
+  assert make_client().get('/api/v1/config').get_json()["sandbox_html"] is True

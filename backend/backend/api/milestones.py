@@ -59,11 +59,14 @@ def get_milestone(milestone_id):
 
 def compute_runs(milestone):
   """Saves in the milestone what its runs used (datasets, qa batches, platforms), see summarize_runs"""
+  # shown to whoever sees the milestone's project: only from results the current user can see too
+  if not is_authorized_user(None, milestone.results_project_id):
+    return
   hexsha = milestone.commit_hexsha
   commit_filter = CiCommit.hexsha == hexsha if len(hexsha) >= 40 else CiCommit.hexsha.startswith(hexsha)
   rows = (db_session
-          .query(Output.output_type, Output.platform, Output.configurations, Output.extra_parameters, Output.data,
-                 Output.is_failed, Output.is_pending, TestInput.path, TestInput.database, TestInput.data)
+          .query(Output.id, Output.output_type, Output.platform, Output.configurations, Output.extra_parameters, Output.data,
+                 Output.is_failed, Output.is_pending, Output.is_running, TestInput.path, TestInput.database, TestInput.data)
           .join(Batch, Output.batch_id == Batch.id)
           .join(CiCommit, Batch.ci_commit_id == CiCommit.id)
           .outerjoin(TestInput, Output.test_input_id == TestInput.id)
@@ -71,10 +74,12 @@ def compute_runs(milestone):
           .filter(or_(Output.deleted == False, Output.deleted == None))
           .all())
   runs = [{
-    'output_type': output_type, 'platform': platform, 'configurations': configurations, 'extra_parameters': extra_parameters,
-    'batch': (data or {}).get('batch'), 'is_failed': is_failed, 'is_pending': is_pending,
+    'id': id, 'output_type': output_type, 'platform': platform, 'configurations': configurations,
+    # the web app shows the parameters a run reported over its tuning parameters: filters see them too
+    'extra_parameters': {**(extra_parameters or {}), **((data or {}).get('params') if isinstance((data or {}).get('params'), dict) else {})},
+    'batch': (data or {}).get('batch'), 'is_failed': is_failed, 'is_pending': is_pending, 'is_running': is_running,
     'path': path, 'database': database, 'metadata': (input_data or {}).get('metadata') or {},
-  } for output_type, platform, configurations, extra_parameters, data, is_failed, is_pending, path, database, input_data in rows]
+  } for id, output_type, platform, configurations, extra_parameters, data, is_failed, is_pending, is_running, path, database, input_data in rows]
   milestone.data = {**(milestone.data or {}), 'runs': summarize_runs(runs, milestone.filter)}
 
 
@@ -288,23 +293,30 @@ def import_milestones():
       skipped.append({"project": project_id, "reason": "The project doesn't exist"})
       done.append(project_id)
       continue
-    if not is_authorized_user(user_info, project_id):
-      skipped.append({"project": project_id, "reason": "You don't have access to this project"})
+    if require_project_access(user_info, project_id, 'milestones.write'):
+      skipped.append({"project": project_id, "reason": "You can't save milestones in this project"})
       continue
     existing = [
       {'project_id': m.project_id, 'commit_hexsha': m.commit_hexsha, 'commit_project_id': m.commit_project_id, 'batch': m.batch, 'filter': m.filter, 'label': m.label}
       for m in Milestone.query.filter(Milestone.project_id == project_id).filter(Milestone.user_id == user_id)
     ]
+    kept = False
     for key, legacy in milestones.items():
       fields = from_legacy(key, legacy, project_id)
       if fields is None:
         skipped.append({"project": project_id, "key": key, "reason": "Not a milestone"})
+        continue
+      # like when saving one: milestones protect their results from deletion, and describe them
+      if fields['commit_project_id'] and not is_authorized_user(user_info, fields['commit_project_id']):
+        skipped.append({"project": project_id, "key": key, "reason": f"You don't have access to {fields['commit_project_id']}"})
+        kept = True # the browser keeps it, e.g. until they get access
         continue
       if any(same_results(fields, e) for e in existing):
         continue
       existing.append(fields)
       db_session.add(Milestone(user_id=user_id, shared=False, **fields))
       imported += 1
-    done.append(project_id)
+    if not kept:
+      done.append(project_id)
   db_session.commit()
   return jsonify({"imported": imported, "done": done, "skipped": skipped})

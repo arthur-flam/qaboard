@@ -12,9 +12,9 @@ to their docs. No dates, no promised timelines.
 import {StatusLegend} from '@site/src/components/StatusBadge';
 import RoadmapItem from '@site/src/components/RoadmapItem';
 
-QA-Board started at Samsung Israel R&D Center in 2018. It's still the central platform there, for about 50 projects
-in production. This page says where we're taking it: the principles we hold to, then what we're building, theme by
-theme. Each item has a status:
+QA-Board started at Samsung in 2018. It's still the central quality platform there, for about 50 projects in
+production and more than 40 million runs. This page says where we're taking it: the principles we hold to, then what
+we're building, theme by theme. Each item has a status:
 
 <StatusLegend />
 
@@ -31,8 +31,9 @@ Nothing here has a date. If an item matters to your team, [tell us](#how-to-weig
   the same tests, read the same Metrics Diff and meet the same targets as people, and a person decides what ships.
 
 ## Compare more than two
-Today the commit page compares a new commit with one reference: a commit, a branch or a milestone (see
-[New and reference](/docs/user-guide/comparing-results)). History follows metrics across commits. Many questions
+Today the commit page compares a new commit with one reference at a time: a commit, a branch or a milestone. You
+can stack several references and switch between them with one key (see
+[Several references](/docs/user-guide/comparing-results#several-references)). History follows metrics across commits. Many questions
 need more than two sides: which of five models handles night scenes best, or whether quality drifted over the last
 releases.
 
@@ -62,9 +63,10 @@ plot of parameters and metrics, and the trade-off between two metrics. See
 [Tuning from the web app](/docs/tuning-from-the-webapp).
 </RoadmapItem>
 
-<RoadmapItem status="experimental" title="Automated tuning">
-`qa optimize` searches for the parameters that optimize an objective, with scikit-optimize, and plots its
-convergence. Its configuration and solver may change. See [Automated tuning](/docs/auto-optimization).
+<RoadmapItem status="shipped" title="Automated tuning">
+`qa optimize` searches for the parameters that optimize an objective, with Optuna, and resumes a search that was
+interrupted. **Tuning Analysis** says what it found and what to do next. See
+[Find the best parameters automatically](/docs/user-guide/automated-tuning).
 </RoadmapItem>
 
 <RoadmapItem status="next" title="Overlay plots from N runs">
@@ -99,9 +101,29 @@ Today you wrap your code with `qa`: `qa run` for one input, `qa batch` for many 
 [Running your code](/docs/running-your-code)). Some code doesn't fit a wrapper: training loops, notebooks, test
 suites.
 
-<RoadmapItem status="next" title="A Python SDK">
-`qaboard.init()`, `run.log({...})`, `run.log_image()` and `run.finish()`, an API in the style of W&B's, from
-training loops, notebooks and pytest, without `qa run`. These runs show in the web app like any other.
+<RoadmapItem status="shipped" title="Read results and add metrics from Python">
+`qaboard.runs(url)` gives the runs a web app page shows, as `Run` objects; `run.log_metrics({...})` adds metrics
+to them, recording who, when and which script, and `run.log_artifact(name, file)` adds files; `qa runs <url>` lists
+them from the shell ([runs in scripts](/docs/apis#runs-in-scripts)).
+</RoadmapItem>
+
+<RoadmapItem status="shipped" title="Benchmark files">
+Save a pytest-benchmark, Google Benchmark, hyperfine, Criterion, JMH or `go test` file in a run: the web app shows each
+benchmark against the reference's, beyond noise or within it, and `benchmark_metrics` returns them as metrics (see
+[benchmark suites](/docs/benchmarks)).
+</RoadmapItem>
+
+<RoadmapItem status="shipped" title="Flame graphs from your profiler's files">
+Save what perf, py-spy, async-profiler, Go's pprof or Node.js record in a run: the web app draws a differential flame
+graph against the reference's profile, with a table of the top functions (see
+[profiles and flame graphs](/docs/flame-graphs)).
+</RoadmapItem>
+
+<RoadmapItem status="next" title="A Python SDK that creates runs">
+`start_run(...)` from training loops, notebooks and pytest, without `qa run`: `log()` with a `step` for the values
+logged during training, `log_params()`, `finish()`, with the method names people know from the usual
+experiment trackers. These runs show in the web app like any other. The design is in the repository,
+[`docs/rfcs/python-sdk-runs.md`](https://github.com/Samsung/qaboard/blob/master/docs/rfcs/python-sdk-runs.md).
 </RoadmapItem>
 
 <RoadmapItem status="exploring" title="A wandb.log shim">
@@ -142,9 +164,10 @@ Keep results in S3, R2, GCS or MinIO instead of a file share. The upload protoco
 the image server, can read from S3.
 </RoadmapItem>
 
-<RoadmapItem status="exploring" title="A Kubernetes Job runner">
-Run each run of a `qa batch` as a Kubernetes Job, next to the existing runners: local, LSF, Celery, Dask and
-Jenkins.
+<RoadmapItem status="shipped" title="A Kubernetes Job runner">
+Run each run of a `qa batch` in a pod of a Kubernetes Job, or several short runs per pod, as your own user, within
+your cluster's queues and quotas. Start batches on the cluster from the web app. See
+[Run batches on Kubernetes](/docs/kubernetes-runner).
 </RoadmapItem>
 
 ## Enterprise
@@ -194,11 +217,13 @@ admin panel's audit log.
 
 <RoadmapItem status="exploring" title="Retention and quotas in the web app">
 Set how long results are kept, and how much storage each project can use, from the web app. Today retention is set
-per project in *qaboard.yaml* (see [Deleting old data](/docs/storage/deleting-old-data)).
+per project in *qaboard.yaml* (see [Deleting old data](/docs/storage/deleting-old-data)), admins schedule the cleanup
+in the admin panel, and [Storage usage](/docs/user-guide/storage-usage) shows what each project, branch and person
+keeps.
 </RoadmapItem>
 
-<RoadmapItem status="exploring" title="Usage analytics">
-Which projects and views teams use, to see where QA-Board helps and where it doesn't.
+<RoadmapItem status="shipped" title="Usage analytics">
+Which projects and views teams use, to see where QA-Board helps and where it doesn't: [Admin → Usage](/docs/backend-admin/usage-analytics).
 </RoadmapItem>
 
 ## Collaboration
@@ -215,7 +240,9 @@ Review a commit's results and approve them as the new reference, with who approv
 </RoadmapItem>
 
 <RoadmapItem status="exploring" title="Notifications">
-A message in Slack, Teams or by email when a batch finishes or a metric regresses.
+A message in Slack or Teams when a batch finishes or a metric regresses. Today QA-Board emails you when a batch you
+started ends, if your server sends emails (see
+[Get an email when a batch ends](/docs/user-guide/running-from-the-webapp#emails-when-batches-end)).
 </RoadmapItem>
 
 ## Agents
@@ -230,22 +257,32 @@ differences. See [Bit accuracy](/docs/bit-accuracy).
 
 <RoadmapItem status="experimental" title="Quality gate" id="quality-gate">
 `qa gate` fails CI when quality regresses against the reference: rules per metric (a maximum regression, an absolute
-floor, a limit for each test), a summary in the CI job, and a commit status that links to the Metrics Diff. See
-[Quality gate](/docs/quality-gate).
+floor, a limit for each test), a summary in the CI job, a commit status that links to the Metrics Diff, and a comment
+on the pull request. See [Quality gate](/docs/quality-gate).
 </RoadmapItem>
 
-<RoadmapItem status="next" title="OpenAPI spec and JSON output">
-A documented HTTP API, and JSON output from `qa` commands, so that scripts and agents read results without parsing
-text.
+<RoadmapItem status="shipped" title="An OpenAPI description of the HTTP API">
+Your server describes the endpoints to read results at `/api/v1/openapi.json`, with a page to try them at
+`/api/v1/docs`. See [HTTP API](/docs/http-api).
+</RoadmapItem>
+
+<RoadmapItem status="next" title="A generated API reference" id="generated-api-reference">
+The backend moves to FastAPI, and the OpenAPI document is generated from its code: every endpoint is described, and
+the description can't drift from what the server does.
+</RoadmapItem>
+
+<RoadmapItem status="next" title="JSON output from qa commands">
+JSON output from every `qa` command, so that scripts and agents read results without parsing text.
 </RoadmapItem>
 
 <RoadmapItem status="next" title="An MCP server, read-only first">
 `qa mcp` lets agents read results, Metrics Diffs, failing tests and image crops. Starting batches comes later.
 </RoadmapItem>
 
-<RoadmapItem status="exploring" title="An agent kit">
-An `AGENTS.md` and skill template for your project, telling agents to run the batch and read the Metrics Diff before
-they claim a change is better.
+<RoadmapItem status="experimental" title="Skills for coding agents">
+Two skills in the repository, `qaboard-integration` and `qaboard-results`, teach agents to wrap a project and to read
+results before they claim a change is better, with an `AGENTS.md` template for your project. See
+[Coding agents](/docs/agents).
 </RoadmapItem>
 
 <RoadmapItem status="exploring" title="Runs labeled by agents">
@@ -257,28 +294,64 @@ agent.
 An agent reads a tuning analysis and proposes the next experiment, for a person to start.
 </RoadmapItem>
 
+<RoadmapItem status="experimental" title="The gate's verdict on pull requests">
+`qa gate --post-comment` posts the gate's table on the commit's pull request or merge request, and updates it on each
+push. It says when runs only passed after being done again, and when the commit loosens the gate's rules. See
+[The gate on pull requests](/docs/quality-gate-pull-requests).
+</RoadmapItem>
+
+<RoadmapItem status="experimental" title="Rules a commit can't change">
+A project's owners set gate rules from the web app, in **Admin → Quality gate**: `qa gate` checks them on every
+commit, on top of the commit's own, and can fail commits that loosen their rules. See
+[Set a project's gate rules](/docs/user-guide/project-gate).
+</RoadmapItem>
+
+<RoadmapItem status="next" title="The gate's verdict in QA-Board, and alerts">
+`qa gate` reports its verdict to the server, which shows it on the commit and tells the people and chat channels a
+project's owners chose, in **Admin → Alerts**.
+</RoadmapItem>
+
+<RoadmapItem status="next" title="A noise floor per metric">
+A metric says how much it moves between identical runs (`noise: 2%`, or the spread a benchmark harness reported): the
+Metrics Diff grays changes within it, and the gate doesn't fail on them. QA-Board still doesn't repeat runs for you.
+</RoadmapItem>
+
+<RoadmapItem status="exploring" title="A record of who decided, on what evidence">
+For every change: where its runs came from (a verified CI job, an agent, a laptop), the gate's verdict, and who
+approved it as the new reference, with a list of the batches that wait for a decision.
+</RoadmapItem>
+
+<RoadmapItem status="shipped" title="A record of every attempt">
+A shared or CI run that is done again no longer erases what came before: QA-Board keeps how each earlier attempt
+ended, its metrics and its log, and shows the latest. See
+[When a run is done again](/docs/storage/where-is-the-data#reruns).
+</RoadmapItem>
+
 <RoadmapItem status="exploring" title="Metrics Diff summaries on pull requests">
-A comment on each pull request with the metrics that changed, and links to the outputs.
+Beyond the gate's rules: the metrics that changed most and the outputs behind them, with image crops, in the comment.
 </RoadmapItem>
 
 ## Polish
 Smaller changes to the web app that you'd notice every day.
 
-<RoadmapItem status="next" title="Dark mode">
-A dark theme for the web app.
+<RoadmapItem status="shipped" title="Dark mode">
+A dark theme for the web app, or one that follows your system's. Plots, editors and viewers follow it (see
+[Tips & FAQ](/docs/user-guide/tips-and-faq#how-do-i-switch-to-the-dark-theme)).
 </RoadmapItem>
 
-<RoadmapItem status="exploring" title="Command palette">
-Jump to a project, branch, commit or view from the keyboard.
+<RoadmapItem status="shipped" title="Command palette">
+Press `Ctrl+K` to jump to a project, a branch, a commit, your recent batches or a page (see
+[Search from anywhere](/docs/user-guide/finding-results#command-palette)).
 </RoadmapItem>
 
-<RoadmapItem status="exploring" title="Date ranges in the URL">
-Share the commit list and History for a date range. Today you add `from` and `to` to the URL yourself (see
-[Sharing](/docs/user-guide/sharing)).
+<RoadmapItem status="shipped" title="Date ranges in the URL">
+The link to a commit list keeps its date range and search, and History its options: share the link, you share the
+view (see [Sharing](/docs/user-guide/sharing)).
 </RoadmapItem>
 
-<RoadmapItem status="exploring" title="Faster huge batches">
-Commit pages and Metrics Diffs that stay fast on very large batches.
+<RoadmapItem status="shipped" title="Faster huge batches">
+Commit pages stay fast with 1000 runs: the filter answers in half a second, the Metrics Table opens in a third of a
+second, and run cards load their files as they scroll into view.
 </RoadmapItem>
 
 ## How to weigh in

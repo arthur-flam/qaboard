@@ -65,15 +65,19 @@ export const limiter = createLimiter();
 // The searches running (not waiting for their turn): { [JSON of their query key]: when they started }
 export const useStartedSearches = () => useSyncExternalStore(limiter.subscribe, limiter.started);
 
-export const regionsKey = (provider_id, { output_new, output_ref, path, path_ref }) =>
-  ['image-regions', provider_id, output_new?.output_dir_url ?? output_new?.id, output_ref?.output_dir_url ?? output_ref?.id ?? null, path, path_ref ?? path];
+// The size of the differences, when users look for some: [min, max], else null (the same key as before sizes)
+export const sizeKey = diff_size => diff_size && (diff_size.min || diff_size.max) ? [diff_size.min || null, diff_size.max || null] : null;
+
+export const regionsKey = (provider_id, { output_new, output_ref, path, path_ref, diff_size }) =>
+  ['image-regions', provider_id, output_new?.output_dir_url ?? output_new?.id, output_ref?.output_dir_url ?? output_ref?.id ?? null, path, path_ref ?? path, sizeKey(diff_size)];
 
 // The query of a provider's regions for an image pair. context: { output_new, output_ref, path, path_ref }
+// Providers whose regions depend on the image only (e.g. its annotations) say what identifies it: key(context)
 export const regionsQuery = (provider, context, priority = 'low') => ({
-  queryKey: regionsKey(provider.id, context),
+  queryKey: provider.key ? ['image-regions', provider.id, ...provider.key(context)] : regionsKey(provider.id, context),
   queryFn: ({ signal, queryKey }) => limiter.run(() => provider.find(context, { signal }), { signal, priority, id: JSON.stringify(queryKey) }),
-  // the server keeps them, until the files change
-  staleTime: Infinity,
+  // the server keeps them, until the files change. Others change their regions, e.g. people annotate.
+  staleTime: provider.staleTime ?? Infinity,
   gcTime: 60 * 60 * 1000,
   retry: false,
 });

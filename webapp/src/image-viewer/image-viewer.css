@@ -720,6 +720,94 @@
   white-space: nowrap;
 }
 
+/* What the active region says about itself, e.g. an annotation */
+.qiv-region-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 2px 0 4px;
+  font-size: 12px;
+}
+.qiv-region-details-label {
+  font-weight: 600;
+}
+.qiv-region-field {
+  font-variant-numeric: tabular-nums;
+}
+.qiv-region-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--qiv-accent);
+}
+/* The regions button says when there are some, e.g. annotations */
+.qiv-announce {
+  color: var(--qiv-accent);
+  background: var(--qiv-pressed);
+}
+
+/* The regions outlined on the images */
+.qiv-outlines {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+.qiv-outlines svg {
+  display: block;
+}
+.qiv-outline-halo {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 3;
+}
+.qiv-outline-line {
+  fill-opacity: 0;
+  stroke-width: 1.5;
+}
+.qiv-outlines-focus .qiv-outline:not(.qiv-outline-active):not(.qiv-outline-hovered) {
+  opacity: 0.55;
+}
+.qiv-outline-hovered .qiv-outline-line {
+  fill-opacity: 0.08;
+}
+.qiv-outline-active .qiv-outline-halo {
+  stroke-width: 4.5;
+}
+.qiv-outline-active .qiv-outline-line {
+  stroke-width: 2.5;
+  fill-opacity: 0.06;
+}
+.qiv-outline-label {
+  position: absolute;
+  max-width: 180px;
+  height: 16px;
+  padding: 0 5px;
+  overflow: hidden;
+  border: 0;
+  border-left: 3px solid;
+  border-radius: 2px;
+  background: rgba(17, 20, 24, 0.82);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.qiv-outline-label:hover,
+.qiv-outline-label.qiv-active {
+  z-index: 1;
+  background: rgba(17, 20, 24, 0.95);
+}
+.qiv-outlines-focus .qiv-outline-label:not(.qiv-active):not(:hover) {
+  opacity: 0.75;
+}
+
 /* The analysis panel: histogram, profiles, statistics */
 .qiv-analysis {
   margin-top: 6px;
@@ -1772,4 +1860,92 @@
 .qiv-compare-scope + .qiv-compare-footer {
   margin-top: 0;
   border-top: none;
+}
+.qiv-image-histogram-area {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The values under the pointer, or of the pixel pinned: users select them to copy them */
+.qiv-readout-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.qiv-readout-row .qiv-readout-values {
+  flex: 1 1 auto;
+  min-width: 0;
+  user-select: text;
+  cursor: text;
+}
+.qiv-base-toggle,
+.qiv-pin-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--qiv-border);
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.qiv-base-toggle {
+  font-family: var(--qiv-mono);
+  opacity: 0.7;
+}
+.qiv-base-toggle:hover {
+  opacity: 1;
+}
+.qiv-pin-chip {
+  border-color: var(--qiv-accent);
+  background: color-mix(in srgb, var(--qiv-accent) 14%, transparent);
+  color: var(--qiv-accent);
+  font-weight: 600;
+}
+.qiv-pin-chip .qiv-icon {
+  fill: currentColor;
+}
+.qiv-pin-chip-action {
+  font-weight: 400;
+}
+.qiv-pin-chip-x {
+  font-size: 13px;
+  line-height: 1;
+}
+.qiv-pin-chip:hover .qiv-pin-chip-x,
+.qiv-pin-chip:focus-visible .qiv-pin-chip-x {
+  font-weight: 700;
+}
+.qiv-crosshair.qiv-pinned path:last-child {
+  stroke: var(--qiv-accent);
+}
+
+/* The sensor: what the pixels say, and notes that changed after a guess */
+.qiv-guess-result {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.qiv-guess-result .qiv-cfa {
+  flex: 0 0 auto;
+}
+@keyframes qiv-flash {
+  from { background: color-mix(in srgb, var(--qiv-accent) 22%, transparent); }
+  to { background: transparent; }
+}
+.qiv-flash {
+  border-radius: 3px;
+  animation: qiv-flash 1.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .qiv-flash { animation: none; }
 }

@@ -16,7 +16,7 @@ import fnmatch
 import statistics
 from typing import Any, Dict, List, Optional, Tuple
 
-from polyleven import levenshtein
+from qaboard.matching import config_distance
 
 
 # ---------------------------------------------------------------------------- matching runs, like the web app
@@ -47,15 +47,6 @@ def prepare_output(output: Dict) -> Dict:
   return o
 
 
-def _shorten(string: str) -> str:
-  # like webapp/src/levenshtein.js: removes the first match only
-  return re.sub(r'(workspace|[{}", \'/.\-_]|global|sim|partial_config|image_writer|config|raw|bmp)', '', string, count=1)
-
-
-def _distance(str1: str, str2: str) -> int:
-  return levenshtein(_shorten(str1 or ''), _shorten(str2 or ''))
-
-
 def matching_output(output: Dict, ref_outputs: List[Dict]) -> Tuple[Optional[Dict], Optional[Dict]]:
   """
   The reference run that matches a run best, and how they differ (None if they're the same test).
@@ -74,8 +65,8 @@ def matching_output(output: Dict, ref_outputs: List[Dict]) -> Tuple[Optional[Dic
     same_input = o['input_path'] == output['input_path'] or o.get('test_input_path') == output.get('test_input_path')
     return (
       0 if same_input else 1,
-      _distance(o['configurations_str'], output['configurations_str']),
-      _distance(o['extra_parameters_str'], output['extra_parameters_str']),
+      config_distance(o.get('configurations'), output.get('configurations')),
+      config_distance(o.get('extra_parameters'), output.get('extra_parameters')),
       0 if o.get('platform') == output.get('platform') else 1,
     )
   candidates.sort(key=sort_key)  # stable: ties keep the order of the ids
@@ -252,6 +243,9 @@ def compare_outputs(new_outputs: List[Dict], ref_outputs: List[Dict], available_
       'configurations': o.get('configurations'),
       'extra_parameters': o.get('extra_parameters'),
       'is_failed': bool(o.get('is_failed')),
+      # the batch of qaboard.yaml the run comes from (`qa batch <name>`), for the gate's rules on some batches.
+      # Not a number of the views: the web app's helpers (compare.js) have nothing to mirror.
+      'batch': o['data'].get('batch') if isinstance(o.get('data'), dict) else None,
       'metrics': cells,
       # filled in by compare_bit_accuracy()
       'bit_accurate': None,
@@ -277,7 +271,7 @@ def run_counts(outputs: List[Dict]) -> Dict[str, int]:
 # ---------------------------------------------------------------------------- bit accuracy, like `qa check-bit-accuracy`
 
 # files that change from run to run, always ignored (see `is_bit_accurate` in qaboard/bit_accuracy.py)
-IGNORED_FILES = ['manifest.inputs.json', 'run.json', 'log.txt', 'log.lsf.txt', 'metrics.json', 'metrics_definitions.json', '.nfs000*']
+IGNORED_FILES = ['manifest.inputs.json', 'run.json', 'log.txt', 'log.lsf.txt', 'log.attempt', 'metrics.json', 'metrics_definitions.json', 'latest_attempt.txt', '.nfs000*']
 CHECKED_CDE_ATTRS = ["width", "height", "format", "imageType", "md5_data"]
 
 

@@ -36,7 +36,10 @@ from backend.config import qaboard_data_dir
 image_cache_dir = Path(os.environ.get('QABOARD_IMAGE_CACHE_DIR', qaboard_data_dir / 'cache' / 'images'))
 image_cache_dir.mkdir(exist_ok=True, parents=True)
 # The disk space they can use: we remove the least recently used
-image_cache_bytes = float(os.environ.get('QABOARD_IMAGE_CACHE_GB', '20')) * 1e9
+def image_cache_bytes() -> float:
+  """The size of the cache: storage.image_cache_gb (QABOARD_IMAGE_CACHE_GB)"""
+  from ..settings import setting
+  return float(setting('storage.image_cache_gb')) * 1e9
 # The regions where two images differ, once found: keyed by the files (and when they changed) and how they're compared
 regions_cache_dir = image_cache_dir / 'regions'
 regions_cache_dir.mkdir(exist_ok=True)
@@ -63,7 +66,8 @@ def _image_lock(hash):
 
 
 def clear_memmapped_cache_dir(keep=None):
-  """Removes the least recently used images until the cache fits in image_cache_bytes"""
+  """Removes the least recently used images until the cache fits in image_cache_bytes()"""
+  limit = image_cache_bytes()
   entries = []
   for data in image_cache_dir.glob('*.dat'):
     try: # other processes may have deleted it
@@ -73,7 +77,7 @@ def clear_memmapped_cache_dir(keep=None):
     entries.append((stat.st_mtime, stat.st_size, data))
   total = sum(size for _, size, _ in entries)
   for _, size, data in sorted(entries): # least recently used first
-    if total <= image_cache_bytes:
+    if total <= limit:
       break
     if data.stem == keep:
       continue
@@ -135,11 +139,18 @@ def decoded_image(image_path):
   if opened or (data_path.exists() and info_path.exists()):
     try:
       return _open_cached(hash, data_path, info_path)
-    except (FileNotFoundError, json.JSONDecodeError):
-      pass # removed meanwhile, or written by a process that died
+    except (FileNotFoundError, ValueError): # e.g. json.JSONDecodeError
+      pass # removed meanwhile, or broken: we check again with the lock
   with _image_lock(hash):
     if data_path.exists() and info_path.exists():
-      return _open_cached(hash, data_path, info_path)
+      try:
+        return _open_cached(hash, data_path, info_path)
+      except (FileNotFoundError, ValueError) as e: # e.g. a truncated file, after a full disk: we decode it again
+        print(f"WARNING: the cached values of {image_path} can't be read ({type(e).__name__}): decoding it again")
+        with _opened_lock:
+          _opened.pop(hash, None)
+        data_path.unlink(missing_ok=True)
+        info_path.unlink(missing_ok=True)
     print(f'MISS {image_path}')
     image, meta = read_image(image_path)
     image = np.asarray(image)
@@ -285,7 +296,8 @@ def get_pixels():
   })
 
 
-REGIONS_VERSION = 2
+# 3: the regions say the size of their difference (spot), and can be filtered by it
+REGIONS_VERSION = 3
 
 @app.route("/api/v1/output/image/diff", methods=['POST'])
 @login_required
@@ -293,7 +305,8 @@ def get_rois():
   """
   The regions where two images differ most, the largest difference first: [{x, y, w, h, peak_x, peak_y, value, diff}]
   JSON body: output_dir_url_new, output_dir_url_ref, path, path_ref (default: path), diff_type (yiq, ssim, ciede2000),
-  count (default 20). See image_diff.py.
+  count (default 20), min_size and max_size (optional, pixels: only the differences of that size, along their longest
+  side). See image_diff.py.
   """
   data = request.get_json(silent=True) or {}
   if not data.get('path'):
@@ -308,12 +321,17 @@ def get_rois():
   if method not in METHODS:
     return jsonify({"error": f"Unknown diff_type {method}, use one of {', '.join(METHODS)}"}), 400
   count = min(100, max(1, int(data.get('count') or 20)))
+  try:
+    sizes = [int(data[k]) if data.get(k) not in (None, '') else None for k in ('min_size', 'max_size')]
+  except (TypeError, ValueError):
+    return jsonify({"error": "min_size and max_size are numbers of pixels"}), 400
+  min_size, max_size = [s if s and s > 0 else None for s in sizes]
   for label, path in (('new', path_new), ('reference', path_ref)):
     if not path.is_file():
       return jsonify({"error": f"The {label} run has no {path.name}"}), 404
 
   stats = [path_new.stat(), path_ref.stat()]
-  key = json.dumps([REGIONS_VERSION, str(path_new), str(path_ref), [(s.st_size, s.st_mtime_ns) for s in stats], method, count])
+  key = json.dumps([REGIONS_VERSION, str(path_new), str(path_ref), [(s.st_size, s.st_mtime_ns) for s in stats], method, count, min_size, max_size])
   cached = regions_cache_dir / f"{hashlib.sha1(key.encode()).hexdigest()}.json"
   try:
     return Response(cached.read_bytes(), mimetype='application/json', headers={'X-Regions-Cache': 'hit'})
@@ -333,7 +351,7 @@ def get_rois():
     return jsonify({"error": f"The images have different sizes: {w1}x{h1} and {w2}x{h2}"}), 400
   decoded = time.time()
   delta, factor = difference_map(image_new, image_ref, method)
-  body = json.dumps(find_regions(delta, factor, image_new.shape, count)).encode()
+  body = json.dumps(find_regions(delta, factor, image_new.shape, count, min_size, max_size)).encode()
   tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{threading.get_ident()}.tmp")
   tmp.write_bytes(body)
   tmp.rename(cached)

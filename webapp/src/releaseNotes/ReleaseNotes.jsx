@@ -47,17 +47,23 @@ export const useReleaseNotes = () => useContext(ReleaseNotesContext);
 // They come from website/release-notes/, see webapp/releaseNotes.js
 const loadNotes = () => import("virtual:release-notes")
   .then(m => (m.default || m).notes);
+// Their changes ("All changes") are most of their size: they load when the panel opens
+const loadHtml = () => import("virtual:release-notes-html")
+  .then(m => m.default || m);
 
 
-export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 1000 }) => {
+// autoPopup: false in development, see vite.config.js
+export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 1000, autoPopup = import.meta.env.QABOARD_RELEASE_NOTES_POPUP }) => {
   const { docs_root } = useSiteConfig();
   const [notes, setNotes] = useState([]);
   // Notes not seen before this page load: they keep their "New" tag until the next one
   const [newSlugs, setNewSlugs] = useState(new Set());
   const [popup, setPopup] = useState([]);
-  const [hasUnread, setHasUnread] = useState(false);
+  // Whether users saw the notes during this page load: they opened them, or closed the popup
+  const [seen, setSeen] = useState(window.location.hash === HASH);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(window.location.hash === HASH);
+  const [html, setHtml] = useState(null);
 
   useEffect(() => {
     let timer;
@@ -69,8 +75,7 @@ export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 
       setNotes(notes);
       setNewSlugs(new Set(unseenNotes(notes, lastSeen).map(n => n.slug)));
       setPopup(to_popup);
-      setHasUnread(to_popup.length > 0);
-      if (to_popup.length > 0 && window.location.hash !== HASH)
+      if (autoPopup && to_popup.length > 0 && window.location.hash !== HASH)
         timer = setTimeout(() => {
           // another tab may have shown the notes in the meantime
           if (popupNotes(notes, getLastSeen()).length === 0) return;
@@ -81,17 +86,18 @@ export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 
         }, popupDelay);
     }).catch(error => console.warn("Could not load the release notes", error));
     return () => { cancelled = true; clearTimeout(timer) };
-  }, [load, popupDelay]);
+  }, [load, popupDelay, autoPopup]);
 
   const markSeen = useCallback(() => {
     const newest = lastSeenSlug(notes);
     if (newest) setLastSeen(newest);
-    setHasUnread(false);
+    setSeen(true);
   }, [notes]);
 
   const open = useCallback(via => {
     setDialogOpen(false);
     setDrawerOpen(true);
+    setSeen(true);
     track("release_notes_open", { via });
   }, []);
 
@@ -101,9 +107,18 @@ export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [open]);
+  // The drawer shows all the notes: they are seen, also when they load after it opened (e.g. from the link)
   useEffect(() => {
-    if (drawerOpen && notes.length > 0) markSeen();
-  }, [drawerOpen, notes, markSeen]);
+    const newest = drawerOpen && lastSeenSlug(notes);
+    if (newest) setLastSeen(newest);
+  }, [drawerOpen, notes]);
+  const hasUnread = popup.length > 0 && !seen;
+  useEffect(() => {
+    if (!drawerOpen || html) return;
+    loadHtml().then(setHtml).catch(error => console.warn("Could not load the release notes", error));
+  }, [drawerOpen, html]);
+  // with their changes once they're loaded (the tests' notes come with theirs)
+  const drawerNotes = html ? notes.map(note => ({ ...note, html: note.html ?? html[note.slug] })) : notes;
 
   const closeDialog = () => { setDialogOpen(false); markSeen() };
   const closeDrawer = () => {
@@ -124,7 +139,7 @@ export const ReleaseNotesProvider = ({ children, load = loadNotes, popupDelay = 
     />
     <WhatsNewDrawer
       isOpen={drawerOpen}
-      notes={notes}
+      notes={drawerNotes}
       newSlugs={newSlugs}
       docs_root={docs_root}
       onClose={closeDrawer}
@@ -312,8 +327,13 @@ const NoteSection = styled.section`
 
 const ReleaseNote = ({ note, isNew, expanded, docs_root }) => {
   const [showDetails, setShowDetails] = useState(expanded);
-  useEffect(() => setShowDetails(expanded), [expanded]);
-  const html = useMemo(() => renderHtml(note.html, docs_root), [note.html, docs_root]);
+  // until `expanded` changes, users choose
+  const [expandedBefore, setExpandedBefore] = useState(expanded);
+  if (expanded !== expandedBefore) {
+    setExpandedBefore(expanded);
+    setShowDetails(expanded);
+  }
+  const html = useMemo(() => note.html ? renderHtml(note.html, docs_root) : '', [note.html, docs_root]);
   return <NoteSection id={`release-note-${note.slug}`}>
     <NoteHeader note={note} isNew={isNew} />
     <Description>{note.description}</Description>

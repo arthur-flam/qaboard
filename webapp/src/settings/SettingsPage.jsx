@@ -13,7 +13,7 @@ import { SignInTab } from "./SignInTab";
 import { SessionsTab } from "./SessionsTab";
 
 
-const tabs = [
+export const tabs = [
   { id: 'profile', title: 'Profile', icon: 'person', Panel: ProfileTab },
   { id: 'preferences', title: 'Preferences', icon: 'settings', Panel: PreferencesTab },
   { id: 'sign-in', title: 'Sign-in methods', icon: 'log-in', Panel: SignInTab },
@@ -27,7 +27,7 @@ export const SettingsPage = () => {
   const { match, history } = useRouter();
   const selected = tabs.find(tab => tab.id === match.params?.tab) ?? tabs[0];
   const { Panel } = selected;
-  return <PageShell title="Settings">
+  return <PageShell title="Settings" tab_title={selected.title}>
     <RequireLogin what="see your settings">
       {user => <>
         <ScrollingTabs>

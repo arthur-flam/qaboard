@@ -5,23 +5,28 @@ sidebar_label: Storage usage
 description: "See how much storage your runs and exports use, what QA-Board deletes automatically, find what it doesn't track, and delete what you don't need."
 ---
 Short on quota? **Storage usage** shows how much storage your runs take, project by project, down to each batch,
-commit, branch and folder, and deletes the files of many runs at once. Open it from your profile menu (**Storage
-usage**, next to **Settings**), or from a project's sidebar.
+commit, branch and folder, and deletes the files of many runs at once. Open it from your account menu (**Storage
+usage**, next to **Settings**), from a project's sidebar, or with **Storage usage** at the top right of your home page.
 
 ## Find what takes space
 - **Projects**: your usage in each project. Click one to see its batches.
 - **Batches**, **Commits**, **Branches**: the biggest first. Filter by project, branch, or age (*No runs for 3 months*),
   search, and sort by size, age or number of runs.
-- **Folders**: the folders your runs are in, like on disk. **Paste the folder from a quota alert** to see what QA-Board
-  knows there, and open its subfolders. Your biggest folders are suggested.
+- **Folders**: the folders your runs are in, like on disk. Paste a folder in its box, e.g. the one from a quota alert,
+  to see what QA-Board knows there, and open its subfolders. Your biggest folders are suggested.
 - **Users**: who uses the most, with their share and biggest project, for everyone's runs or a project's. Click someone
   to see their runs: admins can then delete them.
-- **Your runs** or **Everyone's**: switch between your runs and everyone's. You see other people's usage in the projects
-  where you're a developer or an owner; admins see everyone's.
+- **Your runs**, **Everyone's** or **Someone…**: switch between your runs, everyone's, and one person's: search for
+  their name, or type the user name their runs were made with. You see other people's usage in the projects where
+  you're a developer or an owner; admins see everyone's.
 - Opened from a project, the page shows only that project: **All projects**, at the top, shows them all again.
+
+<Shot id="storage/batches" />
 
 In **Folders**, folders that only lead to one subfolder are skipped: the page starts where your runs split, and a row
 like `a/b/c` opens `c` directly. Click `/` in the path to start from the root.
+
+<Shot id="storage/folders" />
 
 Each batch and commit shows its commit's message (hover for all of it), author and date, and each branch its latest
 commit. Click a project, branch or person in a row to filter by it, and a row to select it.
@@ -31,7 +36,8 @@ runs from QA-Board.
 
 ## What QA-Board deletes automatically
 The page lists what your admins scheduled, e.g. *Old results are deleted: the files of runs on commits without new runs
-for 1 month are deleted*, when it runs next, and what it keeps (milestones, the reference branch). With a project
+for 1 month are deleted*, when it runs next, and what it keeps (milestones, the reference branch). Several rules are
+summed up in a line: **Show the rules** to see them all. With a project
 selected, it says what the project's *qaboard.yaml* sets (`storage.garbage.after`). The project's commit list shows it
 too, at the top right: *Results deleted after 1 month*.
 
@@ -45,6 +51,8 @@ To keep a batch, make it a [milestone](/docs/user-guide/milestones).
    - **Other people's runs**: you delete only the runs you ran. Ask them, or an admin.
    - **Running runs** are kept.
 3. For big deletions, type the sentence QA-Board asks for, then confirm.
+
+<Shot id="storage/delete" />
 
 The deletion runs in the background: follow it in **Your deletions**, at the top of the page, with its errors, e.g.
 files QA-Board could not delete.
@@ -64,8 +72,8 @@ left when they delete the runs for good, usually with a schedule listed in *What
 </details>
 
 ## Exports
-**Export** on the commit page gathers files from many runs in one folder, to share them. **Exports** lists yours:
-their folder, size, the commit and batch they come from, and when you last exported there. Check the ones you don't need
+**Export** on the commit page gathers files from many runs in a new folder, to share them. **Exports** lists yours:
+their name, folder, size, the commit and batch they come from, and when you last exported there. Check the ones you don't need
 and **Delete…**: no terminal needed. The runs aren't deleted.
 
 :::caution Exports are links
@@ -74,13 +82,23 @@ free the space while the export exists, and the other way round. QA-Board tags t
 (when you pick another folder) take space of their own.
 :::
 
-Exporting again to the same folder adds to it, and the export is measured again. If you deleted files of an export
-yourself, the refresh button measures it again.
+Each export goes to a new folder. Exporting into a folder you chose adds to it, and the export is measured again. If you deleted files of an export
+yourself, the refresh button measures it again. Exports made before QA-Board tracked them show up once your admins scan
+the storage, tagged *Found by a scan*.
+
+<details>
+<summary>Exports in a folder someone chose</summary>
+
+Deleting an export deletes its folder. When a scan found an export in a folder someone chose rather than one QA-Board
+made, it's tagged *In a folder someone chose*: other people may have files there, so you can delete it only if all its
+files are yours. Ask the others, or an admin, for the rest.
+
+</details>
 
 ## Files QA-Board doesn't track
-Your admins can scan the storage to find what QA-Board doesn't know: old exports, runs whose upload failed, what
-deleted runs left, files you copied next to your runs. **Not tracked** lists what the latest scan found that you own,
-the biggest first, with when it last changed.
+Your admins can scan the storage to find what QA-Board doesn't know: runs whose upload failed, what deleted runs left,
+files you copied next to your runs. **Not tracked** lists what the latest scan found that
+you own, the biggest first, with when it last changed.
 
 Check the folders you don't need and **Delete…**. You can only delete folders whose files are all yours: ask the
 others, or an admin, for the rest. What QA-Board uses (runs, artifacts) can't be deleted from there: delete runs from the
@@ -98,9 +116,9 @@ Click **Why does IT's quota say something else?** on the page: it gives the comm
 subfolders, your biggest files and your exports, for the folder you paste:
 
 ```bash
-du -sh /algo/project/outputs/alice
-du -h --max-depth=3 /algo/project/outputs/alice 2>/dev/null | sort -rh | head -30
-find /algo/project/outputs/alice -user alice -type f -size +100M -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -50 | numfmt --to=si --field=1
+du -sh /mnt/qaboard/kitefin/camera-isp
+du -h --max-depth=3 /mnt/qaboard/kitefin/camera-isp 2>/dev/null | sort -rh | head -30
+find /mnt/qaboard/kitefin/camera-isp -user ines -type f -size +100M -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -50 | numfmt --to=si --field=1
 ```
 
 Prefer deleting runs from QA-Board rather than their folders: QA-Board then knows the space is free.

@@ -5,11 +5,12 @@ sidebar_label: How it works
 description: How QA-Board runs your code and where its results go, then the steps to add it to a project, from qa init to CI, with what you get after each.
 ---
 This guide is for whoever adds QA-Board to a project: you wrap your code with `qa`, and the web app shows every
-commit's outputs and metrics next to a reference's. This page shows how the pieces fit, then the steps, in order.
-Looking at results that someone else set up? Read the [user guide](/docs/user-guide/overview).
+commit's outputs and metrics next to a reference's. This page shows how the pieces fit, then the steps, in order. A
+coding agent can do these steps too: see [Coding agents](/docs/agents). Looking at results that someone else set up?
+Read the [user guide](/docs/user-guide/overview).
 
-QA-Board was born at Samsung Israel R&D Center in 2018, where it is the central quality platform for ~50 projects in
-production.
+QA-Board was born at Samsung in 2018, where it is the central quality platform for ~50 projects in production, with
+more than 40 million runs.
 
 ## What you get {#what-you-get}
 For each commit, the web app compares your runs with the reference's: metrics first, then the files your code wrote,
@@ -49,6 +50,9 @@ like images with synced zoom and their difference.
   the server's API.
 - **The web app compares.** It shows a commit's runs next to the reference's: by default, the latest results of your
   reference branch.
+- **Scripts and agents read the same results.** The web app reads them from the server's HTTP API, and so can your
+  scripts, CI jobs and agents: from Python with `qaboard.runs(url)` ([results in scripts](/docs/apis)), or from any
+  language ([HTTP API](/docs/http-api)).
 - ***qaboard.yaml***, at the root of your repository, tells `qa` how to run your code, where your inputs are, and how
   to show your metrics and files.
 
@@ -65,8 +69,8 @@ project whose code already runs from a script.
    **You get:** `qa --help` works. See [Installation](/docs/installation). No server yet? The
    [quickstart](/docs/get-started/quickstart) starts one on your computer; for your team, see
    [Starting a server](/docs/deploy).
-2. **Create *qaboard.yaml***, about 5 minutes: run `qa init` at the root of your repository, then set the project's
-   name and its reference branch.
+2. **Create *qaboard.yaml***, about 5 minutes: run `qa init` at the root of your repository, then check the
+   project's name, its reference branch, and `storage`: the results folder your server reads.
    **You get:** *qaboard.yaml* and a `qa/` folder with *main.py*, *batches.yaml* and *metrics.yaml*. See
    [Project setup](/docs/project-init).
 3. **Point to your inputs**, about 10 minutes: set the folder they're in, `inputs.database`.
@@ -89,14 +93,15 @@ project whose code already runs from a script.
 
    <Clip
      id="cli/batch"
-     caption="qa --share batch prints the link to the results, then runs the code on each input, one after the other."
+     caption="qa --share batch prints the link to the results, then runs the code on each input and configuration."
    />
 
-8. **Pick a runner**, from 15 minutes to an hour: by default, `qa batch` does the runs one after the other, on the
-   machine where you start it. Runners do them at the same time, on that machine or on a cluster:
-   [local](/docs/local-multiprocessing), [LSF](/docs/lsf-integration), [Dask](/docs/dask-integration),
-   [Celery](/docs/celery-integration) or [Jenkins](/docs/jenkins-integration).
-   **You get:** a batch's runs in parallel.
+8. **Pick a runner**, from 15 minutes to an hour: by default, `qa batch` does the runs on the machine where you
+   start it, one per CPU with the *qaboard.yaml* of `qa init` (the [local](/docs/local-multiprocessing) runner).
+   Other runners send them to an LSF, Slurm, PBS or SGE cluster, to Kubernetes, or to Celery workers: see
+   [Choose where runs execute](/docs/runners), and [Coming from another tool](/docs/coming-from-other-tools) if you
+   run evaluations with MLflow, W&B Launch, ClearML or job arrays today. `qa doctor` checks the setup.
+   **You get:** a batch's runs on many machines at once.
 9. **Run in CI**, about 30 minutes: run `qa batch ci` on every push, on CI runners that mount the storage, and connect
    your [git host](/docs/project-init#optional-connect-your-git-host).
    **You get:** every commit's results, compared with the reference branch, shown as **CI**. See
@@ -104,9 +109,12 @@ project whose code already runs from a script.
 
 ### When you need them {#optional-steps}
 - **Tuning from the web app:** people run batches with other parameters from the web app, without a checkout. It needs
-  your build's artifacts and a runner the server can use. See [Tuning from the web app](/docs/tuning-from-the-webapp)
-  and [Artifacts](/docs/storage/artifacts). Automated tuning with `qa optimize` is experimental: see
-  [Automated tuning](/docs/auto-optimization).
+  your build's artifacts and a runner the server can use. See [Tuning from the web app](/docs/tuning-from-the-webapp),
+  [Artifacts](/docs/storage/artifacts), and for the server's admins,
+  [Run batches from the web app](/docs/backend-admin/runners).
+- **Automated tuning:** `qa optimize` searches the parameters that give the best metrics, from the CLI or the web app.
+  See [Automated tuning with qa optimize](/docs/auto-optimization), and, for the people who tune,
+  [Find the best parameters automatically](/docs/user-guide/automated-tuning).
 - **A quality gate (experimental):** `qa gate` fails the CI job when metrics regress against the reference. See
   [Quality gate](/docs/quality-gate).
 - **Integrations:** links and buttons in the web app's **Integrations** menu, to start CI jobs, call webhooks or open
@@ -125,7 +133,7 @@ project whose code already runs from a script.
     Projects, batches, runs, inputs, configurations, references and milestones, in plain words.
   </Card>
   <Card title="Use cases" to="/docs/use-cases" eyebrow="Examples">
-    Five demo projects, with their qaboard.yaml and what they look like in the web app.
+    Six demo projects, with their qaboard.yaml and what they look like in the web app.
   </Card>
   <Card title="Quickstart" to="/docs/get-started/quickstart" eyebrow="Try it">
     A QA-Board server on your computer, with the demo projects.

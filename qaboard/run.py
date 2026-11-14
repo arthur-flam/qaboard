@@ -1,3 +1,5 @@
+import os
+import sys
 import json
 import copy
 from pathlib import Path
@@ -7,6 +9,7 @@ from typing import List, Dict, Optional, Any
 import click
 
 from .conventions import serialize_config, output_dirs_for_input_part
+from .attempts import latest_dir
 from .utils import merge, input_metadata
 
 
@@ -54,6 +57,11 @@ class RunContext():
         return self.input_path.relative_to(self.database)
 
     @property
+    def input(self) -> str:
+        """The input's path relative to the database, as given to `qa run --input` and in batches: like `Run.input` (qaboard/results.py)"""
+        return self.rel_input_path.as_posix()
+
+    @property
     def output_directory(self):
         return self.output_dir
 
@@ -73,12 +81,28 @@ class RunContext():
 
     def is_failed(self, verbose=False):
       metrics_path = self.output_dir / 'metrics.json'
+      if not metrics_path.exists():
+        # NFS: a job on another host wrote the files, and this host may still remember that they didn't exist, e.g.
+        # when `qa batch` looked for the attempt's directory before starting the job. Reading the folders asks the server.
+        for directory in (self.output_dir.parent, self.output_dir):
+          try:
+            os.listdir(directory)
+          except OSError:
+            pass
       if metrics_path.exists():
-          with metrics_path.open() as f:
-            is_failed = json.load(f).get('is_failed', True)
-            if verbose and is_failed:
-                click.secho(f"[ERROR] Failed run! More info at: {self.output_directory}/log.txt", fg='red', err=True)
-            return is_failed
+          # try to load the metrics file
+          try:
+            with metrics_path.open() as f:
+              is_failed = json.load(f).get('is_failed', True)
+          except (OSError, ValueError): # empty/corrupt file (run killed before reporting), or a read race on the cluster
+            if verbose:
+              click.secho(f'[ERROR] Failed run! Could not parse {metrics_path}. It usually means that your run/job was killed before it got a chance to update QA-Board', fg='red', err=True)
+            return True
+
+          # report failure
+          if verbose and is_failed:
+            click.secho(f"[ERROR] Failed run! More info at: {self.output_directory}/log.txt", fg='red', err=True)
+          return is_failed
       else:
           if verbose:
             if not self.output_dir.exists():
@@ -124,7 +148,7 @@ class RunContext():
         input_path_absolute = (database / input_path).resolve()
         if not input_path_absolute.exists():
             click.secho(f"[ERROR] {input_path_absolute} cannot be found", fg='red')
-            exit(1)
+            sys.exit(1)
 
         if not ctx.params.get('output_path'):
             assert input_path_absolute.relative_to(database)
@@ -136,6 +160,8 @@ class RunContext():
             )
             # we don't want people using ../ in the input causing issues 
             assert output_dir.resolve().relative_to(ctx.obj['batch_conf_dir'].resolve())
+            # a run that was done again is in its latest attempt's directory: `qa run` reserves the next
+            output_dir = latest_dir(output_dir)
         else:
             output_dir = ctx.params.get('output_path')
 
@@ -145,19 +171,9 @@ class RunContext():
             extra_parameters["forwarded_args"] = ctx.params["forwarded_args"]
         extra_parameters.update(ctx.obj["extra_parameters"])
         ctx.obj["extra_parameters"] = extra_parameters
-        if "/tv/" not in str(input_path):
-            metadata = input_metadata(input_path_absolute, database, input_path, config)
-            if metadata:
-                metadata_keys = list(metadata.keys())
-                for k in metadata_keys:
-                    if k.startswith('_') or k == "input_path" or k == "rel_input_path":
-                        del metadata[k]
-        else:
-            metadata = {}
         run_context = RunContext(
             input_path=input_path_absolute,
             database=database,
-            input_metadata=metadata,
             configurations=ctx.obj["configurations"],
             extra_parameters=extra_parameters,
             platform=ctx.obj["platform"],
@@ -165,6 +181,15 @@ class RunContext():
             type=ctx.obj['input_type'],
             click_context=ctx,
         )
+        # FIXME: SIRC-specific workaround, inputs with /tv/ in their path skip metadata() and get no input_metadata.
+        #        It's an easy fix on SIRC's side, then we remove this special case.
+        #        Nothing else in qaboard depends on it. Note that `qa batch` still calls metadata() for those inputs when filtering.
+        if "/tv/" not in str(input_path):
+            metadata = input_metadata(run_context, config)
+            for k in list(metadata.keys()):
+                if k.startswith('_') or k == "input_path" or k == "rel_input_path":
+                    del metadata[k]
+            run_context.input_metadata = metadata
 
         # for backward compatibility we need obj to behave nicely as the run_context...
         # it's also what we send to the API for now...
@@ -184,12 +209,13 @@ class RunContext():
 
 
     @property
-    def configs(self):        
+    def configs(self):
         _extra_parameters = copy.deepcopy(self.extra_parameters)
         if _extra_parameters:
             if "_configs" in _extra_parameters:
                 _extra_parameters_configs = _extra_parameters.pop("_configs")
-                return [*self.configurations, *_extra_parameters_configs, self.extra_parameters]
+                # the other tuning parameters, without _configs (also kept out of .params)
+                return [*self.configurations, *_extra_parameters_configs, *([_extra_parameters] if _extra_parameters else [])]
             else:
                 return [*self.configurations, self.extra_parameters]
         else:

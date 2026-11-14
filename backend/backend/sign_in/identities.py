@@ -11,6 +11,12 @@ from ..tokens import utcnow, iso
 DROPPED_CLAIMS = {'at_hash', 'c_hash', 'nonce', 'sid', 'session_state', 'jti'}
 
 
+def kept_claims(claims: Optional[dict]) -> dict:
+  """The claims we store: no credentials, no pictures as data: URIs (they're in user_pictures)"""
+  return {k: v for k, v in (claims or {}).items()
+          if k not in DROPPED_CLAIMS and not (isinstance(v, str) and v.startswith('data:') and len(v) > 1000)}
+
+
 def find(provider_id: str, subject: str):
   from ..models import UserIdentity
   return UserIdentity.query.filter(UserIdentity.provider_id == provider_id, UserIdentity.subject == subject).one_or_none()
@@ -34,12 +40,34 @@ def record(user, provider_id: str, subject: str, email: Optional[str] = None, cl
       db_session.add(identity)
     identity.subject = subject
   identity.email = email or identity.email
-  identity.claims = {k: v for k, v in (claims or {}).items() if k not in DROPPED_CLAIMS}
+  identity.claims = kept_claims(claims)
   identity.last_login_at = utcnow()
   identity.claims_refreshed_at = identity.last_login_at
   if refresh_token:
     store_refresh_token(identity, refresh_token)
   return identity
+
+
+def verified_emails(user, identities=None) -> set:
+  """
+  The user's emails we can trust (lowercase), e.g. for email_domain group rules, the `domains` access policy and
+  $QABOARD_ADMINS: the directory's (LDAP, SAML accounts, and accounts with LDAP's attributes), and those an OIDC
+  provider says are verified (`email_verified`). Not local accounts': sign-up doesn't verify them.
+  `identities`: the user's, if already loaded.
+  """
+  from ..access.groups import directory_attributes
+  emails = set()
+  if user.email and ((getattr(user, 'login_type', None) or '').upper() in ('LDAP', 'SAML') or directory_attributes(user)):
+    emails.add(user.email.lower())
+  if identities is None:
+    from ..models import UserIdentity
+    identities = UserIdentity.query.filter(UserIdentity.user_id == user.id).all()
+  for identity in identities:
+    claims = identity.claims or {}
+    email = getattr(identity, 'email', None)
+    if email and claims.get('email_verified') in (True, 'true') and str(claims.get('email') or '').lower() == email.lower():
+      emails.add(email.lower())
+  return emails
 
 
 def store_refresh_token(identity, refresh_token: Optional[str]):

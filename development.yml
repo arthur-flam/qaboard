@@ -18,6 +18,9 @@ services:
     - ${QABOARD_DEV_PROXY_PORT_5001:-5001}:5001
 
   backend:
+    # With the compilers: `uv run` installs the dependencies in backend/.venv
+    build:
+      target: dev
     volumes:
     - ./qaboard:/qaboard/qaboard
     - ./backend:/qaboard/backend
@@ -102,6 +105,9 @@ services:
       driver: json-file
   
   website:
+    # The default target only has the built site
+    build:
+      target: dev
     command: yarn start
     volumes:
     - ./website:/website
@@ -109,6 +115,7 @@ services:
     - ./charts:/charts:ro
     - ./examples:/examples:ro
     - ./docs-media/shots.yaml:/docs-media/shots.yaml:ro
+    - ./docs-media/standins:/docs-media/standins:ro
     environment:
       # to access the server from outside the docker environment
       - HOST=0.0.0.0

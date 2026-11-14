@@ -2,6 +2,7 @@
 id: project-access
 sidebar_label: Project access
 title: Project access and roles
+description: "Decide who can see and act on each project: visibility, roles, owners, groups from your directory or identity provider, and access requests."
 ---
 
 Decide who can see each project, and who can send results or act on its runs, from the web app. Projects' owners
@@ -59,7 +60,7 @@ add users from their groups in your directory or identity provider:
 | `groups` | single sign-on (OpenID Connect), if your IdP sends it | `camera-team` |
 | `realm_access.roles` | Keycloak's realm roles (nested claims are written with dots) | `camera` |
 | `memberOf` | LDAP (or the attributes in `QABOARD_LDAP_GROUP_ATTRIBUTES`), SAML attributes | `CN=camera-algo,OU=Groups,DC=example,DC=com`, or just `camera-algo` |
-| `email_domain` | any | `example.com` |
+| `email_domain` | LDAP, SAML, single sign-on if your IdP says the email is verified (`email_verified`); not local accounts | `example.com` |
 
 Values match case-insensitively; an LDAP group matches by its full DN or its name. Members you add by hand stay.
 To write rules, look at **Admin → Audit**: `auth.login` events list the groups each sign-in put users in, and for
@@ -93,7 +94,7 @@ to add the groups of their groups: it costs one more query per user.
 
 Identity providers send the groups when users sign in. To keep them up to date between sign-ins, enable **Refresh
 groups daily** on the provider (`QABOARD_OIDC_REFRESH_GROUPS=true` for the environment's): QA-Board asks for
-`offline_access`, keeps each user's refresh token encrypted (it needs `QABOARD_ENCRYPTION_KEY`), and reads their claims
+`offline_access`, keeps each user's refresh token encrypted ([the encryption key](/docs/backend-admin/settings#secrets-and-the-encryption-key)), and reads their claims
 again every day. When the provider refuses a refresh token, e.g. the user was disabled, the groups it gave end, and
 the user's QA-Board sessions from that provider too: signing in again gives the groups back.
 

@@ -36,8 +36,24 @@ def finish(user, provider_id: str, subject: Optional[str] = None, email: Optiona
   db_session.commit()
 
 
-def new_user_status(email: Optional[str]) -> str:
-  return initial_status(email)
+def new_user_status(email: Optional[str], verified: bool = True) -> str:
+  """`verified`: whether the email is (identities.verified_emails): the `domains` policy doesn't trust the others"""
+  return initial_status(email if verified else None)
+
+
+def refresh_name(user, provider, claims: dict):
+  """
+  Keeps an account's name and email up to date with the IdP's. Only verified emails, that no other account uses:
+  emails decide who is an admin ($QABOARD_ADMINS) and the `domains` access policy. Doesn't commit.
+  """
+  from ..models import User
+  full_name = claims.get(provider.claim('name'))
+  if isinstance(full_name, str) and full_name.strip() and full_name.strip() != user.full_name:
+    user.full_name = full_name.strip()
+  email = claims.get(provider.claim('email'))
+  if isinstance(email, str) and email and email != user.email and claims.get('email_verified') in (True, 'true'):
+    if User.query.filter(User.email == email, User.id != user.id).count() == 0:
+      user.email = email
 
 
 def oidc_account(provider, claims: dict, linking_user=None):
@@ -75,7 +91,8 @@ def oidc_account(provider, claims: dict, linking_user=None):
     user = User.query.filter(User.user_name == user_name).one_or_none()
   elif match == 'email' and email and claims.get('email_verified') is True:
     user = User.query.filter(User.email == email).one_or_none()
-  if user is not None:
+  # service accounts only use tokens
+  if user is not None and user.kind != 'service':
     return user, email
 
   if User.query.filter(User.user_name == user_name).one_or_none() is not None:
@@ -90,10 +107,13 @@ def oidc_account(provider, claims: dict, linking_user=None):
     email=email_for_account,
     login_type='OIDC',
     data={},
-    status=new_user_status(email),
+    status=new_user_status(email, verified=claims.get('email_verified') in (True, 'true')),
   )
   db_session.add(user)
   db_session.flush()
   from ..audit import audit
   audit('user.create', 'user', user.id, user.user_name, user=user, meta={"provider": provider.id, "status": user.status})
+  # the `qa` commands they ran before signing in, as this name, are theirs (backend/usage.py)
+  from ..usage import claim_events
+  claim_events(user)
   return user, email

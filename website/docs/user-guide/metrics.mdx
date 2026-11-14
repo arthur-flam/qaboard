@@ -51,7 +51,8 @@ For each **summary metric**:
 - when the metric has a [target](#targets), a bar with the share of runs that meet it, for each side;
 - box plots of the new and reference values, over the target's zone in green and red.
 
-Hover a median for its exact value and the number of runs, and the change for which way is better.
+Hover a median for its exact value and the number of runs, the change for which way is better, and a box plot for its
+quartiles, mean and whiskers.
 
 Pick other metrics in the box at the top of the view. When the project doesn't choose its summary metrics, the
 Summary shows up to 8: those that changed the most vs the reference.
@@ -134,6 +135,13 @@ compares with the reference.
 Targets are set by the project, with the metric's definition: see
 [Declaring metrics](/docs/computing-quantitative-metrics#declaring-metrics). A target needs to know which way is
 better: without it, cells stay blue.
+
+## Metrics added after the run {#added-metrics}
+Scripts can add metrics to a run once it's done, for instance a score computed later from its outputs. On the run
+cards and in the Metrics Diff and Metrics Table, their values have a small pencil mark: hover it to see who added the
+metric, when, and with which script, and the run's own value if the script replaced it. Hovering a metric's name in
+the tables says how many runs have values added this way. To add metrics from your scripts, see
+[Add metrics to runs](/docs/apis#log).
 
 ## Failed runs {#failed-runs}
 A failed run has a red **Failed** tag in the tables, and the **N failed** message above the views lists it. Most

@@ -5,7 +5,10 @@ import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncEx
 import { pixelDensityRatio } from './comparison';
 import { renderDiff } from './diffRenderer';
 import { drawHighlight } from './highlightRenderer';
+import { HIGHLIGHT } from './histogram';
+import { MASK } from './imageAnalysis';
 import { cellFont, formatNumber, formatSigned, MIN_CELL, textColorOn, visiblePixels } from './pixels';
+import { clipRegion } from './regions';
 import { imageKey, thumbnailUrl } from './sources';
 
 // Redraws after the viewers draw (once per frame), and when `deps` change
@@ -63,6 +66,91 @@ export const HighlightLayer = ({ controller, pane, highlight, active, width, hei
       // the image server doesn't send CORS headers: the histogram says so
     }
   }, [shown, highlight?.lo, highlight?.hi, highlight?.channels.join(), width, height]);
+  if (!shown) return null;
+  return <canvas ref={canvas} className="qiv-highlight" style={{ width, height }} />;
+};
+
+
+// The pixels of a pane's image within a range of its own values (raw, 16-bit…), picked on the histogram of the image
+// values: the mask of the pixels read (highlightMask in imageAnalysis.js), in the image's pixels. It follows the image
+// as users pan and zoom; the pixels not read show as they are.
+const rgba = ([r, g, b, a]) => `rgba(${r}, ${g}, ${b}, ${a})`;
+
+// The chunks of a mask as alpha masks: { inside, outside } canvases, made once per mask
+const mask_canvases = new WeakMap();
+const canvasesOf = chunk => {
+  let canvases = mask_canvases.get(chunk);
+  if (canvases) return canvases;
+  const { w, h, states } = chunk;
+  const make = state => {
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const context = canvas.getContext('2d');
+    const image = context.createImageData(w, h);
+    for (let p = 0; p < states.length; p++) if (states[p] === state) image.data[4 * p + 3] = 255;
+    context.putImageData(image, 0, 0);
+    return canvas;
+  };
+  canvases = { inside: make(MASK.in), outside: make(MASK.out) };
+  mask_canvases.set(chunk, canvases);
+  return canvases;
+};
+
+// The zebra stripes of the highlighted pixels, like HighlightLayer's, in device pixels
+let stripes = null;
+const stripesOf = (context, ratio) => {
+  const period = Math.max(2, Math.round(HIGHLIGHT.period * ratio));
+  if (stripes?.period !== period) {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = period;
+    const tile_context = tile.getContext('2d');
+    for (let y = 0; y < period; y++)
+      for (let x = 0; x < period; x++) {
+        tile_context.fillStyle = rgba((x + y) % period < period / 2 ? HIGHLIGHT.light : HIGHLIGHT.dark);
+        tile_context.fillRect(x, y, 1, 1);
+      }
+    stripes = { period, tile };
+  }
+  return context.createPattern(stripes.tile, 'repeat');
+};
+
+const scratch = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+
+export const ImageHighlightLayer = ({ controller, pane, mask, active, width, height }) => {
+  const canvas = useRef(null);
+  const shown = !!mask && active;
+  useRedraw(controller, () => {
+    const element = canvas.current;
+    if (!shown || !element) return;
+    const ratio = pixelDensityRatio();
+    sizeCanvas(element, width, height, ratio);
+    const context = element.getContext('2d');
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, element.width, element.height);
+    const transform = controller.imageTransform(pane);
+    if (!transform?.scale) return;
+    const scale = transform.scale * ratio;
+    // each image pixel a square once zoomed in, blended when zoomed out
+    const paint = (target, which, fill) => {
+      const target_context = target.getContext('2d');
+      target_context.setTransform(1, 0, 0, 1, 0, 0);
+      target_context.globalCompositeOperation = 'source-over';
+      target_context.imageSmoothingEnabled = scale < 1;
+      target_context.setTransform(scale, 0, 0, scale, transform.origin.x * ratio, transform.origin.y * ratio);
+      for (const chunk of mask.chunks) target_context.drawImage(canvasesOf(chunk)[which], chunk.x, chunk.y);
+      target_context.setTransform(1, 0, 0, 1, 0, 0);
+      target_context.globalCompositeOperation = 'source-in';
+      target_context.fillStyle = fill(target_context);
+      target_context.fillRect(0, 0, target.width, target.height);
+      target_context.globalCompositeOperation = 'source-over';
+    };
+    paint(element, 'outside', () => rgba(HIGHLIGHT.dimmed));
+    sizeCanvas(scratch, width, height, ratio);
+    scratch.getContext('2d').clearRect(0, 0, scratch.width, scratch.height);
+    paint(scratch, 'inside', target_context => stripesOf(target_context, ratio));
+    context.drawImage(scratch, 0, 0);
+  }, [shown, mask, width, height]);
   if (!shown) return null;
   return <canvas ref={canvas} className="qiv-highlight" style={{ width, height }} />;
 };
@@ -245,13 +333,16 @@ export const Crosshair = ({ controller, pane }) => {
   if (!pointer) return null;
   const position = controller.screenPoint(pane, pointer.point);
   if (!position) return null;
-  // white over a dark outline, to show on any image; open in its middle, to see the pixel
-  return <svg className="qiv-crosshair" style={{ left: position.x, top: position.y }} width="25" height="25" viewBox="0 0 25 25" aria-hidden="true">
-    <path d={CROSS} stroke="rgba(0, 0, 0, 0.75)" strokeWidth="3" />
-    <path d={CROSS} stroke="#fff" strokeWidth="1" />
+  // white over a dark outline, to show on any image; open in its middle, to see the pixel. A pixel pinned (clicked) is
+  // framed, in the accent color
+  const pinned = !!pointer.pinned;
+  return <svg className={`qiv-crosshair ${pinned ? 'qiv-pinned' : ''}`} style={{ left: position.x, top: position.y }} width="25" height="25" viewBox="0 0 25 25" aria-hidden="true">
+    <path d={pinned ? `${CROSS}${FRAME}` : CROSS} stroke="rgba(0, 0, 0, 0.75)" strokeWidth="3" fill="none" />
+    <path d={pinned ? `${CROSS}${FRAME}` : CROSS} stroke="#fff" strokeWidth="1" fill="none" />
   </svg>;
 };
 const CROSS = 'M12.5 0v9M12.5 16v9M0 12.5h9M16 12.5h9';
+const FRAME = 'M8.5 8.5h8v8h-8z';
 
 // The row or column of the images hovered on its profile (analysisPanel.jsx): { axis: 'x' | 'y', value } in the pixels of
 // the first image. Zoomed in, it frames the pixels.
@@ -317,5 +408,75 @@ export const Minimap = ({ controller, image, size }) => {
       width: `${100 * region.w / size.width}%`,
       height: `${100 * region.h / size.height}%`,
     }} />
+  </div>;
+};
+
+
+// Where the regions are drawn in a pane, in CSS pixels: [{ index, x, y, w, h }], without those outside the image.
+// Regions are in the pixels of the first image (size), the pane's image may have another resolution (pane_size).
+export const regionBoxes = (regions, size, pane_size, transform) => {
+  if (!transform?.scale || !size?.width) return [];
+  const k = (pane_size?.width ? pane_size.width / size.width : 1) * transform.scale;
+  return regions.flatMap((region, index) => {
+    const clipped = clipRegion(region, size);
+    return clipped ? [{ index, x: transform.origin.x + clipped.x * k, y: transform.origin.y + clipped.y * k, w: clipped.w * k, h: clipped.h * k }] : [];
+  });
+};
+
+// Labels of every region while they're few and large enough on screen, else of the active and hovered ones
+const MAX_LABELED = 25;
+const MIN_LABELED_WIDTH = 28;
+const LABEL_ROOM = 48;
+
+// The regions of the set shown, outlined on the images. The active one stands out, and the one under the pointer shows
+// its label. Clicking a label shows its region.
+export const RegionOutlines = ({ controller, pane, regions, active, size, paneSize, onSelect }) => {
+  // where the image is drawn, as users zoom and pan
+  const [transform, setTransform] = useState(null);
+  useEffect(() => {
+    const update = () => {
+      const next = controller.imageTransform(controller.geometry(pane));
+      setTransform(previous => previous && next && previous.scale === next.scale && previous.origin.x === next.origin.x && previous.origin.y === next.origin.y ? previous : next);
+    };
+    update();
+    return controller.onDraw(update);
+  }, [controller, pane]);
+  const pointer = useSyncExternalStore(controller.subscribePointer, controller.getPointer);
+  const boxes = regions?.length ? regionBoxes(regions, size, paneSize, transform) : [];
+  if (boxes.length === 0) return null;
+  // the smallest under the pointer
+  const at = pointer && controller.screenPoint(pane, pointer.point);
+  const hovered = at ? boxes
+    .filter(box => at.x >= box.x && at.x <= box.x + box.w && at.y >= box.y && at.y <= box.y + box.h)
+    .sort((a, b) => a.w * a.h - b.w * b.h)[0]?.index ?? null : null;
+  const all_labels = boxes.length <= MAX_LABELED;
+  // the active one on top
+  const ordered = [...boxes].sort((a, b) => (a.index === active) - (b.index === active));
+  return <div className={`qiv-outlines ${active !== null && active !== undefined ? 'qiv-outlines-focus' : ''}`} aria-hidden="true">
+    <svg width="100%" height="100%">
+      {ordered.map(({ index, x, y, w, h }) => {
+        const color = regions[index].color ?? 'var(--qiv-accent)';
+        const state = index === active ? 'qiv-outline-active' : index === hovered ? 'qiv-outline-hovered' : '';
+        return <g key={index} className={`qiv-outline ${state}`}>
+          <rect className="qiv-outline-halo" x={x} y={y} width={w} height={h} />
+          <rect className="qiv-outline-line" x={x} y={y} width={w} height={h} style={{ stroke: color, fill: color }} />
+        </g>;
+      })}
+    </svg>
+    {ordered.filter(({ index, w }) => index === active || index === hovered || (all_labels && w >= MIN_LABELED_WIDTH)).map(({ index, x, y, h }) => {
+      const region = regions[index];
+      // above the region, else inside it at its bottom: the top of the pane has the image's name
+      const top = y >= LABEL_ROOM ? y - 18 : Math.max(0, y + h - 18);
+      return <button
+        key={index}
+        type="button"
+        tabIndex={-1}
+        className={`qiv-outline-label ${index === active ? 'qiv-active' : ''}`}
+        style={{ left: Math.max(0, x), top, borderLeftColor: region.color ?? 'var(--qiv-accent)' }}
+        title={region.label ?? `Region ${index + 1}`}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={() => onSelect(index)}
+      >{region.label ?? index + 1}</button>;
+    })}
   </div>;
 };

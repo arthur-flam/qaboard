@@ -22,8 +22,8 @@ const json = (data, status = 200) => Promise.resolve(new Response(JSON.stringify
 const provider = props => ({ type: 'oidc', kind: 'redirect', recommended: false, ...props, start_url: `/api/v1/auth/oidc/${props.id}/start${props.next ? `?next=${encodeURIComponent(props.next)}` : ''}` });
 const options = ({ next, ...props } = {}) => ({
   providers: [
-    provider({ id: 'github', name: 'GitHub', next }),
     provider({ id: 'sso', name: 'Company SSO', recommended: true, next }),
+    provider({ id: 'github', name: 'GitHub', next }),
     { id: 'ldap', type: 'ldap', kind: 'password', name: 'Directory account (LDAP)', recommended: false, start_url: null },
   ],
   password_form: true,
@@ -90,6 +90,23 @@ describe('LoginPage', () => {
     expect(goTo).not.toHaveBeenCalled();
   });
 
+  it("keeps the server's order: admins choose it", async () => {
+    mockApi({
+      'GET /api/v1/auth/providers': options({ providers: [
+        provider({ id: 'github', name: 'GitHub' }),
+        provider({ id: 'sso', name: 'Company SSO', recommended: true }),
+      ] }),
+      'GET /api/v1/user/me/': anonymous_me,
+    });
+    renderAt('/login');
+    const sso = await screen.findByRole('button', { name: 'Company SSO' });
+    const github = screen.getByRole('button', { name: 'GitHub' });
+    expect(github.compareDocumentPosition(sso) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // the recommended one is the main button only when it comes first
+    expect(sso).not.toHaveClass('bp6-intent-primary');
+    expect(github).not.toHaveClass('bp6-intent-primary');
+  });
+
   it('the password form is the main action without single sign-on', async () => {
     mockApi({ 'GET /api/v1/auth/providers': options({ providers: [] }), 'GET /api/v1/user/me/': anonymous_me });
     renderAt('/login');
@@ -122,6 +139,19 @@ describe('LoginPage', () => {
     expect(init.body.get('password')).toBe('secret');
     expect(queryClient.getQueryData(userQuery.queryKey)).toMatchObject({ is_logged: true, user_name: 'alice', is_admin: true });
     expect(toaster.show).toHaveBeenCalledWith(expect.objectContaining({ message: 'Welcome, Alice' }));
+  });
+
+  it("loads the server's own pages after signing in, like pgAdmin", async () => {
+    let signed_in = false;
+    mockApi({
+      'GET /api/v1/auth/providers': options(),
+      'GET /api/v1/user/me/': () => [signed_in ? { is_authenticated: true, user_id: 1, user_name: 'alice', is_admin: true } : anonymous_me, 200],
+      'POST /api/v1/user/auth/': () => { signed_in = true; return [{ user_id: 1, user_name: 'alice', status: 'active', is_admin: true }, 200]; },
+    });
+    renderAt('/login?next=%2Fpgadmin4%2Fbrowser%2F');
+    await screen.findByRole('form', { name: 'Sign in with a user name and password' });
+    signInWith('alice', 'secret');
+    await waitFor(() => expect(goTo).toHaveBeenCalledWith('/pgadmin4/browser/'));
   });
 
   it("doesn't go to other sites after signing in", async () => {
@@ -262,7 +292,7 @@ describe('LoginPage', () => {
 describe('PendingAccount', () => {
   const pending_user = request => ({
     ...logged_out_user, reason: 'user_pending', error: "This account is waiting for an admin's approval.",
-    pending: { user_name: 'carol', full_name: 'Carol', email: 'carol@example.com', reviewers: ['Root', 'Dana'], request },
+    pending: { user_name: 'carol', full_name: 'Carol', email: 'carol@example.com', avatar_url: '/api/v1/users/7/picture?v=ab12cd34', reviewers: ['Root', 'Dana'], request },
   });
 
   it('sends why users need access, and shows it', async () => {
@@ -270,9 +300,11 @@ describe('PendingAccount', () => {
       'POST /api/v1/user/access-request': (url, init) => [{ id: 1, kind: 'instance', message: JSON.parse(init.body).message, status: 'pending', created_at: '2026-10-20T10:00:00Z', decided_at: null }, 200],
     });
     const user = pending_user({ id: 1, kind: 'instance', message: '', status: 'pending', created_at: '2026-10-20T10:00:00Z', decided_at: null });
-    const { queryClient } = renderWithProviders(<PendingAccount user={user}/>, { user });
+    const { queryClient } = renderWithProviders(<PendingAccount user={user}/>, { user, siteConfig: {} });
     expect(screen.getByText('Waiting for an admin')).toBeInTheDocument();
     expect(screen.getByText(/Root and Dana review requests/)).toBeInTheDocument();
+    // their picture, from their sign-in
+    expect(document.querySelector('img[src="/api/v1/users/7/picture?v=ab12cd34"]')).toBeInTheDocument();
     // nothing to send yet
     fireEvent.click(screen.getByRole('button', { name: 'Send to the admins' }));
     expect(screen.getByText('Say why you need access, e.g. your team and your projects.')).toBeInTheDocument();

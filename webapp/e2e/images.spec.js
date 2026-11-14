@@ -54,9 +54,10 @@ const rawValue = (image, x, y) => {
 };
 const RAW_SENSOR = { cfa: { pattern: 'GBRG', block: 1 }, bit_depth: 10, white_level: 1023, black_level: 64, fields: { pattern: 'GBRG', imageType: 'UI10', pedestal: 64 } };
 
-const setup = async (page, { metadata = {}, manifests, qatools_config = default_config, runs, differences = {}, diff_delay = 0, eight_bit = false, raw = false, signed_in = true } = {}) => {
+const setup = async (page, { metadata = {}, manifests, qatools_config = default_config, runs, differences = {}, diff_delay = 0, eight_bit = false, raw = false, signed_in = true, annotations = null } = {}) => {
   const api = {
-    '/api/v1/config': {},
+    '/api/v1/config': annotations ? { annotation_sources: [{ id: 'iqe', label: 'IQE', group_noun: 'workspace' }] } : {},
+    ...(annotations ? { '/api/v1/output/image/annotations/iqe': annotations } : {}),
     '/api/v1/user/me/': signed_in ? { is_authenticated: true, user_id: 1, user_name: 'alice', full_name: 'Alice', email: 'alice@example.com', login_type: 'local' } : { is_authenticated: false },
     '/api/v1/projects': { [project]: { data: { qatools_config }, latest_commit_datetime: '2026-09-01T10:00:00Z', total_commits: 2 } },
     '/api/v1/project': { qatools_config },
@@ -77,7 +78,9 @@ const setup = async (page, { metadata = {}, manifests, qatools_config = default_
       const run = body.output_dir_url_new.split('/')[4].split('-')[1];
       const value = differences[run];
       if (diff_delay) await new Promise(resolve => setTimeout(resolve, diff_delay));
-      return route.fulfill({ json: value ? [{ x: 90, y: 90, w: 60, h: 60, peak_x: 120, peak_y: 120, value, diff: 1 }] : [] });
+      // the square's difference is 20 pixels wide
+      const fits = (!body.min_size || body.min_size <= 20) && (!body.max_size || body.max_size >= 20);
+      return route.fulfill({ json: value && fits ? [{ x: 90, y: 90, w: 60, h: 60, peak_x: 120, peak_y: 120, value, diff: 1, spot: { x: 110, y: 110, w: 20, h: 20 } }] : [] });
     }
     if (url.pathname === '/api/v1/output/image/pixels') {
       const [, , , , folder, , ...file] = url.searchParams.get('image_url').split('/');
@@ -224,6 +227,43 @@ test('compares images side by side, with a wipe, toggling, and as their differen
   // the keyboard picks the mode of the viewer under the mouse
   await page.keyboard.press('1');
   await expect(page.getByRole('radio', { name: 'Side by side' })).toHaveAttribute('aria-checked', 'true');
+});
+
+test('pins a pixel on click: its values stay while the mouse moves and modes change, until it leaves the viewer', async ({ page }) => {
+  await setup(page);
+  await expect(page.getByRole('button', { name: /^new 512×384/ })).toBeVisible();
+  const box = await page.locator('.qiv-pane').first().boundingBox();
+  const readout = page.locator('.qiv-readout');
+  await page.mouse.click(box.x + box.width * 120 / 512, box.y + box.height * 120 / 384);
+  await expect(page.locator('.qiv-pin-chip')).toBeVisible();
+  const pinned = (await readout.textContent()).match(/x \d+ y \d+/)[0];
+  // elsewhere on the images: the values stay
+  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.8, { steps: 5 });
+  await expect(readout).toContainText(pinned);
+  // to the values, to select them
+  const line = await readout.boundingBox();
+  await page.mouse.move(line.x + 2, line.y + line.height / 2, { steps: 5 });
+  await page.mouse.down();
+  await page.mouse.move(line.x + 200, line.y + line.height / 2, { steps: 5 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => String(window.getSelection()))).toContain(pinned);
+  // to the toolbar, to switch modes, and back on the images: still pinned
+  await page.getByRole('radio', { name: 'Wipe' }).click();
+  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.8, { steps: 5 });
+  await expect(page.locator('.qiv-pin-chip')).toBeVisible();
+  await expect(readout).toContainText(pinned);
+  await page.getByRole('radio', { name: 'Side by side' }).click();
+  // out of the viewer, and back on the images: it follows the pointer
+  const viewer = await page.locator('.qiv').first().boundingBox();
+  await page.mouse.move(viewer.x + viewer.width / 2, viewer.y + viewer.height + 40, { steps: 5 });
+  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.8, { steps: 10 });
+  await expect(page.locator('.qiv-pin-chip')).toHaveCount(0);
+  await expect(readout).not.toContainText(pinned);
+  // Esc
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator('.qiv-pin-chip')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.qiv-pin-chip')).toHaveCount(0);
 });
 
 test('shows the difference between the images, or alone', async ({ page }) => {
@@ -472,6 +512,61 @@ test('shows the regions of interest of the input', async ({ page }) => {
   await expect.poll(() => zoom(page)).toBeLessThan(200);
 });
 
+// The annotations of the input in an annotation app: 2 workspaces, one the user's. The input is twice as large as the
+// images shown: the annotations are scaled.
+const ANNOTATIONS = {
+  width: 1024, height: 768,
+  groups: [
+    { id: '1940', label: 'Benchmark night', detail: 'by bob', url: 'https://annotations.example.com/workspace/1940', users: ['bob'], mine: false },
+    { id: '12', label: 'Halo review', detail: 'by alice', url: 'https://annotations.example.com/workspace/12', users: ['alice'], mine: true },
+  ],
+  annotations: [
+    { id: '1', group: '12', x: 200, y: 200, w: 80, h: 80, label: 'Dark square', tags: ['DEFECT'], fields: { Importance: 'High', By: 'alice' }, url: 'https://annotations.example.com/workspace/12' },
+    { id: '2', group: '12', x: 600, y: 80, w: 240, h: 160, label: 'Banding', fields: { Importance: 'Medium' } },
+    { id: '3', group: '1940', x: 40, y: 500, w: 320, h: 200, label: 'Noise', fields: { Importance: 'Low', By: 'bob' } },
+  ],
+};
+
+test("shows the annotations of the input, the user's workspaces first, and remembers the workspaces picked", async ({ page }) => {
+  await setup(page, { annotations: ANNOTATIONS });
+  // the regions button says there are some
+  const button = page.getByRole('button', { name: 'Regions of interest' });
+  await expect(button).toContainText('3 annotations');
+  await button.click();
+  await page.getByRole('menuitem', { name: /IQE/ }).click();
+  const regions = page.locator('.qiv-regions');
+  // the user's workspace is shown, the other isn't
+  await expect(regions.getByRole('button', { name: /Halo review/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(regions.getByRole('button', { name: /Benchmark night/ })).toHaveAttribute('aria-pressed', 'false');
+  const outlines = page.locator('.qiv-pane').first().locator('.qiv-outline');
+  await expect(outlines).toHaveCount(2);
+  // on the dark square of the image (100, 100, 40x40 of 512x384), not where the input's coordinates would put it
+  const pane = await page.locator('.qiv-pane').first().boundingBox();
+  const square = await page.locator('.qiv-pane').first().locator('.qiv-outline-label', { hasText: 'Dark square' }).boundingBox();
+  expect(Math.abs((square.x - pane.x) / pane.width - 100 / 512)).toBeLessThan(0.02);
+  await regions.getByRole('button', { name: /Benchmark night/ }).click();
+  await expect(outlines).toHaveCount(3);
+  await page.waitForTimeout(600);
+  if (process.env.E2E_SCREENSHOTS) await page.locator('.qiv').first().screenshot({ path: `${process.env.E2E_SCREENSHOTS}/annotations-overview.png` });
+  // one annotation, and what it is
+  await page.locator('.qiv-pane').first().locator('.qiv-outline-label', { hasText: 'Dark square' }).click();
+  await expect(page.locator('.qiv-region-details')).toContainText('DEFECT');
+  await expect(page.locator('.qiv-region-details').getByRole('link', { name: 'Open in IQE' })).toHaveAttribute('href', 'https://annotations.example.com/workspace/12');
+  await settledZoom(page);
+  if (process.env.E2E_SCREENSHOTS) await page.locator('.qiv').first().screenshot({ path: `${process.env.E2E_SCREENSHOTS}/annotations-one.png` });
+  // remembered
+  await page.reload();
+  await page.getByRole('button', { name: 'Regions of interest' }).click();
+  await page.getByRole('menuitem', { name: /IQE/ }).click();
+  await expect(page.locator('.qiv-pane').first().locator('.qiv-outline')).toHaveCount(3);
+  // the list of workspaces
+  await page.locator('.qaboard-annotation-groups-inline .bp6-button').click();
+  await expect(page.locator('.qaboard-annotation-groups')).toContainText('2 workspaces annotated this input in IQE');
+  if (process.env.E2E_SCREENSHOTS) await page.locator('.qiv').first().screenshot({ path: `${process.env.E2E_SCREENSHOTS}/annotations-workspaces.png` });
+  await page.locator('.qaboard-annotation-groups').getByRole('button', { name: 'None' }).click();
+  await expect(page.locator('.qiv-regions')).toContainText('Pick the workspaces to show');
+});
+
 test('finds where the images differ in all the runs, and ranks them', async ({ page }) => {
   const { diff_requests } = await setup(page, { runs: ['A', 'B', 'C'], differences: { A: 0.3, C: 0.05 } });
   const first = page.locator('.output-card[data-output-id="100"]');
@@ -498,8 +593,19 @@ test('finds where the images differ in all the runs, and ranks them', async ({ p
   await expect(card.locator('.qiv-regions')).toContainText('Where they differ: perceptual');
   await expect(card.locator('.qiv-region').first()).toContainText('#1 · 5.0%');
   // and so do the others, with what was found already
-  await expect(first.locator('.qiv-region').first()).toContainText('#1 · 30.0%');
+  await expect(first.locator('.qiv-region').first()).toContainText('#1 · 30.0% · 20×20 px');
   expect(diff_requests).toHaveLength(3);
+
+  // only the small differences: the viewer searches again
+  await first.getByLabel('Largest difference, in pixels').fill('10');
+  await first.getByLabel('Largest difference, in pixels').press('Enter');
+  await expect(first.locator('.qiv-regions')).toContainText('No difference of that size (≤ 10 px)');
+  expect(diff_requests.at(-1)).toMatchObject({ max_size: 10, min_size: null });
+  // the size is the project's: the other viewers that show where their images differ search again too
+  await expect(page.locator('.qiv-regions', { hasText: 'No difference of that size' })).toHaveCount(3);
+  await first.getByRole('button', { name: 'Any size' }).click();
+  await expect(first.locator('.qiv-region').first()).toContainText('#1 · 30.0%');
+  const requests = diff_requests.length;
 
   // on another page, nothing is compared until users ask
   await navigate(page, `/${project}/commit/ref?reference=new&selected_views=output-list`);
@@ -507,11 +613,11 @@ test('finds where the images differ in all the runs, and ranks them', async ({ p
   await expect(other.getByRole('button', { name: /^new 512×384/ })).toBeVisible();
   await page.waitForTimeout(1000);
   await expect(page.locator('.qiv-region')).toHaveCount(0);
-  expect(diff_requests).toHaveLength(3);
+  expect(diff_requests).toHaveLength(requests);
   // back on the page, what was found shows again
   await page.goBack();
   await expect(first.locator('.qiv-region').first()).toContainText('#1 · 30.0%');
-  expect(diff_requests).toHaveLength(3);
+  expect(diff_requests).toHaveLength(requests);
 });
 
 test('logged out: says to sign in for the images\' own values and to find where they differ', async ({ page }) => {

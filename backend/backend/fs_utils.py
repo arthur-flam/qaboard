@@ -5,13 +5,13 @@ Deal with filesystem common needs and issues
 # python backend/fs_utils.py 11611:10 ~/test.yaml
 """
 import os
-import pwd
 import sys
 import pickle
 import tempfile
 import traceback
 import subprocess
 from pathlib import Path
+from typing import List, Tuple
 
 
 
@@ -72,47 +72,144 @@ def rm_empty_parents(path: Path):
       break
 
 
-def as_user(user, f, *args, **kwargs):
-  """Call a function as a given user, assuming the current user can setuid/setgid (~root)"""
-  tf = tempfile.NamedTemporaryFile(delete=False)
-  Path(tf.name).chmod(0o777)
-  pid = os.fork()
-  if pid == 0:
-    # child - do the work and exit
-    try:
-      if ":" in user:
-        uid, gid = user.split(':')
-        uid = int(uid)
-        gid = int(gid)
-      else:
-        pwnam = pwd.getpwnam(user)
-        assert user == pwnam.pw_name
-        uid = pwnam.pw_uid
-        gid = pwnam.pw_gid
+class UnknownAccountError(ValueError):
+  pass
 
-      os.setegid(gid)
-      os.seteuid(uid)
-      print("as:", user)
+
+def _accounts():
+  try:
+    from . import accounts
+  except ImportError: # we run as a script, with sudo (see rmtree)
+    return None
+  return accounts
+
+
+def unix_identity(user) -> Tuple[int, int, List[int]]:
+  """
+  (uid, gid, groups) to act as `user`: an account name, or "uid:gid".
+  Names and groups come from backend/accounts.py ($QABOARD_ACCOUNTS_COMMAND...): the server's own /etc/passwd
+  often doesn't know the users, e.g. in containers, or with LDAP/SSSD.
+  """
+  accounts = _accounts()
+  if ":" in str(user):
+    uid, gid = (int(n) for n in str(user).split(':'))
+    name = accounts.user_name(uid) if accounts else None
+    account = accounts.account(name) if name else None
+    # the file's group, e.g. for rmtree, and the groups of its owner if we know them
+    groups = {gid, *(accounts.group_ids(name, account.gid) if account else ())}
+    return uid, gid, sorted(groups)
+  account = accounts.account(user) if accounts else None
+  if not account:
+    raise UnknownAccountError(
+      f"QA-Board doesn't know the Unix account of {user}, it can't act as them. "
+      "Admins: the accounts come from $QABOARD_ACCOUNTS_COMMAND, else the server's /etc/passwd"
+    )
+  return account.uid, account.gid, sorted(accounts.group_ids(account.name, account.gid))
+
+
+def owner(path) -> str:
+  """
+  Who owns a file: their account's name, or "uid 2041" if unknown (backend/accounts.py).
+  Unlike Path.owner(), it works when the server's /etc/passwd doesn't know the users.
+  """
+  from . import accounts
+  return accounts.owner_name(os.lstat(path).st_uid)
+
+
+def owner_ids(path) -> str:
+  """"uid:gid" of a file, to act as its owner with as_user(), even if we don't know their name"""
+  stat = os.lstat(path)
+  return f"{stat.st_uid}:{stat.st_gid}"
+
+
+def as_user(user, f, *args, **kwargs):
+  """
+  Call a function as a given user, assuming the current user can setuid/setgid (~root).
+  Returns what it returns, raises what it raises, or an Exception if the child process fails.
+  """
+  # in the parent: the child's errors are less clear, and the accounts may refresh in a background thread
+  uid, gid, groups = unix_identity(user)
+  # the child sends its result in this file. It runs as the user: they must be able to write it
+  fd, result_path = tempfile.mkstemp(prefix='qaboard-as-user-')
+  os.close(fd)
+  try:
+    Path(result_path).chmod(0o666)
+    pid = os.fork()
+    if pid == 0:
+      # child - do the work and exit
       try:
-        result = f(*args, **kwargs)
+        # else the child keeps the server's groups, e.g. root's
+        try:
+          os.setgroups(groups)
+        except PermissionError: # e.g. tests, as the same user without CAP_SETGID
+          if uid != os.geteuid():
+            raise
+        os.setegid(gid)
+        os.seteuid(uid)
+        print("as:", user)
+        try:
+          result = f(*args, **kwargs)
+        except Exception as e:
+          # the parent raises it again: without this, logs and Sentry only see where the parent raised it
+          e.add_note(f"Raised in a child process, as {user}:\n{traceback.format_exc().rstrip()}")
+          result = e
+        with open(result_path, 'wb') as file:
+          pickle.dump(result, file, pickle.HIGHEST_PROTOCOL)
       except Exception as e:
-        result = e
-      pickle.dump(result, open(tf.name, 'wb'), pickle.HIGHEST_PROTOCOL)
+        print(f"ERROR in child process: {e}")
+        traceback.print_exc(file=sys.stdout)
+        try:
+          with open(result_path, 'wb') as file:
+            pickle.dump(e, file, pickle.HIGHEST_PROTOCOL)
+        except Exception:
+          pass
+      finally:
+        os._exit(0)
+    # parent - wait for the child to do its work and keep going as root
+    pid, status = os.waitpid(pid, 0)
+    if status != 0:
+      # we are a server worker in the middle of a request: we fail the request, not the worker
+      raise Exception(f"Could not run {getattr(f, '__name__', f)} as {user}: the child process ({pid}) exited with {status}")
+    try:
+      with open(result_path, 'rb') as file:
+        return_value = pickle.load(file)
     except Exception as e:
-      print(f"ERROR in child process: {e}")
-      pickle.dump(e, open(tf.name, 'wb'), pickle.HIGHEST_PROTOCOL)
-      traceback.print_exc(file=sys.stdout)
-    finally:
-      os._exit(0)
-  # parent - wait for the child to do its work and keep going as root
-  pid, status = os.waitpid(pid, 0)
-  if status != 0:
-    print(f"ERROR: Child ({pid}) exited with {status}")
-    os._exit(1)
-  return_value = pickle.load(open(tf.name, 'rb'))
+      raise Exception(f"Could not run {getattr(f, '__name__', f)} as {user}: no result ({e})")
+  finally:
+    try:
+      os.unlink(result_path)
+    except OSError:
+      pass
   if isinstance(return_value, Exception):
     raise return_value
   return return_value
+
+
+def mkdir_shared(path: Path, mode=0o777):
+  """
+  `mkdir -p` where the folders we create get `mode`, e.g. so that users' runs, under their own accounts, write in them.
+  Unlike changing the umask, it doesn't change the permissions of what other threads create meanwhile.
+  """
+  path = Path(path)
+  missing = []
+  parent = path
+  while not os.path.lexists(parent) and parent != parent.parent:
+    missing.append(parent)
+    parent = parent.parent
+  path.mkdir(parents=True, exist_ok=True)
+  for folder in reversed(missing):
+    try:
+      folder.chmod(mode)
+    except OSError: # e.g. created by someone else meanwhile
+      pass
+
+
+def chmod_shared(path: Path, mode=0o666):
+  """Gives a file we created `mode`. Files that others created keep theirs: only their owner (or root) can change it."""
+  try:
+    Path(path).chmod(mode)
+  except OSError:
+    pass
 
 
 if __name__ == "__main__":

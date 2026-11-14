@@ -7,8 +7,9 @@ import qs from "qs";
 import { DateTime } from "luxon";
 
 import { history, useRouter, matchRoutes } from "./router";
-import { route_paths, app_paths } from "./route_paths";
+import { route_paths, app_paths, project_routes } from "./route_paths";
 import { side_color_count } from "./sideColors";
+import { track } from "./analytics";
 
 
 // Names in the URL's query string
@@ -32,17 +33,20 @@ const url_keys = {
 };
 
 const route_names = Object.fromEntries(Object.entries(route_paths).map(([name, path]) => [path, name]));
-const page_routes = Object.values(route_paths).map(path => ({ path }));
+const page_routes = project_routes;
 
-// What kind of page a route pattern is
-export const route_info = path => {
+// What kind of page a route pattern is. `params`: what the pattern matched, for the pages that have sections
+export const route_info = (path, params = {}) => {
   const name = route_names[path];
   const is_committer = name === 'committer';
   const is_commits = ['project', 'commits', 'branch'].includes(name);
   const is_commit = ['commit', 'latest_commit'].includes(name);
   const is_history = ['history', 'history_branch', 'dashboard', 'dashboard_branch'].includes(name);
   const is_access = name === 'access';
-  return { is_committer, is_commits, is_commit, is_history, is_access, is_list: is_commits || is_committer };
+  // the project's Admin pages besides Access: `section` says which (gate)
+  const is_project_admin = name === 'project_admin';
+  const section = is_project_admin ? params.section ?? null : null;
+  return { is_committer, is_commits, is_commit, is_history, is_access, is_project_admin, section, is_list: is_commits || is_committer };
 };
 
 const decode = value => {
@@ -384,7 +388,7 @@ const text_param = value => (value == null ? "" : typeof value === 'string' ? va
 export const selection_from_url = (match, search) => {
   const { path, params } = match;
   const query = parse_query(search);
-  const route = route_info(path);
+  const route = route_info(path, params);
   const project = decode(params.project_id) ?? query.project ?? null;
 
   // '' is a special value: nothing should be selected
@@ -445,7 +449,8 @@ export const selection_from_url = (match, search) => {
     hide_ci: query.hide_ci === '1' || query.hide_ci === 'true',
     // the project page lists batches or commits, null for the default
     list_view: ['batches', 'commits'].includes(query.view) ? query.view : null,
-    sort_order: Number(query.sort_order ?? -1),
+    // 1: ascending, -1: descending, undefined: the default for what runs are sorted by (see selectors/sorting.js)
+    sort_order: [1, -1].includes(Number(query.sort_order)) ? Number(query.sort_order) : undefined,
     sort_by: query.sort_by || undefined, // undefined: we use the default metric
     selected_views,
     selected_metrics: as_list(query.selected_metrics),
@@ -467,7 +472,6 @@ const selection_defaults = {
   filter_batch_new: '',
   filter_batch_ref: '',
   search: '',
-  sort_order: -1,
   ref_index: 0,
   label_new: '',
   label_ref: '',
@@ -487,7 +491,7 @@ export const url_for_selection = (selected, { pathname, search }, defaults = {})
   defaults = { ...selection_defaults, ...defaults };
   const query = parse_query(search);
   const matched = matchRoutes(page_routes, pathname);
-  const route = route_info(matched?.route.path ?? '');
+  const route = route_info(matched?.route.path ?? '', matched?.match.params);
   const project = decode(matched?.match.params.project_id);
   const project_path = `/${path_segment(project)}`;
   const on_commit_page = route.is_commit;
@@ -563,7 +567,25 @@ export const updateSelected = (selected = {}, { replace = false, defaults } = {}
   const url = url_for_selection(selected, window.location, defaults);
   if (url.pathname === window.location.pathname && `?${url.search}` === (window.location.search || '?'))
     return;
+  recordComparison(selected, replace);
   (replace ? history.replace : history.push)(url);
+};
+
+// Usage analytics: users chose another reference commit (the reference tabs, milestones, the history's chart,
+// switching new and reference). Not the default references, nor the full ids the page writes back (replace).
+const recordComparison = (selected, replace) => {
+  const chosen = selected.ref_commit_id;
+  if (replace || typeof chosen !== 'string' || !chosen) return;
+  const query = parse_query(window.location.search);
+  if (chosen === query[url_keys.ref_commit_id]) return;
+  const project = selected.ref_project ?? selected.new_project ?? project_of(window.location.pathname);
+  track('commit_compare', {}, { project_id: project || undefined });
+};
+
+// The project of a project page's URL, or undefined (the app's own pages)
+const project_of = pathname => {
+  const matched = matchRoutes(project_routes, pathname);
+  return matched && !matchRoutes(app_routes, pathname) ? decode(matched.match.params?.project_id) : undefined;
 };
 
 // qs reads ?compare[0]=a&compare[1][commit]=b as a list with objects: "repeat" would write it compare=a&compare[commit]=b,

@@ -13,18 +13,21 @@ import {
   HTMLSelect,
   Tooltip,
   Button,
-  PopoverNext,
-  Menu,
-  PopoverInteractionKind,
 } from "@blueprintjs/core";
 
 import { OutputViewer } from "./OutputViewer";
 import { config_visualizations } from "./controls";
+import { is_visualization_shown, run_shown } from "./runView";
 import { MetricsTags } from "../components/metrics";
-import { OutputTags, StatusTag, RunBadges, style_skeleton } from '../components/tags'
-import { RunInfoMenuItems } from '../components/RunInfoMenu'
+import { ConfigurationsTags, OutputTags, PlatformTag, StatusTag, RunBadges, style_skeleton } from '../components/tags'
+import { runTime } from '../components/RunInfoMenu'
+import { RunName } from '../components/runNames'
+import { LazyHoverPopover } from '../components/LazyPopover'
+import { configurationSummary } from '../configurations/tokens'
+import { useOutputCardDensity } from '../stores/prefs'
 
 import { updateSelected } from "../hooks";
+import { track } from "../analytics";
 import { http, errorMessage } from "../api/http";
 import { output_files_stale_time, invalidateOutputFiles } from "../api/queries";
 import { at_most, is_same_data } from '../utils'
@@ -94,37 +97,36 @@ const compute_options = (outputs, manifest) => {
 }
 
 
-const error_html = error => {
-  const data = error.response?.data;
-  return typeof data === 'string' && data ? data : errorMessage(error);
-}
-
-
 const SlimCard = styled(Card)`
   overflow: "auto";
 `;
 
 // The button is in the full screen element, to exit too. No tooltips in there: they show outside of it.
-const FullScreenableSlimCard = ({ updateFullscreen, className, style, children }) => {
+const FullScreenable = ({ updateFullscreen, children }) => {
   const handle = useFullScreenHandle();
-  return <SlimCard compact className={className} style={style}>
-    <FullScreen handle={handle} onChange={state => updateFullscreen(state)}>
-      <div style={{position: "relative"}}>
-        <div style={{position: "absolute", right: "0px", top: "0px", zIndex: 1}}>
-          <Button
-            size="small"
-            variant="minimal"
-            icon={handle.active ? "minimize" : "fullscreen"}
-            aria-label={handle.active ? "Exit full screen" : "Full screen"}
-            title={handle.active ? "Exit full screen (Esc)" : "Full screen: this run's visualizations. Images have their own, in their toolbar"}
-            onClick={handle.active ? handle.exit : handle.enter}
-          />
-        </div>
+  return <FullScreen handle={handle} onChange={state => updateFullscreen(state)}>
+    <div style={{position: "relative"}}>
+      <div style={{position: "absolute", right: "0px", top: "0px", zIndex: 1}}>
+        <Button
+          size="small"
+          variant="minimal"
+          icon={handle.active ? "minimize" : "fullscreen"}
+          aria-label={handle.active ? "Exit full screen" : "Full screen"}
+          title={handle.active ? "Exit full screen (Esc)" : "Full screen: this run's visualizations. Images have their own, in their toolbar"}
+          onClick={handle.active ? handle.exit : handle.enter}
+        />
       </div>
-      {children}
-    </FullScreen>
-  </SlimCard>
-}
+    </div>
+    {children}
+  </FullScreen>;
+};
+
+// Cards out of view show nothing yet, so nothing in full screen either: there can be hundreds of them, and the button
+// was most of what they cost
+const FullScreenableSlimCard = ({ updateFullscreen, viewable, className, style, children }) =>
+  <SlimCard compact className={className} style={style}>
+    {viewable ? <FullScreenable updateFullscreen={updateFullscreen}>{children}</FullScreenable> : children}
+  </SlimCard>;
 
 
 // Long paths are cut, the tags after them stay on the line
@@ -137,9 +139,45 @@ const run_path_style = {
   verticalAlign: 'bottom',
 };
 
-const OutputHeader = ({ project, commit, output, output_ref, type, manifests, style, prefix, viewable, tags_first=false }) => {
-  const has_metadata = !!output.test_input_metadata && (Object.keys(output.test_input_metadata).length > 0)
-  const has_label = has_metadata && !!output.test_input_metadata.label
+// Compact cards: the header is one line, like the runs in the logs. The configuration is text, its tags on hover.
+const CompactHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 30px;
+  /* the full screen button is at the top right */
+  padding-right: 28px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  & > * {
+    flex: none;
+  }
+  .run-name-target {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: ${props => props.$summary ? '65%' : 'none'};
+    font-weight: 600;
+  }
+  .summary {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 12px;
+  }
+  .runtime {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .run-name-target, .summary, .runtime {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+`;
+
+const configuration_popover_style = { padding: 8, maxWidth: 600 };
+
+const OutputHeader = ({ project, commit, output, output_ref, type, manifests, style, prefix, viewable, compact }) => {
   const tags = <OutputTags
     output={output}
     project={project}
@@ -148,32 +186,45 @@ const OutputHeader = ({ project, commit, output, output_ref, type, manifests, st
     manifests={manifests}
     commit={commit}
     type={type}
-    style={{marginLeft: '5px', marginRight: '5px'}}
+    configuration={!compact}
+    style={compact ? undefined : {marginLeft: '5px', marginRight: '5px'}}
   />
-
-  let run_path = `${output.test_input_database === '/' ? '/' : ''}${output.test_input_path}`
-  if (output.output_type === "pipeline" || output.test_input_path === "PIPELINE") {
-    run_path = <span>{output.data.batch} <span className={Classes.TEXT_MUTED}>(pipeline)</span></span>
+  const name = <RunName
+    output={output}
+    project={project}
+    commit={commit}
+    type={type}
+    style={compact ? undefined : run_path_style}
+  />
+  if (compact) {
+    const summary = configurationSummary(output);
+    const runtime = runTime(output);
+    return <CompactHeader $summary={!!summary}>
+      {prefix}
+      {name}
+      <RunBadges output={output}/>
+      {summary
+        ? <LazyHoverPopover className="summary" placement="bottom-start" content={<div style={configuration_popover_style}>
+            <PlatformTag platform={output.platform}/>
+            <ConfigurationsTags configurations={output.configurations ?? []} tuning={output.extra_parameters} mismatch={output.reference_mismatch} collapse={false}/>
+          </div>}>
+            <span className={Classes.TEXT_MUTED}>{summary}</span>
+          </LazyHoverPopover>
+        : <span className="summary"/>}
+      {!!runtime && <span className={`runtime ${Classes.TEXT_MUTED}`} title="Compute time">{runtime}</span>}
+      {viewable && tags}
+    </CompactHeader>
   }
-  if (has_label) {
-    run_path = output.test_input_metadata.label
-  }
-  const popover_content = <Menu>
-    <RunInfoMenuItems project={project} commit={commit} output={output} type={type} />
-  </Menu>
+  const has_badges = (output.params?.badges ?? []).length > 0
   return <>
     <h5 className={Classes.HEADING} style={style} >
       {prefix}
-      {tags_first && viewable && tags}
-      {output.output_type !== "batch" && !viewable ?
-        <span key="batch-info" style={run_path_style}>{run_path}</span> : <PopoverNext hoverCloseDelay={1000} interactionKind={PopoverInteractionKind.HOVER} content={popover_content}>
-        <span key="batch-info" style={run_path_style}>{run_path}</span>
-      </PopoverNext>}
-      {!tags_first && viewable && tags}
+      {name}
+      {viewable && tags}
     </h5>
-    <p style={{maxWidth: '600px'}}>
+    {has_badges && <p style={{maxWidth: '600px'}}>
       <RunBadges output={output}></RunBadges>
-    </p>
+    </p>}
   </>
 }
 
@@ -245,6 +296,8 @@ const OutputCard = memo(function OutputCard(props) {
     onRegisterOutputOptions, onToggleDynamicOptionSync, onControlsChange, labels,
   } = props;
   const controls = props.controls ?? {};
+  // compact cards take less room around the visualizations, see the user's preferences
+  const compact = useOutputCardDensity() === 'compact';
   const sync_prefs = controls.dynamic_options_sync ?? no_options;
   const synced_values = controls.dynamic_options ?? no_options;
 
@@ -252,6 +305,16 @@ const OutputCard = memo(function OutputCard(props) {
   const { ref: in_view_ref, inView } = useInView({ triggerOnce: true, rootMargin: '100%', skip: !!props.viewable, fallbackInView: true });
   const viewable = !!props.viewable || inView;
   const [fullscreen, setFullscreen] = useState(false);
+  // Usage analytics: an output someone opened, i.e. took full screen (the cards of a list are all shown: showing
+  // them says nothing about what people looked at). Once per card.
+  const opened = useRef(false);
+  const updateFullscreen = state => {
+    setFullscreen(state);
+    if (state && !opened.current) {
+      opened.current = true;
+      track('output_open', { viewer: type ?? 'files' }, { project_id: project });
+    }
+  };
   // values selected in this card for the options that are not synced across outputs
   const [local_selected, setLocalSelected] = useState({});
   const [registration_error, setRegistrationError] = useState();
@@ -332,7 +395,9 @@ const OutputCard = memo(function OutputCard(props) {
   const error = { new: query_new.error, reference: query_ref.error, parse: parse_errors.length > 0 ? parse_errors : undefined, registration: registration_error };
 
   const views = config_visualizations(config?.outputs);
-  const is_shown = view => (!view.default_hidden && controls.show?.[view.name] !== false) || controls.show?.[view.name] === true;
+  // what users chose in the view options, else what the run asks to show (its `view`), else the project's defaults
+  const shown_by_run = run_shown(output_new, views);
+  const is_shown = view => is_visualization_shown(view, controls, shown_by_run);
 
   // we display the input for each option before the first visualization that uses it
   const already_shown_options = new Set();
@@ -360,7 +425,7 @@ const OutputCard = memo(function OutputCard(props) {
             <span style={{ fontSize: '12px', fontWeight: '500', flex: 1 }}>{option_label}</span>
             {onToggleDynamicOptionSync && (
               <Tooltip content={`Use the ${option_label} chosen in the view options for all runs`}>
-                <Button icon="link" minimal small onClick={() => onToggleDynamicOptionSync(name)} style={sync_button_style}>
+                <Button icon="link" variant="minimal" size="small" onClick={() => onToggleDynamicOptionSync(name)} style={sync_button_style}>
                   Same for all runs
                 </Button>
               </Tooltip>
@@ -383,7 +448,6 @@ const OutputCard = memo(function OutputCard(props) {
               value={option.value}
               onChange={setSelectedOption(name)}
               fill
-              small
             />
           )}
         </div>
@@ -435,8 +499,8 @@ const OutputCard = memo(function OutputCard(props) {
                   >
                     <Button
                       icon="unlink"
-                      minimal
-                      small
+                      variant="minimal"
+                      size="small"
                       aria-label={`Choose ${optionLabel(option_name)} per run`}
                       onClick={() => onToggleDynamicOptionSync?.(option_name)}
                       style={unlink_button_style}
@@ -504,6 +568,7 @@ const OutputCard = memo(function OutputCard(props) {
         selected_metrics={main_metrics}
         available_metrics={available_metrics}
         metrics_new={output_new.metrics ?? {}}
+        added_metrics={output_new.added_metrics}
         metrics_ref={output_ref?.metrics && output_ref.id !== output_new.id ? output_ref.metrics : {}}
       />
       {views.map(render_view)}
@@ -522,22 +587,23 @@ const OutputCard = memo(function OutputCard(props) {
 
   return <div style={container_style} className="output-card" data-output-id={output_new.id} ref={in_view_ref}>
     <FullScreenableSlimCard
-      updateFullscreen={setFullscreen}
-      className="output-card"
+      updateFullscreen={updateFullscreen}
+      viewable={viewable}
+      className={compact ? "output-card compact" : "output-card"}
       style={{
         ...maybe_style_skeleton,
-        paddingBottom: !viewable ? "100px" : undefined,
-        minHeight: type !== 'bit_accuracy' ? "400px" : undefined,
+        paddingBottom: !viewable ? (compact ? "40px" : "100px") : undefined,
+        minHeight: type !== 'bit_accuracy' ? (compact ? "200px" : "400px") : undefined,
       }}
     >
       {error.new && <span key="error-new">
-        <Tooltip content={<span dangerouslySetInnerHTML={{ __html: error_html(error.new) }} />}>
+        <Tooltip content={<span>{errorMessage(error.new)}</span>}>
           <Tag style={{ margin: '5px' }} intent={Intent.DANGER}>Could not list the run's files</Tag>
         </Tooltip>
         <Button size="small" variant="minimal" icon="refresh" text="Retry" onClick={() => query_new.refetch()}/>
       </span>}
       {error.reference && <span key="error-ref">
-        <Tooltip content={<span dangerouslySetInnerHTML={{ __html: error_html(error.reference) }} />}>
+        <Tooltip content={<span>{errorMessage(error.reference)}</span>}>
           <Tag style={{ margin: '5px' }} intent={Intent.DANGER}>Could not list the reference's files</Tag>
         </Tooltip>
         <Button size="small" variant="minimal" icon="refresh" text="Retry" onClick={() => query_ref.refetch()}/>
@@ -562,7 +628,8 @@ const OutputCard = memo(function OutputCard(props) {
         manifests={manifests}
         type={type}
         style={condensed_header_style}
-        prefix={output_new.is_running && <StatusTag output={output_new} style={{ marginRight: '5px' }}/>}
+        compact={compact}
+        prefix={output_new.is_running && <StatusTag output={output_new} style={compact ? undefined : { marginRight: '5px' }}/>}
       />}
       {/* History shows cards as hover previews, without a logs view */}
       {output_new.is_failed && (no_header

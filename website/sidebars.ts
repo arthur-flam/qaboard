@@ -46,13 +46,18 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Use cases',
       collapsible: false,
-      link: {
-        type: 'generated-index',
-        slug: '/use-cases',
-        title: 'Use cases',
-        description: 'QA-Board on demo projects of a fictional robotics company: the problem, the workflow, what you see in the web app, and the configuration that produces it.',
-      },
-      items: ['use-cases/image-quality', 'use-cases/serving-latency', 'use-cases/detection-eval', 'use-cases/robotics-3d', 'use-cases/agent-evals', 'use-cases/software-quality'],
+      // The overview (slug /use-cases) shows each use case's problem with a screenshot
+      link: {type: 'doc', id: 'use-cases/overview'},
+      items: [
+        'use-cases/image-quality',
+        'use-cases/detection-eval',
+        'use-cases/serving-latency',
+        'use-cases/robotics-3d',
+        'use-cases/agent-evals',
+        'use-cases/software-quality',
+        // Where QA-Board fits next to experiment trackers, LLM eval platforms and test dashboards
+        'alternatives',
+      ],
     },
     // The other sidebars (links, so these pages keep their own sidebar)
     {
@@ -97,15 +102,21 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'user-guide/running-from-the-webapp',
+        'user-guide/automated-tuning',
         'user-guide/available-tests',
         'user-guide/logs',
         'user-guide/runs-activity',
         'user-guide/sharing',
         'user-guide/files',
         'user-guide/storage-usage',
-        'user-guide/account',
-        'user-guide/project-access',
       ],
+    },
+    {
+      // A project's Admin pages (Access, Quality gate) and your own account
+      type: 'category',
+      label: 'Account and projects',
+      collapsed: false,
+      items: ['user-guide/account', 'user-guide/project-access', 'user-guide/project-gate'],
     },
     {
       type: 'category',
@@ -138,27 +149,36 @@ const sidebars: SidebarsConfig = {
         "computing-quantitative-metrics",
         "visualizations",
         "viewers",
+        // Performance results in the files harnesses and profilers write
+        "benchmarks",
+        "flame-graphs",
         "references-and-milestones",
       ],
     },
     {
       type: 'category',
       label: 'Run batches',
+      collapsed: false,
       items: [
         "batches-running-on-multiple-inputs",
-        "batches-advanced",
-        "using-the-qa-cli",
+        // Where runs execute: the overview picks a runner, then one page per runner, from a laptop to a cluster
         {
           type: 'category',
-          label: 'Runners',
+          label: 'Where runs execute',
+          link: {type: 'doc', id: 'runners'},
           items: [
+            "coming-from-other-tools",
             "local-multiprocessing",
-            "celery-integration",
             "lsf-integration",
             "dask-integration",
+            "kubernetes-runner",
+            "celery-integration",
             "jenkins-integration",
+            "doctor",
           ],
         },
+        "batches-advanced",
+        "using-the-qa-cli",
       ],
     },
     {
@@ -167,8 +187,11 @@ const sidebars: SidebarsConfig = {
       items: [
         "ci-integration",
         "quality-gate",
+        "quality-gate-pull-requests",
         "triggering-third-party-tools",
         "apis",
+        "http-api",
+        "agents",
         "metadata-integration-external-databases",
       ],
     },
@@ -198,10 +221,14 @@ const sidebars: SidebarsConfig = {
         "backend-admin/deployment",
         "backend-admin/kubernetes",
         "backend-admin/user-management",
+        "backend-admin/settings",
         "backend-admin/sign-in",
         "backend-admin/project-access",
         "backend-admin/storage",
+        "backend-admin/runners",
+        "backend-admin/annotations",
         "backend-admin/monitoring",
+        "backend-admin/usage-analytics",
         "backend-admin/troubleshooting",
     ]
   }

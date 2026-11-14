@@ -31,6 +31,56 @@ def test_record_submission_keeps_the_most_recent():
     assert "s0" not in ids and f"s{MAX_SUBMISSIONS + 4}" in ids
 
 
+def test_pending_note(tmp_path):
+    """While `qa batch` waits to start (e.g. its pod is pending), the runner says why in log.pending.txt"""
+    import datetime
+    from backend.submissions import pending_note, PENDING_NOTE_MAX_BYTES
+    created_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + 'Z'
+    submission = {"id": "s1", "runner": "kubernetes", "status": "submitted", "log_dir": str(tmp_path), "created_at": created_at}
+    assert pending_note(submission) is None
+    (tmp_path / "log.pending.txt").write_text("The pod is pending: 0/3 nodes have a free GPU.\n")
+    assert pending_note(submission) == "The pod is pending: 0/3 nodes have a free GPU."
+    assert pending_note({**submission, "status": "submitting"}) == "The pod is pending: 0/3 nodes have a free GPU."
+    # an empty log is no log
+    (tmp_path / "log.txt").write_text("")
+    assert pending_note(submission) is not None
+    # once `qa batch` started, or ended, its logs say the rest
+    (tmp_path / "log.txt").write_text("qa batch started\n")
+    assert pending_note(submission) is None
+    (tmp_path / "log.txt").unlink()
+    for status in ("done", "failed", "stopped"):
+        assert pending_note({**submission, "status": status}) is None
+    # bounded, and whatever is in the file
+    (tmp_path / "log.pending.txt").write_bytes(b"\xff" + b"x" * 10 * PENDING_NOTE_MAX_BYTES)
+    assert len(pending_note(submission)) == PENDING_NOTE_MAX_BYTES
+    for invalid in (None, "x", {"status": "submitted"}, {"status": "submitted", "log_dir": 7}, {**submission, "created_at": "yesterday"}, {**submission, "created_at": 7}):
+        assert pending_note(invalid) is None
+
+
+def test_pending_note_reads_the_storage_only_for_recent_kubernetes_submissions(tmp_path, monkeypatch):
+    """Batches are serialized often, and LSF or Kubernetes submissions stay "submitted": we don't read the storage for each"""
+    import datetime
+    from pathlib import Path
+    from backend.submissions import pending_note
+    (tmp_path / "log.pending.txt").write_text("The pod is pending\n")
+    now = datetime.datetime(2026, 11, 10, 12, 0, tzinfo=datetime.timezone.utc)
+    submission = {"id": "s1", "runner": "kubernetes", "status": "submitted", "log_dir": str(tmp_path), "created_at": "2026-11-10T09:00:00.123456Z"}
+    assert pending_note(submission, now=now) == "The pod is pending"
+    assert pending_note({**submission, "created_at": "2026-11-09T12:30:00Z"}, now=now) == "The pod is pending"
+    def no_storage(*args, **kwargs):
+        raise AssertionError("the storage was read")
+    monkeypatch.setattr(Path, "stat", no_storage)
+    monkeypatch.setattr(Path, "open", no_storage)
+    for runner in ("lsf", "bridge", "local", "celery", None):
+        assert pending_note({**submission, "runner": runner}, now=now) is None
+    # after a day it started, or never will
+    assert pending_note({**submission, "created_at": "2026-11-09T11:59:00Z"}, now=now) is None
+    assert pending_note({**submission, "created_at": "2026-10-01T09:00:00Z"}, now=now) is None
+    # from before we recorded when, or from the future
+    assert pending_note({k: v for k, v in submission.items() if k != "created_at"}, now=now) is None
+    assert pending_note({**submission, "created_at": "2026-11-11T09:00:00Z"}, now=now) is None
+
+
 def test_check_tuning_search():
     from backend.api.tuning import check_tuning_search
     assert check_tuning_search({"search_type": "grid", "parameter_search": [{"a": 1}, {"a": 2}]}) == []
@@ -41,9 +91,12 @@ def test_check_tuning_search():
     assert "Unknown search type" in check_tuning_search({"search_type": "random"})[0]
     optimize = lambda yaml: check_tuning_search({"search_type": "optimize", "parameter_search": yaml})
     assert "not valid YAML" in optimize("a: [")[0]
-    errors = " ".join(optimize("evaluations: 0\nsearch_space: []"))
-    assert "objective" in errors and "positive integer" in errors and "empty" in errors
-    assert optimize("objective: {psnr: 1}\nevaluations: 10\nsearch_space:\n- Real: {name: x, low: 0, high: 1}") == []
+    # the same checks and messages as qa optimize: one per section
+    errors = optimize("evaluations: 0\nsearch_space: []\nsolver: {n_initial_points: 3}")
+    assert len(errors) == 3
+    assert "objective" in errors[0] and "search_space" in errors[1] and "n_startup_trials" in errors[2]
+    assert "positive whole number" in optimize("objective: {psnr: {}}\nevaluations: 0\nsearch_space:\n- Real: {name: x, low: 0, high: 1}")[0]
+    assert optimize("objective: {psnr: {}}\nevaluations: 10\nsearch_space:\n- Real: {name: x, low: 0, high: 1}") == []
 
 
 def make_commit(tmp_path, config, batches=None):
@@ -77,7 +130,7 @@ def test_check_tuning_request(tmp_path):
     assert check["errors"] == []
     assert check["batches"] == ["smoke"]
     # the alias stands for a batch of the commit's batch file, named as in its qaboard.yaml
-    assert check["definitions"] == [{"name": "smoke", "files": ["sub/batches.yaml"]}]
+    assert check["definitions"] == [{"name": "smoke", "files": ["sub/batches.yaml"], "sources": ["commit"]}]
     # the entrypoint is missing from the artifacts
     assert any("entrypoint" in w for w in check["warnings"])
 
@@ -98,8 +151,8 @@ def test_check_tuning_request_says_where_batches_are_defined(tmp_path, monkeypat
     check = tuning.check_tuning_request(ci_commit, data)
     assert check["errors"] == []
     assert check["definitions"] == [
-        {"name": "night-1", "files": ["sub/batches.yaml"]},
-        {"name": "night-2", "files": ["sub/batches.yaml", "alice.yml"]},
+        {"name": "night-1", "files": ["sub/batches.yaml"], "sources": ["commit"]},
+        {"name": "night-2", "files": ["sub/batches.yaml", "alice.yml"], "sources": ["commit", "qaboard"]},
     ]
     # `qa batch` reads them in the same order as on the commit, QA-Board's last
     assert [f["path"] for f in check["batches_files"]] == ["sub/batches.yaml", "alice.yml"]
@@ -241,7 +294,7 @@ def list_tests(app, name, commit="94d909ca"):
 def test_lists_a_batch_and_where_it_is_defined(dummy_app, batches_setup):
     data = list_tests(dummy_app, "ci")
     assert data["tests"] == [{"input_path": "a", "configurations": []}]
-    assert data["definitions"] == [{"name": "ci", "files": ["qa/tests/tests.yaml"]}]
+    assert data["definitions"] == [{"name": "ci", "files": ["qa/tests/tests.yaml"], "sources": ["commit"]}]
     assert [(f["path"], f["status"]) for f in data["files"]] == [
         ("qa/tests/tests.yaml", "ok"),
         ("qa/tests/nightly.yaml", "missing"),
@@ -257,7 +310,7 @@ def test_lists_a_batch_and_where_it_is_defined(dummy_app, batches_setup):
 
 def test_the_last_file_defining_a_batch_wins_like_for_qa_batch(dummy_app, batches_setup):
     data = list_tests(dummy_app, "both")
-    assert data["definitions"] == [{"name": "both", "files": ["qa/tests/tests.yaml", "qa/tests/modes.yaml"]}]
+    assert data["definitions"] == [{"name": "both", "files": ["qa/tests/tests.yaml", "qa/tests/modes.yaml"], "sources": ["commit", "commit"]}]
     assert [t["input_path"] for t in data["tests"]] == ["a", "b"]
 
 
@@ -271,7 +324,7 @@ def test_says_when_a_batch_is_not_defined(dummy_app, batches_setup):
 def test_says_which_inputs_are_missing(dummy_app, batches_setup):
     data = list_tests(dummy_app, "broken")
     assert data["tests"] == []
-    assert data["definitions"] == [{"name": "broken", "files": ["qa/tests/tests.yaml"]}]
+    assert data["definitions"] == [{"name": "broken", "files": ["qa/tests/tests.yaml"], "sources": ["commit"]}]
     assert f"Inputs not found by the QA-Board server: `missing-input` under `{batches_setup.database}`." in data["warnings"]
 
 
@@ -336,4 +389,193 @@ def test_says_which_input_is_wrong(dummy_app, batches_setup):
     assert data["tests"] == []
     # the file as in qaboard.yaml, not its path in the artifacts
     assert data["error"] == 'qa/tests/tests.yaml:4: The batch "ci" has an empty input, after "a": a "-" with nothing after it. Remove the "-", or write the input after it.'
-    assert data["definitions"] == [{"name": "ci", "files": ["qa/tests/tests.yaml"]}]
+    assert data["definitions"] == [{"name": "ci", "files": ["qa/tests/tests.yaml"], "sources": ["commit"]}]
+
+
+def test_lists_a_batch_without_a_commit_with_the_projects_config(dummy_app, batches_setup):
+    import copy
+    project_config = copy.deepcopy(batches_setup.config)
+    (batches_setup.tmp_path / "shared" / "group/repo").mkdir(parents=True)
+    (batches_setup.tmp_path / "shared" / "group/repo" / "alice.yml").write_text("mine:\n  inputs: [b]\n")
+    data = list_tests(dummy_app, "mine", commit=None)
+    assert data["tests"] == [{"input_path": "b", "configurations": []}]
+    assert [f["source"] for f in data["files"]] == ["qaboard", "qaboard"]
+    # the project's config is left as it was
+    assert batches_setup.config == project_config
+
+
+@pytest.fixture
+def custom_iter_inputs(batches_setup, monkeypatch):
+    """The commit's entrypoint defines iter_inputs: the server lists the tests with `qa batch --list`."""
+    import backend.api.tuning as tuning
+    (batches_setup.artifacts / "qa/main.py").write_text("def iter_inputs(*args):\n  pass\n")
+    monkeypatch.setattr(tuning, "check_storage_path", lambda path: None)
+    return batches_setup
+
+
+def list_tests_response(app, name):
+    from backend.api.tuning import get_group
+    query = {"project": "group/repo", "name": name, "commit": "94d909ca"}
+    with app.test_request_context("/api/v1/tests/group", method="POST", query_string=query, json={"groups": []}):
+        response, status = get_group()
+        return response.get_json(), status
+
+
+def test_listing_with_the_projects_code_in_a_missing_folder(dummy_app, custom_iter_inputs):
+    custom_iter_inputs.commit.artifacts_dir = custom_iter_inputs.tmp_path / "deleted"
+    data, status = list_tests_response(dummy_app, "ci")
+    assert status == 500
+    assert data["error"].startswith("Could not list the tests with the project's code:")
+
+
+def test_listing_with_the_projects_code_times_out(dummy_app, custom_iter_inputs, monkeypatch):
+    import subprocess
+    import backend.api.tuning as tuning
+    def too_slow(cmd, cwd, timeout):
+        assert timeout == tuning.LIST_TESTS_TIMEOUT
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    monkeypatch.setattr(tuning, "run_with_timeout", too_slow)
+    data, status = list_tests_response(dummy_app, "ci")
+    assert status == 504
+    assert "took more than" in data["error"]
+
+
+def test_run_with_timeout_stops_what_the_command_started(tmp_path):
+    import time
+    import subprocess
+    from backend.api.tuning import run_with_timeout
+    assert run_with_timeout(["bash", "-c", "echo out; echo err >&2"], cwd=tmp_path, timeout=10).stdout == "out\n"
+    marker = tmp_path / "still-running"
+    start = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_with_timeout(["bash", "-c", f"(sleep 1; touch {marker}) & sleep 30"], cwd=tmp_path, timeout=0.3)
+    assert time.monotonic() - start < 5
+    time.sleep(1.5)
+    assert not marker.exists()
+
+
+def test_mkdir_for_everyone_leaves_the_umask_alone(tmp_path):
+    import os
+    from backend.api.tuning import mkdir_for_everyone
+    (tmp_path / "existing").mkdir()
+    (tmp_path / "existing").chmod(0o755)
+    previous = os.umask(0o022)
+    try:
+        mkdir_for_everyone(tmp_path / "existing" / "batch" / "logs")
+        assert os.umask(0o022) == 0o022
+    finally:
+        os.umask(previous)
+    assert ((tmp_path / "existing" / "batch").stat().st_mode & 0o777) == 0o777
+    assert ((tmp_path / "existing" / "batch" / "logs").stat().st_mode & 0o777) == 0o777
+    assert ((tmp_path / "existing").stat().st_mode & 0o777) == 0o755
+    mkdir_for_everyone(tmp_path / "existing" / "batch" / "logs")  # already there
+
+
+def test_celery_dispatch_gives_the_broker_in_the_environment_not_the_script(tmp_path, monkeypatch):
+    """The script is saved with the batch's logs: the broker's password stays out of it"""
+    import backend.api.tuning as tuning
+    script = tmp_path / "qa_batch.sh"
+    script.write_text('#!/bin/bash\necho "broker=$CELERY_BROKER_URL db=${QABOARD_DB_PASSWORD:-none} host=$QABOARD_HOST"\n')
+    monkeypatch.setenv("CELERY_BROKER_URL", "pyamqp://qaboard:secret@rabbitmq//")
+    monkeypatch.setenv("QABOARD_DB_PASSWORD", "db-secret")
+    monkeypatch.setenv("QABOARD_HOST", "qaboard.example.com")
+    submission = tuning._dispatch_celery(script, tmp_path, "c0ffee00-0000")
+    assert submission["status"] == "done", (tmp_path / "log.txt").read_text()
+    assert "secret" not in script.read_text()
+    assert "export QABOARD_HOST=qaboard.example.com\n" in script.read_text()
+    assert "broker=pyamqp://qaboard:secret@rabbitmq// db=none host=qaboard.example.com" in (tmp_path / "log.txt").read_text()
+
+    # without the celery runner, no broker either
+    script.write_text('#!/bin/bash\necho "broker=${CELERY_BROKER_URL:-none}"\n')
+    assert tuning._dispatch_local(script, tmp_path, "c0ffee00-0001")["status"] == "done"
+    assert (tmp_path / "log.txt").read_text().splitlines()[-1] == "broker=none"
+    # unless the project's runner may be celery
+    commit = SimpleNamespace(project=SimpleNamespace(data={"qatools_config": {"runners": {"default": "lsf", "celery": {}}}}))
+    tuning._dispatch_local(script, tmp_path, "c0ffee00-0002", commit)
+    assert (tmp_path / "log.txt").read_text().splitlines()[-1] == "broker=pyamqp://qaboard:secret@rabbitmq//"
+
+
+def test_local_dispatch_does_not_wait_for_qa_batch(tmp_path, monkeypatch):
+    """qa batch runs detached: the request returns, and uWSGI's harakiri doesn't kill it. Stopping the batch kills it."""
+    import time
+    import socket
+    import psutil
+    import backend.api.tuning as tuning
+    from backend.local_jobs import refresh_status, stop_local_submissions
+    monkeypatch.setenv("QABOARD_LOCAL_START_WAIT", "0.5")
+    script = tmp_path / "qa_batch.sh"
+    # like `qa batch` with the local runner: runs in the background, one in its own session (with a timeout)
+    script.write_text(
+        '#!/bin/bash\ntrap \'echo "[qaboard] qa batch exited with code $?"\' EXIT\n'
+        'sleep 600 & echo $! > child.pid\n'
+        'setsid sleep 600 & echo $! > own-session.pid\n'
+        'wait\n'
+    )
+    started = time.monotonic()
+    submission = tuning._dispatch_local(script, tmp_path, "c0ffee00-0003")
+    assert time.monotonic() - started < 10
+    assert submission["status"] == "submitted", (tmp_path / "log.txt").read_text()
+    assert submission["host"] == socket.gethostname()
+    assert submission["pid"] != submission["pgid"]
+    submission = {**submission, "id": "c0ffee00-0003", "runner": "local", "log_dir": str(tmp_path)}
+    assert refresh_status(submission) == submission
+
+    # Someone wrote a submission with our pid: it's not theirs
+    forged = {**submission, "id": "forged-0000"}
+    assert stop_local_submissions({"submissions": {"forged-0000": forged}})["stopped"] == []
+    assert psutil.pid_exists(submission["pid"])
+
+    # Stopping the batch kills qa batch and what it started
+    children = [int((tmp_path / name).read_text()) for name in ("child.pid", "own-session.pid")]
+    stopped = stop_local_submissions({"submissions": {submission["id"]: submission}})
+    assert stopped == {"stopped": [submission["id"]], "errors": []}
+    def running(pid):
+        return psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    for _ in range(50):
+        if not any(running(pid) for pid in [submission["pid"], *children]):
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("qa batch, or what it started, still runs")
+    # it's gone without an exit code
+    assert refresh_status(submission)["status"] == "failed"
+
+
+def test_local_submissions_on_other_hosts_are_not_stopped(tmp_path):
+    from backend.local_jobs import stop_local_submissions, refresh_status
+    submission = {"id": "c0ffee00-0004", "runner": "celery", "status": "submitted", "pid": 1, "pgid": 1, "host": "another-replica", "log_dir": str(tmp_path)}
+    stopped = stop_local_submissions({"submissions": {submission["id"]: submission}})
+    assert stopped["stopped"] == []
+    assert "another-replica" in stopped["errors"][0]
+    # we can't tell how it is
+    assert refresh_status(submission) == submission
+    # until it writes its exit code
+    (tmp_path / "exit_code").write_text("2\n")
+    assert refresh_status(submission) == {**submission, "status": "failed", "exit_code": 2}
+    assert stop_local_submissions({"submissions": {submission["id"]: submission}}) == {"stopped": [], "errors": []}
+
+
+def test_qa_environment_has_no_secrets():
+    from backend.local_jobs import qa_environment
+    server = {
+        "PATH": "/usr/bin", "HOME": "/home/qaboard", "LANG": "C.UTF-8", "QABOARD_HOST": "qaboard", "QABOARD_PROTOCOL": "https",
+        "http_proxy": "http://proxy:3128", "no_proxy": "localhost", "REQUESTS_CA_BUNDLE": "/etc/ssl/ca.pem", "SSL_CERT_FILE": "/etc/ssl/ca.pem",
+        "QA_RUNNERS_LSF_BRIDGE": "ssh lsf {bsub_command}", "QA_STORAGE": "/mnt", "QABOARD_STORAGE_ROOTS": "/mnt",
+        "SECRET_KEY": "x", "QABOARD_DB_PASSWORD": "x", "QABOARD_DB_HOST": "db", "QABOARD_DB_USER": "qaboard",
+        "QABOARD_LDAP_PASSWORD": "x", "QABOARD_LDAP_BIND_DN": "cn=x", "QABOARD_SMTP_PASSWORD": "x", "QABOARD_SMTP_USER": "x",
+        "QABOARD_OIDC_CLIENT_SECRET": "x", "QABOARD_OIDC_CLIENT_ID": "x", "QABOARD_SAML_DIR": "/saml", "QABOARD_ENCRYPTION_KEY": "x",
+        "JENKINS_AUTH": "x", "GITLAB_AUTH": "x", "GITHUB_TOKEN": "x", "SENTRY_DSN": "https://x@sentry", "POSTHOG_API_KEY": "x",
+        "DATABASE_URL": "postgresql://x", "AWS_SECRET_ACCESS_KEY": "x", "GOOGLE_APPLICATION_CREDENTIALS": "/key.json",
+        "CELERY_BROKER_URL": "pyamqp://qaboard:x@rabbitmq//", "CELERY_RESULT_BACKEND": "rpc://",
+        # credentials in a URL, whatever the name
+        "SOME_SERVICE_URL": "https://user:pw@service", "https_proxy": "http://user:pw@proxy:3128",
+    }
+    env = qa_environment("c0ffee00", environ=server)
+    assert env == {
+        "PATH": "/usr/bin", "HOME": "/home/qaboard", "LANG": "C.UTF-8", "QABOARD_HOST": "qaboard", "QABOARD_PROTOCOL": "https",
+        "http_proxy": "http://proxy:3128", "no_proxy": "localhost", "REQUESTS_CA_BUNDLE": "/etc/ssl/ca.pem", "SSL_CERT_FILE": "/etc/ssl/ca.pem",
+        "QA_RUNNERS_LSF_BRIDGE": "ssh lsf {bsub_command}", "QA_STORAGE": "/mnt", "QABOARD_STORAGE_ROOTS": "/mnt",
+        "QABOARD_SUBMISSION_ID": "c0ffee00",
+    }
+    celery_env = qa_environment("c0ffee00", celery=True, environ=server)
+    assert celery_env == {**env, "CELERY_BROKER_URL": "pyamqp://qaboard:x@rabbitmq//", "CELERY_RESULT_BACKEND": "rpc://"}

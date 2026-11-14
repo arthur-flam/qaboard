@@ -4,9 +4,13 @@
 // Tuning parameters (`qa --tuning`, a run's extra_parameters) are one more object, applied last: their settings are
 // shown and compared like the others, but they're kept apart from the configuration's (`source: 'tuning'`).
 // Pure functions: the commit page calls them for each of its 1000s of runs, so they're memoized.
+// config_distance is ported to Python in qaboard/matching.py, both are tested against tests/fixtures/config-distance.json.
 
 // Some configuration keys are used and shown by viewers - we don't display them as settings
-export const hidden_keys = ["badges", "roi", "auto_rois"];
+export const hidden_keys = ["badges", "roi", "auto_rois", "view"];
+// `view` is what a run asks to show (viewers/runView.js) when it's a mapping: else it's a project's own parameter
+export const is_hidden = (key, value) => hidden_keys.includes(key)
+  && (key !== 'view' || (value !== null && typeof value === 'object' && !Array.isArray(value)));
 
 // Values as people write them: [1, 0.98, 0.95] rather than JSON's [1,0.98,0.95]
 export const format_value = value => {
@@ -36,7 +40,7 @@ const has_objects = array => array.some(v => is_object(v) && Object.keys(v).leng
 const visit = (value, path, item, source, tokens) => {
   if (is_object(value) && Object.keys(value).length > 0) {
     for (const [key, v] of Object.entries(value)) {
-      if (!path && hidden_keys.includes(key)) continue;
+      if (!path && is_hidden(key, v)) continue;
       visit(v, path ? `${path}.${key}` : key, item, source, tokens);
     }
   } else if (Array.isArray(value) && has_objects(value)) {
@@ -457,3 +461,21 @@ export const summarize_changes = pairs => {
   }
   return [...changes.values()].sort((a, b) => b.runs - a.runs);
 };
+
+
+// "lr=0.1 · base · config.yaml · isp: {...}": how the run is configured, as one line of text.
+// Rendering the configurations as tags is slow and wide when lists have 100s of runs.
+// The tuning parameters come first: when people tune, they tell runs apart, and long lines are cut at their end.
+export const configurationSummary = output => {
+  const parts = []
+  for (const [key, value] of Object.entries(output.extra_parameters ?? {}))
+    if (!is_hidden(key, value)) parts.push(`${key}=${JSON.stringify(value)}`)
+  if (output.platform && output.platform !== 'linux') parts.push(`@${output.platform}`)
+  for (const configuration of output.configurations ?? []) {
+    if (typeof configuration === 'string') parts.push(configuration)
+    else if (configuration && typeof configuration === 'object')
+      for (const [key, value] of Object.entries(configuration))
+        if (!is_hidden(key, value)) parts.push(`${key}: ${JSON.stringify(value)}`)
+  }
+  return parts.join(' · ')
+}

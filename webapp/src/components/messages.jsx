@@ -9,10 +9,12 @@ import {
   NonIdealState,
 } from "@blueprintjs/core";
 import { ConfigurationsTags } from './tags'
+import { RunName } from './runNames'
 import { http, errorMessage, isArtifactsError } from "../api/http";
 import { useRefreshCommit, updateSelected, useUser } from "../hooks";
-import { pretty_label } from "../utils";
+import { pretty_label, shows_only_failed, only_failed_filter, without_failed_filter, only_run_filter } from "../utils";
 import { toaster } from "../toaster"
+import { track } from "../analytics"
 import { SubmissionCallout } from "./logs/BatchSubmissions"
 import { ArtifactsCallout } from "./ArtifactsCallout"
 import { LoginHint } from "./authentication/login"
@@ -64,19 +66,12 @@ const CommitWarningMessages = ({ project, commit }) => {
 
 
 
-// link_logs: the run names open their log
-const SimpleOutputList = ({outputs, intent, link_logs = false}) => {
+// link_logs: the run names open their log, actions: what's shown after each run, e.g. buttons
+const SimpleOutputList = ({outputs, intent, link_logs = false, actions}) => {
   return <ul className={Classes.LIST}>
     {outputs.map(o => {
-      const has_metadata = !!o.test_input_metadata && (Object.keys(o.test_input_metadata).length > 0)
-      const has_label = has_metadata && !!o.test_input_metadata.label
-      let run_path = `${o.test_input_database === '/' ? '/' : ''}${o.test_input_path}`
-      if (o.output_type === "pipeline" || o.test_input_path === "PIPELINE") {
-        run_path = <span>{o.data.batch} <span className={Classes.TEXT_MUTED}>(pipeline)</span></span>
-      }
-      if (has_label) {
-        run_path = o.test_input_metadata.label
-      }
+      // after its batch and database when the runs come from several, like everywhere
+      const run_path = <RunName output={o} hover={false}/>
       return <li key={o.id}>
         <strong style={{paddingRight: '5px'}}>
           {link_logs && !!o.output_dir_url
@@ -84,6 +79,7 @@ const SimpleOutputList = ({outputs, intent, link_logs = false}) => {
             : run_path}
         </strong>
         <ConfigurationsTags intent={intent} configurations={o.configurations} tuning={o.extra_parameters}/>
+        {actions?.(o)}
       </li>
       }
     )}
@@ -92,7 +88,45 @@ const SimpleOutputList = ({outputs, intent, link_logs = false}) => {
 
 
 
-const BatchStatusMessages = ({ project, commit, batch }) => {
+// Up to this many failed runs, we list them. When more fail, it's often for a common reason: the list would push
+// the page down, users rather filter the page to show only the runs that failed, and list them on demand.
+const few_failed_runs = 5
+
+// Filters the page to show only this run (Back shows them all again)
+const goToRun = (id, filter) => updateSelected({ filter_batch_new: only_run_filter(filter, id) })
+
+// The runs that failed, among those the filter keeps
+const FailedRunsCallout = ({ runs, filter, onShowLogs }) => {
+  const [expanded, setExpanded] = useState(false)
+  if (runs.length === 0) return null
+  const is_long = runs.length > few_failed_runs
+  const only_failed = shows_only_failed(filter)
+  const setFilter = value => updateSelected({ filter_batch_new: value })
+  return <Callout icon="error" intent={Intent.DANGER} title={`${runs.length} failed`}>
+    {(!is_long || expanded) && <SimpleOutputList
+      outputs={runs}
+      intent={Intent.DANGER}
+      link_logs
+      actions={o => <Tooltip content="Show only this run" placement="right">
+        <Button size="small" variant="minimal" icon="locate" aria-label="Show only this run" onClick={() => goToRun(o.id, filter)}/>
+      </Tooltip>}
+    />}
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {only_failed
+        ? <Button size="small" icon="filter-remove" onClick={() => setFilter(without_failed_filter(filter))}>Show all the runs</Button>
+        : <Button size="small" icon="filter" intent={is_long ? Intent.DANGER : Intent.NONE} onClick={() => setFilter(only_failed_filter(filter))}>
+            Show only the failed runs
+          </Button>}
+      {is_long && <Button size="small" variant="minimal" icon={expanded ? 'chevron-up' : 'chevron-down'} onClick={() => setExpanded(!expanded)}>
+        {expanded ? 'Hide the list' : `List the ${runs.length} runs`}
+      </Button>}
+      <Button size="small" icon="console" onClick={onShowLogs}>Open the logs</Button>
+    </div>
+  </Callout>
+}
+
+
+const BatchStatusMessages = ({ project, commit, batch, filter }) => {
   const [waiting_stop, setWaitingStop] = useState(false);
   const [waiting_redo, setWaitingRedo] = useState(false);
   const refreshCommit = useRefreshCommit();
@@ -116,6 +150,7 @@ const BatchStatusMessages = ({ project, commit, batch }) => {
     http.post(`/api/v1/batch/stop/`, {id: batch.id})
       .then(() => {
         toaster.show({message: `Stopping the runs of ${pretty_label(batch)}`, intent: Intent.SUCCESS}, key);
+        track('batch_stop', { commit_id: commit?.id }, { project_id: project })
         refresh()
       })
       .catch(error => {
@@ -133,6 +168,7 @@ const BatchStatusMessages = ({ project, commit, batch }) => {
     http.post(`/api/v1/batch/redo/`, {id: batch.id, only_deleted: true})
       .then(({ data }) => {
         toaster.show({message: `Redoing the deleted runs of ${pretty_label(batch)}`, intent: Intent.SUCCESS, action: show_logs}, key);
+        track('batch_start', { kind: 'redo', commit_id: commit?.id, n_runs: typeof data?.submission?.runs === 'number' ? data.submission.runs : undefined }, { project_id: project })
         // e.g. only the source files of the artifacts could be restored
         if (data?.warning) toaster.show({message: data.warning, intent: Intent.WARNING, timeout: 15000});
       })
@@ -185,20 +221,9 @@ const BatchStatusMessages = ({ project, commit, batch }) => {
       {some_pending && !is_logged && <LoginHint text="Sign in to stop runs"/>}
     </Callout>
   )
-  let failed_message = batch.filtered.failed_outputs > 0 && (
-    <Callout
-      icon="error"
-      intent={Intent.DANGER}
-      title={`${batch.filtered.failed_outputs} failed`}
-    >
-      <SimpleOutputList
-        outputs={outputs.filter(o => o.is_failed)}
-        intent={Intent.DANGER}
-        link_logs
-      />
-      <Button size="small" icon="console" onClick={show_logs}>Open the logs</Button>
-    </Callout>
-  )
+  // A failed evaluation of an automated tuning isn't one of the batch's runs: Tuning Analysis explains it
+  const failed_runs = outputs.filter(o => o.is_failed && o.output_type !== 'optim_iteration')
+  let failed_message = <FailedRunsCallout runs={failed_runs} filter={filter} onShowLogs={show_logs}/>
 
   let deleted_message = batch.filtered.deleted_outputs > 0 && (
     <Callout

@@ -6,8 +6,14 @@ import {
   reference_names, reference_colors, side_colors, switch_new_and_reference,
   project_url,
 } from '../selection';
+import { vi } from 'vitest';
 import { matchRoutes } from '../router';
 import { route_paths } from '../route_paths';
+import { history } from '../router';
+import { updateSelected } from '../selection';
+import { track } from '../analytics';
+
+vi.mock('../analytics', () => ({ track: vi.fn() }));
 
 const routes = Object.values(route_paths).map(path => ({ path }));
 
@@ -50,7 +56,8 @@ describe('reading the selection from the URL', () => {
     expect(s.ref_commit_id).toBe(null);
     expect(s.selected_batch_new).toBe('default');
     expect(s.filter_batch_new).toBe('');
-    expect(s.sort_order).toBe(-1);
+    // the default order of what runs are sorted by, see selectors/sorting.js
+    expect(s.sort_order).toBeUndefined();
     expect(s.selected_views).toBeUndefined();
     expect(s.selected_metrics).toBeUndefined();
   });
@@ -71,6 +78,9 @@ describe('reading the selection from the URL', () => {
     expect(route_info("/:project_id+/committer/:committer+")).toMatchObject({ is_committer: true, is_commit: false });
     expect(route_info("/:project_id+/commit/:name+")).toMatchObject({ is_commit: true, is_list: false });
     expect(route_info("/:project_id+/history/:name+")).toMatchObject({ is_history: true, is_commit: false });
+    expect(route_info("/:project_id+/access")).toMatchObject({ is_access: true, is_project_admin: false, section: null, is_list: false });
+    // the project's other Admin pages, with the section the URL gives
+    expect(route_info("/:project_id+/admin/:section(gate)", { project_id: 'group/repo', section: 'gate' })).toMatchObject({ is_project_admin: true, section: 'gate', is_access: false, is_list: false });
   });
 });
 
@@ -121,10 +131,12 @@ describe('changing the selection', () => {
 
   test('defaults are not in the URL', () => {
     const { url, selected } = roundtrip('/p/commit/a?batch=x&batch_ref=y&filter=f&sort_order=1&search=s', {
-      selected_batch_new: 'default', selected_batch_ref: 'default', filter_batch_new: '', search: '', sort_order: '-1',
+      selected_batch_new: 'default', selected_batch_ref: 'default', filter_batch_new: '', search: '', sort_order: undefined,
     });
     expect(url).toBe('/p/commit/a?');
-    expect(selected).toMatchObject({ selected_batch_new: 'default', filter_batch_new: '', sort_order: -1 });
+    expect(selected).toMatchObject({ selected_batch_new: 'default', filter_batch_new: '', sort_order: undefined });
+    // an order users chose stays, whatever it is
+    expect(roundtrip('/p/commit/a', { sort_order: -1 }).url).toBe('/p/commit/a?sort_order=-1');
     // '' still means "no commit selected"
     expect(roundtrip('/p/commit/a', { ref_commit_id: '' }).url).toBe('/p/commit/a?reference=');
   });
@@ -438,5 +450,21 @@ describe('project_url', () => {
     expect(project_url('settings')).toBe('/settings/commits');
     // only exact matches are the app's
     expect(project_url('projects/sub')).toBe('/projects/sub');
+  });
+});
+
+
+describe('usage analytics', () => {
+  test('choosing a reference commit is a comparison, writing its full id back is not', () => {
+    track.mockClear();
+    history.replace('/group/repo/commit/abc');
+    updateSelected({ ref_commit_id: 'def' });
+    expect(track).toHaveBeenCalledWith('commit_compare', {}, { project_id: 'group/repo' });
+    // the page resolves "def" to its full id, quietly
+    updateSelected({ ref_commit_id: 'def0123' }, { replace: true });
+    // the same reference again, or a batch: nothing
+    updateSelected({ ref_commit_id: 'def0123', selected_batch_ref: 'tuning' });
+    updateSelected({ ref_commit_id: '' });
+    expect(track).toHaveBeenCalledTimes(1);
   });
 });

@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import uuid
+import signal
 import fnmatch
 import datetime
 import itertools
@@ -14,7 +15,6 @@ import subprocess
 from glob import glob
 from copy import deepcopy
 from shlex import quote
-from html import escape
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Dict, List, Any
@@ -32,7 +32,7 @@ from ..models import CiCommit, Project
 from ..config import qaboard_data_shared_dir
 from ..shell_utils import safe_user_name, lsf_bridge_command
 from ..storage import check_storage_path, UnsafePathError
-from ..submissions import record_submission, MAX_SUBMISSIONS, user_batch_dir, submission_dir # noqa: F401
+from ..submissions import record_submission, MAX_SUBMISSIONS, user_batch_dir, submission_dir, append_log, startup_logs # noqa: F401
 from ..artifacts import ArtifactsUnavailable
 from ..notifications.batches import request_batch_notification, cancel_batch_notification
 from .auth import login_required, require_project_access, is_authorized_user, forbidden_project
@@ -186,10 +186,10 @@ def read_batches_file(batches_file):
 def batch_definitions(files_batches):
   """
   Where each batch is defined, and the aliases, from [(file, batches)].
-  Returns ({batch: [the paths of the files defining it, in order]}, aliases).
+  Returns ({batch: [the files defining it, in order, as {"path", "source"}]}, aliases).
   Like for `qa batch`, the last file defining a batch wins.
   """
-  defined: Dict[str, List[str]] = {}
+  defined: Dict[str, List[Dict[str, str]]] = {}
   aliases: Dict[str, Any] = {}
   for batches_file, batches in files_batches:
     if not batches:
@@ -200,19 +200,25 @@ def batch_definitions(files_batches):
     names = [n for n in batches if isinstance(n, str) and not n.startswith('.') and n not in BATCH_FILE_SETTINGS]
     batches_file["batches"] = len(names)
     for name in names:
-      defined.setdefault(name, []).append(batches_file["path"])
+      defined.setdefault(name, []).append({"path": batches_file["path"], "source": batches_file["source"]})
   return defined, aliases
 
 
 def definitions_of(batches, defined):
   """
   Where the batches are defined, from batch_definitions(). `batches` can be patterns, like `qa batch --batch 'night-*'`.
-  Returns ([{"name", "files"}], the batches that are not defined).
+  Returns ([{"name", "files", "sources"}], the batches that are not defined).
+  `files` are the paths of the files defining the batch, and `sources` where each comes from:
+  "commit" for the commit's files (paths as in its qaboard.yaml), "qaboard" for QA-Board's shared and private files.
   """
   definitions, undefined = [], []
   for batch in batches:
     matches = [batch] if batch in defined else [n for n in defined if fnmatch.fnmatch(n, batch)]
-    definitions.extend({"name": m, "files": defined[m]} for m in matches)
+    definitions.extend({
+      "name": m,
+      "files": [f["path"] for f in defined[m]],
+      "sources": [f["source"] for f in defined[m]],
+    } for m in matches)
     if not matches:
       undefined.append(batch)
   return definitions, undefined
@@ -259,6 +265,38 @@ def missing_inputs_from_logs(logs):
   """The inputs `qa batch` warned it didn't find, like recording_missing_inputs()."""
   pattern = r'No inputs found (?:for the batch|matching) "(.*?)".*? under "?(.*?)"?\.?$'
   return [{"input": m.group(1), "database": m.group(2)} for m in re.finditer(pattern, logs, re.MULTILINE)]
+
+
+# Below nginx's uwsgi_read_timeout (300s): users get our message, not a 504 from the proxy
+LIST_TESTS_TIMEOUT = 240
+
+def run_with_timeout(cmd, cwd, timeout):
+  """
+  Like subprocess.run(capture_output=True, timeout=...), but on timeout it kills what the command started too
+  (e.g. `qa` started by bash): they would keep running, and keep the pipes open.
+  """
+  with subprocess.Popen(cmd, cwd=cwd, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as process:
+    try:
+      stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+      try:
+        os.killpg(process.pid, signal.SIGKILL)
+      except ProcessLookupError:
+        pass
+      process.communicate()
+      raise
+  return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+
+
+def mkdir_for_everyone(path):
+  """
+  Creates a folder and its missing parents, writable by all users: runs started as the users write in them.
+  We don't change the umask: it's the process', so it would apply to what other threads create meanwhile.
+  """
+  missing = [p for p in [path, *path.parents] if not p.exists()]
+  path.mkdir(parents=True, exist_ok=True)
+  for p in missing:
+    p.chmod(0o777)
 
 
 def commit_database(database, ci_commit=None):
@@ -382,12 +420,13 @@ def get_group():
         ])
         cmd = '\n'.join([*envrcs, cmd])
         print(cmd)
-        process = subprocess.run(
-            ['bash', '-c', cmd],
-            cwd=cwd,
-            encoding="utf-8",
-            capture_output=True,
-        )
+        try:
+            process = run_with_timeout(['bash', '-c', cmd], cwd=cwd, timeout=LIST_TESTS_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": f"Listing the tests with the project's code took more than {LIST_TESTS_TIMEOUT}s: QA-Board stopped it.", "cmd": str(cmd)}), 504
+        except OSError as e:
+            # e.g. the artifacts folder doesn't exist
+            return jsonify({"error": f"Could not list the tests with the project's code: {e}", "cmd": str(cmd)}), 500
         print(process.stderr)
         try:
             process.check_returncode()
@@ -466,30 +505,31 @@ def _generate_batch_script(ci_commit, user, working_directory, command_id, batch
     return script
 
 
-def _run_script(qa_batch_path, log_dir):
-    """Run a bash script, appending its output to log_dir/log.txt"""
-    cmd = ['bash', str(qa_batch_path)]
-    print(cmd)
-    with (Path(log_dir) / 'log.txt').open('a') as log:
-        out = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT)
-    out.check_returncode()
+def _run_script(qa_batch_path, log_dir, command_id, celery=False):
+    """
+    Runs the bash script on the server, detached: it outlives the request (see local_jobs.py), with the server's
+    environment minus its secrets, and its output appended to log_dir/log.txt.
+    Returns the submission's {"status", "pid", "pgid", "host"}, and "exit_code" if it already ended.
+    """
+    from ..local_jobs import start_detached, qa_environment
+    return start_detached(qa_batch_path, log_dir, qa_environment(command_id, celery=celery))
 
 
-def _dispatch_local(qa_batch_path, log_dir):
-    """Run batch script locally via subprocess."""
-    _run_script(qa_batch_path, log_dir)
+def _dispatch_local(qa_batch_path, log_dir, command_id, ci_commit=None):
+    """Run batch script locally, detached. It gets the broker if the project's runner may be celery."""
+    from ..local_jobs import project_uses_celery
+    return _run_script(qa_batch_path, log_dir, command_id, celery=project_uses_celery(ci_commit))
 
 
-def _dispatch_celery(qa_batch_path, log_dir):
-    """Run batch script via celery worker. Injects broker URL into script."""
-    broker_url = os.environ.get('CELERY_BROKER_URL', 'pyamqp://guest:guest@qaboard:5672//')
+def _dispatch_celery(qa_batch_path, log_dir, command_id):
+    """Run batch script locally, detached, with the broker's URL (in its environment, not in the script: it has the password)."""
+    # if it's not set, `qa` uses qaboard/runners/celeryconfig.py's default (qaboard.yaml's runners.celery wins anyway)
     qaboard_host = os.environ.get('QABOARD_HOST', 'localhost')
     qaboard_protocol = os.environ.get('QABOARD_PROTOCOL', 'http')
 
     celery_env = "".join([
         f"export QABOARD_PROTOCOL={quote(qaboard_protocol)}\n",
         f"export QABOARD_HOST={quote(qaboard_host)}\n",
-        f"export CELERY_BROKER_URL={quote(broker_url)}\n",
         f"export no_proxy={quote(f'{qaboard_host},proxy,rabbitmq,qaboard')}\n",
     ])
     with qa_batch_path.open("r") as f:
@@ -497,7 +537,7 @@ def _dispatch_celery(qa_batch_path, log_dir):
     content = content.replace("#!/bin/bash\n", f"#!/bin/bash\n{celery_env}", 1)
     with qa_batch_path.open("w") as f:
         f.write(content)
-    _run_script(qa_batch_path, log_dir)
+    return _run_script(qa_batch_path, log_dir, command_id, celery=True)
 
 
 def parse_bsub_job_id(output: str):
@@ -540,10 +580,23 @@ def _dispatch_lsf(qa_batch_path, log_dir, user, ci_commit, do_optimize):
     print(out.stdout)
     if out.returncode != 0:
         # Users see this log in QA-Board
-        with (log_dir / 'log.txt').open('a') as log:
-            log.write(f"ERROR: Could not submit the job to LSF (exit code {out.returncode}):\n{out.stdout}\n")
+        append_log(log_dir, f"ERROR: Could not submit the job to LSF (exit code {out.returncode}):\n{out.stdout}\n")
     out.check_returncode()
     return {"lsf_job_id": parse_bsub_job_id(out.stdout), "queue": queue}
+
+
+def _dispatch_kubernetes(qa_batch_path, log_dir, user_info, ci_commit, do_optimize, command_id, on_prepared=None):
+    """
+    Run the batch script on Kubernetes, in a "driver" pod (a 1-pod Job named qa-<command_id[:8]>-driver) that runs as
+    the signed-in user (`user_info`, g.user), with the commit's runners.kubernetes (image, mounts...) as far as the
+    server allows it, see backend/runner_jobs.py. Its `qa batch` starts the runs' Jobs with the pod's ServiceAccount
+    (QABOARD_KUBERNETES_SERVICE_ACCOUNT), and stopping the batch deletes them all: they have the batch's command id.
+    `on_prepared({"kubernetes_job", "namespace"})` is called before the job is submitted, to record it.
+    Returns {"kubernetes_job", "namespace"}. The pod writes its output in log_dir/log.txt, and so do we if it can't start.
+    `do_optimize`: the pod has no deadline either way, `qa optimize` runs as long as its experiment.
+    """
+    from ..runner_jobs import submit_driver
+    return submit_driver(qa_batch_path, log_dir, user_info, ci_commit, command_id, on_prepared=on_prepared)
 
 
 def find_commit(project_id, hexsha):
@@ -630,12 +683,9 @@ def check_tuning_search(tuning_search) -> list:
             return [f"The automated tuning configuration is not valid YAML: {e}"]
         if not isinstance(optim_config, dict):
             return ["The automated tuning configuration should be a YAML mapping, with an `objective`, an `evaluations` budget and a `search_space`."]
-        errors = [f"The automated tuning configuration needs a `{key}`." for key in ('objective', 'evaluations', 'search_space') if key not in optim_config]
-        if 'evaluations' in optim_config and (not isinstance(optim_config['evaluations'], int) or optim_config['evaluations'] < 1):
-            errors.append("`evaluations` should be a positive integer.")
-        if 'search_space' in optim_config and not optim_config['search_space']:
-            errors.append("`search_space` is empty: there is nothing to optimize.")
-        return errors
+        # the same checks as `qa optimize`, with the same messages
+        from qaboard.optimization import check_config
+        return check_config(optim_config)
     if search_type not in ('grid', 'sampler'):
         return [f"Unknown search type: {search_type}"]
     if parameter_search is None:
@@ -650,7 +700,7 @@ def check_tuning_request(ci_commit, data):
     """
     Checks a request to run a batch from QA-Board, before we start anything.
     Returns {errors, warnings, artifacts, batches, definitions, batches_files}: with errors we don't start.
-    `definitions` says in which files the batches that would run are defined: [{"name", "files"}].
+    `definitions` says in which files the batches that would run are defined: [{"name", "files", "sources"}].
     """
     from .commit import commit_artifacts_info
     errors, warnings = [], []
@@ -781,7 +831,7 @@ def start_tuning(hexsha):
         return jsonify({"error": " ".join(check["errors"]), "errors": check["errors"], "warnings": check["warnings"]}), 400
 
     # Now that we updated the last_output_datetime, the artifacts won't be deleted again until a little while
-    ci_commit.latest_output_datetime = datetime.datetime.now()
+    ci_commit.latest_output_datetime = datetime.datetime.now(datetime.timezone.utc)
     batch = ci_commit.get_or_create_batch(data['batch_label'])
     db_session.add(ci_commit)
     db_session.commit()
@@ -789,7 +839,6 @@ def start_tuning(hexsha):
     # We store in this directory the scripts used to run this new batch, as well as the logs
     # We may instead want to use the folder where this batch's results are stored
     # Or even store the metadata in the database itself...
-    prev_mask = os.umask(000)
 
     # FIXME: if the output directory includes "{user}", we will use the current user (qaboard)
     # but it's likely better to use the user that requested the tuning
@@ -799,24 +848,19 @@ def start_tuning(hexsha):
         check_storage_path(batch_dir)
         check_storage_path(ci_commit.artifacts_dir)
     except UnsafePathError as e:
-        os.umask(prev_mask)
         return jsonify({"error": str(e)}), 400
     if not batch.batch_dir_override:
         batch.batch_dir_override = str(batch_dir)
         db_session.add(batch)
         db_session.commit()
 
-    if not batch_dir.exists():
-        batch_dir.mkdir(exist_ok=True, parents=True)
-    os.umask(prev_mask)
+    mkdir_for_everyone(batch_dir)
 
     command_id = str(uuid.uuid4())
     # Each batch started from QA-Board has its own scripts and logs
     created_at = datetime.datetime.utcnow()
     log_dir = submission_dir(batch_dir, created_at, command_id)
-    prev_mask = os.umask(000)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    os.umask(prev_mask)
+    mkdir_for_everyone(log_dir)
     batches_files = copy_batches_files(check["batches_files"], log_dir)
 
     working_directory = ci_commit.artifacts_dir
@@ -828,7 +872,8 @@ def start_tuning(hexsha):
         # we write somewhere the optimization search configuration
         # it needs to be accessed from LSF so we can't use temporary files...
         config_path = batch_dir / 'optim-config.yaml'
-        checkpoint_path = batch_dir / 'checkpoint.pkl'
+        # qa optimize saves the search there as it goes, and resumes from it when the experiment starts again
+        checkpoint_path = batch_dir / 'optuna-journal.log'
         config_option = f"--config-file {quote(str(config_path))} --checkpoint {quote(str(checkpoint_path))}"
         with config_path.open("w") as f:
             f.write(data['tuning_search']['parameter_search'])
@@ -866,7 +911,7 @@ def start_tuning(hexsha):
         # where the batches are defined: the command reads copies of the batch files
         "batch": data['selected_group'],
         "definitions": check["definitions"],
-        # local/celery: we wait for `qa batch` (it uses --no-wait), LSF: `qa batch` is an LSF job
+        # local/celery: `qa batch` runs detached on the server, LSF/kubernetes: `qa batch` is an LSF job/a pod
         "status": "submitting",
     }
     record_submission(batch, submission)
@@ -880,12 +925,20 @@ def start_tuning(hexsha):
         if runner == 'lsf':
             submission.update(_dispatch_lsf(qa_batch_path, log_dir, user, ci_commit, do_optimize))
             submission["status"] = "submitted"
+        elif runner == 'kubernetes':
+            def record_driver(driver):
+                # before it's submitted: the batch can be stopped whatever happens next
+                submission.update(driver)
+                record_submission(batch, submission)
+                db_session.add(batch)
+                db_session.commit()
+            submission.update(_dispatch_kubernetes(qa_batch_path, log_dir, g.user, ci_commit, do_optimize, command_id, on_prepared=record_driver))
+            submission["status"] = "submitted"
         elif runner == 'celery':
-            _dispatch_celery(qa_batch_path, log_dir)
-            submission.update({"status": "done", "exit_code": 0})
+            # status: "submitted" while it runs, "done"/"failed" if it ended already
+            submission.update(_dispatch_celery(qa_batch_path, log_dir, command_id))
         else:
-            _dispatch_local(qa_batch_path, log_dir)
-            submission.update({"status": "done", "exit_code": 0})
+            submission.update(_dispatch_local(qa_batch_path, log_dir, command_id, ci_commit))
     except Exception as e:
         submission["status"] = "failed"
         if isinstance(e, subprocess.CalledProcessError):
@@ -900,7 +953,8 @@ def start_tuning(hexsha):
 
     if submission["status"] == "failed":
         cancel_batch_notification(db_session, command_id, "The batch failed to start")
-        error_log = (log_dir / 'log.txt').read_text() if (log_dir / 'log.txt').exists() else submission.get("error", "Failed to start batch")
+        # what `qa batch` wrote, and why it waited (e.g. its Kubernetes pod was pending)
+        error_log = startup_logs(log_dir) or submission.get("error", "Failed to start batch")
         return jsonify({"error": error_log, "cmd": runner, "submission": submission}), 500
     return jsonify({"cmd": runner, "stdout": "OK", "submission": submission, "warning": restored_message, "notification": notification})
 

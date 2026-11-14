@@ -1,21 +1,29 @@
 // The image viewer in QA-Board: compares an image of a run with the same image of its reference run, or with another
 // image of the run (e.g. its ground truth).
 // It maps runs, their files and the site's image servers to the viewer's props (src/image-viewer/README.md).
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Tag } from '@blueprintjs/core';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router';
 import { create } from 'zustand';
 
 import { ImageViewer } from '../../image-viewer';
+import { ANALYSES } from '../../image-viewer/analysis';
+import { MODES } from '../../image-viewer/modes';
+import { run_view } from '../runView';
 import { errorMessage, http, isAbort } from '../../api/http';
+import { track } from '../../analytics';
 import { useComparison, useLabels, useSelected, useSiteConfig, useUser } from '../../hooks';
 import { usePrefsStore } from '../../stores/prefs';
 import { at_most, is_same_data } from '../../utils';
+import { doneAgainInPlace, STALE_WARNING } from '../../utils/attempts';
 import { build_image_name, iiif_url } from './utils';
 import { COMPARE_SCOPES, comparedFor, compareCandidates, pickCompared } from './compareWith';
-import { regionProviders } from './regionProviders';
-import { regionsQuery } from './regionSearch';
+import { annotationProvider, isGroupShown, regionProviders } from './regionProviders';
+import { AnnotationGroups } from './AnnotationGroups';
+import { regionsQuery, sizeKey } from './regionSearch';
+import { useRegionSetStore } from './regionSetStore';
+import { DiffSizeFilter, describeDiffSize, useDiffSize } from './DiffSize';
 import { differenceProviders, RegionsTriage, usePagePairs } from './RegionsTriage';
 import './image-viewer-theme.css';
 
@@ -137,14 +145,6 @@ export const coin = (seed, key) => {
   return (h & 1) === 1;
 };
 
-// The region set shown is the same for the viewers of a visualization, e.g. where the images differ. Searches (sets
-// found on demand) are opt-in on each page: on the next, they'd compare the images of all its runs again.
-const useRegionSetStore = create(set => ({
-  // { [path]: { id, page } }
-  by_path: {},
-  set: (path, id, page) => set(state => ({ by_path: { ...state.by_path, [path]: { id, page } } })),
-}));
-
 // The page, for the region sets: the commits, batches... it compares
 const usePageKey = () => {
   const comparison = useComparison();
@@ -162,15 +162,42 @@ const SIGN_IN_SEARCH = 'Sign in (in the sidebar) to find where the images differ
 
 // The regions of interest of the providers. Those found on demand are shared by the page (regionSearch.js): a search
 // for all the runs fills each viewer.
-const useRegionSets = (context, signed_in) => {
+const useRegionSets = (context, signed_in, onDiffSizeChange) => {
   const queryClient = useQueryClient();
-  const providers = regionProviders().filter(provider => !provider.available || provider.available(context));
+  // the site's annotations, e.g. from the app where people mark defects
+  const { annotation_sources } = useSiteConfig();
+  // the groups of annotations users see, e.g. workspaces
+  const group_choices = usePrefsStore(state => state.annotationGroups);
+  const providers = [...regionProviders(), ...(annotation_sources ?? []).map(annotationProvider)]
+    .filter(provider => !provider.available || provider.available(context));
   const finders = providers.filter(provider => !provider.regions && provider.find);
-  // what's found, without searching: only when users pick the set
-  const found = useQueries({ queries: finders.map(provider => ({ ...regionsQuery(provider, context), enabled: false })) });
+  // what's found, without searching: only when users pick the set. Annotations are fetched right away (auto).
+  const found = useQueries({ queries: finders.map(provider => ({ ...regionsQuery(provider, context), enabled: !!provider.auto })) });
   const sets = [];
   for (const provider of providers) {
-    const base = { id: provider.id, label: provider.label, description: provider.description };
+    const base = { id: provider.id, label: provider.label, description: provider.description, section: provider.section, overview: provider.overview };
+    if (provider.auto) {
+      const { data, error, fetchStatus } = found[finders.indexOf(provider)];
+      const shown = new Set(data?.groups.filter(group => isGroupShown(group, group_choices?.[provider.source])).map(group => group.id));
+      const failed = error && !isAbort(error) ? errorMessage(error) : undefined;
+      sets.push({
+        ...base,
+        announce: true,
+        noun: provider.noun,
+        // all of them, the regions button says how many there are
+        total: data?.regions.length,
+        regions: data?.regions.filter(region => shown.has(region.group)),
+        loading: fetchStatus === 'fetching' && !data,
+        error: failed,
+        empty: !data?.regions.length ? provider.empty
+          : shown.size === 0 ? `Pick the ${provider.group_noun}s to show`
+          : `No annotations in these ${provider.group_noun}s`,
+        settings: data?.groups.length ? <AnnotationGroups source={provider.source} groups={data.groups} noun={provider.group_noun} label={provider.label} /> : undefined,
+        // only to retry: else it's not a search, and stays picked on other pages
+        load: failed ? () => queryClient.fetchQuery(regionsQuery(provider, context, 'high')).catch(() => {}) : undefined,
+      });
+      continue;
+    }
     if (provider.regions) {
       const regions = provider.regions(context);
       if (regions?.length) sets.push({ ...base, regions });
@@ -179,9 +206,11 @@ const useRegionSets = (context, signed_in) => {
     const i = finders.indexOf(provider);
     if (i === -1) continue;
     const { data, error, fetchStatus } = found[i];
+    const sized = provider.sized && onDiffSizeChange;
     sets.push({
       ...base,
-      empty: provider.empty,
+      empty: sized && context.diff_size ? `No difference of that size (${describeDiffSize(context.diff_size)})` : provider.empty,
+      settings: sized ? <DiffSizeFilter size={context.diff_size} onChange={onDiffSizeChange} /> : undefined,
       regions: data,
       loading: fetchStatus === 'fetching',
       error: !signed_in ? SIGN_IN_SEARCH : error && !isAbort(error) ? errorMessage(error) : undefined,
@@ -206,9 +235,17 @@ const ImageViewerForRuns = ({
   image_mode,
   image_diff,
   diff,
+  // false: users turned off what runs ask to show
+  run_views,
   onControlsChange,
 }) => {
   const labels = useLabels(labels_);
+  // What the run asks for its images (its `view.images`): the comparison mode, the analysis panel
+  const asked = run_views !== false ? run_view(output_new).images : null;
+  const asked_mode = MODES.some(m => m.value === asked?.mode) ? asked.mode : undefined;
+  const asked_analysis = ANALYSES.some(a => a.value === asked?.analysis) ? asked.analysis : undefined;
+  // the panel's view is a preference shared by the viewers: this viewer keeps its own when the run asked for one
+  const [own_analysis, setOwnAnalysis] = useState(asked_analysis);
   const { image_servers } = useSiteConfig();
   const pixel_values = usePrefsStore(state => state.imagePixelValues);
   const setPixelValues = usePrefsStore(state => state.setImagePixelValues);
@@ -218,6 +255,13 @@ const ImageViewerForRuns = ({
   const setAnalysisValues = usePrefsStore(state => state.setImageAnalysisValues);
   // what users said of the sensor of the project's raw images
   const { project } = useSelected();
+  // Usage analytics: each feature once per viewer, so that holding a key doesn't send hundreds of events
+  const used_features = useRef(new Set());
+  const use = feature => {
+    if (used_features.current.has(feature)) return;
+    used_features.current.add(feature);
+    track('image_viewer_use', { feature }, { project_id: project });
+  };
   const sensor = usePrefsStore(state => state.imageSensor[project]);
   const setSensor = usePrefsStore(state => state.setImageSensor);
   const adjustments = useAdjustmentsStore(state => state.by_path[path]);
@@ -227,7 +271,7 @@ const ImageViewerForRuns = ({
   const [local_mode, setLocalMode] = useState(undefined);
   const [local_diff, setLocalDiff] = useState(undefined);
   // `diff` is how the URL said "difference mode" before there were modes
-  const mode = (onControlsChange ? image_mode : local_mode) ?? (diff ? 'difference' : 'side-by-side');
+  const mode = (onControlsChange ? image_mode : local_mode) ?? (diff ? 'difference' : asked_mode ?? 'side-by-side');
   const diff_settings = onControlsChange ? image_diff : local_diff;
 
   const image = runImage(output_new, path, manifests?.new, image_servers, labels.new, labels.colors.new);
@@ -247,10 +291,11 @@ const ImageViewerForRuns = ({
   const same_as_other = !!other && is_same_data(path, manifests?.new?.[path], manifests?.new?.[other]);
   const signed_in = useUser().is_logged;
   // the regions where the images differ: of the image and the other image of the run, or its reference
+  const [diff_size, setDiffSize] = useDiffSize();
   const region_context = other
-    ? { output_new, output_ref: output_new, path, path_ref: other }
-    : { output_new, output_ref: reference ? output_ref : null, path, path_ref };
-  const region_sets = useRegionSets(region_context, signed_in);
+    ? { output_new, output_ref: output_new, path, path_ref: other, diff_size }
+    : { output_new, output_ref: reference ? output_ref : null, path, path_ref, diff_size };
+  const region_sets = useRegionSets(region_context, signed_in, setDiffSize);
   const page = usePageKey();
   const chosen = useRegionSetStore(state => state.by_path[path]);
   const setChosen = useRegionSetStore(state => state.set);
@@ -259,6 +304,14 @@ const ImageViewerForRuns = ({
   const region_set = chosen && (chosen.page === page || !is_search(chosen.id))
     ? chosen.id
     : region_sets.some(set => set.id === 'presets') ? 'presets' : null;
+  // another size of differences: the set shown searches again
+  const size_key = JSON.stringify(sizeKey(diff_size));
+  const shown_set = region_sets.find(set => set.id === region_set);
+  const searchAgain = shown_set?.settings && !shown_set.regions && !shown_set.loading ? shown_set.load : null;
+  useEffect(() => {
+    searchAgain?.();
+    // oxlint-disable-next-line react/exhaustive-deps -- when the size changes, not when the set is reloaded
+  }, [size_key]);
   const page_swapped = usePageComparisonStore(state => state.swapped);
   const page_blind = usePageComparisonStore(state => state.blind);
   const swapPage = usePageComparisonStore(state => state.swap);
@@ -290,6 +343,9 @@ const ImageViewerForRuns = ({
     document.querySelector(`.output-card[data-output-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const stale_ref = !other && !!reference && doneAgainInPlace(output_ref);
+  const maybe_stale = doneAgainInPlace(output_new) ? 'This run' : (stale_ref ? 'The reference run' : null);
+
   return <ImageViewer
     className="qaboard-image-viewer"
     style={{ width: fullscreen ? '100%' : at_most(style?.width), maxWidth: '100%' }}
@@ -297,7 +353,7 @@ const ImageViewerForRuns = ({
     reference={reference}
     compareWith={compare_with}
     compared={compared}
-    onComparedChange={value => setCompared(path, output_new.id, value, compared_page)}
+    onComparedChange={value => { use('compare'); setCompared(path, output_new.id, value, compared_page); }}
     compareScopes={COMPARE_SCOPES}
     compareScope={compare_scope}
     onCompareScopeChange={setCompareScope}
@@ -307,11 +363,12 @@ const ImageViewerForRuns = ({
     diff={diff_settings}
     onDiffChange={value => onControlsChange ? onControlsChange({ image_diff: value }) : setLocalDiff(value)}
     adjustments={adjustments}
-    onAdjustmentsChange={value => setAdjustments(path, value)}
+    onAdjustmentsChange={value => { use(value?.falseColor !== adjustments?.falseColor ? 'colormap' : 'adjustments'); setAdjustments(path, value); }}
     pixelValues={pixel_values}
     onPixelValuesChange={setPixelValues}
-    analysis={analysis}
-    onAnalysisChange={setAnalysis}
+    analysis={own_analysis ?? analysis}
+    onAnalysisChange={value => { if (own_analysis) setOwnAnalysis(value); setAnalysis(value); }}
+    defaultShowAnalysis={!!asked_analysis}
     analysisValues={analysis_values}
     onAnalysisValuesChange={setAnalysisValues}
     sensor={sensor}
@@ -321,7 +378,7 @@ const ImageViewerForRuns = ({
     syncKey={output_new.test_input_path ?? null}
     regionSets={region_sets}
     regionSet={region_set}
-    onRegionSetChange={setRegionSet}
+    onRegionSetChange={value => { if (value) use(String(value).startsWith('annotations-') ? 'annotations' : 'region'); setRegionSet(value); }}
     regionActions={region_actions}
     swapped={page_swapped !== shuffled}
     onSwappedChange={swapPage}
@@ -329,12 +386,15 @@ const ImageViewerForRuns = ({
     onBlindTestChange={blindTestPage}
     getPixels={signed_in ? getPixels : undefined}
     imageValuesUnavailable={signed_in ? undefined : SIGN_IN_VALUES}
+    onUse={use}
     maxHeight={height => height - (fullscreen ? 120 : 260)}
     notice={<>
       {label && <span className="qaboard-image-viewer-label">{label}</span>}
       {/* no tooltips: they wouldn't show in full screen */}
       {same_data && !other && <Tag minimal icon="duplicate" title="The new and reference files have the same hash">same as the reference</Tag>}
       {same_as_other && <Tag minimal icon="duplicate" title={`${path} and ${other} have the same hash`}>same data as {other.split('/').pop()}</Tag>}
+      {/* runs done again in place keep their paths: the browser, the viewer and the image server cache images by path */}
+      {maybe_stale && <Tag minimal icon="warning-sign" intent="warning" title={`${maybe_stale} ${STALE_WARNING}`}>may be stale</Tag>}
       {triage && <RegionsTriage path={path} path_ref={path_ref} provider={triage} onProviderChange={setTriage} onShow={showRun} onClose={() => setTriage(null)} />}
     </>}
   />;

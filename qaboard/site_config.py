@@ -9,11 +9,10 @@ Priority order (highest wins):
 Site packages can also provide a base `qaboard.yaml` that all projects' configurations are merged on,
 by pointing QABOARD_SITE_CONFIG to it (see `site_qaboard_config`).
 
-Install a site package to auto-configure:
-    # for SIRC 
-    pip install --upgrade "qaboard-site-sirc @ git+ssh://git@gitlab-srv/common-infrastructure/qaboard#subdirectory=deployments/sirc/cli"    # SIRC defaults
-    # for DSK (replace the repo URL with one you can access)
-    pip install --upgrade "qaboard-site-dsk @ git+ssh://git@gitlab-srv/common-infrastructure/qaboard#subdirectory=deployments/dsk/cli"    # DSK defaults
+Install a site package to auto-configure, e.g. from deployments/<site>/cli in your copy of the repository:
+    pip install --upgrade "qaboard-site-mysite @ git+ssh://git@git.example.com/infra/qaboard#subdirectory=deployments/mysite/cli"
+
+Set QABOARD_IGNORE_SITE=1 to ignore the installed site packages' defaults, e.g. in qaboard's own tests.
 """
 import os
 import json
@@ -41,6 +40,8 @@ def site_entry_points(group):
 def _load_site_defaults():
     """Discover and load site defaults from installed entry points."""
     defaults = {}
+    if os.environ.get('QABOARD_IGNORE_SITE', '').lower() in ('1', 'true', 'yes', 'on'):
+        return defaults
     try:
         eps = site_entry_points("qaboard.site")
         for ep in eps:

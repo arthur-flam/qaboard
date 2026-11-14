@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { Link, useLinkClickHandler, useRouter } from "./router";
-import { path_segment, project_url } from "./selection";
+import { path_segment, project_url, url_for_selection } from "./selection";
 import styled from "styled-components";
 
 import { colors, spacing, typography, borders, transitions, sidebar } from './design/tokens';
@@ -26,8 +26,9 @@ import { ThemeButton } from "./components/ThemeButton"
 import { useHelpSheet, is_typing } from "./components/HelpSheet"
 import { PaletteButton } from "./palette/CommandPalette"
 import { LogsMenuItem, logs_hint_class } from "./AppSiderLogsItem"
+import { project_admin_pages } from "./projectAdmin/ProjectAdminTabs"
 
-import { useCommitsList, useComparison, useProjects, useSiteConfig, useUser, updateSelected } from "./hooks"
+import { useCommitsList, useComparison, useProjects, useSiteConfig, useUser } from "./hooks"
 import { path_segments } from "./explore/tree"
 import { usePrefsStore } from "./stores/prefs"
 import { useIntegrationStatuses } from "./useIntegrationStatuses"
@@ -367,14 +368,15 @@ const Sider = styled.div`
 // Hovering a view says what it's for: QA-Board has many, and their names are short
 const hint_delay = 600;
 // Collapsed, the hint also names the view, and opens sooner: it's the only label
-const SiderHint = ({ name, content, children }) => {
+// `placement`: items with a submenu open it on their right, their hint goes elsewhere
+const SiderHint = ({ name, content, placement = "right", children }) => {
   const collapsed = useContext(SiderCollapsedContext);
   return <Tooltip
     content={<span style={{display: 'inline-block', maxWidth: 260}}>
       {collapsed && name && <><strong>{name}</strong>{content ? <br/> : null}</>}
       {content}
     </span>}
-    placement="right"
+    placement={placement}
     hoverOpenDelay={collapsed ? 150 : hint_delay}
     targetTagName="div"
     fill
@@ -465,6 +467,15 @@ const MenuItemLink = ({ to, ...props }) => {
   return <MenuItem {...props} href={to} onClick={handleClick}/>
 }
 
+// A results view (Summary, Logs...): a link to the same page with that view, so ctrl/cmd+click opens it in a new tab
+const ViewMenuItem = ({ view, default_views, as: Item = MenuItem, ...props }) => {
+  const { location } = useRouter()
+  const { pathname, search } = url_for_selection({ selected_views: view }, location, { selected_views: default_views })
+  const to = search ? `${pathname}?${search}` : pathname
+  const handleClick = useLinkClickHandler(to)
+  return <Item {...props} href={to} onClick={handleClick}/>
+}
+
 // How much storage the project's runs use
 const StorageMenuItem = ({ user, project }) => {
   if (!user?.is_logged)
@@ -495,11 +506,32 @@ const ActivityMenuItem = ({ user, project }) => {
     icon="pulse"
     text="Runs activity"
     title="What waits and runs now, and what ran recently"
+    // In a portal, like the sidebar's other submenus: else the sidebar's scrolling cuts it off, or flips it off-screen on the left
+    popoverProps={{ usePortal: true, hoverCloseDelay: 300 }}
   >
     <MenuItemLink to={mine} icon="person" text="Your runs in this project"/>
     <MenuItemLink to={`/activity?scope=all&project=${encodeURIComponent(project ?? '')}`} icon="people" text="Everyone's runs in this project"/>
     <MenuItemLink to="/activity?scope=all" icon="globe-network" text="Everyone's runs, in every project"/>
   </MenuItemLink>
+}
+
+// The project's Admin pages (docs/rfcs/project-admin.md): a click opens Access, hovering lists them all
+const AdminMenuItem = ({ project, route }) => {
+  const pages = project_admin_pages(project)
+  const current = route.is_access ? 'access' : route.is_project_admin ? route.section : null
+  // the hint above the item: on the right, it would cover the submenu
+  return <SiderHint name="Admin" content="Who can access the project, and the rules its quality gate holds every commit to." placement="top-start">
+    <MenuItemLink
+      to={pages[0].to}
+      active={current !== null}
+      icon="cog"
+      text="Admin"
+      // In a portal, like the sidebar's other submenus: else the sidebar's scrolling cuts it off, or flips it off-screen on the left
+      popoverProps={{ usePortal: true, hoverCloseDelay: 300 }}
+    >
+      {pages.map(({ id, text, icon, to }) => <MenuItemLink key={id} to={to} active={id === current} icon={icon} text={text}/>)}
+    </MenuItemLink>
+  </SiderHint>
 }
 
 // Milestones: a menu to pick any of them, and the user's favorites one click away
@@ -580,7 +612,8 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
   let reference_branch = qatools_config.project?.reference_branch;
 
   const is_history = selected.route.is_history;
-  const is_access = selected.route.is_access;
+  // the project's Admin pages: Access, Quality gate
+  const is_admin = selected.route.is_access || selected.route.is_project_admin;
   const is_branch = !!selected.branch;
   const is_project_home = selected.route.is_commits && !is_branch;
   const tag = selected.branch ?? selected.committer ?? reference_branch;
@@ -590,7 +623,7 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
   return <>
     {/* The branch's commits: highlighted on their page, a link elsewhere */}
     <SiderHint name={branch ? `Commits on ${branch}` : tag && !is_branch && !(is_project_home || is_history) ? `Commits by ${tag}` : 'All commits'}>
-      {(is_project_home || is_history || is_access)
+      {(is_project_home || is_history || is_admin)
         ? <MenuItemLink to={commits_url} text={(is_branch || project_data.is_loaded) ? branch ?? 'All commits' : <span className={Classes.SKELETON}>branch</span>} title={branch ? `Commits on ${branch}` : 'Commits on all branches'} icon='git-branch'/>
         : <MenuItem icon={is_branch ? "git-branch" : 'user'} active text={tag ?? 'All commits'} title={is_branch ? `Commits on ${tag}` : tag && `Commits by ${tag}`}/>
       }
@@ -615,9 +648,7 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
     <SiderMilestones project={project} project_data={project_data} docs_root={docs_root}/>
     <ActivityMenuItem user={user} project={project} />
     <StorageMenuItem user={user} project={project} />
-    <SiderHint name="Access" content="Who can see the project, upload runs and act on them. Request access, or manage it.">
-      <MenuItemLink to={`/${path_segment(project)}/access`} active={is_access} icon="people" text="Access"/>
-    </SiderHint>
+    <AdminMenuItem project={project} route={selected.route}/>
   </>
 }
 
@@ -628,36 +659,35 @@ const results_integrations = ({ new_batch, commit, project_data }) =>
 const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, new_batch, ref_batch, selected_views, default_views, filter, ref_filter, ref_project, user, docs_root, ...integrationProps }) => {
   const has_optim = new_batch?.data?.optimization === true;
   const active = view => selected_views.includes(view);
-  const set = view => () => updateSelected({ selected_views: view }, { defaults: { selected_views: default_views } })
   return <>
     {/* Metrics Section */}
     <SectionHeader>Metrics</SectionHeader>
     <SiderHint name="Summary" content="The batch's metrics, aggregated over all its runs, compared with the reference.">
-      <MenuItem icon="dashboard" text="Summary" active={active('summary')} onClick={set('summary')}/>
+      <ViewMenuItem view='summary' default_views={default_views} icon="dashboard" text="Summary" active={active('summary')}/>
     </SiderHint>
     <SiderHint name="Metrics Table" content="The metrics of each run, colored by how they compare to their targets.">
-      <MenuItem icon="locate" text="Metrics Table" active={active('table-kpi')} onClick={set('table-kpi')} />
+      <ViewMenuItem view='table-kpi' default_views={default_views} icon="locate" text="Metrics Table" active={active('table-kpi')}/>
     </SiderHint>
     <SiderHint name="Metrics Diff" content="For each run, how the metrics changed versus the reference: find regressions.">
-      <MenuItem icon="heat-grid" text="Metrics Diff" active={active('table-compare')} onClick={set('table-compare')}/>
+      <ViewMenuItem view='table-compare' default_views={default_views} icon="heat-grid" text="Metrics Diff" active={active('table-compare')}/>
     </SiderHint>
 
     {/* Runs Section */}
     <SectionHeader>Runs</SectionHeader>
     <SiderHint name="Visualizations" content="Images, videos, plots, point clouds... of each run, side by side with the reference, as configured in qaboard.yaml.">
-      <MenuItem icon="media" text="Visualizations" active={active('output-list')} onClick={set('output-list')} />
+      <ViewMenuItem view='output-list' default_views={default_views} icon="media" text="Visualizations" active={active('output-list')}/>
     </SiderHint>
     <SiderHint name="Output Files" content="All the files each run created, and which differ from the reference (bit-accuracy).">
-      <MenuItem icon="folder-open" text="Output Files" active={active('bit-accuracy')} onClick={set('bit-accuracy')} />
+      <ViewMenuItem view='bit-accuracy' default_views={default_views} icon="folder-open" text="Output Files" active={active('bit-accuracy')}/>
     </SiderHint>
     <SiderHint name="Logs" content="The logs of each run, and of the batch's submission: why runs failed.">
-      <LogsMenuItem batch={new_batch} active={active('logs')} onClick={set('logs')} />
+      <ViewMenuItem as={LogsMenuItem} view='logs' default_views={default_views} batch={new_batch} active={active('logs')}/>
     </SiderHint>
 
     {/* Source Section */}
     <SectionHeader>Source</SectionHeader>
     <SiderHint name="Artifacts & Configs" content="The commit's build artifacts and qaboard.yaml configuration, diffed with the reference.">
-      <MenuItem icon="settings" text="Artifacts & Configs" active={active('parameters')} onClick={set('parameters')} />
+      <ViewMenuItem view='parameters' default_views={default_views} icon="settings" text="Artifacts & Configs" active={active('parameters')}/>
     </SiderHint>
     <CodeMenu project={project} project_data={project_data} commit={commit?.id ? commit : undefined} branch={commit?.branch}/>
     <IntegrationsMenus
@@ -679,13 +709,13 @@ const ProjectSideResults = ({ project, project_data = {}, commit, ref_commit, ne
     {/* Tuning Section */}
     <SectionHeader>Tuning</SectionHeader>
     <SiderHint name="Available Tests" content="The batches of tests you can run: see and edit their definitions.">
-      <MenuItem icon="layout-group-by" active={active('groups')} text="Available Tests" onClick={set('groups')} />
+      <ViewMenuItem view='groups' default_views={default_views} icon="layout-group-by" active={active('groups')} text="Available Tests"/>
     </SiderHint>
     <SiderHint name="Run Tests / Tuning" content="Run this commit on more tests, or with other parameters, from the web app.">
-      <MenuItem icon="play" text="Run Tests / Tuning" active={active('tuning')} onClick={set('tuning')} />
+      <ViewMenuItem view='tuning' default_views={default_views} icon="play" text="Run Tests / Tuning" active={active('tuning')}/>
     </SiderHint>
-    <SiderHint name="Tuning Analysis" content={has_optim ? "This batch is an auto-tuning: see how the parameters affect the metrics." : "How the tuned parameters affect the metrics. Useful after tuning or auto-tuning."}>
-      <MenuItem icon="predictive-analysis" intent={has_optim ? "primary" : undefined} active={active('optimization')} text="Tuning Analysis" onClick={set('optimization')}/>
+    <SiderHint name="Tuning Analysis" content={has_optim ? "This batch is an automated tuning: see what it found, and what to do next." : "How the tuned parameters affect the metrics. Useful after tuning or automated tuning."}>
+      <ViewMenuItem view='optimization' default_views={default_views} icon="predictive-analysis" intent={has_optim ? "primary" : undefined} active={active('optimization')} text="Tuning Analysis"/>
     </SiderHint>
 
     <SectionHeader>Milestones</SectionHeader>
@@ -773,9 +803,9 @@ const AppSider = () => {
         <ProjectSideAvatar project={project} project_data={project_data} />
       </SiderSection>
 
-      {/* Navigation Section: views of the results on commit pages, else (commit lists, history) the project's pages */}
+      {/* Navigation Section: views of the results on commit pages, else (commit lists, history, admin) the project's pages */}
       <SiderSection>
-        {(route.is_list || route.is_history || route.is_access) && (
+        {(route.is_list || route.is_history || route.is_access || route.is_project_admin) && (
           <>
             <SiderMenu>
               <ProjectSideCommitList

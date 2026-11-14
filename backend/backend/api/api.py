@@ -10,10 +10,9 @@ import datetime
 import ujson
 from flask import request, jsonify, make_response, g
 
-from sqlalchemy import func, and_, asc, or_, text
+from sqlalchemy import func, and_, asc, text
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import label
 
 # Like the CLI: ENV > secrets > site package (e.g. qaboard-site-sirc) > default
@@ -22,13 +21,13 @@ from qaboard.sentry_utils import traces_sample_rate
 
 from backend import app, db_session
 from ..models import Project, CiCommit, Batch, Output, ProjectView, batches_stats
-from ..utils import profiled
-from ..config import git_server, skip_metrics_aggregation
 from ..search import parse_query, commits_search_filter, escape_like
+from ..metrics_aggregation import parse_metrics_arg
 from .auth import is_authorized_user, get_current_user, forbidden_project
 from ..mine import identity_of, commit_is_mine, batch_is_mine, batch_is_not_mine, batch_origin_in, parse_origins, SCOPES, BATCH_SCOPES
 from ..notifications.mail import email_enabled
-from ..settings import setting
+from ..settings import setting, sandbox_html
+from ..annotations import describe_sources
 
 to_datetime = lambda s: timezone.localize(datetime.datetime.strptime(s, '%Y-%m-%dT%H:%M:%S.%fZ'))
 timezone = pytz.timezone("utc")
@@ -44,6 +43,26 @@ def _parse_json_env(key, default):
 _image_servers = _parse_json_env('QABOARD_IMAGE_SERVERS', '{"default": "/iiif/2/"}')
 
 
+def cli_requirements() -> list:
+    """The pip requirements of scripts using qa here: `qaboard`, plus the site's packages (web.cli_requirements)"""
+    extra = setting('web.cli_requirements') or []
+    return ['qaboard', *[r for r in extra if r != 'qaboard']]
+
+
+def skip_metrics_aggregation() -> tuple:
+    """Projects whose commit lists don't aggregate the batches' metrics (metrics.skip_aggregation): ids or their start"""
+    return tuple(setting('metrics.skip_aggregation') or ())
+
+
+def _setup_required() -> bool:
+    from ..first_admin import setup_open
+    try:
+        return setup_open()
+    except Exception:
+        db_session.rollback()
+        return False
+
+
 @app.route("/api/v1/config")
 def get_site_config():
     """Return runtime site configuration for the frontend."""
@@ -55,34 +74,46 @@ def get_site_config():
         "login_required": setting('auth.require_sign_in'),
         "require_sign_in": setting('auth.require_sign_in'),
         "local_signup": setting('auth.local_signup'),
+        # a new server, without accounts: the web app sends people to /setup (backend/first_admin.py)
+        "setup_required": _setup_required(),
         # how `qa` authenticates the results it sends: off, warn or token
         "ingest_auth": setting('ingest.auth'),
         # what the web app offers when users create tokens
-        "tokens": {"default_lifetime_days": setting('tokens.default_lifetime_days'), "max_lifetime_days": setting('tokens.max_lifetime_days')},
+        "tokens": {"default_lifetime_days": setting('tokens.default_lifetime_days'), "max_lifetime_days": setting('tokens.max_lifetime_days'),
+                   "ci_lifetime_minutes": setting('tokens.ci_lifetime_minutes')},
         # The web app can report to its own Sentry project (where its source maps are uploaded)
         "sentry_dsn": os.environ.get('SENTRY_FRONTEND_DSN') or os.environ.get('SENTRY_DSN'),
         "sentry_environment": os.environ.get('SENTRY_ENVIRONMENT') or 'production',
         "sentry_traces_sample_rate": traces_sample_rate(0.2),
         # "stream" sends spans as they end: it needs a recent Sentry server
         "sentry_trace_lifecycle": os.environ.get('SENTRY_FRONTEND_TRACE_LIFECYCLE') or 'static',
-        "posthog_api_key": os.environ.get('POSTHOG_API_KEY'),
-        "posthog_host": os.environ.get('POSTHOG_HOST'),
+        "posthog_api_key": setting('analytics.posthog_api_key'),
+        "posthog_host": setting('analytics.posthog_host'),
         "path_mappings": _path_mappings,
         # The docs served by this server at /docs/ match its version. Can be e.g. https://samsung.github.io/qaboard/
-        "docs_root": os.environ.get('QABOARD_DOCS_ROOT', '/'),
-        "avatar_url_template": os.environ.get('QABOARD_AVATAR_URL'),
+        "docs_root": setting('web.docs_root') or '/',
+        # What scripts install to use qa and the SDK here: pip requirements, e.g. a site package next to qaboard
+        # (web.cli_requirements). The web app's snippets and install hints use them.
+        "cli_requirements": cli_requirements(),
+        "avatar_url_template": setting('web.avatar_url'),
         # Fallback web URL for git links, when a project doesn't define project.url in qaboard.yaml
         "git_web_url": git_hosts.default.url,
         # The git hosts we know, to link to projects whose data doesn't say where they are hosted: [{type, url, name}]
         "git_hosts": git_hosts.public(),
         # Where users report issues
-        "support_url": os.environ.get('QABOARD_SUPPORT_URL', 'https://github.com/Samsung/qaboard/issues'),
+        "support_url": setting('web.support_url'),
         # Shown to users who can't log in, e.g. which credentials to use
-        "login_hint": os.environ.get('QABOARD_LOGIN_HINT'),
+        "login_hint": setting('auth.login_hint'),
         # Where users install WebCDE, which opens runs whose outputs have a cde.sh
-        "webcde_installer": os.environ.get('QABOARD_WEBCDE_INSTALLER'),
+        "webcde_installer": setting('web.webcde_installer'),
         # Users can ask for an email when the batches they start end
         "email_notifications": email_enabled(),
+        # The runs' HTML runs apart from the app (its scripts in an origin of their own): see website/docs/viewers.mdx
+        "sandbox_html": sandbox_html(),
+        # Where the image viewer finds annotations: [{id, label, description}] (backend/annotations.py)
+        "annotation_sources": describe_sources(),
+        # The web app sends usage events to /api/v1/events (backend/usage.py)
+        "analytics_enabled": setting('analytics.enabled'),
     })
 
 
@@ -140,6 +171,10 @@ def get_commits(branch=None):
     offset = int_arg('offset', default=0, max_value=10**12)
   except ValueError as e:
     return jsonify({"error": f"Invalid pagination: {e}"}), 400
+  try:
+    metrics_to_aggregate = parse_metrics_arg(request.args.get('metrics'))
+  except ValueError as e:
+    return jsonify({"error": f"{e}"}), 400
   search_terms = parse_query(request.args.get('q', ''))
   try:
     identity, origins = scope_and_origins()
@@ -165,16 +200,22 @@ def get_commits(branch=None):
 
   to_date_s = request.args.get('to', None)
   from_date_s = request.args.get('from', None)
-  now_localized = timezone.localize(datetime.datetime.now())
+  try:
+    from_date_arg = to_datetime(from_date_s) if from_date_s else None
+    to_date_arg = to_datetime(to_date_s) if to_date_s else None
+  except ValueError as e:
+    return jsonify({"error": f"Invalid date range, use e.g. 2026-09-01T00:00:00.000Z: {e}"}), 400
+  # in UTC, like the dates: the server's time zone doesn't matter
+  now = datetime.datetime.now(datetime.timezone.utc)
   # We only care about days, and this makes sure we smooth out TZ issues
   # It's likely unnecessary...
-  to_date = (to_datetime(to_date_s) if to_date_s else now_localized) + datetime.timedelta(hours=3)
+  to_date = (to_date_arg or now) + datetime.timedelta(hours=3)
   if search_terms:
     # Searches look at the whole history, unless asked otherwise
-    from_date = to_datetime(from_date_s) - datetime.timedelta(hours=3) if from_date_s else None
-    to_date = to_date if to_date_s else None
+    from_date = from_date_arg - datetime.timedelta(hours=3) if from_date_arg else None
+    to_date = to_date if to_date_arg else None
   else:
-    from_date = to_datetime(from_date_s) if from_date_s else (now_localized - datetime.timedelta(days=4))
+    from_date = from_date_arg or (now - datetime.timedelta(days=4))
     latest_authored_datetime = in_scope(db_session.query(func.max(CiCommit.authored_datetime))).scalar()
     if not latest_authored_datetime:
       return commits_response([], has_more=False if limit else None)
@@ -216,9 +257,8 @@ def get_commits(branch=None):
   # one more to know if there are more
   ci_commits = ci_commits.offset(offset).limit(limit + 1 if limit else max_commits)
 
-  metrics_to_aggregate = json.loads(request.args.get('metrics', '{}'))
   # QABOARD_SKIP_METRICS_AGGREGATION: projects with too many runs for it to be fast
-  if project_id.startswith(skip_metrics_aggregation):
+  if project_id.startswith(skip_metrics_aggregation()):
     metrics_to_aggregate = {}
 
   commits = ci_commits.all()
@@ -326,7 +366,8 @@ def get_batches():
     return jsonify({"error": f"{e}"}), 400
   if not project_id and not project_ids and not (identity and request.args.get('scope') == 'mine'):
     return jsonify({"error": "Give a ?project=, or ask for your batches with ?scope=mine"}), 400
-  if any(p.startswith(skip_metrics_aggregation) for p in ([project_id] if project_id else project_ids)):
+  skipped = skip_metrics_aggregation()
+  if any(p.startswith(skipped) for p in ([project_id] if project_id else project_ids)):
     metrics_to_aggregate, default_metrics = {}, False
   if status:
     # they look at the batches' runs: only recent batches (by default the last 30 days, at most 90)
@@ -387,7 +428,8 @@ def get_batches():
   default_metric = {}
   if default_metrics:
     # one aggregation per default metric: projects often share theirs
-    projects = {b.ci_commit.project_id for b in batches if not b.ci_commit.project_id.startswith(skip_metrics_aggregation)}
+    skipped = skip_metrics_aggregation()
+    projects = {b.ci_commit.project_id for b in batches if not b.ci_commit.project_id.startswith(skipped)}
     metrics = Project.data['qatools_metrics']
     rows = (db_session
             .query(Project.id, metrics['default_metric'].astext, metrics['available_metrics'])

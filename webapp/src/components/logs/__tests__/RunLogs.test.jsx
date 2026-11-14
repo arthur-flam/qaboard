@@ -7,7 +7,9 @@ import { renderWithProviders } from '../../../test-utils';
 import { setupIntersectionMocking, resetIntersectionMocking } from 'react-intersection-observer/test-utils';
 
 import { toaster } from '../../../toaster';
-import { RunLogs, configurationSummary, runName } from '../RunLogs';
+import { RunLogs, configurationSummary } from '../RunLogs';
+import { runName } from '../../tags';
+import { RunOriginsContext } from '../../runNames';
 
 
 const output = {
@@ -84,6 +86,23 @@ describe('RunLogs', () => {
     expect(onToggle).not.toHaveBeenCalled()
   })
 
+  it('starts the name with the batch when runs come from several; clicking it still opens the logs, hovering it says more', async () => {
+    const onToggle = vi.fn()
+    const night = { ...output, data: { batch: 'night' } }
+    const origins = { batches: ['day', 'night'], databases: ['/db'], database_labels: new Map([['/db', 'db']]) }
+    renderWithProviders(<RunOriginsContext value={origins}>
+      <RunLogs id={7} output={night} project="p" commit={{ id: 'abc' }} expanded={false} onToggle={onToggle} />
+    </RunOriginsContext>, { siteConfig: {} })
+    const name = screen.getByText('scenes/indoor/sequence_7.mp4')
+    expect(name.closest('.run-name')).toHaveTextContent('night › scenes/indoor/sequence_7.mp4')
+    fireEvent.click(name)
+    expect(onToggle).toHaveBeenCalledWith(7)
+    // the same as hovering a run card's name
+    fireEvent.mouseEnter(name.closest('.bp6-popover-target'))
+    expect(await screen.findByText('Input path', {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(screen.getByText('Batch & database in names')).toBeInTheDocument()
+  })
+
   it('has the run actions in a menu', async () => {
     renderRun()
     fireEvent.click(screen.getByLabelText('Run actions'))
@@ -110,6 +129,23 @@ describe('RunLogs', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/s/out/7/log.dask.txt', expect.anything()))
     await screen.findByText('No log.txt')
     expect(screen.getByText('The run may have failed before it started, or its files were deleted.')).toBeInTheDocument()
+  })
+
+  it('shows the logs of the kubernetes runner when there are', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => ['/s/out/7/log.k8s.txt', '/s/out/7/log.pending.txt'].includes(url)
+      ? new Response('', { status: 200 }) : new Response('Not Found', { status: 404 })))
+    renderRun({ expanded: true })
+    expect(await screen.findByText('log.k8s.txt')).toBeInTheDocument()
+    expect(screen.getByText('log.pending.txt')).toBeInTheDocument()
+    expect(screen.queryByText('log.dask.txt')).not.toBeInTheDocument()
+  })
+
+  it('offers the logs of the earlier attempts of a run that was done again', async () => {
+    renderRun({ expanded: true, output: { ...output, data: { attempt: 3, attempt_logs: [1, 2] } } })
+    // the latest first, after the run's own log
+    expect(screen.getAllByRole('radio').map(radio => radio.textContent)).toEqual(['log.txt', 'log.attempt2.txt', 'log.attempt1.txt'])
+    fireEvent.click(screen.getByRole('radio', { name: 'log.attempt1.txt' }))
+    await waitFor(() => expect(screen.getByLabelText('Download')).toHaveAttribute('href', '/s/out/7/log.attempt1.txt'))
   })
 
   it('says when the output files of a run were deleted', async () => {

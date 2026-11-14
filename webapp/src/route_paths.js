@@ -12,10 +12,18 @@ export const route_paths = {
   history: "/:project_id+/history",
   // links to milestones: /<project>/milestone/<id>-<label>
   milestone: "/:project_id+/milestone/:name+",
+  // the project's Admin pages, next to Access: /<project>/admin/gate (docs/rfcs/project-admin.md)
+  project_admin: "/:project_id+/admin/:section(gate)",
   // who can see and change the project
   access: "/:project_id+/access",
   project: "/:project_id+",
 };
+
+// Pages with nothing after their name in the URL, matched exactly: /team/access/tools is the project
+// "team/access/tools", not the Access page of "team" (the other pages' URLs go on, with branches and commits)
+export const exact_route_names = ['project_admin', 'access'];
+// The projects' pages, as matchRoutes reads them, in matching order
+export const project_routes = Object.entries(route_paths).map(([name, path]) => ({ name, path, exact: exact_route_names.includes(name) }));
 
 // Pages of the app itself, matched before the projects' pages, exactly: they don't take over projects that would
 // have the same name, e.g. /admin/commits stays the commits of a project named "admin".
@@ -30,9 +38,12 @@ export const app_paths = {
   storage: "/storage/:view(projects|users|batches|commits|branches|folders|exports|untracked)?",
   // what waits and runs now, and what ran recently
   activity: "/activity",
-  admin: "/admin/:section(overview|users|groups|requests|sign-in|tokens|storage|audit|settings)?",
+  // the tabs of admin/AdminPage.jsx, its tests check they all have their URL
+  admin: "/admin/:section(overview|usage|users|groups|requests|sign-in|tokens|service-accounts|storage|audit|settings)?",
   // the ways to sign in, ?next=<page> to go back to it (see login/LoginPage.jsx)
   login: "/login",
+  // a new server's first admin (see login/SetupPage.jsx)
+  setup: "/setup",
   // where `qa auth login` sends users to approve the login
   device: "/device",
   // every project, as a tree (also at / for signed-out visitors, signed-in users get their home page there)

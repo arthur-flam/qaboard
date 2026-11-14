@@ -75,6 +75,9 @@ export class Comparison {
     this.pointer = null;
     // where the mouse is over a pane: { name, clientX, clientY }
     this.hovered = null;
+    // whether the mouse left the viewer since users pinned a pixel: coming back on the images follows it again. Its
+    // controls (the toolbar, the values, the analysis) don't count: users switch modes or select the values there
+    this.leftPinned = false;
     this.drawFrame = null;
   }
 
@@ -119,7 +122,7 @@ export class Comparison {
       this.drawFrame = null;
       // the image moved under the pointer, e.g. zoomed with the keyboard: it's over another pixel
       const { hovered } = this;
-      if (hovered) {
+      if (hovered && !this.pointer?.pinned) {
         const point = this.pointAt(hovered.pane, hovered.clientX, hovered.clientY, hovered.element);
         const current = this.pointer?.point;
         if (point && (!current || point.x !== current.x || point.y !== current.y)) {
@@ -165,7 +168,7 @@ export class Comparison {
     for (const event of ['canvas-press', 'canvas-scroll', 'canvas-pinch', 'canvas-drag'])
       viewer.addHandler(event, () => this.lead(name));
     viewer.addHandler('canvas-click', event => {
-      if (event.quick) this.onClick?.(name, event);
+      if (event.quick) this.onClick?.(name, event.originalEvent);
     });
     viewer.addHandler('tile-load-failed', event => {
       const entry = this.images[name];
@@ -360,7 +363,8 @@ export class Comparison {
     if (viewport && this.images[name]?.item) this.group?.publish(viewport);
   }
 
-  // Called with the pane's name when users click an image (not when they drag it)
+  // Called with the pane's name, the mouse event and the pane's element (for the difference between the images) when
+  // users click an image (not when they drag it)
   setOnClick(listener) {
     this.onClick = listener;
   }
@@ -384,7 +388,10 @@ export class Comparison {
     this.groupKey = key;
     this.group = key === null ? null : joinSyncGroup(key, {
       setViewport: viewport => this.followGroup(viewport),
-      setPointer: point => this.setPointerState(point ? { point, remote: true } : null),
+      // a pixel pinned here stays
+      setPointer: point => {
+        if (!this.pointer?.pinned) this.setPointerState(point ? { point, remote: true } : null);
+      },
     });
   }
 
@@ -506,6 +513,11 @@ export class Comparison {
 
   hover(pane, clientX, clientY, element = null) {
     this.hovered = { pane, clientX, clientY, element };
+    // a pinned pixel stays while the mouse is in the viewer, until it leaves the viewer and comes back
+    if (this.pointer?.pinned) {
+      if (!this.leftPinned) return;
+      this.leftPinned = false;
+    }
     const point = this.pointAt(pane, clientX, clientY, element);
     if (!point) return;
     this.setPointerState({ point, pane, remote: false });
@@ -543,6 +555,9 @@ export class Comparison {
         v.panBy(last_center.minus(center), true);
         v.applyConstraints();
       },
+      clickHandler: event => {
+        if (event.quick) this.onClick?.('diff', event.originalEvent, element);
+      },
       dblClickHandler: event => {
         const v = moved();
         if (!v) return;
@@ -555,10 +570,44 @@ export class Comparison {
 
   unhover() {
     this.hovered = null;
+    if (this.pointer?.pinned) return;
     if (this.pointer && !this.pointer.remote) {
       this.setPointerState(null);
       this.group?.pointer(null);
     }
+  }
+
+  // The mouse left the viewer: back on the images, a pixel pinned follows the mouse again
+  leaveViewer() {
+    if (this.pointer?.pinned) this.leftPinned = true;
+  }
+
+  // Users click a pixel to keep its values while they move the mouse away, e.g. to select them or switch modes.
+  // Clicking the pinned pixel again or outside the image, or unpin(), follows the mouse again; so does leaving the
+  // viewer and coming back on the images.
+  pin(pane, clientX, clientY, element = null) {
+    const point = this.pointAt(pane, clientX, clientY, element);
+    if (!point) return;
+    const geometry = this.geometry(pane);
+    const pixel = this.imagePixel(geometry, point);
+    const pinned = this.pointer?.pinned ? this.imagePixel(geometry, this.pointer.point) : null;
+    // outside the image, or on the pixel pinned
+    if (!pixel || (pinned && pixel.x === pinned.x && pixel.y === pinned.y)) {
+      this.unpin();
+      return;
+    }
+    this.leftPinned = false;
+    this.setPointerState({ point, pane, remote: false, pinned: true });
+    this.group?.pointer(point);
+  }
+
+  unpin() {
+    if (!this.pointer?.pinned) return;
+    this.leftPinned = false;
+    const { hovered } = this;
+    const point = hovered ? this.pointAt(hovered.pane, hovered.clientX, hovered.clientY, hovered.element) : null;
+    this.setPointerState(point ? { point, pane: hovered.pane, remote: false } : null);
+    this.group?.pointer(point ?? null);
   }
 
   // Where a viewport point is in a pane, in CSS pixels

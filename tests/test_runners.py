@@ -3,6 +3,7 @@ Tests for the LSF concurrency limit and the dask runner.
 LSF is not available: we check the bsub commands we would send, and execute the job array scripts with bash.
 """
 import os
+import sys
 import re
 import time
 import tempfile
@@ -181,6 +182,39 @@ class TestLsfConcurrency(unittest.TestCase):
     self.assertEqual(sorted(p.name for p in output_dir.iterdir()), ['log.lsf.txt'])
     self.assertTrue((output_dir / 'log.lsf.txt').read_text().endswith('before\nafter\n'))
 
+  def start_blocking(self, nb_jobs, returncode=0, **job_options):
+    from qaboard.runners.lsf import LsfRunner
+    tmp = tempfile.TemporaryDirectory()
+    self.addCleanup(tmp.cleanup)
+    jobs = make_jobs('lsf', [f'echo run-{i}' for i in range(nb_jobs)], Path(tmp.name), queue='q', **job_options)
+    commands = []
+    def run(command, **kwargs):
+      commands.append(command)
+      return subprocess.CompletedProcess(command, returncode if 'bwait' in command else 0, stdout='', stderr='')
+    with mock.patch('qaboard.runners.lsf.subprocess.run', run), has_bsub(), mock.patch('signal.signal'), mock.patch('qaboard.runners.lsf.time.sleep'), mock.patch('qaboard.runners.lsf.secho'):
+      LsfRunner.start_jobs(jobs, jobs[0].run_context.job_options, blocking=True)
+    return commands
+
+  def test_blocking_waits_with_bwait(self):
+    # No interactive WAIT job: `bsub -I` needs LSF to connect back to us, which fails from Docker containers
+    commands = self.start_blocking(3)
+    self.assertEqual(len(commands), 4)
+    self.assertFalse(any(' -I ' in c for c in commands))
+    self.assertEqual(commands[-1], 'bwait -w "ended(abcdefgh_*)"')
+
+  def test_blocking_waits_with_bwait_through_bridge(self):
+    commands = self.start_blocking(5, concurrency=2, bridge="ssh host {bsub_command}")
+    self.assertEqual(commands[-1], 'ssh host bwait -w "ended(abcdefgh_*)"')
+
+  def test_bwait_failure(self):
+    from qaboard.runners.lsf import LsfRunner, LsfOptions
+    with self.assertRaisesRegex(Exception, 'Failed to wait'):
+      self.start_blocking(1, returncode=255)
+    with mock.patch('qaboard.runners.lsf.subprocess.run', return_value=subprocess.CompletedProcess('', 255)) as run, mock.patch('qaboard.runners.lsf.time.sleep'), mock.patch('qaboard.runners.lsf.secho'):
+      with self.assertRaises(Exception):
+        LsfRunner.wait_jobs('abcdefgh', LsfOptions())
+    self.assertEqual(run.call_count, 3)
+
   def test_array_groups_by_lsf_options(self):
     from qaboard.runners.lsf import LsfRunner
     tmp = tempfile.TemporaryDirectory()
@@ -283,6 +317,9 @@ class TestJobGroups(unittest.TestCase):
     bsub = FakeBsub()
     with mock.patch('qaboard.runners.lsf.subprocess.run', bsub), has_bsub(), mock.patch('signal.signal'):
       LsfRunner.start_groups(group.groups(), blocking=True)
+    # then we wait for all of them, across groups
+    self.assertEqual(bsub.commands[6:], ['bwait -w "ended(abcdefgh_*)"'])
+    bsub.commands = bsub.commands[:6]
     names = bsub.names()
     self.assertRegex(names[0], r'^abcdefgh_[a-z]{12}\[1-3\]%1$')
     self.assertRegex(names[1], r'^abcdefgh_[a-z]{12}$')
@@ -290,9 +327,115 @@ class TestJobGroups(unittest.TestCase):
     # each group has its own waves
     self.assertEqual([n.rsplit('_', 1)[0] for n in names[3:6]], ['abcdefgh_2_W0', 'abcdefgh_2_W0', 'abcdefgh_2_W1'])
     self.assertIn('-w "ended(abcdefgh_2_W0_*)"', bsub.commands[5])
-    # a single job waits for all the others
-    self.assertEqual(names[6:], ['abcdefgh_WAIT'])
-    self.assertIn('-w "ended(abcdefgh_*)"', bsub.commands[6])
+
+
+  def test_stopped_batch_marks_its_runs_as_failed(self):
+    """When `qa batch` is stopped, the runs QA-Board still shows as pending end: failed unless they saved successful metrics"""
+    import json
+    from qaboard.api import dir_to_url
+    from qaboard.runners import JobGroup
+    from qaboard.runners.lsf import LsfRunner
+    killed, done, other = make_jobs('lsf', ['a', 'b', 'c'], self.root.resolve(), queue='q')
+    done.run_context.output_dir.mkdir()
+    (done.run_context.output_dir / 'metrics.json').write_text(json.dumps({"is_failed": False}))
+    outputs = {
+      1: {"output_dir_url": dir_to_url(killed.run_context.output_dir), "is_pending": True, "is_failed": False},
+      2: {"output_dir_url": dir_to_url(done.run_context.output_dir), "is_pending": True, "is_failed": False},
+      3: {"output_dir_url": dir_to_url(other.run_context.output_dir), "is_pending": False, "is_failed": False},
+    }
+    group = JobGroup(jobs=[killed, done, other], job_options={"type": "lsf", "command_id": "abcdefgh-1234", "queue": "q"})
+    for stop in (SystemExit(1), KeyboardInterrupt()):
+      with mock.patch.object(LsfRunner, 'start_groups', side_effect=stop), \
+           mock.patch('qaboard.runners.job.get_outputs', return_value=outputs), \
+           mock.patch('qaboard.runners.job.notify_qa_database') as notify:
+        with self.assertRaises(type(stop)):
+          group.start(blocking=True, qa_context={"share": True})
+      updates = {call.kwargs['output_dir']: call.kwargs['is_failed'] for call in notify.call_args_list}
+      self.assertEqual(updates, {killed.run_context.output_dir: True, done.run_context.output_dir: False})
+      for call in notify.call_args_list:
+        self.assertFalse(call.kwargs['is_pending'])
+    # `qa batch --no-wait` doesn't wait for the runs: they're still running
+    with mock.patch.object(LsfRunner, 'start_groups', side_effect=KeyboardInterrupt), \
+         mock.patch('qaboard.runners.job.notify_qa_database') as notify:
+      with self.assertRaises(KeyboardInterrupt):
+        group.start(blocking=False, qa_context={"share": True})
+    notify.assert_not_called()
+
+  def test_empty_metrics_json_marks_pending_run_as_failed(self):
+    """A killed run can leave a 0-byte metrics.json: the pending run is marked failed, and the batch doesn't crash"""
+    from qaboard.api import dir_to_url
+    from qaboard.runners import JobGroup
+    from qaboard.runners.lsf import LsfRunner
+    killed, done = make_jobs('lsf', ['a', 'b'], self.root.resolve(), queue='q')
+    # like a run killed (SIGKILL) before it reported results
+    killed.run_context.output_dir.mkdir()
+    (killed.run_context.output_dir / 'metrics.json').write_text('')
+    done.run_context.output_dir.mkdir()
+    outputs = {
+      1: {"output_dir_url": dir_to_url(killed.run_context.output_dir), "is_pending": True, "is_failed": False},
+      2: {"output_dir_url": dir_to_url(done.run_context.output_dir), "is_pending": True, "is_failed": False},
+    }
+    group = JobGroup(jobs=[killed, done], job_options={"type": "lsf", "command_id": "abcdefgh-1234", "queue": "q"})
+    with mock.patch.object(LsfRunner, 'start_groups', side_effect=KeyboardInterrupt), \
+         mock.patch('qaboard.runners.job.get_outputs', return_value=outputs), \
+         mock.patch('qaboard.runners.job.notify_qa_database') as notify:
+      with self.assertRaises(KeyboardInterrupt):
+        group.start(blocking=True, qa_context={"share": True})  # no JSONDecodeError escapes
+    updates = {call.kwargs['output_dir']: (call.kwargs['is_pending'], call.kwargs['is_failed']) for call in notify.call_args_list}
+    self.assertEqual(updates, {killed.run_context.output_dir: (False, True), done.run_context.output_dir: (False, True)})
+
+  def test_empty_metrics_json_at_the_end_of_a_batch(self):
+    """When the jobs finish, a pending run that a SIGKILL left with a 0-byte metrics.json is marked failed, and the batch fails"""
+    from qaboard.api import dir_to_url
+    from qaboard.runners import JobGroup
+    from qaboard.runners.lsf import LsfRunner
+    killed, done = make_jobs('lsf', ['a', 'b'], self.root.resolve(), queue='q')
+    killed.run_context.output_dir.mkdir()
+    (killed.run_context.output_dir / 'metrics.json').write_text('')
+    outputs = {
+      1: {"output_dir_url": dir_to_url(killed.run_context.output_dir), "is_pending": True, "is_failed": False},
+      2: {"output_dir_url": dir_to_url(done.run_context.output_dir), "is_pending": False, "is_failed": False},
+    }
+    group = JobGroup(jobs=[killed, done], job_options={"type": "lsf", "command_id": "abcdefgh-1234", "queue": "q"})
+    with mock.patch.object(LsfRunner, 'start_groups'), \
+         mock.patch('qaboard.runners.job.get_outputs', return_value=outputs), \
+         mock.patch('qaboard.runners.job.notify_qa_database') as notify:
+      self.assertTrue(group.start(blocking=True, qa_context={"share": True}))
+    notify.assert_called_once()
+    self.assertEqual(notify.call_args.kwargs['output_dir'], killed.run_context.output_dir)
+    self.assertEqual((notify.call_args.kwargs['is_pending'], notify.call_args.kwargs['is_failed']), (False, True))
+
+
+  def test_runs_are_found_by_their_id_when_they_moved(self):
+    """A run that is done again gets a new directory: if its `qa run` didn't use the one `qa batch` expected
+    (another version of qaboard, a job LSF started twice), the batch still reports the run's real status"""
+    import json
+    from qaboard.api import dir_to_url
+    from qaboard.runners import JobGroup
+    from qaboard.runners.lsf import LsfRunner
+    moved, killed, same = make_jobs('lsf', ['a', 'b', 'c'], self.root.resolve(), queue='q')
+    moved.id, killed.id = 1, 2
+    moved_to = moved.run_context.output_dir.with_name('a_attempt2')
+    killed_in = killed.run_context.output_dir.with_name('b_attempt2')
+    killed_in.mkdir()
+    (killed_in / 'metrics.json').write_text(json.dumps({"is_failed": False}))
+    outputs = {
+      "1": {"id": 1, "output_dir_url": dir_to_url(moved_to), "is_pending": False, "is_failed": False},
+      "2": {"id": 2, "output_dir_url": dir_to_url(killed_in), "is_pending": True, "is_failed": False},
+      "3": {"id": 3, "output_dir_url": dir_to_url(same.run_context.output_dir), "is_pending": False, "is_failed": False},
+    }
+    group = JobGroup(jobs=[moved, killed, same], job_options={"type": "lsf", "command_id": "abcdefgh-1234", "queue": "q"})
+    with mock.patch.object(LsfRunner, 'start_groups'), \
+         mock.patch('qaboard.runners.job.get_outputs', return_value=outputs), \
+         mock.patch('qaboard.runners.job.notify_qa_database') as notify:
+      # by their directories, `moved` and `killed` would be missing, so failed
+      self.assertFalse(group.start(blocking=True, qa_context={"share": True}))
+    self.assertEqual(moved.qaboard_output['id'], 1)
+    self.assertEqual(same.qaboard_output['id'], 3)
+    # the run QA-Board still shows as pending is settled where it said it was, not where we expected it
+    notify.assert_called_once()
+    self.assertEqual(notify.call_args.kwargs['output_dir'], killed_in)
+    self.assertEqual((notify.call_args.kwargs['is_pending'], notify.call_args.kwargs['is_failed']), (False, False))
 
 
 class TestBuildPowershellEnv(unittest.TestCase):
@@ -427,6 +570,26 @@ class TestJenkinsWindowsRunner(unittest.TestCase):
       JenkinsWindowsRunner(BareRunContext(output_dir)).start(blocking=False)
     content = (output_dir / 'run.ps1').read_text()
     self.assertIn('$ErrorActionPreference = "Stop"', content)
+
+
+class TestJenkinsTrigger(unittest.TestCase):
+  def test_the_trigger_says_who_and_which_project(self):
+    # Without a token, the server only starts the Jenkins jobs of the project's qaboard.yaml
+    import requests
+    from qaboard.runners import jenkins_windows
+    answer = mock.MagicMock(status_code=200)
+    answer.json.return_value = {"status": "pending", "url": "http://jenkins/queue/item/7/"}
+    with mock.patch.object(requests, 'post', return_value=answer) as post, \
+         mock.patch.object(jenkins_windows, 'get_jenkins_config', return_value={"build_url": "http://jenkins/job/windows", "token": None}), \
+         mock.patch.object(jenkins_windows, 'api_headers', {"Content-Type": "application/json", "Authorization": "Bearer qab_pat_x"}), \
+         mock.patch.object(jenkins_windows, 'project_name', return_value="group/repo"), \
+         mock.patch.object(sys.modules['qaboard.config'], 'commit_id', "abc123"):
+      jenkins_windows.trigger_run("echo hi")
+    self.assertTrue(post.call_args.args[0].endswith("/jenkins/build/trigger/"))
+    self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer qab_pat_x")
+    data = post.call_args.kwargs["json"]
+    self.assertEqual((data["project"], data["commit"], data["build_url"], data["params"]), ("group/repo", "abc123", "http://jenkins/job/windows", {"task": "echo hi"}))
+    self.assertIn("token", data)
 
 
 class TestJenkinsPolling(unittest.TestCase):
@@ -583,6 +746,27 @@ try:
   has_dask = True
 except ImportError:
   has_dask = False
+
+
+class TestCelerySettings(unittest.TestCase):
+  def test_passwords_come_from_the_environment(self):
+    """qaboard.yaml is in git: broker URLs can read the password from the environment"""
+    from qaboard.runners.celery_settings import celery_settings
+    config = {"runners": {"celery": {
+      "broker_url": "pyamqp://camera:${QA_CELERY_PASSWORD}@qaboard:5672/camera",
+      "result_backend": "rpc://",
+      "timezone": "$TZ_KEPT",
+      "worker_concurrency": 4,
+    }}}
+    with mock.patch.dict(os.environ, {"QA_CELERY_PASSWORD": "secret", "TZ_KEPT": "x"}):
+      settings = celery_settings(config)
+    self.assertEqual(settings["broker_url"], "pyamqp://camera:secret@qaboard:5672/camera")
+    self.assertEqual(settings["result_backend"], "rpc://")
+    self.assertEqual(settings["timezone"], "$TZ_KEPT")
+    self.assertEqual(settings["worker_concurrency"], 4)
+    # the project's configuration isn't changed
+    self.assertIn("${QA_CELERY_PASSWORD}", config["runners"]["celery"]["broker_url"])
+    self.assertEqual(celery_settings({}), {})
 
 
 class TestCleanOutputDir(unittest.TestCase):

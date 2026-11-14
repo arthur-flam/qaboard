@@ -2,7 +2,6 @@
 Authentication for qaboard - LOCAL, LDAP and SAML.
 """
 import os
-from datetime import timedelta
 from functools import wraps
 
 import yaml
@@ -10,22 +9,22 @@ import ldap
 import ldap.filter
 import simplejson
 from flask import request, jsonify, redirect, session, g, has_request_context
-from flask_login import LoginManager, login_user, logout_user, current_user
+from flask_login import LoginManager, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 try:
   # FIXME: Unfortunately we run often into libxml mismatch version issues
   from onelogin.saml2.auth import OneLogin_Saml2_Auth
-  from onelogin.saml2.utils import OneLogin_Saml2_Utils
 except Exception as e:
   print(f"WARNING: Could not import onelogin.saml2: {e}")
 from backend import app, db_session
-from ..models import User, Token
-from ..settings import setting
+from ..models import User
+from ..settings import setting, env_list
 from ..audit import audit
-from ..admins import is_admin, is_env_admin
+from ..admins import is_admin
 from ..actor import unauthenticated
 from ..sign_in import sessions
 from ..sign_in.accounts import finish as finish_sign_in, new_user_status
+from ..sign_in.profiles import avatar_url, public as public_profile
 from .. import tokens as tokens_lib
 from ..access import can
 
@@ -80,6 +79,19 @@ elif login_type == "SAML":
   # saml_attr_id = os.environ.get('QABOARD_SAML_ATTRIBUTE_ID')
 
 
+# The attributes with the user's profile (backend/sign_in/profiles.py): the first of each list that the user has.
+# SAML pictures are an URL, a data: URI or base64.
+PROFILE_ATTRIBUTES = {
+  "LDAP": {"picture": 'thumbnailPhoto,jpegPhoto', "title": 'title', "department": 'department', "organization": 'company,o'},
+  "SAML": {"picture": 'picture,thumbnailPhoto', "title": 'title,jobtitle', "department": 'department', "organization": 'organization,company'},
+}
+
+def profile_attributes(kind: str) -> dict:
+  """{field: [attribute names]}, from QABOARD_LDAP_ATTRIBUTE_PICTURE, QABOARD_SAML_ATTRIBUTE_TITLE..."""
+  return {field: env_list(os.environ.get(f'QABOARD_{kind}_ATTRIBUTE_{field.upper()}') or default)
+          for field, default in PROFILE_ATTRIBUTES[kind].items()}
+
+
 # Don't add the user's info: with LDAP and SAML it holds everything the directory knows about them
 not_authorized_error = "The user is not authorized, please contact QA-Board admins."
 
@@ -89,15 +101,25 @@ not_authorized_error = "The user is not authorized, please contact QA-Board admi
 
 @app.route('/api/v1/user/signup/', methods=['POST'])
 def signup():
+  from ..first_admin import setup_open
+  if setup_open():
+    return jsonify({"error": "QA-Board isn't set up yet: its first account is the admin's, created on the setup page.", "reason": "setup_required"}), 403
   if not setting('auth.local_signup'):
     return jsonify({"error": "Signing up is disabled on this server: sign in with your usual account, or ask an admin.", "reason": "signup_disabled"}), 403
   user_name = request.form.get('user_name')
   if not user_name or not request.form.get('password'):
     return jsonify({"error": "Both user_name and password are required"}), 400
+  # service accounts are named like ci[bot] or group/repo/ci[bot] (backend/service_accounts.py)
+  if any(c in user_name for c in '[]/'):
+    return jsonify({"error": "User names can't have [, ] or /."}), 400
   # "ALICE" next to "alice" would be confusing, and look like an admin from $QABOARD_ADMINS
   from ..search import escape_like
   if User.query.filter(User.user_name.ilike(escape_like(user_name), escape='\\')).first():
     return jsonify({"error": "This user name is already taken"}), 409
+  # admins whatever the database says: they sign in with the directory, or get an account from `qaboard-admin create-admin`
+  from ..admins import env_admins
+  if user_name.casefold() in {a.casefold() for a in env_admins()}:
+    return jsonify({"error": "This user name is reserved: sign in with your usual account, or ask an admin."}), 409
   # Never log or return the form or the exception: they contain the password, its hash, or the SQL query
   try:
     user = create_user({
@@ -145,7 +167,8 @@ def auth_post():
   user_info = auth(username, password)
   user = User.query.filter_by(user_name=username).one_or_none() if user_info["login_success"] else None
   if user_info["login_success"]:
-    if user is None:
+    # service accounts only use tokens
+    if user is None or user.kind == 'service':
       user_info = {"login_success": False, "error": "invalid-username"}
     elif user.status == 'disabled':
       user_info = {"login_success": False, "error": user.status}
@@ -196,6 +219,7 @@ def get_current_user(to_jsonify=True):
         "user_name": pending_user.user_name,
         "full_name": pending_user.full_name,
         "email": pending_user.email,
+        "avatar_url": avatar_url(pending_user),
         "request": serialize_request(request_row) if request_row else None,
         "reviewers": [u.full_name or u.user_name for u in reviewers()][:5],
       }
@@ -209,7 +233,11 @@ def get_current_user(to_jsonify=True):
       "kind": getattr(user, 'kind', 'human'),
       "status": getattr(user, 'status', 'active'),
       "is_admin": is_admin(user),
+      "avatar_url": avatar_url(user),
     })
+    if to_jsonify:
+      # what the sign-in methods say about them (backend/sign_in/profiles.py)
+      info["profile"] = public_profile(user)
     if login_type == "SAML" and to_jsonify is False:
       # the SAML attributes are used by the restrictions of QABOARD_LOGIN_RESTRICTED_YAML. Never sent to clients.
       # Not LDAP's: it's a list of [dn, attributes] that matches_rules can't read (they're checked at login).
@@ -341,20 +369,21 @@ def forbidden_project(project_id=None, permission: str = 'project.read'):
   return jsonify({"error": "Forbidden: You don't have permission to access this project", "reason": "forbidden_project"}), 403
 
 
-def ingest_access(project_id: str):
+def ingest_access(project_id: str, require_token: bool = False):
   """
   For the endpoints where `qa` sends results: (submitted_by, None) or (None, an error response).
   `submitted_by` says who really sent them (a token's user), None for unverified results.
   With ingest.auth "off" or "warn" we accept unverified results, and the X-QABoard-Warning header tells the CLI why.
+  `require_token`: for endpoints without legacy anonymous clients, a token with the ingest scope is needed whatever ingest.auth says.
   """
-  mode = setting('ingest.auth')
+  mode = 'token' if require_token else setting('ingest.auth')
   actor = g.get('actor')
   if actor is None or actor.user is None:
     if mode == 'token':
       return None, (jsonify({
-        "error": "This server only accepts results sent with a token.",
-        "reason": "ingest_token_required",
-      }), 403)
+        "error": "This server only accepts results sent with a token." if not require_token else "Sign in to do this: run `qa auth login`, or send a token with the ingest scope.",
+        "reason": "ingest_token_required" if not require_token else "login_required",
+      }), 401 if require_token else 403)
     if mode == 'warn':
       g.qaboard_warning = "Your results were saved as unverified, without a token. This server will soon require one: run `qa auth login`, or set QABOARD_TOKEN in CI."
     return None, None
@@ -409,9 +438,14 @@ def create_user(info):
     # https://werkzeug.palletsprojects.com/en/1.0.x/utils/#werkzeug.security.generate_password_hash
     password=generate_password_hash(info["password"]) if "password" in info else None,
     # active, or waiting for an admin (auth.access_policy)
-    status=new_user_status(info.get("email")),
+    status=new_user_status(info.get("email"), verified=info["login_type"] != "LOCAL"),
   )
   db_session.add(user)
+  db_session.flush()
+  apply_profile(user, info)
+  # the `qa` commands they ran before signing in, as this name, are theirs (backend/usage.py)
+  from ..usage import claim_events
+  claim_events(user)
   db_session.commit()
   print(f"[auth] Created the user @{user.user_name}" + (" (waiting for an admin)" if user.status == 'pending' else ""))
   return user
@@ -430,9 +464,17 @@ def update_user(user, info):
     "password": generate_password_hash(info["password"]) if "password" in info else None,
   }
   user.update(**user_info)
+  apply_profile(user, info)
   db_session.add(user)
   db_session.commit()
   return user
+
+
+def apply_profile(user, info: dict):
+  """The title, department, organization and picture a directory gave (LDAP, SAML), see backend/sign_in/profiles.py"""
+  if info.get("profile") or info.get("picture") is not None:
+    from ..sign_in import profiles
+    profiles.apply(user, info.get("profile"), info.get("picture"), 'saml' if (info.get("login_type") or '').upper() == 'SAML' else 'ldap')
 
 
 def restrictions(section: str) -> dict:
@@ -531,7 +573,8 @@ def auth_local(username, password):
     session.clear()
     return info
   user = User.query.filter_by(user_name=username).one_or_none()
-  if not user:
+  # service accounts have no password, they only use tokens
+  if not user or user.kind == 'service':
     info["error"] = "invalid-username"
   elif not check_password_hash(user.password, password):
     info["error"] = "invalid-password"
@@ -563,7 +606,22 @@ def ldap_search(user_name: str) -> str:
 
 
 def ldap_attributes() -> list:
-  return [ldap_attr_common_name, ldap_attr_email, *ldap_group_attributes]
+  profile = [name for names in profile_attributes('LDAP').values() for name in names]
+  return list(dict.fromkeys([ldap_attr_common_name, ldap_attr_email, *ldap_group_attributes, *profile]))
+
+
+def directory_profile(attributes: dict, names: dict):
+  """
+  ({title, department, organization}, picture) from a directory's attributes. Removes the picture's attributes:
+  they're binary (LDAP) or big, and users.data and the session cookie (SAML) keep the others.
+  """
+  from ..sign_in.profiles import first_value
+  values = {key: first_value(attributes, names[key])[1] for key in names if key != 'picture'}
+  picture = first_value(attributes, names['picture'])[1]
+  lower = {name.lower() for name in names['picture']}
+  for key in [k for k in attributes if k.lower() in lower]:
+    del attributes[key]
+  return values, picture
 
 
 # Active Directory's LDAP_MATCHING_RULE_IN_CHAIN: the groups that contain the user, also through other groups
@@ -586,6 +644,7 @@ def ldap_details(ldap_connect, user_name: str) -> list:
 def ldap_user_info(details, user_info):
   """Fills user_info from the directory's answer"""
   user_ldap = details[0][1]
+  user_info["profile"], user_info["picture"] = directory_profile(user_ldap, profile_attributes('LDAP'))
   user_info["full_name"] = str(user_ldap[ldap_attr_common_name][0], 'utf-8') if ldap_attr_common_name in user_ldap else None
   if ldap_attr_email not in user_ldap:
     user_info["email"] = None
@@ -626,6 +685,10 @@ def auth_ldap(user_name, password):
     "login_type": login_type,
     "login_success": False,
   }
+  # A bind with an empty password is an anonymous bind, that many LDAP servers accept
+  if not password:
+    user_info["error"] = "invalid-password"
+    return user_info
   ldap_connect = ldap_connection()
   # check if the user exists. Referrals come as entries without a DN.
   found = [entry for entry in ldap_connect.search_s(ldap_user_base, ldap.SCOPE_SUBTREE, ldap_search(user_name), ['distinguishedName']) if entry[0]]
@@ -702,7 +765,9 @@ def saml_auth():
             if 'AuthNRequestID' in session:
                 del session['AuthNRequestID']
 
-            session['samlUserdata'] = auth.get_attributes()
+            saml_attributes = dict(auth.get_attributes())
+            saml_profile, saml_picture = directory_profile(saml_attributes, profile_attributes('SAML'))
+            session['samlUserdata'] = saml_attributes
             session['samlNameId'] = auth.get_nameid()
             session['samlNameIdFormat'] = auth.get_nameid_format()
             session['samlNameIdNameQualifier'] = auth.get_nameid_nq()
@@ -723,6 +788,8 @@ def saml_auth():
               "full_name": samlUserdata.get(saml_attr_common_name, [])[0],
               "email": samlUserdata.get(saml_attr_email, [])[0],
               "data": dict(samlUserdata),
+              "profile": saml_profile,
+              "picture": saml_picture,
               }
               if is_login_restricted and not is_authorized_user(user_info):
                 print(f"[auth] Unauthorized login @{user_info['user_name']}")
@@ -751,9 +818,10 @@ def saml_auth():
         errors = auth.get_errors()
         if len(errors) == 0:
             if url is not None:
-                # TODO: To avoid 'Open Redirect' attacks, before execute the redirection confirm
-                # the value of the request.form['RelayState'] is a trusted URL.
+                # our answer to the IdP's logout request: to its SLO URL, from our SAML settings
                 return redirect(url)
+            # the IdP's answer to our logout
+            return redirect(safe_redirect_url(request.args.get('RelayState')))
 
     # Handle bad requests:
     # raise Exception(" ".join(errors))
@@ -791,3 +859,28 @@ def prepare_flask_request(request):
         # 'lowercase_urlencoding': True,
         'post_data': request.form.copy()
     }
+
+
+@app.route('/api/v1/user/password', methods=['POST'])
+@app.route('/api/v1/user/password/', methods=['POST'])
+@session_required
+def change_password():
+  """{current_password, new_password}: local accounts change their password, from the web app. Their other browsers are signed out."""
+  from ..first_admin import password_problem
+  user = g.actor.user
+  if (user.login_type or '').upper() != 'LOCAL' or not user.password:
+    return jsonify({"error": "You don't have a local account: change your password where your company manages it.", "reason": "not_local"}), 400
+  body = request.get_json(silent=True) or {}
+  current_password, new_password = body.get('current_password'), body.get('new_password')
+  if not isinstance(current_password, str) or not current_password or not check_password_hash(user.password, current_password):
+    audit('user.password_change_failed', 'user', user.id, user.user_name)
+    db_session.commit()
+    return jsonify({"error": "Your current password is wrong.", "reason": "invalid_credentials", "field": "current_password"}), 403
+  if problem := password_problem(new_password):
+    return jsonify({"error": problem, "field": "new_password"}), 400
+  user.password = generate_password_hash(new_password)
+  current = g.get('session_row')
+  signed_out = sessions.revoke_all(user.id, except_id=current.id if current is not None else None)
+  audit('user.password_change', 'user', user.id, user.user_name, meta={"sessions_revoked": signed_out})
+  db_session.commit()
+  return jsonify({"signed_out": signed_out})

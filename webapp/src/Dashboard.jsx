@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { DateTime } from "luxon";
 import styled from "styled-components";
 
@@ -16,19 +16,26 @@ import {
 
 import CommitsEvolution from "./CommitsEvolution";
 import { Container, Section } from "./components/layout";
+import { SectionErrorBoundary } from "./components/ErrorFallback";
 import { MetricsSummary, MetricSelect } from "./components/metrics";
 import { TableCompare, TableKpi } from "./components/tables";
 
 import { useCommitsList, useComparison, updateSelected, used_metrics_signature, with_used_metrics } from "./hooks";
+import { order_labels, run_sort_keys } from "./selectors/sorting";
 import { errorMessage } from "./api/http";
 import { metric_info, with_undeclared_metrics } from "./utils";
+import { usePageTitle, history_title } from "./pageTitle";
 
 
 // Like the views of the commit pages: the title on a row above the card
-const ViewSection = styled(Section)`
+const ViewSectionBox = styled(Section)`
   margin-top: 0;
   margin-bottom: 32px;
 `;
+// a view that crashes doesn't take the others with it
+const ViewSection = ({ children, ...props }) => <ViewSectionBox {...props}>
+  <SectionErrorBoundary>{children}</SectionErrorBoundary>
+</ViewSectionBox>;
 const ViewHeader = styled.div`
   display: flex;
   align-items: baseline;
@@ -59,15 +66,12 @@ const history_metrics = (commits, batch_label, available_metrics) => {
 };
 
 const Dashboard = () => {
-  const { project, project_data, selected, new_commit, ref_commit, new_batch, ref_batch, selected_batch_new, labels } = useComparison();
+  const { project, project_data, selected, new_commit, ref_commit, new_batch, ref_batch, selected_batch_new, labels, sorting } = useComparison();
   // what the tables call the new and reference results
   const table_labels = useMemo(() => [labels.new, labels.reference], [labels]);
   const { commits, error, refetch, isPending, isFetching, date_range, qatools_metrics } = useCommitsList();
 
-  useEffect(() => {
-    let name = project.split('/').slice(-1)[0];
-    document.title = `History - ${name}`;
-  }, [project]);
+  usePageTitle(history_title({ project, branch: selected.branch }));
 
   // On branches, the metrics configuration comes from the latest commit. All the metrics of the runs are shown, declared or not.
   const used_metrics = new_batch.used_metrics;
@@ -238,20 +242,19 @@ const Dashboard = () => {
             <TabsExpander />
             <HTMLSelect
               aria-label="Sort by"
-              value={selected.sort_by ?? metrics.default_metric ?? 'test_input_path'}
-              onChange={e => updateSelected({ sort_by: e.target.value }, { replace: true })}
+              value={sorting?.by ?? selected.sort_by ?? metrics.default_metric ?? 'test_input_path'}
+              onChange={e => updateSelected({ sort_by: e.target.value, sort_order: undefined }, { replace: true })}
             >
-              <option value="test_input_path">Sort by Name</option>
-              <option value="id">Sort by ID</option>
+              {Object.entries(run_sort_keys).map(([key, { label }]) => <option key={key} value={key}>Sort by {label}</option>)}
               {Object.values(available_metrics).filter(m => used_metrics.has(m.key)).map(m => (
                 <option key={m.key} value={m.key}>
                   Sort by {m.label}
                 </option>
               ))}
             </HTMLSelect>
-            <HTMLSelect aria-label="Sort order" value={selected.sort_order} onChange={e => updateSelected({ sort_order: e.target.value }, { replace: true })}>
-              <option value={-1}>descending</option>
-              <option value={1}>ascending</option>
+            <HTMLSelect aria-label="Sort order" value={sorting?.order ?? -1} onChange={e => updateSelected({ sort_order: e.target.value }, { replace: true })}>
+              <option value={-1}>{order_labels(sorting?.by)[1].toLowerCase()}</option>
+              <option value={1}>{order_labels(sorting?.by)[0].toLowerCase()}</option>
             </HTMLSelect>
           </Tabs>
         </Card>

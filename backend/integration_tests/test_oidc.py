@@ -270,6 +270,30 @@ def test_new_users_wait_for_an_admin(idp, make_client, monkeypatch):
   assert me["reason"] == "user_pending" and me["pending"]["user_name"] == "alice"
 
 
+def test_only_verified_emails_count(idp, make_client, monkeypatch):
+  """For the domains policy and the emails of $QABOARD_ADMINS: some IdPs let users choose their email"""
+  from backend.database import db_session
+  from backend.models import User
+  monkeypatch.setenv('QABOARD_ACCESS_POLICY', 'domains')
+  monkeypatch.setenv('QABOARD_ALLOWED_EMAIL_DOMAINS', 'example.com')
+  monkeypatch.setenv('QABOARD_ADMINS', 'alice@example.com')
+  client = make_client()
+  idp.sign_in(client)
+  assert client.get('/api/v1/user/me/').get_json()["reason"] == "user_pending"
+  User.query.update({"status": "active"})
+  db_session.commit()
+  assert client.get('/api/v1/user/me/').get_json()["is_admin"] is False
+  # the IdP says it's verified: at the next sign-in
+  idp.claims["email_verified"] = True
+  idp.sign_in(client)
+  assert client.get('/api/v1/user/me/').get_json()["is_admin"] is True
+  idp.claims.update({"sub": "subject-bob", "preferred_username": "bob", "email": "bob@example.com"})
+  bob = make_client()
+  idp.sign_in(bob)
+  me = bob.get('/api/v1/user/me/').get_json()
+  assert me["user_name"] == "bob" and me["status"] == "active" and me["is_admin"] is False
+
+
 def test_link_another_sign_in_method(idp, make_user, make_client):
   make_user('alice.local', email='alice@example.com')
   client = login(make_client(), 'alice.local')
@@ -322,11 +346,23 @@ def test_admins_add_providers(idp, logged_in, make_client, monkeypatch):
   assert root.post('/api/v1/admin/sign-in/providers', json={"id": "Bad Id", "issuer": ISSUER, "client_id": "x"}).status_code == 400
 
 
-def test_secrets_need_the_encryption_key(logged_in, monkeypatch):
+def test_secrets_without_an_encryption_key(logged_in, monkeypatch):
+  """Without $QABOARD_ENCRYPTION_KEY, the server generates a key in its data folder"""
   monkeypatch.setenv('QABOARD_ADMINS', 'root')
   monkeypatch.delenv('QABOARD_ENCRYPTION_KEY', raising=False)
-  response = logged_in('root').post('/api/v1/admin/sign-in/providers', json={"id": "k", "issuer": ISSUER, "client_id": "x", "client_secret": "s"})
-  assert response.status_code == 400 and "QABOARD_ENCRYPTION_KEY" in response.get_json()["error"]
+  from backend import encryption
+  encryption.key_file().unlink(missing_ok=True)
+  root = logged_in('root')
+  response = root.post('/api/v1/admin/sign-in/providers', json={"id": "k", "issuer": ISSUER, "client_id": "x", "client_secret": "s"})
+  assert response.status_code == 201
+  from backend.models import AuthProvider
+  stored = AuthProvider.query.filter(AuthProvider.id == 'k').one().secret_encrypted
+  assert encryption.key_id_of(stored) == encryption.generated_key().id and encryption.decrypt(stored) == "s"
+  assert oct(encryption.key_file().stat().st_mode & 0o777) == '0o600'
+  # a key file that can't be read stops it
+  monkeypatch.setenv('QABOARD_ENCRYPTION_KEY_FILE', '/no/such/key')
+  response = root.post('/api/v1/admin/sign-in/providers', json={"id": "k2", "issuer": ISSUER, "client_id": "x", "client_secret": "s"})
+  assert response.status_code == 400 and "QABOARD_ENCRYPTION_KEY_FILE" in response.get_json()["error"]
 
 
 def test_the_doctor(idp, logged_in, monkeypatch):

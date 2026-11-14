@@ -104,6 +104,19 @@ app.kubernetes.io/component: {{ index . 1 }}
   {{- end }}
 {{- end -}}
 
+{{/* RabbitMQ's account, as QABOARD_RABBITMQ_USER and QABOARD_RABBITMQ_PASSWORD: the env vars after them use $(...) */}}
+{{- define "qaboard.rabbitmqCredentials" -}}
+- name: QABOARD_RABBITMQ_USER
+  value: {{ .Values.celery.rabbitmq.user | quote }}
+{{- if .Values.celery.rabbitmq.passwordFromSecret }}
+- name: QABOARD_RABBITMQ_PASSWORD
+  valueFrom: {secretKeyRef: {name: {{ include "qaboard.secretName" . }}, key: QABOARD_RABBITMQ_PASSWORD}}
+{{- else }}
+- name: QABOARD_RABBITMQ_PASSWORD
+  value: {{ .Values.celery.rabbitmq.password | quote }}
+{{- end }}
+{{- end -}}
+
 {{- define "qaboard.secretName" -}}
 {{- .Values.secret.existingSecret | default (printf "%s-secret" (include "qaboard.fullname" .)) -}}
 {{- end -}}
@@ -147,8 +160,9 @@ app.kubernetes.io/component: {{ index . 1 }}
   value: "6379"
 {{- end }}
 {{- if .Values.celery.enabled }}
+{{ include "qaboard.rabbitmqCredentials" . }}
 - name: CELERY_BROKER_URL
-  value: pyamqp://guest:guest@{{ include "qaboard.fullname" . }}-rabbitmq:5672//
+  value: pyamqp://$(QABOARD_RABBITMQ_USER):$(QABOARD_RABBITMQ_PASSWORD)@{{ include "qaboard.fullname" . }}-rabbitmq:5672//
 {{- end }}
 {{- with .Values.backend.env }}
 {{ toYaml . }}
@@ -160,4 +174,23 @@ app.kubernetes.io/component: {{ index . 1 }}
     name: {{ include "qaboard.fullname" . }}-config
 - secretRef:
     name: {{ include "qaboard.secretName" . }}
+{{- end -}}
+
+{{/* The backend's ServiceAccount: backend.serviceAccount.name, else the one the chart creates. Empty: the namespace's default */}}
+{{- define "qaboard.backendServiceAccount" -}}
+{{- if .Values.backend.serviceAccount.name -}}
+{{ .Values.backend.serviceAccount.name }}
+{{- else if or .Values.backend.serviceAccount.create .Values.runners.kubernetes.enabled -}}
+{{ include "qaboard.fullname" . }}-backend
+{{- end -}}
+{{- end -}}
+
+{{/* The ServiceAccount of the pods that run `qa batch` for the backend: runners.kubernetes.serviceAccount, else <fullname>-runs */}}
+{{- define "qaboard.runsServiceAccount" -}}
+{{- .Values.runners.kubernetes.serviceAccount | default (printf "%s-runs" (include "qaboard.fullname" .)) -}}
+{{- end -}}
+
+{{/* How the pods the backend starts reach QA-Board: runners.kubernetes.serverUrl, else the proxy's Service */}}
+{{- define "qaboard.kubernetesServerUrl" -}}
+{{- .Values.runners.kubernetes.serverUrl | default (printf "http://%s-proxy.%s.svc" (include "qaboard.fullname" .) .Release.Namespace) -}}
 {{- end -}}

@@ -64,6 +64,18 @@ describe('Access page, for owners', () => {
     expect(match.params.project_id).toBe('a/b/c');
   });
 
+  it('starts with the tabs of the Admin pages', async () => {
+    mockApi({ 'GET /api/v1/project/access': manager_access() });
+    renderAt(`/${project}/access`, <AccessPage/>, { user: alice });
+    const tabs = within(screen.getByRole('navigation', { name: 'Project admin' }));
+    expect(tabs.getByRole('link', { name: 'Access' })).toHaveAttribute('aria-current', 'page');
+    expect(tabs.getByRole('link', { name: 'Quality gate' })).toHaveAttribute('href', `/${project}/admin/gate`);
+    // above the page's title
+    const title = screen.getByRole('heading', { name: 'Access', level: 2 });
+    expect(tabs.getByRole('link', { name: 'Access' }).compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await screen.findByRole('table', { name: 'Members' });
+  });
+
   it('lists the members, inherited ones read-only', async () => {
     mockApi({ 'GET /api/v1/project/access': manager_access() });
     renderAt(`/${project}/access`, <AccessPage/>, { user: alice });
@@ -84,6 +96,16 @@ describe('Access page, for owners', () => {
     expect(qa.getByText('All projects')).toBeInTheDocument();
     expect(qa.queryByRole('combobox')).not.toBeInTheDocument();
     expect(table.getAllByRole('row').length).toBe(5);
+  });
+
+  it("shows members' pictures, groups' icon", async () => {
+    mockApi({ 'GET /api/v1/project/access': manager_access({
+      grants: [grant({ subject: { type: 'user', id: 2, name: 'alice', full_name: 'Alice', avatar_url: '/api/v1/users/2/picture?v=ab12cd34' } }), grant({ id: 2, subject: { type: 'group', id: 7, name: 'camera-team' } })],
+    }) });
+    renderAt(`/${project}/access`, <AccessPage/>, { user: alice, siteConfig: {} });
+    const member = await screen.findByTestId('grant-1');
+    expect(member.querySelector('img')).toHaveAttribute('src', '/api/v1/users/2/picture?v=ab12cd34');
+    expect(within(screen.getByTestId('grant-2')).getByLabelText('Group')).toBeInTheDocument();
   });
 
   it('changes the visibility, or inherits it', async () => {
@@ -113,7 +135,7 @@ describe('Access page, for owners', () => {
   it('adds a member picked in the directory', async () => {
     const fetch = mockApi({
       'GET /api/v1/project/access': manager_access(),
-      'GET /api/v1/directory': { users: [{ id: 5, user_name: 'carol', full_name: 'Carol' }], groups: [{ id: 9, name: 'carol-fans' }] },
+      'GET /api/v1/directory': { users: [{ id: 5, user_name: 'carol', full_name: 'Carol', avatar_url: '/api/v1/users/5/picture?v=1' }], groups: [{ id: 9, name: 'carol-fans' }] },
       'POST /api/v1/project/access/grants': grant({ id: 10 }),
     });
     renderAt(`/${project}/access`, <AccessPage/>, { user: alice });
@@ -123,6 +145,8 @@ describe('Access page, for owners', () => {
     act(() => input.focus());
     fireEvent.change(input, { target: { value: 'car' } });
     // searched a moment after typing
+    const carol = await screen.findByRole('option', { name: /Carol/ });
+    expect(carol.querySelector('img')).toHaveAttribute('src', '/api/v1/users/5/picture?v=1');
     fireEvent.click(within(await screen.findByRole('option', { name: /carol-fans/ })).getByText('carol-fans'));
     expect(input).toHaveValue('carol-fans');
     await waitFor(() => expect(calls(fetch, 'GET', '/api/v1/directory?q=car').length).toBeGreaterThan(0));
@@ -182,7 +206,7 @@ describe('Access page, for others', () => {
   const viewer_access = props => ({
     project, my_role: 'viewer', via: 'signed_in', can_manage: false,
     visibility: { own: 'internal', effective: 'internal', inherited_from: null, default: 'public' },
-    owners: [{ type: 'user', id: 2, name: 'alice' }, { type: 'group', id: 7, name: 'camera-team' }],
+    owners: [{ type: 'user', id: 2, name: 'alice', avatar_url: '/api/v1/users/2/picture?v=ab12cd34' }, { type: 'group', id: 7, name: 'camera-team' }],
     my_request: null,
     ...props,
   });
@@ -195,6 +219,7 @@ describe('Access page, for others', () => {
     const owners = within(screen.getByRole('region', { name: 'Owners' }));
     expect(owners.getByText('alice')).toBeInTheDocument();
     expect(owners.getByText('camera-team')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Owners' }).querySelector('img')).toHaveAttribute('src', '/api/v1/users/2/picture?v=ab12cd34');
     // they can't manage
     expect(screen.queryByRole('combobox', { name: 'Visibility' })).not.toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'Members' })).not.toBeInTheDocument();

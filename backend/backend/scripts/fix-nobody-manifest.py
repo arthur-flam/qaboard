@@ -5,7 +5,6 @@ Usage:
 """
 import os
 import json
-import time
 
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import text
@@ -13,6 +12,7 @@ from qaboard.utils import total_storage, outputs_manifest
 
 from backend.models import Output
 from backend.database import db_session
+from backend.fs_utils import owner
 
 db_session.autoflush = False
 
@@ -45,13 +45,12 @@ def migrate():
              .enable_eagerloads(False) 
   )
   updated = 0
-  now = time.time()
   for idx, o in enumerate(outputs):
     #   try:
     manifest_path = o.output_dir / 'manifest.outputs.json'
     if 'C:\\' in str(manifest_path):
       continue
-    if not manifest_path.exists() or manifest_path.owner() == 'nobody' or manifest_path.owner() == 'arthurf':
+    if not manifest_path.exists() or owner(manifest_path) in ('nobody', 'arthurf'):
         print(o.id, o.output_dir)
         if manifest_path.exists():
             manifest_path.unlink()

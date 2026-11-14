@@ -60,12 +60,13 @@ def test_the_worker_schedules_it_daily(monkeypatch):
 
 def test_rule_changes_apply_to_everyone(root, make_user):
   """No need to wait for users to sign in again"""
-  make_user('alice')
-  make_user('bob', email='bob@other.com')
+  # the domains of verified emails: here SAML's, not the local accounts' (root)
+  make_user('alice', login_type='SAML')
+  make_user('bob', email='bob@other.com', login_type='SAML')
   group = new_group(root, 'example', claim='email_domain', values=['example.com'])
   assert group["rule"]["sync_job"]["kind"] == 'sync_groups'
   run_jobs()
-  assert members(root, group) == [('alice', 'rule'), ('root', 'rule')]
+  assert members(root, group) == [('alice', 'rule')]
   sync = root.get('/api/v1/admin/groups').get_json()["sync"]
   assert sync["last_job"]["status"] == 'done'
   root.delete(f'/api/v1/admin/groups/{group["id"]}/rules/{group["rule"]["id"]}')
@@ -132,7 +133,8 @@ def test_ldap_reads_nested_groups(monkeypatch):
       return [("CN=camera-algo,OU=Groups,DC=example,DC=com", {}), ("CN=algo,OU=Groups,DC=example,DC=com", {})]
   details = auth.ldap_details(Connection(), 'alice')
   assert details[0][1]["memberOf"] == [b"CN=camera-algo,OU=Groups,DC=example,DC=com", b"CN=algo,OU=Groups,DC=example,DC=com"]
-  assert searches[0] == ('(sAMAccountName=alice)', ['cn', 'mail', 'memberOf'])
+  # and the profile's: picture, title, department, organization (backend/sign_in/profiles.py)
+  assert searches[0] == ('(sAMAccountName=alice)', ['cn', 'mail', 'memberOf', 'thumbnailPhoto', 'jpegPhoto', 'title', 'department', 'company', 'o'])
   assert searches[1][0] == '(member:1.2.840.113556.1.4.1941:=CN=alice,DC=example,DC=com)'
 
 
@@ -201,8 +203,13 @@ def test_sso_groups_refresh_daily(idp, root, make_client, monkeypatch):
   assert members(root, camera) == [('alice', 'rule')]
 
 
-def test_refreshing_groups_needs_the_encryption_key(root, monkeypatch):
+def test_refreshing_groups_needs_an_encryption_key(root, monkeypatch):
+  # the server can't generate one: e.g. its data folder isn't writable
   monkeypatch.delenv('QABOARD_ENCRYPTION_KEY', raising=False)
+  from backend import encryption
+  monkeypatch.setattr(encryption, "can_encrypt", lambda: False)
+  import backend.api.admin_sign_in as admin_sign_in
+  monkeypatch.setattr(admin_sign_in, "can_encrypt", lambda: False)
   response = root.post('/api/v1/admin/sign-in/providers', json={
     "id": "keycloak", "name": "Keycloak", "issuer": "https://idp.example.com/realms/x", "client_id": "qaboard", "refresh_groups": True,
   })

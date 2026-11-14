@@ -1,52 +1,34 @@
 """
-Implement the API used by the "Export to a shared directory" plugin.
+The older export API, deprecated: scripts still call it, the web app uses /api/v1/exports (backend/api/export_files.py),
+where the caller says how to name files. Its behavior doesn't change until its callers moved: responses say it's
+deprecated (`Deprecation` header), with a link to the new API.
+One fix: folders matching the pattern are real folders with links (or copies) of their files, not a symbolic link to
+the run's folder, that Windows shares can't open ("wide links" are off by default in Samba). Their names are the same.
 """
 import os
-import re
 import json
 import shutil
 import hashlib
 from pathlib import Path
-from functools import lru_cache
 
 from requests.utils import quote
-from flask import request, jsonify, g
+from functools import wraps
+from flask import request, jsonify, g, make_response
 from sqlalchemy.orm import joinedload
-from polyleven import levenshtein as polyleven_levenshtein
 
 
 from qaboard.compat import windows_to_linux_path
 from qaboard.conventions import serialize_config
+from qaboard.matching import run_distance
+from qaboard.filters import match_query, searched_text
 from backend import app, db_session
-from backend.fs_utils import as_user, rmtree
+
+from backend.fs_utils import as_user, mkdir_shared
 from backend.storage import check_storage_path, UnsafePathError
 from ..models import CiCommit, Batch, slugify_hash
 from ..config import qaboard_url
 from .auth import login_required, require_project_access
-
-
-@lru_cache(maxsize=1024)
-def levenshtein_opt(s1, s2):
-  s1, s2 = strip_common(s1, s2)
-  return levenshtein(s1, s2)
-
-def strip_common(str1, str2):
-    prefix = os.path.commonprefix([str1, str2])
-    str1_no_prefix = str1[len(prefix):]
-    str2_no_prefix = str2[len(prefix):]
-    # Find the common suffix by reversing the strings
-    common_suffix_length = len(os.path.commonprefix([str1_no_prefix[::-1], str2_no_prefix[::-1]]))
-    if common_suffix_length > 0:
-        str1_no_prefix = str1_no_prefix[:-common_suffix_length] if common_suffix_length < len(str1_no_prefix) else ''
-        str2_no_prefix = str2_no_prefix[:-common_suffix_length] if common_suffix_length < len(str2_no_prefix) else ''
-    return str1_no_prefix, str2_no_prefix
-
-
-@lru_cache(maxsize=4096)
-def levenshtein(s1, s2):
-    if s1 == s2:
-      return 0
-    return polyleven_levenshtein(s1, s2)
+from ..actor import is_same_origin, error as error_response
 
 
 def load_commit(project_id, commit_id):
@@ -69,68 +51,55 @@ def load_commit(project_id, commit_id):
 
 
 
-# no need to make a copy - we don't reuse the outputs
 def filter_outputs(query, outputs):
-  if not query:
+  """The runs a filter of the web app's filter box keeps: the same matching as the web app and `qaboard.runs()` (qaboard/filters.py)"""
+  if not query or not query.strip():
     return outputs
-
-  query = query.strip().lower().replace('"', '')
-  query = re.sub(r'(=+|: +)', ':', query)
-
-  tokens = query = query.split()
-  negative_tokens = [t[1:] for t in tokens if t.startswith('-')]
-  positive_tokens = [t for t in tokens if not t.startswith('-')]
-
-  def match(output):
-    # in the web application, json is serialized tight without extra whitespace
-    extra_parameters = json.dumps(output.extra_parameters, separators=(',', ':'))
-    configurations = json.dumps(output.configurations, separators=(',', ':'))
-    input_metadata = output.test_input.data['metadata'] if (output.test_input.data and 'metadata' in output.test_input.data) else {}
-    input_metadata = json.dumps(input_metadata, separators=(',', ':'))
-    failed = 'fail crash' if output.is_failed else ''
-    pending = 'pending running' if output.is_pending else ''
-    batch = output.data.get("batch") or ''
-    searched = f"{output.test_input.path} {output.platform} {configurations} {extra_parameters} {batch} {input_metadata} {failed} {pending}".replace('"', '').lower()
-    # not using output.test_input_tags.join() like in the JS
-    if any([re.search(t, searched) for t in negative_tokens]):
-      return False
-    found = all([re.search(t, searched) for t in positive_tokens])
-    return (not positive_tokens or found)
-  outputs = [o for o in outputs if match(o)]
-  return outputs
+  matches = match_query(query)
+  def searched(output):
+    data = output.data if isinstance(output.data, dict) else {}
+    extra_parameters = output.extra_parameters or {}
+    if isinstance(data.get('params'), dict):
+      extra_parameters = {**extra_parameters, **data['params']}
+    return searched_text(
+      id=output.id,
+      test_input_path=str(output.test_input.path),
+      platform=output.platform,
+      configurations=output.configurations,
+      extra_parameters=extra_parameters,
+      test_input_metadata=output.test_input.data.get('metadata') if output.test_input.data else None,
+      batch=data.get('batch'),
+      is_failed=bool(output.is_failed),
+      is_pending=bool(output.is_pending),
+      is_running=bool(output.is_running),
+    )
+  return [o for o in outputs if matches(searched(o))]
 
 
 def compatible(o1, o2):
+  """Whether the runs are on the same input: same path, or same id in their metadata (e.g. inputs that moved)"""
   if o1.test_input.abs_path == o2.test_input.abs_path:
     return True
   if o1.test_input.path == o2.test_input.path:
     return True
   if o1.test_input.data and o2.test_input.data and o1.test_input.data.get('id') and o1.test_input.data.get('id') == o2.test_input.data.get('id'):
-    return False
+    return True
+  return False
 
-# Note: already defined in qaboard.tuning.py, but raises instead of returning None
 def matching_output(output_reference, outputs):
   """
-  Return the output from a given batch that looks most similar to a given output.
+  Return the output from a given batch that looks most similar to a given output, like the web app.
   This helps us compare an output to historical results.
   """
-  def to_json(a):
-    json_str = json.dumps(a, sort_keys=True)
-    # the string edit distance scales quadratically
-    # we tried to mitigate it
-    json_str = re.sub(r"(workspace|[{}\", '/.\-_]|global|sim|partial_config|image_writer|config|raw|bmp)", "", json_str)
-    return json_str
   possible_matching_outputs = [o for o in outputs if compatible(o, output_reference)]
   valid_outputs = [o for o in possible_matching_outputs if not o.is_pending]
   if not valid_outputs: return None
 
+  def as_run(output):
+    return {'configurations': output.configurations, 'extra_parameters': output.extra_parameters, 'platform': output.platform}
   def match_key(output):
-    return (
-      1 - int(output.test_input.abs_path == output_reference.test_input.abs_path or output.test_input.path == output_reference.test_input.path), 
-      levenshtein_opt(to_json(output.configurations), to_json(output_reference.configurations)), 
-      levenshtein_opt(to_json(output.extra_parameters), to_json(output_reference.extra_parameters)), 
-      output.platform == output_reference.platform,
-    )
+    same_input = output.test_input.abs_path == output_reference.test_input.abs_path or output.test_input.path == output_reference.test_input.path
+    return (0 if same_input else 1, *run_distance(as_run(output_reference), as_run(output)))
   valid_outputs.sort(key=match_key)
   return valid_outputs[0]
 
@@ -149,10 +118,26 @@ def commonprefix(m):
   return s1
 
 
-@app.route("/api/v1/export")
-@app.route("/api/v1/export/")
+def deprecated(f):
+  """Responses tell clients to move to /api/v1/exports"""
+  @wraps(f)
+  def wrapper(*args, **kwargs):
+    response = make_response(f(*args, **kwargs))
+    response.headers['Deprecation'] = 'true'
+    response.headers['Link'] = '</api/v1/exports>; rel="successor-version"'
+    return response
+  return wrapper
+
+
+# POST: it writes in folders. GET for older web apps and scripts.
+@app.route("/api/v1/export", methods=['GET', 'POST'])
+@app.route("/api/v1/export/", methods=['GET', 'POST'])
+@deprecated
 @login_required
 def export_to_folder():
+  # Cookies come with GETs from other websites' links: actor.py only checks the origin of other methods
+  if request.method == 'GET' and g.actor.token is None and not is_same_origin():
+    return error_response(403, 'cross_site_write', "Exports are sent with POST from QA-Board's pages: QA-Board refused this one, it could come from another website.")
   project_id = request.args['project']
   ref_project_id = request.args.get('ref_project', project_id)
   # it creates links or copies in a folder: an action on the project's runs
@@ -165,7 +150,7 @@ def export_to_folder():
   new_commit_id = request.args['new_commit_id']
   new_commit = load_commit(project_id, new_commit_id)
   if not new_commit:
-    return f"ERROR: Commit {request.args['new_commit_id']} not found", 404
+    return jsonify({"error": f"ERROR: Commit {new_commit_id} not found"}), 404
   new_batch_label = request.args.get('batch_new', 'default')
   new_batch = new_commit.get_or_create_batch(new_batch_label)
   new_outputs = new_batch.outputs
@@ -177,7 +162,7 @@ def export_to_folder():
     ref_commit_id = request.args['ref_commit_id']
     ref_commit = load_commit(ref_project_id, ref_commit_id)
     if not ref_commit:
-      return f"ERROR: Commit {ref_commit_id} not found", 404
+      return jsonify({"error": f"ERROR: Commit {ref_commit_id} not found"}), 404
     ref_batch_label = request.args.get('batch_ref', 'default')
     ref_batch = ref_commit.get_or_create_batch(ref_batch_label)
     ref_outputs = ref_batch.outputs
@@ -208,20 +193,28 @@ def export_to_folder():
   try:
     check_storage_path(export_dir)
   except UnsafePathError as e:
-    return json.dumps({"error": f"ERROR: {e}"}), 403
+    return jsonify({"error": f"ERROR: {e}"}), 403
 
-  if not export_dir.exists():
-    prev_mask = os.umask(000)
+  # In folders that were there before, we only add files: they're someone's, maybe not the user's.
+  # We replace files only in the folders of our exports, and never delete folders.
+  created = not os.path.lexists(export_dir)
+  if created:
     try:
-      export_dir.mkdir(parents=True, exist_ok=True)
+      # all users write their exports there
+      mkdir_shared(export_dir)
     except Exception as e:
-      os.umask(prev_mask)
-      return json.dumps({"error": f"ERROR: When creating '{export_dir}': {e}"}), 403
-    os.umask(prev_mask)
+      return jsonify({"error": f"ERROR: When creating '{export_dir}': {e}"}), 403
+  elif not export_dir.is_dir() or export_dir.is_symlink():
+    return jsonify({"error": f"ERROR: '{export_dir}' is not a folder"}), 403
+  from ..models import Export
+  from ..exports import in_chosen_folder
+  tracked = Export.query.filter(Export.path == str(export_dir), Export.deleted_at.is_(None)).first()
+  # an export a scan found in a folder someone chose isn't ours: users may have other files there
+  ours = created or (tracked is not None and not in_chosen_folder(tracked))
 
   is_export_dir_writable = os.access(export_dir, os.W_OK)
   if not is_export_dir_writable:
-    return json.dumps({"error": f"The export folder need to be writable by all users. Call 'chmod a+w {export_dir}'"}), 403
+    return jsonify({"error": f"The export folder need to be writable by all users. Call 'chmod a+w {export_dir}'"}), 403
 
   output_refs = {}
   for output in new_outputs:
@@ -266,8 +259,7 @@ def export_to_folder():
       common_extra_parameters[key] = all_outputs[0].extra_parameters.get(key)
   if common_extra_parameters:
     common_data['extra_parameters'] = common_extra_parameters
-  with (export_dir / '0.common.json').open('w') as f:
-    json.dump(common_data, f, sort_keys=True, indent=2, separators=(',', ': '))
+  write_new(export_dir / '0.common.json', json.dumps(common_data, sort_keys=True, indent=2, separators=(',', ': ')), replace=ours)
 
 
   # we save a mapping label => full into
@@ -330,12 +322,12 @@ def export_to_folder():
       try:
         output_path_rel = output_path.relative_to(output.output_dir)
         copied_to_rel = copy_path_rel(output, output_path, label=label_new)
-        export_to(export_dir / copied_to_rel, output_path, type=export_type, user=g.actor.user)
+        export_to(export_dir / copied_to_rel, output_path, type=export_type, user=g.actor.user, replace=ours)
         if output_ref and output_ref.id != output.id:
           output_path_ref = output_ref.output_dir / output_path_rel
           if output_path_ref.exists():
             copied_to_rel = copy_path_rel(output_ref, output_path_ref, label=label_ref)
-            export_to(export_dir / copied_to_rel, output_path_ref, type=export_type, user=g.actor.user)
+            export_to(export_dir / copied_to_rel, output_path_ref, type=export_type, user=g.actor.user, replace=ours)
             nb_files_exported += 1
         nb_files_exported += 1
       except Exception as e:
@@ -344,10 +336,7 @@ def export_to_folder():
         errors.append(error)
 
   if label_mappings['configurations'] or label_mappings['extra_parameters']:
-    mappings_path = export_dir / '0.mappings.json'
-    if not mappings_path.exists():
-      with mappings_path.open('w') as f:
-        json.dump(label_mappings, f, indent=4, sort_keys=True)
+    write_new(export_dir / '0.mappings.json', json.dumps(label_mappings, indent=4, sort_keys=True))
 
   params = {
     "batch": new_batch.label,
@@ -373,24 +362,17 @@ def export_to_folder():
           If you are not redirected automatically, follow this <a href='{url}'>link to the QA results</a>.
       </body>
   </html>"""
-  redirect_file = export_dir / '0.qa.html'
-  if not redirect_file.exists():
-    with redirect_file.open('w') as f:
-      f.write(redirect)
-
-  link_content = f"[InternetShortcut]\nURL={url}\n"
-  link_file = export_dir / '0.qa.url'
-  if not link_file.exists():
-    with link_file.open('w') as f:
-      f.write(link_content)
-  # users see their exports, and their size, in "Storage usage" (backend/exports.py)
+  write_new(export_dir / '0.qa.html', redirect)
+  write_new(export_dir / '0.qa.url', f"[InternetShortcut]\nURL={url}\n")
+  # users see their exports, and their size, in "Storage usage" (backend/exports.py), and can delete them:
+  # not folders that were there before
   export_id = None
   try:
     from ..exports import record
     export = record(export_dir, project_id=project_id, hexsha=new_commit.hexsha, batch_label=new_batch.label, user_name=g.user.get('user_name'),
-                    export_type=request.args.get('export_type', 'link'), filter=filter_new, nb_files=nb_files_exported)
+                    export_type=request.args.get('export_type', 'link'), filter=filter_new, nb_files=nb_files_exported) if ours else None
     db_session.commit()
-    export_id = export.id
+    export_id = export.id if export else None
   except Exception as e:
     db_session.rollback()
     print(f"WARNING: could not track the export {export_dir}: {e}")
@@ -407,12 +389,27 @@ def export_to_folder():
 
 
 
-def export_to(path_from, path_to, type, user=None):
-  if path_from.exists():
-    try:
-      path_from.unlink()
-    except:
-      rmtree(path_from)
+def write_new(path, text, replace=False):
+  """Writes one of the export's own files, if it's not there. `replace`: in our exports' folders"""
+  if os.path.lexists(path):
+    if not replace:
+      return
+    # e.g. a link someone put there: we remove the link, we don't write where it points
+    path.unlink()
+  with path.open('x') as f:
+    f.write(text)
+
+
+def export_to(path_from, path_to, type, user=None, replace=False):
+  """Links or copies `path_to` at `path_from`. What's there is only replaced if it's a file, and `replace`"""
+  if path_to.is_dir():
+    return export_folder_to(path_from, path_to, type, user=user, replace=replace)
+  if os.path.lexists(path_from):
+    if os.path.exists(path_from) and os.path.samefile(path_from, path_to):
+      return # already exported
+    if not replace or (path_from.is_dir() and not path_from.is_symlink()):
+      raise FileExistsError(f"{path_from} already exists, QA-Board doesn't replace it")
+    path_from.unlink()
   if type == "link":
     try:
       os.link(str(path_to), str(path_from))
@@ -424,6 +421,37 @@ def export_to(path_from, path_to, type, user=None):
     as_user(user.user_name, shutil.copyfile, str(path_to), str(path_from))
   else:
     raise ValueError("Invalid type. Use 'link' or 'copy'.")
+
+
+def export_folder_to(path_from, path_to, type, user=None, replace=False):
+  """
+  A folder: a real folder, with links (or copies) of its files, in the same subfolders. Earlier exports made a
+  symbolic link to the run's folder: it's replaced by a folder, if `replace`.
+  """
+  if os.path.islink(path_from):
+    if not replace:
+      raise FileExistsError(f"{path_from} already exists, QA-Board doesn't replace it")
+    path_from.unlink()
+  elif os.path.lexists(path_from) and not path_from.is_dir():
+    raise FileExistsError(f"{path_from} already exists, QA-Board doesn't replace it")
+  errors = []
+  # links to folders aren't followed: they may be anywhere
+  for root, dirs, names in os.walk(path_to):
+    dirs.sort()
+    folder = path_from / Path(root).relative_to(path_to)
+    if type == 'copy':
+      if user is None:
+        raise Exception("Need Login")
+      as_user(user.user_name, mkdir_shared, folder)
+    else:
+      mkdir_shared(folder)
+    for name in sorted(names):
+      try:
+        export_to(folder / name, Path(root) / name, type, user=user, replace=replace)
+      except Exception as e:
+        errors.append(f"{Path(root) / name}: {e}")
+  if errors:
+    raise Exception(f"{len(errors)} files of the folder failed, e.g. {errors[0]}")
 
 
 def copy_path_rel(output, output_path, label):

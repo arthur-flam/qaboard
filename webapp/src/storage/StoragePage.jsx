@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Breadcrumbs, Button, Callout, Card, Checkbox, Classes, HTMLSelect, HTMLTable, Icon, InputGroup, Intent,
-  ButtonGroup, NonIdealState, SegmentedControl, Tab, Tabs, Tag, Tooltip,
+  ButtonGroup, NonIdealState, Tab, Tabs, Tag, Tooltip,
 } from "@blueprintjs/core";
 import { useLocation } from "react-router";
 import styled from "styled-components";
 
 import { history, Link, useRouter } from "../router";
 import { PageShell, RequireLogin, ScrollingTabs } from "../components/PageShell";
+import { WhoseRuns } from "../components/WhoseRuns";
 import { Time } from "../settings/format";
 import { Loading, QueryError } from "../settings/states";
 import { overviewQuery, itemsQuery, foldersQuery, items_page_size } from "./api";
@@ -64,7 +65,7 @@ const sort_options = [
 
 const Summary = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
   > * { min-width: 0; }
@@ -168,6 +169,7 @@ const ProjectsView = ({ overview, filters, go, setFilters }) => {
       <thead><tr><th>Project</th><th>Size</th><th>Runs</th><th>Batches</th><th>Commits</th><th>Latest run</th></tr></thead>
       <tbody>
         {projects.map(p => <tr key={p.project_id} onClick={event => { if (!event.target.closest('a')) go('batches', { project: p.project_id, page: '' }); }} style={{ cursor: 'pointer' }}>
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- the link has its text */}
           <td><Link to={storageUrl('batches', { ...filters, project: p.project_id, page: '' })}><strong>{p.project_id}</strong></Link></td>
           <td><SizeBar bytes={p.bytes} max={max}/></td>
           <td>{formatNumber(p.runs)}</td>
@@ -189,9 +191,12 @@ const PartialTag = () => <Tooltip content="Only some of its runs are in this fol
 </Tooltip>;
 
 // Projects can be long paths: the end matters most
-const ProjectFilter = ({ item, filters, setFilters }) => filters.project === item.project_id
-  ? <Ellipsis title={item.project_id} style={{ maxWidth: 300, direction: 'rtl' }}>&lrm;{item.project_id}&lrm;</Ellipsis>
-  : <FilterButton type="button" title={`Only ${item.project_id}`} aria-label={item.project_id} onClick={() => setFilters({ project: item.project_id, page: '' })} style={{ maxWidth: 300, direction: 'rtl' }}>&lrm;{item.project_id}&lrm;</FilterButton>;
+// (in a span: right-to-left on the item itself would put the "·" that follows it before it)
+const ProjectFilter = ({ item, filters, setFilters }) => <span style={{ display: 'inline-flex', minWidth: 0, maxWidth: 300 }}>
+  {filters.project === item.project_id
+    ? <Ellipsis title={item.project_id} style={{ direction: 'rtl' }}>&lrm;{item.project_id}&lrm;</Ellipsis>
+    : <FilterButton type="button" title={`Only ${item.project_id}`} aria-label={item.project_id} onClick={() => setFilters({ project: item.project_id, page: '' })} style={{ direction: 'rtl' }}>&lrm;{item.project_id}&lrm;</FilterButton>}
+</span>;
 
 const BranchFilter = ({ item, filters, setFilters }) => !item.branch
   ? <span>no branch</span>
@@ -205,7 +210,7 @@ const BranchFilter = ({ item, filters, setFilters }) => !item.branch
 const ItemsView = ({ group, filters, setFilters, selection, setSelection }) => {
   const sort = filters.sort || 'size';
   const offset = Math.max(0, (parseInt(filters.page || '1', 10) - 1) * items_page_size);
-  const { data, isPending, error, refetch, isFetching } = useQuery(itemsQuery(group, filters, { sort, offset }));
+  const { data, isPending, error, refetch, isPlaceholderData } = useQuery(itemsQuery(group, filters, { sort, offset }));
   if (isPending) return <Loading label="Loading"/>;
   if (error) return <QueryError error={error} refetch={refetch} what="the storage usage"/>;
   const items = data.items;
@@ -230,8 +235,12 @@ const ItemsView = ({ group, filters, setFilters, selection, setSelection }) => {
   const page = Math.floor(offset / items_page_size) + 1;
   const show_users = filters.scope === 'all' || filters.scope === 'user';
 
-  if (items.length === 0)
-    return <NonIdealState icon="search" title="Nothing here" description="No runs match the filters."/>;
+  if (items.length === 0) {
+    const narrowed = ['project', 'folder', 'branch', 'older', 'search'].some(key => filters[key]);
+    return <NonIdealState icon={narrowed ? 'search' : 'database'} title={narrowed ? 'No runs match the filters' : 'No runs take storage here'}
+      description={narrowed ? undefined : filters.scope === 'me' || !filters.scope ? "QA-Board doesn't know runs of yours that take storage." : undefined}
+      action={narrowed ? <Button icon="filter-remove" text="Clear the filters" onClick={() => setFilters({ project: '', folder: '', branch: '', older: '', search: '', page: '' })}/> : undefined}/>;
+  }
   return <>
     {all_on_page && !selection.all && data.total > items.length && <Callout icon="info-sign" style={{ marginBottom: 8 }}>
       All {items.length} on this page are selected.{' '}
@@ -241,7 +250,7 @@ const ItemsView = ({ group, filters, setFilters, selection, setSelection }) => {
       All {formatNumber(data.total)} {group === 'batch' ? 'batches' : group === 'commit' ? 'commits' : 'branches'} that match the filters are selected ({formatBytes(data.totals.bytes)}).{' '}
       <Button variant="minimal" text="Clear the selection" onClick={() => setSelection({ all: false, keys: new Map() })}/>
     </Callout>}
-    <div style={{ overflowX: 'auto', opacity: isFetching ? 0.7 : 1 }}>
+    <div style={{ overflowX: 'auto', opacity: isPlaceholderData ? 0.6 : 1 }}>
       <HTMLTable compact style={{ width: '100%' }} aria-label={`${group === 'batch' ? 'Batches' : group === 'commit' ? 'Commits' : 'Branches'}`}>
         <thead>
           <tr>
@@ -452,16 +461,10 @@ export const StorageUsage = ({ me, view, filters }) => {
 
   return <>
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-      {can_see_others !== 'none' && <SegmentedControl
-        aria-label="Whose runs"
-        options={[{ label: 'Your runs', value: 'me' }, { label: "Everyone's", value: 'all' }]}
-        value={scope === 'user' ? 'all' : scope}
-        onValueChange={value => setFilters({ scope: value, user: '', page: '' })}
-      />}
+      <WhoseRuns scope={scope} user={filters.user} everyone={can_see_others !== 'none'} onChange={({ scope, user }) => setFilters({ scope, user, page: '' })}/>
       {scope !== 'me' && can_see_others === 'some' && <Tooltip content="Only admins see everyone's usage everywhere: you see it in the projects where you're a developer or an owner." hoverOpenDelay={200}>
         <Tag minimal icon="info-sign">In your projects</Tag>
       </Tooltip>}
-      {scope === 'user' && <Tag large minimal icon="person" onRemove={() => setFilters({ scope: 'all', user: '' })}>Runs of {filters.user}</Tag>}
       {filters.project
         ? <ButtonGroup>
           <Tag large minimal icon="projects" title={filters.project} style={{ maxWidth: 360 }} onRemove={() => setFilters({ project: '', page: '' })}>{filters.project}</Tag>
@@ -483,7 +486,12 @@ export const StorageUsage = ({ me, view, filters }) => {
       A worker computes it in the background. If this lasts, ask an admin to check Admin → Storage.
     </Callout>}
 
-    {isPending && <Loading label="Loading the storage usage"/>}
+    {isPending && <Summary aria-busy="true" aria-label="Loading the storage usage">
+      {[0, 1, 2].map(i => <Card compact key={i}>
+        <div className={`value ${Classes.SKELETON}`} style={{ width: '50%' }}>0</div>
+        <div className={Classes.SKELETON} style={{ marginTop: 4, width: '70%' }}>runs</div>
+      </Card>)}
+    </Summary>}
     {error && <QueryError error={error} refetch={refetch} what="the storage usage"/>}
     {overview && <Summary>
       <Card compact>
@@ -509,6 +517,7 @@ export const StorageUsage = ({ me, view, filters }) => {
         </span>}
         hoverOpenDelay={200}
         targetTagName="div"
+        targetProps={{ style: { display: 'grid' } }}
       >
         <Card compact data-testid="deleted-leftovers">
           <div className="value">{formatBytes(overview.totals.deleted.bytes)}</div>
@@ -532,7 +541,7 @@ export const StorageUsage = ({ me, view, filters }) => {
     </Summary>}
 
     <Deletions/>
-    {overview && <Rules project={filters.project}/>}
+    <Rules project={filters.project}/>
 
     <ScrollingTabs>
       <Tabs id="storage-views" selectedTabId={selected_view.id} onChange={id => go(id, { page: '' })} size="large">
@@ -549,12 +558,12 @@ export const StorageUsage = ({ me, view, filters }) => {
           onClick={() => setDeleting({ group: group ?? 'batch', keys: null, filters, label: `Everything that matches the filters in ${filters.project}` })}/>}
       </Toolbar>}
       <ActiveFilters filters={filters} setFilters={setFilters}/>
-      {selected_view.id === 'projects' && <ProjectsView overview={overview} filters={filters} go={go} setFilters={setFilters}/>}
+      {selected_view.id === 'projects' && overview && <ProjectsView overview={overview} filters={filters} go={go} setFilters={setFilters}/>}
       {selected_view.id === 'users' && <UsersView me={me} filters={filters} storageUrl={storageUrl} openUser={user => go('batches', { scope: 'user', user: user.user_name, page: '' })}/>}
       {group && <ItemsView group={group} filters={filters} setFilters={setFilters} selection={selection} setSelection={setSelection}/>}
       {selected_view.id === 'folders' && <FoldersView filters={filters} setFilters={setFilters} go={go} overview={overview} onDelete={setDeleting}/>}
       {selected_view.id === 'exports' && <ExportsView filters={filters} me={me}/>}
-      {selected_view.id === 'untracked' && <UntrackedView me={me}/>}
+      {selected_view.id === 'untracked' && <UntrackedView me={me} filters={filters}/>}
     </div>
 
     {group && (selection.all || selection.keys.size > 0) && <SelectionBar as="section" className={`${Classes.CARD} ${Classes.ELEVATION_3}`} aria-label="Selection">
@@ -580,9 +589,10 @@ export const StoragePage = () => {
   const { match } = useRouter();
   const location = useLocation();
   const filters = readFilters(location.search);
-  return <PageShell title="Storage usage" wide>
+  const view = match.params?.view ?? 'projects';
+  return <PageShell title="Storage usage" tab_title={views.find(v => v.id === view)?.title} wide>
     <RequireLogin what="see your storage usage">
-      {me => <StorageUsage me={me} view={match.params?.view ?? 'projects'} filters={filters}/>}
+      {me => <StorageUsage me={me} view={view} filters={filters}/>}
     </RequireLogin>
   </PageShell>;
 };

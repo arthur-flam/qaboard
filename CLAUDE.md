@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## QA-Board Architecture
 
-QA-Board is an experiment tracking framework with advanced viewers for algorithm, ML, and performance engineers. It consists of:
+QA-Board is a self-hosted quality tracking platform: every commit's outputs and metrics next to a reference's, with advanced viewers, reviewed by people and coding agents alike (positioning: "Positioning" in `website/STYLE.md`). It consists of:
 
 - **`qaboard/`** - Python CLI package that wraps user code and manages experiments
 - **`backend/`** - Flask API with PostgreSQL database for managing runs and data  
@@ -55,6 +55,17 @@ The image viewer (`webapp/src/image-viewer/`) is a standalone React component on
 from the app (a test checks it). QA-Board adapts it in `webapp/src/viewers/images/` (runs, image servers, pixel values,
 regions of interest providers). `npm start` then `/image-viewer.html` shows it alone, with generated images.
 The JUnit test report viewer (`webapp/src/viewers/junit/`) has its playground too: `/junit-viewer.html?tests=50000`.
+So does the benchmark viewer (`webapp/src/viewers/benchmarks/`): `/benchmark-viewer.html?benchmarks=5000`. Its parser
+and `qaboard/benchmarks.py` read the same formats: both are tested on `tests/fixtures/benchmarks/`.
+The flame graph viewer (`webapp/src/viewers/flamegraph/`, the formats it reads in `formats.js`) too: `/flame-graph-viewer.html?stacks=300000`,
+with a new and a reference profile that differ in known ways (`generate.js`); `qaboard/flamegraphs.py` converts `perf script` and pprof.
+Like the image viewer, `viewers/benchmarks/` and `viewers/flamegraph/` are standalone: they import nothing from the app, which
+only loads their adapters (`viewers/benchmarks-viewer.jsx`, `viewers/flame-graph.jsx`), lazily. `viewers/__tests__/isolation.test.js`
+checks it, and `TestIsolation` in the Python tests checks that `qaboard/benchmarks.py` and `flamegraphs.py` import nothing from `qaboard`.
+The "What's new" release notes popup is off with `npm start` (dev mode), so it doesn't cover the page when you
+drive the app; `QABOARD_RELEASE_NOTES_POPUP=1 npm start` turns it on to work on it. On a production build
+(`npm run preview`, e2e, a deployed server) it still pops up: mark the notes seen first, as the e2e tests do,
+`localStorage.setItem('qaboard.release-notes.last-seen', '9999-12-31')` (Playwright: `page.addInitScript`).
 
 ### Backend Development (Python Flask)
 ```bash
@@ -77,6 +88,15 @@ yarn build              # Build static site
 uv sync --extra dev     # Install with dev dependencies
 ```
 
+### Runners
+`qa batch` starts runs with a runner (`qaboard/runners/`): local, lsf, celery, dask (workers on LSF, Slurm, PBS, SGE,
+HTCondor, OAR, Moab, Kubernetes or local, `runners.dask.cluster.type`), kubernetes (Indexed Jobs), windows (Jenkins).
+Optional dependencies are extras: `uv sync --extra dev --extra celery --extra dask --extra kubernetes --extra dask-kubernetes`
+(CI's python 3.13 job installs them all, 3.11 none). `qa doctor [--runner X] [--test-job]` checks a setup and prints
+fixes (runners implement `doctor()`). The server starts/stops batches with `QABOARD_TUNING_RUNNER` (`backend/backend/runner_jobs.py`,
+`local_jobs.py`). Design and trust model: `docs/design/kubernetes-runner.md`; known limits: `TODO_WARTS.md` (Runners).
+Kubernetes end-to-end test on kind: `.github/scripts/kubernetes_runner_e2e.py`.
+
 ## Release notes and docs (communicating with users)
 
 Users see the release notes in the web app's "What's new" panel: it pops up once when a period with notes
@@ -91,9 +111,23 @@ website shows them at `/release-notes` (with RSS/Atom feeds).
   headings when there are many, in every section). If the month's file doesn't exist,
   create it as a draft: `website/release-notes/release_notes.py draft 2026-11 --write` (pre-filled from
   the git log, keeps `draft: true`). Skip refactors, CI-only and typo changes.
-- **Write for the reader**: one change per bullet, starting with a verb, saying what they can now do.
-  No commit shas, no names, no internal hostnames or ticket ids: the repo and website are public.
-  Link docs as `[text](/docs/page-id)`.
+- **Write for the reader**: one change per bullet, starting with a verb, saying what they can now do, in 1-3
+  sentences: the details are in the docs, linked as `[text](/docs/page-id)`. No commit shas, no names, no internal
+  hostnames or ticket ids: the repo and website are public.
+- **Keep the note organized as it grows**, so that publishing it is curation, not a rewrite:
+  - Each `##` section once, in the template's order (`release_notes.py check` fails on duplicates). Past ~6 bullets,
+    group a section by theme under `###` headings named like the app's areas (*Automated tuning*, *Image viewer*,
+    *Storage usage*), the biggest themes first, and put a new bullet under its theme.
+  - One bullet per change, not per commit: before adding one, read the section, and if the period already has a
+    bullet on that feature, edit it. Polish and bug fixes of something added in the same period aren't bullets at
+    all (readers never saw the old behavior), and don't go under `## Fixes` either: Fixes is for what shipped before
+    the period.
+  - Split a change by audience, not by commit: what people see goes under Web app, what integrators write
+    (qaboard.yaml, `qa` flags, code) under CLI and project setup, what admins install, configure or migrate under
+    Server and administration. A change that spans audiences gets one short bullet per audience, each saying only
+    what that audience does.
+  - A month with more than ~40 bullets is a big release: tighten it mid-month (merge, cut, add highlights), don't
+    wait for publication.
 - **Publishing** (maintainers, at the start of the next month or for a big release): curate the bullets,
   write `description` (1-2 sentences) and 2-4 `highlights` (up to 8 for a big release) (title, `audience`: users | project-integration |
   admins, a Blueprint `icon` name, plain-text `description` (backticks for code), optional `link: /docs/...`), set `date`
@@ -169,7 +203,7 @@ npm test -- --run       # Vitest + Testing Library, jsdom
 - **LSF Integration**: High-performance computing cluster support for batch jobs
 - **Advanced Visualizations**: Images, videos, plots, 3D point clouds, flame graphs
 - **Git Integration**: Version control awareness and commit tracking
-- **Parameter Tuning**: Built-in optimization workflows with scikit-optimize
+- **Parameter Tuning**: grid search and sampling, and automated tuning (`qa optimize`, with Optuna)
 - **Bit Accuracy Testing**: Automated regression testing for algorithm validation
 
 ## Architecture Notes

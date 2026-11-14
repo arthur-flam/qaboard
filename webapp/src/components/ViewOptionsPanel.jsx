@@ -4,6 +4,7 @@ import {
   Classes,
   HTMLSelect,
   Switch,
+  Tag,
   Button,
   Icon,
   InputGroup,
@@ -11,13 +12,18 @@ import {
   Tooltip,
 } from "@blueprintjs/core";
 import { is_image } from "../viewers/images/utils";
+import { has_run_view, run_shown } from "../viewers/runView";
 import { DEFAULT_MODE, MODES } from "../image-viewer/modes";
 import DynamicOptionControl from "./DynamicOptionControl";
 import { defaultRule, optionLabel, resolveOptionValue } from "../utils/dynamicOptions";
 import SidePanel from "./SidePanel";
-import { SharedSettings, useSharedConfiguration, useHideSharedSettings } from "../configurations/ConfigurationsTags";
-import { HideSharedSwitch } from "../configurations/ConfigurationOverview";
+import { SharedSettings, useSharedConfiguration, useHideSharedSettings, useShortenLongSettings } from "../configurations/ConfigurationsTags";
+import { HideSharedSwitch, ShortenLongSettingsSwitch } from "../configurations/ConfigurationOverview";
 import { FileOptionSwitches, file_options_summary } from "../viewers/bit_accuracy/utils";
+import { usePrefsStore, useOutputCardDensity, useRunNameOrigin } from "../stores/prefs";
+import { run_name_origin_options } from "./RunInfoMenu";
+import { OutputCardDensityControl } from "./DensityControl";
+import { order_labels, run_sort_keys, default_sort_order, effective_sort_order } from "../selectors/sorting";
 
 // The commit page's View options: what the views of the runs' results show, and in which order.
 // Docked on the right of the page (see SidePanel), they only list what changes the views selected.
@@ -80,14 +86,6 @@ const Explained = ({ label, explanation, className }) => explanation
     </Tooltip>
   : <span className={className}>{label}</span>;
 
-// How to read the sort order, depending on what we sort by
-const order_labels = sort_by => {
-  if (sort_by === 'test_input_path') return ['A to Z', 'Z to A'];
-  if (sort_by === 'id') return ['Oldest first', 'Newest first'];
-  if (sort_by === 'data.storage') return ['Smallest first', 'Largest first'];
-  return ['Lowest first', 'Highest first'];
-};
-
 const ViewOptionsPanel = ({
   controls,
   visualizations,
@@ -141,6 +139,7 @@ const ViewOptionsPanel = ({
   // what all the runs shown share, hidden in each run (see ConfigurationsTags)
   const shared = useSharedConfiguration();
   const hide_shared = useHideSharedSettings();
+  const shorten_long = useShortenLongSettings();
 
   const [prev_reveal_files, setPrevRevealFiles] = useState(revealFiles);
   if (revealFiles !== prev_reveal_files) {
@@ -157,6 +156,11 @@ const ViewOptionsPanel = ({
       setExpandedSections(prev => ({ ...prev, [revealSection.id]: true }));
     }
   }
+
+  // users' preferences, not the project's: not reset with the view options
+  const card_density = useOutputCardDensity();
+  const run_name_origin = useRunNameOrigin();
+  const setRunNameOrigin = usePrefsStore(state => state.setRunNameOrigin);
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({
@@ -201,15 +205,41 @@ const ViewOptionsPanel = ({
     .filter(([, option]) => option.values?.length > 0)
     .filter(([, option]) => isForDisplayedVisualization(option) || !option.views || option.views.length === 0);
 
+  // Runs can ask for their own view (viewers/runView.js): the visualizations they show by default, viewer options.
+  // The switches below are the project's defaults and what users chose, which wins over what runs ask for.
+  const runs = shows_cards ? Object.values(new_batch.outputs ?? {}) : [];
+  const nb_runs_with_view = runs.filter(has_run_view).length;
+  const run_views_on = controls.run_views !== false;
+  const asked_by = new Map();
+  if (shows_visualizations && run_views_on)
+    for (const run of runs)
+      for (const name of run_shown(run, visualizations) ?? [])
+        asked_by.set(name, (asked_by.get(name) ?? 0) + 1);
+  const run_views_switch = nb_runs_with_view > 0 && <Switch
+    key="run-views"
+    checked={run_views_on}
+    onChange={() => onUpdateControls({ run_views: run_views_on ? false : undefined })}
+    labelElement={<Explained
+      label="Each test's own view"
+      explanation={`${nb_runs_with_view} of the ${runs.length} runs say what to show by default: their visualizations, how their images open. What you turn on or off below still applies to all runs. Turn this off to show every run the same way.`}
+    />}
+  />;
+
   const filter = visualizationFilter.toLowerCase();
   const visualization_switches = visualizations_in_runs
     .filter(view => !filter || (view.label || view.name || view.path).toLowerCase().includes(filter))
-    .map((view, idx) => <Switch
-      key={view.name ?? idx}
-      checked={isVisualizationEnabled(view)}
-      onChange={onToggleShow(view.name)}
-      label={view.label || view.name || view.path}
-    />);
+    .map((view, idx) => {
+      const nb_asking = asked_by.get(view.name) ?? 0;
+      return <Switch
+        key={view.name ?? idx}
+        checked={isVisualizationEnabled(view)}
+        onChange={onToggleShow(view.name)}
+        labelElement={<>
+          {view.label || view.name || view.path}
+          {nb_asking > 0 && <Tag minimal style={{ marginLeft: 6 }} title={`${nb_asking} run${nb_asking === 1 ? ' shows' : 's show'} it by default: their own view`}>{nb_asking} run{nb_asking === 1 ? '' : 's'}</Tag>}
+        </>}
+      />;
+    });
 
   const viewer_switches = [
     ...(has_images ? [<OptionHeader key="image_mode" style={{ marginBottom: 8 }}>
@@ -220,7 +250,6 @@ const ViewOptionsPanel = ({
           onChange={event => onUpdateControls({ image_mode: event.target.value, diff: undefined })}
           aria-label="Compare images"
           options={MODES.map(({ value, label }) => ({ value, label }))}
-          small
         />
       </div>
     </OptionHeader>] : []),
@@ -298,7 +327,6 @@ const ViewOptionsPanel = ({
               defaultLabel={has_choice ? default_label : undefined}
               defaultRule={defaultRule(option)}
               onChange={(value) => value === undefined ? onResetDynamicOption(name) : onUpdateDynamicOption(name, value)}
-              small
             />
           : <Hint><Icon icon="unlink" size={12} style={{ marginRight: 6 }} />Chosen in each run's card</Hint>}
         {isSync && !has_choice && <Hint>All runs have only this value</Hint>}
@@ -311,19 +339,26 @@ const ViewOptionsPanel = ({
     );
   });
 
-  // The default sort, e.g. the project's main metric, is marked as such
-  const sort_value = sort_by ?? default_sort_by ?? 'test_input_path';
-  const default_mark = key => key === (default_sort_by ?? 'test_input_path') ? ' (default)' : '';
+  // The default sort, e.g. the project's main metric, or the batches when runs come from several, is marked as such
+  const default_by = default_sort_by ?? 'test_input_path';
+  const sort_value = sort_by ?? default_by;
+  const default_mark = key => key === default_by ? ' (default)' : '';
   const [ascending_label, descending_label] = order_labels(sort_value);
+  const order = effective_sort_order(sort_value, sort_order);
+  // what runs can be sorted by: batches and databases when they differ, or when sorted by them
+  const run_values = key => new Set(Object.values(new_batch.outputs ?? {}).map(o => key === 'data.batch' ? o.data?.batch : o.test_input_database).filter(Boolean)).size;
+  const run_keys = Object.keys(run_sort_keys)
+    .filter(key => !['data.batch', 'test_input_database'].includes(key) || key === sort_value || run_values(key) > 1);
 
   // What differs from the project's defaults, whatever the view: counted in the header, a dot on the rail's icons
-  const sort_label = key => ({ test_input_path: 'Name', id: 'Run id', 'data.storage': 'Storage' })[key] ?? available_metrics[key]?.label ?? key;
-  const order_label = (Number(sort_order) === 1 ? ascending_label : descending_label).toLowerCase();
-  const sort_changed = (sort_by !== undefined && sort_by !== (default_sort_by ?? 'test_input_path')) || Number(sort_order) !== -1;
+  const sort_label = key => run_sort_keys[key]?.label ?? available_metrics[key]?.label ?? key;
+  const order_label = (order === 1 ? ascending_label : descending_label).toLowerCase();
+  const sort_changed = (sort_by !== undefined && sort_by !== default_by) || order !== default_sort_order(sort_value);
   const changes = {
     visualizations: visualizations
       .filter(view => isVisualizationEnabled(view) === !!view.default_hidden)
-      .map(view => `${view.label || view.name || view.path} ${isVisualizationEnabled(view) ? 'shown' : 'hidden'}`),
+      .map(view => `${view.label || view.name || view.path} ${isVisualizationEnabled(view) ? 'shown' : 'hidden'}`)
+      .concat(nb_runs_with_view > 0 && !run_views_on ? ["Each test's own view off"] : []),
     dynamic_options: [
       ...Object.entries(controls.dynamic_options ?? {})
         .map(([name, value]) => [name, [].concat(value ?? [])[0]])
@@ -339,7 +374,11 @@ const ViewOptionsPanel = ({
         .filter(control => !!controls[control.name] !== !!control.default)
         .map(control => `${control.label || humanize(control.name)} ${controls[control.name] ? 'on' : 'off'}`),
     ],
-    configuration: shared?.collapse && !hide_shared ? ['Shared settings shown in each run'] : [],
+    configuration: [
+      ...(shared?.collapse && !hide_shared ? ['Shared settings shown in each run'] : []),
+      ...(!shorten_long ? ['Long settings shown in full'] : []),
+    ],
+    display: [],
     files: file_options_on.map(option => `Output files: ${option}`),
     sorting: sort_changed ? [`Sorted by ${sort_label(sort_value)}, ${order_label}`] : [],
   };
@@ -367,6 +406,7 @@ const ViewOptionsPanel = ({
           size="small"
           style={{ marginBottom: 8 }}
         />}
+        {run_views_switch}
         {visualization_switches}
         {filter && visualization_switches.length === 0 && <Hint>No visualizations match “{visualizationFilter}”</Hint>}
         {visualizations_without_files.length > 0 && <Hint>
@@ -415,6 +455,41 @@ const ViewOptionsPanel = ({
           <SharedSettings tokens={shared.tokens} />
         </div>
         {shared.collapse && <HideSharedSwitch />}
+        <ShortenLongSettingsSwitch style={{ marginTop: 6 }} />
+      </>,
+    },
+    {
+      id: 'display',
+      title: 'Display',
+      icon: 'list-detail-view',
+      summary: [
+        shows_cards && `${card_density === 'compact' ? 'Compact' : 'Comfortable'} cards`,
+        `batch & database in names: ${run_name_origin_options.find(o => o.value === run_name_origin)?.label.toLowerCase()}`,
+      ].filter(Boolean).join(', '),
+      content: <>
+        {shows_cards && <OptionGroup>
+          <OptionHeader>
+            <span className="option-label">Run cards</span>
+            <div className="option-actions"><OutputCardDensityControl/></div>
+          </OptionHeader>
+        </OptionGroup>}
+        <OptionGroup>
+          <OptionHeader>
+            <Explained
+              className="option-label"
+              label="Batch & database in names"
+              explanation="Runs' names can start with the batch and the database of their input, e.g. when one batch runs several batches of qaboard.yaml on the same images. Hover a run's name to see them."
+            />
+          </OptionHeader>
+          <HTMLSelect
+            value={run_name_origin}
+            onChange={event => setRunNameOrigin(event.target.value)}
+            aria-label="Batch and database in runs' names"
+            options={run_name_origin_options.map(({ value, label }) => ({ value, label }))}
+            fill
+          />
+          {run_name_origin === 'auto' && <Hint>When the runs shown come from several batches or databases. If they all have the same input, names show only those.</Hint>}
+        </OptionGroup>
       </>,
     },
     {
@@ -431,11 +506,10 @@ const ViewOptionsPanel = ({
             onChange={onUpdate('sort_by')}
             aria-label="Sort runs by"
             fill
-            small
           >
-            <option value="test_input_path">Name{default_mark('test_input_path')}</option>
-            <option value="id">Run id{default_mark('id')}</option>
-            <option value="data.storage">Storage{default_mark('data.storage')}</option>
+            <optgroup label="Runs">
+              {run_keys.map(key => <option key={key} value={key}>{run_sort_keys[key].label}{default_mark(key)}</option>)}
+            </optgroup>
             {has_tuning && <optgroup label="Tuning parameters">
               {tuned_params.map(param =>
                 <option key={param} value={param}>
@@ -454,10 +528,9 @@ const ViewOptionsPanel = ({
             </optgroup>
           </HTMLSelect>
           <HTMLSelect
-            value={sort_order}
+            value={order}
             onChange={onUpdate('sort_order')}
             aria-label="Sort order"
-            small
             style={{ minWidth: 118 }}
           >
             <option value={-1}>{descending_label}</option>
