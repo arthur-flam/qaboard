@@ -217,9 +217,11 @@ export function ParallelCoordinates({
     return { mask, count };
   }, [selection, index_of, n]);
   const selected = brushed ?? external;
-  const resolved_marks = useMemo(() => Object.entries(marks)
+  // by content: callers often build `marks` at every render, and that mustn't redraw the plot
+  const marks_content = JSON.stringify(marks);
+  const resolved_marks = useMemo(() => Object.entries(JSON.parse(marks_content))
     .map(([id, mark]) => ({ ...mark, row: index_of.get(id) ?? index_of.get(Number(id)) }))
-    .filter(mark => mark.row !== undefined), [marks, index_of]);
+    .filter(mark => mark.row !== undefined), [marks_content, index_of]);
 
   const scene = useMemo(() => layout && {
     axes: layout.axes, layout, colors, rows, marks: resolved_marks, curve: layout.curve, dark: is_dark, surface, height,

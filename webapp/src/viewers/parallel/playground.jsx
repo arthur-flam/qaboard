@@ -2,7 +2,7 @@
 // /parallel-coordinates.html. ?kind=grid (3 parameters x 3 values), ?kind=optuna (300 iterations, the default),
 // ?kind=mixed (every type, missing values, a constant column, long names), ?rows=5000&columns=40 for more,
 // ?dark for the dark theme, ?height=600, ?empty for the empty state. See generate.js for the data.
-import { StrictMode, useState } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Classes, Switch } from '@blueprintjs/core';
 import "normalize.css";
@@ -41,7 +41,7 @@ function Playground() {
   const [selection, setSelection] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [clicked, setClicked] = useState(null);
-  document.documentElement.classList.toggle(Classes.DARK, dark);
+  useEffect(() => { document.documentElement.classList.toggle(Classes.DARK, dark); }, [dark]);
   return <div style={{ padding: 16, maxWidth: number('width') ?? 1212, margin: '0 auto', background: 'var(--qa-background)', minHeight: '100vh', color: 'var(--qa-text)' }}>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
       <h3 style={{ margin: 0 }}>Tuning analysis</h3>
