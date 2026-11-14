@@ -644,7 +644,7 @@ shots:
     kind: still
     project: serving-latency
     shows: 'A run done three times: its card tagged "attempt 3", the tag''s tooltip listing attempt 1 (failed) and attempt 2 (succeeded, with its metrics), and that their logs are in the Logs view.'
-    pages: [landing]
+    pages: [user-guide/commit-page]
     needs: a run done again in a story (seed.py has no reruns yet)
     phase: 3
     status: planned
