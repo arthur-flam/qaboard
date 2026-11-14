@@ -631,8 +631,9 @@ shots:
     phase: 3
     status: planned
     standin:
-      # The web app's flame graph playground (webapp/flame-graph-viewer.html) on the cpu.folded files of the example's
-      # steady-high runs, measured on a 4-CPU VM with the flags of both commits, not on the demo stack
+      # `uv run docs-media/standins/make.py commit/flame-top-functions`: the web app's flame graph playground on the
+      # cpu.folded files of the example's steady-high runs, measured on a 4-CPU VM with the flags of both commits, not
+      # on the demo stack
       light: standins/commit/flame-top-functions.webp
       dark: standins/commit/flame-top-functions-dark.webp
       width: 1212
@@ -783,23 +784,22 @@ shots:
   - id: commit/benchmarks
     kind: still
     project: software-quality
-    shows: "The benchmark viewer on the codec's pytest-benchmark suite at the varint fast path, against the commit before: the 5-byte encoding slower beyond noise, the others within it."
+    shows: "The benchmark viewer on the fleet SDK's pytest-benchmark suite, the commit that decodes frames with the deprecated parse() against the one before: dispatching small frames is slower beyond noise, the rest within it."
     pages: [user-guide/other-viewers, benchmarks]
     features: [benchmarks]
-    needs: "varint-fast-path vs grid-docs, and the example's benchmarks/ in its runs: a batch that runs them, pytest.benchmarks.json in outputs.visualizations, a story step, a spec in commit.spec.ts"
+    needs: "legacy-parse vs reserve-tests, and the example's benchmarks/ in its runs: a batch that runs them, pytest.benchmarks.json in outputs.visualizations, a spec in commit.spec.ts"
     phase: 3
     status: planned
     standin:
-      # The web app's benchmark playground (webapp/benchmark-viewer.html) on two real runs of the example's
-      # benchmarks/ (pytest-benchmark, pinned to one CPU of a 4-CPU VM, --benchmark-disable-gc --benchmark-warmup=on
-      # --benchmark-min-time=0.005 --benchmark-max-time=2 --benchmark-min-rounds=50): with build/flags.json
-      # {"bug_varint_fast_path": true}, and without. Not on the demo stack: the machine line is the VM's
+      # `uv run docs-media/standins/make.py commit/benchmarks`: the web app's benchmark playground on two runs of the
+      # example's benchmarks/ with the flags of both commits, on a 4-CPU VM, not on the demo stack. The VM is noisy
+      # (spreads of 10-25%): only the changes of 50% and more show beyond noise
       light: standins/commit/benchmarks.webp
       dark: standins/commit/benchmarks-dark.webp
       width: 1180
       height: 648
-      alt: "The benchmark viewer on the codec's pytest-benchmark file, the varint fast path against main: 23 benchmarks, 1 slower, 22 within noise, overall +0.9%. The table, biggest regressions first: test_encode_varint[5] takes 841 ns against 656 ns, +28.2%, in red; the other varint benchmarks changed by 5 to 20% either way, in gray, within spreads of up to 31%."
-      caption: "A fast path that isn't: encoding 5-byte varints got 28% slower, and every other change is within the noise the harness measured."
+      alt: "The benchmark viewer on the fleet SDK's pytest-benchmark file, legacy-parse against main: 27 benchmarks, 2 slower, 25 within noise, overall +10.0%. In the client group, test_dispatch_without_handler takes 5.19 µs against 2.26 µs, +129%, and test_dispatch[16] 7.6 µs against 5.01 µs, +51.7%, both in red. The other benchmarks, frames and varints, changed by less than their spread, in gray."
+      caption: "Decoding with the deprecated parse() makes dispatching small frames 50 to 130% slower. Every other change is within the noise the harness measured."
   - id: commit/tests-diff
     kind: still
     project: software-quality
