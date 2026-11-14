@@ -55,7 +55,7 @@ export function formatTick(x, step) {
   if (x === 0) return '0';
   const a = Math.abs(x);
   if (a >= 1e15) return exponent(x, 2);
-  if (a >= 1e4) {
+  if (a >= 1e3) {
     const [unit, suffix] = UNITS.find(([u]) => a >= u);
     return `${trimZeros((x / unit).toPrecision(3))}${suffix}`;
   }
@@ -79,7 +79,7 @@ export function analyzeColumn(column, rows) {
   const n = rows.length;
   const key = column.key;
   const num = new Float64Array(n).fill(NaN);
-  const names = new Array(n);
+  const names = Array.from({ length: n });
   let n_missing = 0, n_num = 0;
   for (let i = 0; i < n; i++) {
     const v = rows[i].values?.[key];
@@ -365,38 +365,50 @@ export function layoutAxis(column, { top, bottom, missing_y, log = false, flippe
  * the other one.
  */
 export function spreadTies(axes) {
-  axes.forEach((axis, j) => {
-    const n = axis.center.length;
-    const neighbours = [axes[j + 1], axes[j - 1]].filter(Boolean);
-    // sort() is stable: the right neighbour comes first on a tie
-    neighbours.sort((a, b) => a.slots.length - b.slots.length);
-    const k1 = neighbours[0]?.center, k2 = neighbours[1]?.center;
-    const slot = axis.slot;
-    const order = new Uint32Array(n);
-    for (let i = 0; i < n; i++) order[i] = i;
-    order.sort((a, b) => slot[a] - slot[b]
-      || (k1 ? k1[a] - k1[b] : 0)
-      || (k2 ? k2[a] - k2[b] : 0)
-      || a - b);
-    const pos = new Float32Array(n);
-    let start = 0;
-    while (start < n) {
-      const s = axis.slots[slot[order[start]]];
-      let end = start + 1;
-      while (end < n && slot[order[end]] === slot[order[start]]) end++;
-      const count = end - start;
-      for (let r = start; r < end; r++) {
-        const i = order[r];
-        pos[i] = s.band > 0 && count > 1
-          ? s.y + ((r - start) / (count - 1) - 0.5) * s.band
-          // tied within less than a pixel, without room to spread: where the value is
-          : axis.center[i];
-      }
-      start = end;
-    }
-    axis.pos = pos;
-  });
+  // twice: the second time, rows that are tied on the neighbours too follow the order they got there, so that the
+  // lines of a bundle are parallel
+  const first = axes.map((axis, j) => spreadAxis(axes, j, null));
+  const second = axes.map((axis, j) => spreadAxis(axes, j, first));
+  axes.forEach((axis, j) => { axis.pos = second[j]; });
   return axes;
+}
+
+function spreadAxis(axes, j, previous) {
+  const axis = axes[j];
+  const n = axis.center.length;
+  // nothing to spread: the rows are where their values are
+  if (!axis.slots.some(s => s.band > 0 && s.count > 1)) return axis.center;
+  const neighbours = [j + 1, j - 1].filter(k => axes[k]);
+  // sort() is stable: the right neighbour comes first on a tie
+  neighbours.sort((a, b) => axes[a].slots.length - axes[b].slots.length);
+  const k1 = axes[neighbours[0]]?.center, k2 = axes[neighbours[1]]?.center;
+  const p1 = previous?.[neighbours[0]], p2 = previous?.[neighbours[1]];
+  const slot = axis.slot;
+  const order = new Uint32Array(n);
+  for (let i = 0; i < n; i++) order[i] = i;
+  order.sort((a, b) => slot[a] - slot[b]
+    || (k1 ? k1[a] - k1[b] : 0)
+    || (k2 ? k2[a] - k2[b] : 0)
+    || (p1 ? p1[a] - p1[b] : 0)
+    || (p2 ? p2[a] - p2[b] : 0)
+    || a - b);
+  const pos = new Float32Array(n);
+  let start = 0;
+  while (start < n) {
+    const s = axis.slots[slot[order[start]]];
+    let end = start + 1;
+    while (end < n && slot[order[end]] === slot[order[start]]) end++;
+    const count = end - start;
+    for (let r = start; r < end; r++) {
+      const i = order[r];
+      pos[i] = s.band > 0 && count > 1
+        ? s.y + ((r - start) / (count - 1) - 0.5) * s.band
+        // tied within less than a pixel, without room to spread: where the value is
+        : axis.center[i];
+    }
+    start = end;
+  }
+  return pos;
 }
 
 /**
@@ -444,18 +456,25 @@ export function computeLayout(columns, { width, height, options = {}, marks = fa
 // --- Brushes ----------------------------------------------------------------------------------------------------
 
 // A brush is on an axis, by its column's key:
-// - { type: 'range', t0, t1 }: the rows whose value is drawn between two heights, as fractions of the axis' extent
+// - { type: 'range', t0, t1 }: the rows whose value is drawn between two heights, as fractions of the axis' height
 //   (so that they survive a resize). Tied rows are kept or dropped together: what counts is where their value is,
 //   not where each line was spread to.
 // - { type: 'set', names: [...] }: the rows in those slots (categories, the values of a grid, MISSING, OTHER).
 
-export const brushPixels = (axis, brush) => {
-  const [e0, e1] = axis.extent;
-  return [e0 + brush.t0 * (e1 - e0), e0 + brush.t1 * (e1 - e0)];
+const BEYOND = 1000;
+// heights as fractions of the axis: 0 at its top, 1 at its bottom, and pixels / 1000 beyond (the "other" and "missing" slots)
+const toFraction = (axis, y) => {
+  const top = axis.top, bottom = axis.line_bottom;
+  return y < top ? (y - top) / BEYOND : y > bottom ? 1 + (y - bottom) / BEYOND : (y - top) / (bottom - top);
 };
+const fromFraction = (axis, t) => {
+  const top = axis.top, bottom = axis.line_bottom;
+  return t < 0 ? top + t * BEYOND : t > 1 ? bottom + (t - 1) * BEYOND : top + t * (bottom - top);
+};
+export const brushPixels = (axis, brush) => [fromFraction(axis, brush.t0), fromFraction(axis, brush.t1)];
 export const rangeBrush = (axis, y0, y1) => {
   const [e0, e1] = axis.extent;
-  const t = y => Math.min(1, Math.max(0, (y - e0) / (e1 - e0)));
+  const t = y => toFraction(axis, Math.min(e1, Math.max(e0, y)));
   return { type: 'range', t0: t(Math.min(y0, y1)), t1: t(Math.max(y0, y1)) };
 };
 
@@ -601,7 +620,8 @@ export function moveKey(keys, key, index) {
 /** How opaque and thick the lines are: fewer rows, stronger lines */
 export function lineStyle(n) {
   return {
-    alpha: Math.min(0.85, Math.max(0.06, 4.5 / Math.sqrt(Math.max(1, n)))),
+    // like 1/sqrt(n), then faster: thousands of lines would fill the plot
+    alpha: n <= 1000 ? Math.min(0.85, 4.5 / Math.sqrt(Math.max(1, n))) : 0.142 * (1000 / n) ** 0.75,
     width: n <= 60 ? 1.6 : n <= 600 ? 1.2 : 1,
   };
 }

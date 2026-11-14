@@ -241,7 +241,7 @@ export function ParallelCoordinates({
     const from = scroller.scrollLeft - TILE_MARGIN, to = scroller.scrollLeft + (scroller.clientWidth || s.layout.width) + TILE_MARGIN;
     const t0 = performance.now();
     let painted = 0;
-    for (const k of [...dirty.current]) {
+    for (const k of dirty.current) {
       const canvas = tilesRef.current[k];
       const x = k * Math.floor(TILE_PIXELS / s.dpr);
       const width = Math.min(Math.floor(TILE_PIXELS / s.dpr), s.layout.width - x);
@@ -551,7 +551,12 @@ export function ParallelCoordinates({
         <div
           className={`qa-parallel-content${dragging ? ' qa-parallel-reordering' : ''}`} ref={contentRef} style={{ width: layout.width, height }}
           onPointerMove={onPointerMove} onPointerLeave={onPointerLeave}
-          onClick={e => { if (!e.target.closest?.('button, .qa-parallel-brush-zone')) clickRow(); }}
+          onClick={e => {
+            if (e.target.closest?.('button, .qa-parallel-brush-zone')) return;
+            // a click right after a move: the line under the cursor now
+            if (e.clientX || e.clientY) { cancelAnimationFrame(pointer.current.frame); pointer.current.x = e.clientX; pointer.current.y = e.clientY; hitTest(); }
+            clickRow();
+          }}
         >
           {tiles.map((tile, k) => <canvas key={k} className="qa-parallel-lines" ref={el => { tilesRef.current[k] = el; }} style={{ left: tile.x, width: tile.width, height }} aria-hidden="true"/>)}
           {/* stays in view when the plot scrolls; under the axes' labels */}
@@ -589,10 +594,11 @@ export function ParallelCoordinates({
                 className="qa-parallel-brush-zone" style={{ top: axis.extent[0], height: axis.extent[1] - axis.extent[0] }}
                 onPointerDown={e => onBrushDown(axis, e)} onPointerMove={e => onBrushMove(axis, e)} onPointerUp={e => onBrushUp(axis, e)}
                 onPointerCancel={() => { brush_drag.current = null; busy.current = false; setBrushing(false); }}
+                onDoubleClick={() => setBrush(key, null)}
               >
                 {range && <div
                   className="qa-parallel-brush" data-part="body" style={{ top: range[0] - axis.extent[0], height: Math.max(2, range[1] - range[0]) }}
-                  onDoubleClick={() => setBrush(key, null)} title="Drag to move, drag the ends to resize, double-click to clear"
+                  title="Drag to move, drag the ends to resize, double-click to clear"
                 >
                   <div className="qa-parallel-brush-handle qa-parallel-brush-top" data-part="top"/>
                   <div className="qa-parallel-brush-handle qa-parallel-brush-bottom" data-part="bottom"/>

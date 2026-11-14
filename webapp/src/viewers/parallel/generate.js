@@ -113,7 +113,7 @@ function pad({ columns, data }, count) {
     const key = `isp.${block}.${['strength', 'threshold', 'mode', 'radius', 'gain_log'][kind]}_${Math.floor(k / BLOCKS.length)}`;
     const weight = rand();
     data.forEach((row, i) => {
-      const base = weight * (1 - Math.min(1, (row.objective ?? row.noise / 5 ?? 0.5) * 2)) + (1 - weight) * rand();
+      const base = weight * (1 - Math.min(1, (row.objective ?? (row.noise ?? 2.5) / 5) * 2)) + (1 - weight) * rand();
       row[key] = kind === 0 ? Number(base.toFixed(3))
         : kind === 1 ? Math.round(base * 255)
         : kind === 2 ? ['off', 'low', 'medium', 'high'][Math.min(3, Math.floor(base * 4))]
