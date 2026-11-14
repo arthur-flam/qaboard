@@ -1,36 +1,46 @@
 # TODO
 
 Loose ends from the docs overhaul (`docs/docs-overhaul-plan.md`), smallest first within each section. Each item says
-where to start. When you finish one, delete it.
+where to start. When you finish one, delete it. Code warts are in [warts.md](warts.md), what's site-specific in
+[known-issues.md](known-issues.md), the web app's follow-ups in [webapp/TODO.md](../webapp/TODO.md).
 
 ## Shots
-The shot list is `docs-media/shots.yaml`, how to capture is `docs-media/README.md`. Every planned shot is published.
+The shot list is `docs-media/shots.yaml`, how to capture is `docs-media/README.md`.
+- **Capture `commit/flame-diff` again, and `commit/flame-top-functions`** (no reseed: the Docs media workflow on the
+  current snapshot, with a web app that has the new flame graph viewer). The published `commit/flame-diff` shows the
+  viewer before November 2026, so the pages use `commit/flame-top-functions`, which is a stand-in from the playground.
+  Once both are published: delete the stand-in, and give `commit/flame-diff` its pages back where the table isn't
+  the point (`pages:` in `shots.yaml`).
+- **`commit/benchmarks` is a stand-in**: no demo project saves a benchmark file. `examples/software-quality/benchmarks/`
+  has the suite it was measured with. To capture it: a batch that runs it and saves *pytest.benchmarks.json*, the
+  visualization in the example's *qaboard.yaml*, a story step, a spec in `docs-media/shots/commit.spec.ts`, then a reseed.
+  On a quiet machine: the stand-in's VM has spreads of 5-30%, so only one change shows beyond noise.
+- **The other stand-ins** wait for a story or a spec: `ci/pr-comment`, `commit/attempt-tag` and `logs/attempts`
+  (seed.py has no reruns), `project-admin/gate`. See their `needs:` in `shots.yaml`.
 - **Reseed the snapshot**: the robotics and agent shots were captured from local seeds of their stories, and
   `commit/regions-all-runs` from snapshot `b6f6c4b8af6d9fbe`: no snapshot has this checkout's stories yet. Run the Docs
   media workflow with `reseed` (seeding all five stories takes over an hour); its captures replace these when they
-  differ beyond the dedupe tolerance.
+  differ beyond the dedupe tolerance. Do it once, after the story changes above.
 
 ## Shots to improve
-- **`commit/text-diff`**: at the 1440 px window, the last column of HdrHistogram's table (`1/(1-Percentile)`) is cut on
-  both sides of the diff. A narrower font in the text viewer, or a crop that drops that column, would read better.
 - **Clips are 1x**: the CDP screencast of headless Chromium sends frames at CSS size (1440x900), not at the device
   scale (2x), so clips are softer than stills, most visibly the landing tiles (crops of 585-720 px). `meta.json`'s
   `scale` is now the frames' (`lib/record.ts`), so crops are right either way. Getting 2x frames (headed Chromium, or a
   device metrics override for the screencast) would need the clip budgets checked again.
 
 ## Docs
-- **Old screenshots still used** where no shot covers them; check them for internal names and replace or drop them:
-  `first-outputs.png`, `plotly-3d-example.png`, `rich-metrics-in-card.png`,
-  `copy-windows-output-dir.png`, `winows-explorer-output-dir.jpg`, `export-commit-folder.png`, `gitlab-jenkins.gif`,
-  `configure-jenkins-build-triggers.png`, `login-block-unsigned-user.jpg`, the FAQ's `export-files-viz/-output/-commit.jpg`,
-  `slides/flame-graphs.jpg` (blog).
+- **`slides/flame-graphs.jpg`** (blog, June 2020) is the last screenshot from before the overhaul: check it for
+  internal names, then keep it as the post's picture of its time or drop it.
 - **Detection-eval numbers**: int8 results differ a little between GitHub's runners and other machines, even with the
   reference QDQ arithmetic (e.g. indoor minmax 0.0713 vs 0.0647). Quote only numbers from the published demo data.
   The story's `int8-tuned` commit uses `quant_keep_fp32: first-conv`, while the CI's `qa optimize` ranks
   `quant_keep_fp32: none` best: say "the team picked" rather than "`qa optimize` found" if a page shows the commit.
 - **Detection-eval indoor drop**: `examples/detection-eval/story.yaml`'s header and `SPEC.md` say "-40%" for indoor,
   the demo data measures -35% (the pages say 35%).
-- **Release notes**: publish October's note at the start of November (see `website/release-notes/_template.md`).
+- **Fleet SDK, the fast path's "-30% encode time"**: the message of `varint-fast-path` in
+  `examples/software-quality/story.yaml` isn't a measurement. The example's benchmarks measure the fast path as no
+  faster, and 28% slower for 5-byte values. Reword the message, or make the fast path fast.
+- **Release notes**: publish November's note at the start of December (see `website/release-notes/_template.md`).
 
 ## Product, small
 - **Analysis view** (tuning): the frontier and plots only use the metrics selected in its tag picker; with another

@@ -94,7 +94,7 @@ HTCondor, OAR, Moab, Kubernetes or local, `runners.dask.cluster.type`), kubernet
 Optional dependencies are extras: `uv sync --extra dev --extra celery --extra dask --extra kubernetes --extra dask-kubernetes`
 (CI's python 3.13 job installs them all, 3.11 none). `qa doctor [--runner X] [--test-job]` checks a setup and prints
 fixes (runners implement `doctor()`). The server starts/stops batches with `QABOARD_TUNING_RUNNER` (`backend/backend/runner_jobs.py`,
-`local_jobs.py`). Design and trust model: `docs/design/kubernetes-runner.md`; known limits: `TODO_WARTS.md` (Runners).
+`local_jobs.py`). Design and trust model: `docs/design/kubernetes-runner.md`; known limits: `docs/warts.md` (Runners).
 Kubernetes end-to-end test on kind: `.github/scripts/kubernetes_runner_e2e.py`.
 
 ## Release notes and docs (communicating with users)

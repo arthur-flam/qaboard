@@ -31,6 +31,7 @@ features:
   plotly-overlay: Plotly plots with the reference overlaid
   flame-diff: Differential flame graphs
   text-diff: Monaco text diff with Next Diff
+  benchmarks: Benchmark suites (pytest-benchmark, Google Benchmark, hyperfine...) against the reference's, with what changed beyond noise
   junit-viewer: JUnit XML test reports as a tree against the reference's, with filters, search and the failures
   video-sync: Videos played in sync with the reference
   video-compare: Videos compared frame by frame, side by side, with a wipe, one at a time (Single) or as their difference, synced zoom
@@ -613,7 +614,9 @@ shots:
     kind: still
     project: serving-latency
     shows: A differential flame graph where the response rendering under the shared cache's lock is new (orange), the skipped model work blue.
-    pages: [user-guide/other-viewers, viewers, landing, recipes/flame-graphs, tutorials/perf-regression, use-cases/overview, use-cases/serving-latency]
+    # Published from the viewer before November 2026 (no toolbar, legend or table): the pages show
+    # commit/flame-top-functions until it's captured again. The spec below targets the new viewer.
+    pages: []
     features: [flame-diff]
     needs: cache-shared vs batch-overflow-fix
     phase: 2
@@ -622,7 +625,7 @@ shots:
     kind: still
     project: serving-latency
     shows: The steady-high run's flame graph diff with the shared cache, rooted at "all", and its Top functions table under it, the biggest increase of share first.
-    pages: [landing, use-cases/overview, use-cases/serving-latency]
+    pages: [landing, user-guide/other-viewers, flame-graphs, use-cases/overview, use-cases/serving-latency]
     features: [flame-diff]
     needs: cache-shared vs batch-overflow-fix
     phase: 3
@@ -777,6 +780,26 @@ shots:
     needs: green-ci vs closest-robot
     phase: 3
     status: published
+  - id: commit/benchmarks
+    kind: still
+    project: software-quality
+    shows: "The benchmark viewer on the codec's pytest-benchmark suite at the varint fast path, against the commit before: the 5-byte encoding slower beyond noise, the others within it."
+    pages: [user-guide/other-viewers, benchmarks]
+    features: [benchmarks]
+    needs: "varint-fast-path vs grid-docs, and the example's benchmarks/ in its runs: a batch that runs them, pytest.benchmarks.json in outputs.visualizations, a story step, a spec in commit.spec.ts"
+    phase: 3
+    status: planned
+    standin:
+      # The web app's benchmark playground (webapp/benchmark-viewer.html) on two real runs of the example's
+      # benchmarks/ (pytest-benchmark, pinned to one CPU of a 4-CPU VM, --benchmark-disable-gc --benchmark-warmup=on
+      # --benchmark-min-time=0.005 --benchmark-max-time=2 --benchmark-min-rounds=50): with build/flags.json
+      # {"bug_varint_fast_path": true}, and without. Not on the demo stack: the machine line is the VM's
+      light: standins/commit/benchmarks.webp
+      dark: standins/commit/benchmarks-dark.webp
+      width: 1180
+      height: 648
+      alt: "The benchmark viewer on the codec's pytest-benchmark file, the varint fast path against main: 23 benchmarks, 1 slower, 22 within noise, overall +0.9%. The table, biggest regressions first: test_encode_varint[5] takes 841 ns against 656 ns, +28.2%, in red; the other varint benchmarks changed by 5 to 20% either way, in gray, within spreads of up to 31%."
+      caption: "A fast path that isn't: encoding 5-byte varints got 28% slower, and every other change is within the noise the harness measured."
   - id: commit/tests-diff
     kind: still
     project: software-quality
