@@ -19,7 +19,7 @@ import {
 
 import { copyWithToast } from "../utils/clipboard";
 import { usePrefsStore } from "../stores/prefs";
-import { run_tokens, reference_tokens, diff_tokens, count_changes, string_change, change_key, format_value, value_separator, hidden_keys } from "./tokens";
+import { run_tokens, reference_tokens, diff_tokens, count_changes, string_change, change_key, format_value, value_separator, is_hidden } from "./tokens";
 
 
 // What all the runs on the page share (see shared_configuration), null when we show a single run
@@ -36,7 +36,7 @@ export const tuning_format = items => {
   items.forEach(config => {
     if (typeof config === 'object' && config !== null) {
       Object.entries(config)
-        .filter(([k]) => !hidden_keys.includes(k))
+        .filter(([k, v]) => !is_hidden(k, v))
         .forEach(([key, value]) => {
           // numeric vectors would be read as a list of values to try
           merged[key] = Array.isArray(value) && value.every(item => typeof item === 'number') ? [[[value]]] : [value];
