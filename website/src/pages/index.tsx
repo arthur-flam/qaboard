@@ -103,7 +103,7 @@ function Hero() {
           </div>
           {contact && (
             <p className={styles.heroHelp}>
-              Setting it up for your team? <a href="#start-small">Start small</a>, and the maintainers help you get
+              Setting it up for your team? See <a href="#start-small">the steps</a>. The maintainers help you get
               started: <a href="#get-in-touch">get in touch</a>.
             </p>
           )}
@@ -306,7 +306,7 @@ const RAMP: RampStep[] = [
   {
     when: 'When the team joins',
     title: 'A server for everyone',
-    text: 'The same Compose files, or the Helm chart, on your machines. Add single sign-on, project roles, backups and monitoring when you need them, not before.',
+    text: 'The same Compose files, or the Helm chart, on your machines. Add single sign-on, project roles, backups and monitoring when you need them.',
     to: '/docs/deploy',
     linkLabel: 'Start a server',
   },
@@ -318,9 +318,8 @@ function StartSmall() {
   return (
     <section id="start-small" className={styles.section}>
       <div className="container">
-        <SectionHeader eyebrow="Getting started" title="Start small, add the rest when you need it">
-          A first result takes a few commands, not a project plan. You decide nothing up front: each step works on its
-          own, and the next one builds on it.
+        <SectionHeader eyebrow="Getting started" title="Set it up one step at a time">
+          Start with a server on your computer. Add your project next, then your team.
         </SectionHeader>
         <ol className={styles.ramp}>
           {RAMP.map(({when, title, text, to, linkLabel}, index) => (
@@ -340,10 +339,9 @@ function StartSmall() {
         <div className={styles.rampAgent}>
           <h3 className={styles.cardTitle}>Or ask your coding agent</h3>
           <p>
-            Both setups are commands and files with a result to check, which is work coding agents such as Claude Code
-            do well. Point yours at the quickstart to start a server. Give it the integration skill to put your project
-            on QA-Board: it wraps your code, declares metrics and visualizations, sets up CI, and checks its work
-            before it says it&apos;s done.
+            Coding agents such as Claude Code are good at this setup. Point yours at the quickstart to start a server.
+            Give it the integration skill to add your project: it wraps your code, declares metrics and
+            visualizations, sets up CI, and checks its work.
           </p>
           <Link to="/docs/agents">Set up QA-Board with a coding agent →</Link>
         </div>

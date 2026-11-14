@@ -31,8 +31,8 @@ performance, test suites and LLM agents: anything whose quality you measure.
   <a href="https://samsung.github.io/qaboard">Clips and use cases on the website</a>.</i>
 </p>
 
-## Start small
-A first result takes a few commands, and each step after it works on its own.
+## Set it up one step at a time
+Start with a server on your computer. Add your project next, then your team.
 
 1. **A server on your computer**, in a few commands: one Compose file, or a kind cluster, starts QA-Board with demo
    projects to explore. Most of the time goes to downloading about 2 GB of images.
@@ -45,9 +45,8 @@ A first result takes a few commands, and each step after it works on its own.
    roles, backups and monitoring when you need them.
    See [Start a server](https://samsung.github.io/qaboard/docs/deploy).
 
-**Or ask your coding agent.** Both setups are commands and files with a result to check, which is work coding agents
-such as Claude Code do well. Point yours at the quickstart to start a server, and give it the
-[integration skill](skills/qaboard-integration) to put your project on QA-Board: see
+**Or ask your coding agent.** Coding agents such as Claude Code are good at this setup. Point yours at the quickstart
+to start a server, and give it the [integration skill](skills/qaboard-integration) to add your project: see
 [Coding agents](https://samsung.github.io/qaboard/docs/agents).
 
 What it needs: Docker or Kubernetes for the server, and a folder that the server and your runs both see: a local
