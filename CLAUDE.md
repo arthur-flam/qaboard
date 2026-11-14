@@ -148,7 +148,7 @@ website shows them at `/release-notes` (with RSS/Atom feeds).
   app, or runs its tests (`webapp/releaseNotes.js`, imported as `virtual:release-notes`; the frontend image
   is built from the repo root for that, see `webapp/Dockerfile`). `npm start` reloads when a note changes;
   `QABOARD_RELEASE_NOTES_DRAFTS=1 npm start` also shows the drafts. `release_notes.py check` validates the
-  frontmatter and the docs links, and warns on notes too long to read: CI runs it.
+  frontmatter and the docs links, and checks notes being written aren't too long to read: CI runs it with `--strict`.
 - **Changelog from git**: `release_notes.py changelog 2026-09` (or `2026-q3`, `2026`) lists the period's
   commits grouped by the area they touch, as raw material for a note.
 - Code: `webapp/src/releaseNotes/` (popup, panel, links), `website/src/components/ReleaseNoteHighlights.js`
