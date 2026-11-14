@@ -86,6 +86,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/commit-page',
         'user-guide/metrics',
         'user-guide/comparing-results',
+        'user-guide/reference-runs',
         'user-guide/milestones',
         'user-guide/history-and-dashboards',
       ],
