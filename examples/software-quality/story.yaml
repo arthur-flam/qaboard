@@ -67,7 +67,7 @@ commits:
     branch: main
     at: -31d 01:20
     author: kaito
-    message: "varint: unrolled fast path for values up to 5 bytes (-30% encode time)"
+    message: "varint: unrolled fast path for values up to 5 bytes"
     flags: {bug_varint_fast_path: true}
 
   - id: varint-fix
