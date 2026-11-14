@@ -103,6 +103,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'user-guide/running-from-the-webapp',
+        'user-guide/tuning',
         'user-guide/automated-tuning',
         'user-guide/available-tests',
         'user-guide/logs',

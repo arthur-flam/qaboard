@@ -928,7 +928,7 @@ shots:
   - id: tuning/manual-form
     kind: still
     project: detection-eval
-    shows: Run Tests / Tuning on int8-percentile, experiment int8-nms on quant-search (2 tests), with a grid over score_threshold and nms_iou, 4 combinations, "8 total runs", and the Start 8 runs button.
+    shows: Run Tests / Tuning on int8-percentile, experiment int8-nms on quant-search (2 tests), Choose the values with a grid over score_threshold and nms_iou, 4 combinations, "8 total runs", and the Start 8 runs button.
     pages: [user-guide/running-from-the-webapp]
     needs: int8-percentile
     phase: 2
@@ -936,7 +936,7 @@ shots:
   - id: tuning/auto-form
     kind: still
     project: detection-eval
-    shows: 'Automated tuning''s guided form filled from qa/tune-int8.yaml: four parameters with their ranges or values, AP small and mAP to improve and the model size to keep small, 20 evaluations, and the summary "Ready to start" with the runs it counts.'
+    shows: 'Run Tests / Tuning with Search automatically chosen, its guided form filled from qa/tune-int8.yaml: four parameters with their ranges or values, AP small and mAP to improve and the model size to keep small, 20 evaluations, and the summary "Ready to start" with the runs it counts.'
     pages: [auto-optimization, user-guide/automated-tuning, user-guide/running-from-the-webapp, tutorials/tuning]
     phase: 2
     status: captured
@@ -944,7 +944,7 @@ shots:
   - id: tuning/launch-to-analysis
     kind: clip
     project: detection-eval
-    shows: The manual-form grid (8 runs) is sent, its int8-nms batch picked in the batch selector once its runs are done, and its Analysis opened, with the runs in parallel coordinates.
+    shows: The manual-form grid (8 runs) is sent, its int8-nms batch picked in the batch selector once its runs are done, and its Tuning Analysis opened, with the best of its 4 parameter sets, then every set in parallel coordinates.
     pages: [tuning-from-the-webapp, user-guide/running-from-the-webapp, landing, tutorials/tuning]
     features: [tuning-analysis]
     needs: int8-percentile
@@ -962,7 +962,7 @@ shots:
   - id: tuning/frontier
     kind: still
     project: serving-latency
-    shows: 'The tune-batching sweep''s efficient frontier of CPU per request (added to the Analysis view''s metrics) against p99, 12 configurations colored by max delay, the chosen one (16, 250 µs) hovered on it, next to (64, 250 µs): within the noise between identical configurations.'
+    shows: 'Tuning Analysis''s trade-offs of the tune-batching sweep: CPU per request against p99, 12 configurations with the best trade-offs highlighted, the chosen one (16, 250 µs) hovered on it, next to (64, 250 µs): within the noise between identical configurations.'
     pages: [tuning-from-the-webapp, use-cases/serving-latency, user-guide/running-from-the-webapp, landing, tutorials/tuning, tutorials/perf-regression]
     features: [tuning-analysis]
     needs: cache-sharded (tune-batching)
