@@ -18,8 +18,8 @@
 <link rel="alternate" type="application/rss+xml" href="/qaboard/release-notes/rss.xml" title="QA-Board release notes RSS Feed">
 <link rel="alternate" type="application/atom+xml" href="/qaboard/release-notes/atom.xml" title="QA-Board release notes Atom Feed">
 <link rel="alternate" type="application/json" href="/qaboard/release-notes/feed.json" title="QA-Board release notes JSON Feed"><link rel="stylesheet" href="/qaboard/assets/css/styles.a0fe5e86.css">
-<script src="/qaboard/assets/js/runtime~main.903257df.js" defer="defer"></script>
-<script src="/qaboard/assets/js/main.1e52a7c4.js" defer="defer"></script>
+<script src="/qaboard/assets/js/runtime~main.e03da67c.js" defer="defer"></script>
+<script src="/qaboard/assets/js/main.d5685153.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -77,17 +77,19 @@ have nothing to do. The detector&#x27;s <code>run()</code> lets them override it
 <a class="" href="/qaboard/docs/batches-running-on-multiple-inputs">Batches of inputs</a>.</p>
 <details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>Shortcuts for people who tune</summary><div><div class="collapsibleContent_i85q"><ul>
 <li class="">To start from an existing run&#x27;s parameters, hover its configuration tags and choose <strong>Copy as a tuning search
-space</strong>, then paste it in the <strong>Manual tuning</strong> editor.</li>
-<li class="">Pasting lines of <code>key=value</code> in the <strong>Manual tuning</strong> editor converts them to the tuning format:
+space</strong>, then paste it in the editor under <strong>Choose the values</strong>.</li>
+<li class="">Pasting lines of <code>key=value</code> in that editor converts them to the tuning format:
 <code>block.threshold=10</code> becomes <code>&quot;block.threshold&quot;: [10]</code>, and space-separated matrices like <code>[1 2 3]</code> become JSON
 arrays.</li>
 <li class="">In the <strong>Available Tests</strong> view, <kbd>Ctrl</kbd>+<kbd>S</kbd> (or <kbd>Cmd</kbd>+<kbd>S</kbd>) saves the batches
 file you are editing.</li>
-<li class="">Once runs are done, the <strong>Tuning Analysis</strong> view shows how the metrics depend on the parameters: the sensitivity to
-each parameter and to pairs of parameters, a parallel coordinates plot, and the trade-off between two metrics. See
-the <a class="" href="/qaboard/docs/user-guide/running-from-the-webapp#tuning-analysis">user guide</a>. For an automated tuning, it starts with
-a report of what the search found and what to do next: see
+<li class="">Once runs are done, the <strong>Tuning Analysis</strong> view says which parameter set is best, how much each parameter matters,
+where the best set loses test by test, and the trade-off between two metrics, with every set in parallel
+coordinates. See the <a class="" href="/qaboard/docs/user-guide/running-from-the-webapp#tuning-analysis">user guide</a>. For an automated
+tuning, it reports what the search found and what to do next: see
 <a class="" href="/qaboard/docs/user-guide/automated-tuning#results">Read the results</a>.</li>
+<li class="">Runs without metrics can be scored afterwards: Tuning Analysis gives people a script to start from, which adds a
+metric to each run with <code>run.log_metrics()</code> (<a class="" href="/qaboard/docs/apis#log">Add metrics to runs</a>).</li>
 </ul></div></div></details>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id="other-tuning-workflows">Other tuning workflows<a href="#other-tuning-workflows" class="hash-link" aria-label="Direct link to Other tuning workflows" title="Direct link to Other tuning workflows" translate="no">​</a></h2>
 <p>Tuning from the web app runs the code of a commit. Depending on where you are in your work, other workflows fit
