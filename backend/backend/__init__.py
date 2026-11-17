@@ -77,6 +77,7 @@ import backend.api.api
 import backend.api.commit
 import backend.api.compare
 import backend.api.batch
+import backend.api.runs
 import backend.api.outputs
 import backend.api.webhooks
 import backend.api.integrations

@@ -323,6 +323,123 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
 
+  /experiments:
+    get:
+      tags: [Runs]
+      operationId: listExperiments
+      summary: List a project's experiments
+      description: >-
+        A project's experiments, the latest first: its batches' names without the `@user| ` prefix of the runs made
+        outside the CI, so that everyone's runs of `backbone/lr-sweep` are one experiment. Each with its number of runs,
+        how many run, wait or failed, and when it last got a run. Names with slashes make a tree in the **Runs** page.
+      parameters:
+        - {$ref: "#/components/parameters/project"}
+        - {$ref: "#/components/parameters/RunsSinceDays"}
+        - {$ref: "#/components/parameters/RunsScope"}
+        - {$ref: "#/components/parameters/RunsOrigin"}
+        - {$ref: "#/components/parameters/RunsUser"}
+        - {$ref: "#/components/parameters/RunsFromCode"}
+      responses:
+        "200":
+          description: Experiments. The `X-Has-More` header says if there were more than the 2000 listed.
+          headers:
+            X-Has-More: {$ref: "#/components/headers/X-Has-More"}
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    experiment: {type: string, example: backbone/lr-sweep}
+                    batches: {type: integer, description: "Its batches: one per commit, and per person outside the CI."}
+                    runs: {type: integer}
+                    running: {type: integer}
+                    pending: {type: integer, description: Waiting to start.}
+                    failed: {type: integer}
+                    latest: {type: string, format: date-time, nullable: true}
+                    from_code: {type: boolean, description: "Has runs started with `qaboard.start_run()`."}
+                    users: {type: array, items: {type: string}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+
+  /runs:
+    get:
+      tags: [Runs]
+      operationId: listRuns
+      summary: List a project's runs across commits
+      description: >-
+        A project's runs, whatever their commit: the running first, then the latest. Each with its batch (and
+        experiment) and commit. What the **Runs** page lists, and `qaboard.runs(project=, experiment=)` reads.
+      parameters:
+        - {$ref: "#/components/parameters/project"}
+        - name: experiment
+          in: query
+          description: The runs of this experiment and of those under it (`backbone` includes `backbone/lr-sweep`).
+          schema: {type: string}
+          example: backbone/lr-sweep
+        - {$ref: "#/components/parameters/RunsSinceDays"}
+        - {$ref: "#/components/parameters/RunsScope"}
+        - {$ref: "#/components/parameters/RunsOrigin"}
+        - {$ref: "#/components/parameters/RunsUser"}
+        - {$ref: "#/components/parameters/RunsFromCode"}
+        - name: status
+          in: query
+          description: "Comma-separated, among `running`, `pending`, `failed` and `finished`."
+          schema: {type: string}
+          example: running,failed
+        - name: q
+          in: query
+          description: >-
+            The web app's filter on runs (inputs, configurations, parameters, `id:`...), that also matches the
+            experiment, who ran it and the commit. It reads at most the 5000 latest runs: the `X-Scanned` header
+            says when it stopped there.
+          schema: {type: string}
+          example: lr=0.001
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 500, default: 100}
+        - name: offset
+          in: query
+          schema: {type: integer, minimum: 0, maximum: 100000, default: 0}
+      responses:
+        "200":
+          description: Runs. The `X-Has-More` header says if there are more.
+          headers:
+            X-Has-More: {$ref: "#/components/headers/X-Has-More"}
+            X-Scanned:
+              description: With `q`, when the filter only looked at this many runs, the latest of the selection.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - {$ref: "#/components/schemas/Run"}
+                    - type: object
+                      properties:
+                        batch:
+                          type: object
+                          properties:
+                            id: {type: integer}
+                            label: {type: string, example: "@alice| backbone/lr-sweep"}
+                            experiment: {type: string, example: backbone/lr-sweep}
+                            origin: {type: string, enum: [webapp, local, ci], nullable: true}
+                            user_name: {type: string, nullable: true}
+                        commit:
+                          type: object
+                          properties:
+                            id: {type: string}
+                            branch: {type: string}
+                            message: {type: string, nullable: true}
+                            committer_name: {type: string, nullable: true}
+                            authored_datetime: {type: string, format: date-time, nullable: true}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+
   /output/{output_id}:
     get:
       tags: [Runs]
@@ -769,6 +886,32 @@ components:
       schema: {type: string, enum: ["true", "false"]}
 
   parameters:
+    RunsSinceDays:
+      name: since_days
+      in: query
+      description: Only runs from the last days. At most 90 with the CI's runs (no `origin`, or one with `ci`).
+      schema: {type: integer, minimum: 1, maximum: 3650, default: 30}
+    RunsScope:
+      name: scope
+      in: query
+      description: "`mine`: the runs of the batches you started; `others`: the others'. Needs to be signed in."
+      schema: {type: string, enum: [all, mine, others], default: all}
+    RunsOrigin:
+      name: origin
+      in: query
+      description: "Comma-separated: where the batches were started, among `webapp`, `local` and `ci`."
+      schema: {type: string}
+      example: webapp,local
+    RunsUser:
+      name: user
+      in: query
+      description: Only the runs of this person (their user name).
+      schema: {type: string}
+    RunsFromCode:
+      name: from_code
+      in: query
+      description: "Only the batches with runs started from code, with `qaboard.start_run()`."
+      schema: {type: boolean, default: false}
     project:
       name: project
       in: query

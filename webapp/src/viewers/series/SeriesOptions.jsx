@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { HTMLSelect, Slider, Switch } from "@blueprintjs/core";
 
-import { parse_series } from "./series";
+import { default_options, parse_series } from "./series";
 
 // Running runs write their series every few seconds
 export const REFRESH_INTERVAL = 10 * 1000;
-export const default_options = { smoothing: 0, log: false, x: 'step' };
+export { default_options } from "./series";
 
 // { model } or { error }, for files that may not be series
 export const parse_file = text => {

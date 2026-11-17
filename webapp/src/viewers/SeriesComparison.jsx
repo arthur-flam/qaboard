@@ -1,44 +1,22 @@
 // The series of all the runs shown, on the same plots: one plot per series, one line per run (run.log() in Python,
 // see qaboard/series.py). In the Summary view. People show and hide runs, color them by a parameter, and compare
 // them with their reference runs. A run's card has the same series against its reference alone (series.jsx).
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Button, Callout, Card, Classes, HTMLSelect, InputGroup, Spinner, Switch, Tag } from "@blueprintjs/core";
 
-import Plot, { restylePlot } from "../components/Plot";
-import { fileQuery } from "../api/queries";
 import { sorted_keys } from "./series/series";
-import { REFRESH_INTERVAL, SeriesOptions, parse_file, plot_config, plot_layout, useSeriesOptions } from "./series/SeriesOptions";
-import { comparison_traces, highlight_update, run_labels, run_styles, series_counts, varying_params } from "./series/comparison";
+import { SeriesOptions, useSeriesOptions } from "./series/SeriesOptions";
+import { comparison_traces, run_labels, run_styles, series_counts, varying_params } from "./series/comparison";
+import { ComparisonPlot, series_query, useHighlight } from "./series/plots";
 import { started_from_code } from "./runView";
+import { Link } from "../router";
+import { runs_path } from "../runs/state";
+import { experiment_of } from "../runs/tree";
 
 // More lines than that can't be told apart, and each run is a request: people filter the runs
 export const MAX_RUNS = 40;
 const SHOWN_AT_FIRST = 8;
-const SERIES_FILE = 'series.json';
-const PLOT_WIDTH = 460;
-const PLOT_HEIGHT = 300;
-
-// runs whose file isn't series are left out
-const parse = text => parse_file(text).model;
-
-const series_query = output => ({
-  ...fileQuery(output?.output_dir_url ? `${output.output_dir_url}/${SERIES_FILE}` : undefined, { is_running: output?.is_running, responseType: 'text' }),
-  select: parse,
-  // runs without series: no file
-  retry: false,
-  refetchInterval: output?.is_running ? REFRESH_INTERVAL : false,
-});
-
-// with many runs, a label with every run's value hides the plot: only the closest
-// register: tells the comparison the plot's element once Plotly drew it, null when it is removed
-const ComparisonPlot = ({ name, traces, options, many, register }) => <Plot
-  data={traces}
-  layout={plot_layout(name, options, { width: PLOT_WIDTH, height: PLOT_HEIGHT, hovermode: many ? 'closest' : 'x unified' })}
-  config={plot_config}
-  onInitialized={(_, element) => register(element)}
-  onPurge={() => register(null)}
-/>;
 
 const swatch_style = (style, shown) => ({
   display: 'inline-block', flex: 'none', width: 18, height: 0, marginRight: 8,
@@ -52,14 +30,12 @@ const toolbar_style = { display: 'flex', alignItems: 'center', gap: 14, flexWrap
 
 // - new_batch, ref_batch: the batches compared, with the runs the page's filters keep (.filtered.outputs)
 // - controls.series: the options shared with the runs' cards (smoothing, log scale, by step or time), in the URL
-const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, labels }) => {
+// - project: to link to the experiment's runs across commits (src/runs/)
+const SeriesComparison = ({ project, new_batch, ref_batch, controls, onControlsChange, labels }) => {
   const [options, setOptions, preview] = useSeriesOptions(controls?.series, onControlsChange);
   const [hidden, setHidden] = useState(() => new Set());
-  // The run under the pointer, in the list: its lines come forward in every plot. Not React state: Plotly restyles
-  // the plots that are drawn, instead of React drawing them all again each time the pointer moves over the list
-  const plots = useRef(new Map());
-  const highlight = id => plots.current.forEach(element => restylePlot(element, highlight_update(element.data, id)));
-  const register = key => element => element ? plots.current.set(key, element) : plots.current.delete(key);
+  // The run under the pointer, in the list: its lines come forward in every plot
+  const [highlight, register] = useHighlight();
   const [color_by, setColorBy] = useState('');
   const [filter, setFilter] = useState('');
   const [show_all, setShowAll] = useState(false);
@@ -145,6 +121,9 @@ const SeriesComparison = ({ new_batch, ref_batch, controls, onControlsChange, la
         {visible.length === runs.length ? `${runs.length} run${runs.length === 1 ? '' : 's'}` : `${visible.length} of ${runs.length} runs`}, {keys.length} series
       </span>
       {loading && <Spinner size={14} style={{ display: 'inline-block', marginLeft: 8 }} aria-label="Loading more runs"/>}
+      {project && new_batch?.label && <Link to={`${runs_path(project, experiment_of(new_batch.label))}${new_batch.origin === 'ci' || !new_batch.origin ? '?ci=1' : ''}`} style={{ fontSize: 12, fontWeight: 'normal', marginLeft: 12 }} title="Every run of this experiment, whatever its commit, on the Runs page">
+        All the runs of {experiment_of(new_batch.label)}, across commits →
+      </Link>}
     </h4>
     {candidates.length > MAX_RUNS && <Callout compact icon="info-sign" style={{ marginBottom: 8 }}>
       Showing the first {MAX_RUNS} of {candidates.length} runs. Filter the runs at the top of the page to compare others.

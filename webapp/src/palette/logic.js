@@ -2,6 +2,7 @@
 // Items are {key, section, title, positions (matched characters in the title), score, ...what rows show}.
 import { batch_name, batch_url } from "../BatchList";
 import { path_segment, project_url } from "../selection";
+import { runs_path } from "../runs/state";
 
 const day_ms = 24 * 3600 * 1000;
 const time = date => {
@@ -188,9 +189,11 @@ export const settings_tabs = [
  * The app's pages, and what users can do from anywhere. `suggested` ones show without a query.
  * Items with `url` navigate, `href` leave the app, `action` is done by the palette.
  */
-export function app_items({ user, docs_root = '/', is_dark = false }) {
+export function app_items({ user, docs_root = '/', is_dark = false, project = null, has_runs = false }) {
   const logged = !!user?.is_logged;
   const pages = [
+    // the project's runs across commits, for projects whose code creates runs (src/runs/)
+    project && has_runs && { key: 'runs', title: 'Runs', subtitle: project, icon: 'lab-test', url: runs_path(project), keywords: 'experiments trainings sweeps across commits', suggested: true },
     { key: 'home', title: 'Home', icon: 'home', url: '/', keywords: 'start', suggested: true },
     { key: 'explore', title: 'Explore projects', icon: 'projects', url: '/projects', keywords: 'all every list tree', suggested: true },
     logged && { key: 'activity', title: 'Runs activity', icon: 'pulse', url: '/activity', keywords: 'running waiting queue jobs pending', suggested: true },

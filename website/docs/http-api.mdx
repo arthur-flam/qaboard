@@ -382,6 +382,10 @@ Each run, batch and commit has these fields. The [API reference](#reference) has
   *qaboard.yaml* and metrics definitions.
 - `GET /batches?project=<project>`: the latest batches, each with its commit; `scope=mine` for yours in every
   project.
+- `GET /runs?project=<project>&experiment=<experiment>`: the runs of an experiment and of those under it, whatever
+  their commit, the running first, each with its batch and commit; `since_days=`, `scope=mine`, `status=running,failed`,
+  `origin=webapp,local` and `q=` (the web app's filter) narrow them. `GET /experiments?project=<project>`: the
+  experiments, with their counts of runs: what the [Runs page](/docs/user-guide/runs) shows.
 
 ```bash
 curl -i "$QABOARD_URL/api/v1/commits?project=kitefin/detector&q=committer:arjun&limit=50&offset=50"

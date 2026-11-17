@@ -18,15 +18,17 @@ evals: `qaboard.start_run()`, qaboard/active_run.py) give the same `Run`. Its at
 This module doesn't need a qaboard.yaml: it only talks to the server, found in the URL. It reads the token to send
 like the rest of qa (qaboard/credentials.py).
 """
+import datetime
 import hashlib
 import math
 import os
+import re
 import shutil
 import sys
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
 from .compat import url_to_dir
@@ -139,6 +141,52 @@ def parse_url(url: str, server: Optional[str] = None) -> _Selection:
   return _Selection(server=server, new=new, reference=reference, url=url)
 
 
+def _runs_page(url: str, server: Optional[str] = None) -> Optional[Dict[str, Any]]:
+  """
+  What the web app's Runs page shows, from its address: `https://qaboard/<project>/runs/<experiment>?scope=mine&days=7`.
+  None for other pages. The keys are runs()'s arguments (webapp/src/runs/state.js writes them).
+  """
+  parts = urlsplit(url.strip())
+  if not parts.scheme or not parts.netloc:
+    return None
+  path = unquote(parts.path)
+  if server:
+    prefix = urlsplit(server.rstrip('/')).path
+    stripped = _strip_prefix(path, prefix) if prefix.strip('/') else path
+    if stripped is None:
+      return None
+    path = stripped
+  segments = [s for s in path.split('/') if s]
+  # like the web app's routes (webapp/src/route_paths.js): the project is everything before the last "runs"
+  index = next((i for i in reversed(range(len(segments))) if segments[i] == 'runs'), None)
+  if index is None or index == 0:
+    return None
+  # the web app's routes for commits, history... come first: /ml/runs/commit/abc is a commit of the project "ml/runs"
+  if any(segment in FIRST_ROUTES for segment in segments[1:]):
+    return None
+  query = parse_qs(parts.query, keep_blank_values=True)
+  days = _text(query, 'days')
+  statuses = [s for s in (_text(query, 'status') or '').split(',') if s in STATUSES]
+  selected = [int(i) for i in (_text(query, 'selected') or '').split(',') if i.strip().isdigit()]
+  return {
+    'server': (server or f"{parts.scheme}://{parts.netloc}").rstrip('/'),
+    'project': '/'.join(segments[:index]),
+    'experiment': '/'.join(segments[index + 1:]) or None,
+    # like the web app (webapp/src/runs/state.js): what it doesn't know is the default
+    'scope': 'mine' if _text(query, 'scope') == 'mine' else 'all',
+    'since': int(days) if days and days.isdigit() and int(days) > 0 else 30,
+    'status': statuses or None,
+    'filter': _text(query, 'q'),
+    'user': _text(query, 'user'),
+    'include_ci': _text(query, 'ci') == '1',
+    'selected': selected,
+  }
+
+
+# The web app's project routes matched before the Runs page (webapp/src/route_paths.js)
+FIRST_ROUTES = ('committer', 'commits', 'commit', 'dashboard', 'history', 'milestone')
+
+
 # Run's fields given as read-only mappings
 _MAPPINGS = ('extra_parameters', 'params', 'metrics', 'input_metadata', 'data')
 
@@ -234,6 +282,11 @@ class Run:
                configs=(*(configs or ()), *([extra_parameters] if extra_parameters else [])), extra_parameters=extra_parameters,
                params=run_params(configs, extra_parameters), output_dir=output_dir, server=server,
                is_pending=True, is_running=False, is_failed=False)
+
+  @property
+  def experiment(self) -> str:
+    """The batch without the "@you| " of runs made outside the CI: what the web app's Runs page groups runs by"""
+    return re.sub(r'^@[^|]+\| ', '', self.batch or 'default')
 
   @property
   def state(self) -> str:
@@ -432,7 +485,8 @@ def _token_for(server: str, token: Optional[str]) -> Optional[str]:
 
 
 def _request(server: str, path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None,
-             method: str = 'GET', json: Optional[Dict[str, Any]] = None, timeout: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
+             method: str = 'GET', json: Optional[Dict[str, Any]] = None, timeout: Optional[Tuple[float, float]] = None,
+             headers_out: Optional[Dict[str, str]] = None) -> Any:
   import requests
   token = _token_for(server, token)
   headers = {'Authorization': f"Bearer {token}"} if token else {}
@@ -446,13 +500,18 @@ def _request(server: str, path: str, params: Optional[Dict[str, Any]] = None, to
     refused = refusal(r)
     if refused:
       scope = 'ingest' if method != 'GET' else 'read'
-      hint = f"Sign in with `qa auth login {server}`, or set QABOARD_TOKEN to a token with the {scope} scope." if refused.get('reason') in ('login_required', 'ingest_token_required', 'missing_scope', 'token_expired', 'invalid_token') else "Ask the project's owners for access."
+      hint = f"Sign in with `qa auth login {server}`, or set QABOARD_TOKEN to a token with the {scope} scope." if refused.get('reason') in ('login_required', 'sign_in_required', 'ingest_token_required', 'missing_scope', 'token_expired', 'invalid_token') else "Ask the project's owners for access."
       raise ResultsError(f"{refused['error']} ({refused.get('reason')}). {hint}", status=r.status_code, reason=refused.get('reason') or 'refused')
     try:
       message = r.json().get('error') or r.text
     except ValueError:
       message = r.text
     raise ResultsError(f"{server} answered {r.status_code} to {path} ({params}): {message}", status=r.status_code)
+  if headers_out is not None:
+    # the answer's headers, e.g. X-Scanned
+    raw = getattr(r, 'headers', None)
+    if isinstance(raw, Mapping):
+      headers_out.update({k: v for k, v in raw.items() if isinstance(v, str)})
   try:
     return r.json()
   except ValueError as e:
@@ -477,9 +536,99 @@ def _side_runs(server: str, side: _Side, *, token: Optional[str], include_delete
   return Runs(runs, side=side, commit=commit.get('id'), server=server)
 
 
+# The Runs page's pages: GET /api/v1/runs answers at most that many runs at a time
+RUNS_PAGE = 500
+SCOPES = ('all', 'mine', 'others')
+STATUSES = ('running', 'pending', 'failed', 'finished')
+
+
+def _since_days(since: Union[int, datetime.timedelta, datetime.datetime, datetime.date, None]) -> Optional[int]:
+  """Days, rounded up: the server's window"""
+  if since is None:
+    return None
+  if isinstance(since, bool) or not isinstance(since, (int, datetime.timedelta, datetime.date)):
+    raise TypeError(f"since={since!r}: days, a timedelta or a date")
+  if isinstance(since, int):
+    days: float = since
+  elif isinstance(since, datetime.timedelta):
+    days = since.total_seconds() / 86400
+  else:
+    start = since if isinstance(since, datetime.datetime) else datetime.datetime.combine(since, datetime.time())
+    now = datetime.datetime.now(start.tzinfo) if start.tzinfo else datetime.datetime.now()
+    days = (now - start).total_seconds() / 86400
+  if days <= 0:
+    raise ValueError(f"since={since!r} is not in the past")
+  return max(1, math.ceil(days))
+
+
+def _project_runs(project: str, *, experiment: Optional[str], since: Any, scope: Optional[str], user: Optional[str],
+                  status: Union[str, Sequence[str], None], include_ci: Optional[bool], filter: Optional[str],
+                  limit: Optional[int], server: Optional[str], token: Optional[str], include_deleted: bool,
+                  include_hidden: bool, dry_run: bool) -> Runs:
+  """A project's runs across commits, from GET /api/v1/runs: what the Runs page lists"""
+  if scope is not None and scope not in SCOPES:
+    raise ValueError(f"scope={scope!r}: expected one of {', '.join(map(repr, SCOPES))}")
+  statuses = [status] if isinstance(status, str) else list(status or [])
+  unknown = [s for s in statuses if s not in STATUSES]
+  if unknown:
+    raise ValueError(f"status={status!r}: expected some of {', '.join(map(repr, STATUSES))}")
+  if limit is not None and limit < 1:
+    raise ValueError(f"limit={limit!r}: at least 1")
+  server_url = (server or default_server()[0]).rstrip('/')
+  params: Dict[str, Any] = {'project': project}
+  if experiment:
+    params['experiment'] = experiment.strip('/')
+  days = _since_days(since)
+  if days:
+    params['since_days'] = days
+  if scope:
+    params['scope'] = scope
+  if user:
+    params['user'] = user
+  if statuses:
+    params['status'] = ','.join(statuses)
+  if filter:
+    params['q'] = filter
+  # like the Runs page: the CI's runs are left out unless asked
+  if not include_ci:
+    params['origin'] = 'webapp,local'
+  rows: List[Dict[str, Any]] = []
+  seen: set = set()
+  offset = 0
+  scanned = None
+  while limit is None or len(rows) < limit:
+    page_size = RUNS_PAGE if limit is None else min(RUNS_PAGE, limit - len(rows))
+    headers: Dict[str, str] = {}
+    page = _request(server_url, 'runs', {**params, 'limit': page_size, 'offset': offset}, token, headers_out=headers)
+    if not isinstance(page, list):
+      raise ResultsError(f"{server_url} doesn't list runs across commits: update it, or name a commit")
+    scanned = scanned or {k.lower(): v for k, v in headers.items()}.get('x-scanned')
+    new = [row for row in page if row.get('id') not in seen]
+    seen.update(row.get('id') for row in new)
+    rows.extend(new)
+    offset += len(page)
+    # the last page, or one that brings nothing new
+    if len(page) < page_size or not new:
+      break
+  if scanned:
+    print(f"WARNING: the filter {filter!r} only looked at the {scanned} latest runs: give experiment= or a shorter since= to search the others.", file=sys.stderr)
+  found = [Run.from_api(row, project=project, commit=(row.get('commit') or {}).get('id'),
+                        batch=(row.get('batch') or {}).get('label') or 'default', server=server_url) for row in rows]
+  if not include_deleted:
+    found = [r for r in found if not r.deleted]
+  if not include_hidden:
+    found = [r for r in found if r.type not in HIDDEN_RUN_TYPES]
+  for run in found:
+    run._token, run._dry_run = token, dry_run
+  return Runs(found, server=server_url)
+
+
 def runs(url: Optional[str] = None, *, project: Optional[str] = None, commit: Optional[str] = None, branch: Optional[str] = None,
          batch: Optional[str] = None, filter: Optional[str] = None, side: str = 'new', server: Optional[str] = None,
-         token: Optional[str] = None, include_deleted: bool = False, include_hidden: bool = False, dry_run: bool = False) -> Runs:
+         token: Optional[str] = None, include_deleted: bool = False, include_hidden: bool = False, dry_run: bool = False,
+         experiment: Optional[str] = None, since: Union[int, datetime.timedelta, datetime.datetime, datetime.date, None] = None,
+         scope: Optional[str] = None, user: Optional[str] = None, status: Union[str, Sequence[str], None] = None,
+         include_ci: Optional[bool] = None, limit: Optional[int] = None) -> Runs:
   """
   The runs a web app page shows, as `Run` objects.
 
@@ -488,12 +637,51 @@ def runs(url: Optional[str] = None, *, project: Optional[str] = None, commit: Op
   arguments override what the URL says: `commit=` or `branch=` replaces the URL's. `side='reference'` gives the runs of
   the reference bar (`?reference=&batch_ref=&filter_ref=`) instead of the compared ones (`side='new'`).
 
+  Runs across commits, like the web app's Runs page (whose address works too): give the project and `experiment=`, `since=`, `scope=`, `user=` or
+  `status=`, without a commit or a URL. `runs(project='group/repo', experiment='backbone/lr-sweep', since=7)`: the runs
+  of that experiment and of those under it, whoever ran them, on any commit, the running first, then the latest.
+  `since`: days, a timedelta or a date (default: 30 days). `scope`: "mine", "others" or "all". `status`: "running",
+  "pending", "failed", "finished", or several. `include_ci=True`: the CI's runs too, left out by default like on
+  the page. `filter` is the web app's filter: it looks at the 5000 latest runs of the selection, and warns when there were
+  more. `limit`: at most this many runs (default: all of them), before runs whose files were deleted are left out.
+
   `server`: the QA-Board server, when the URL doesn't say (its address, or when it is served under a path prefix).
   Without a URL, the server is the one `qa` uses (QABOARD_URL...). `token`: an API token, else the one `qa` is
   signed in with. Left out unless asked: runs whose files were deleted (`include_deleted`), and runs the web app
   doesn't list with the batch, like `qa optimize`'s iterations (`include_hidden`). With `dry_run=True`, `run.log_metrics()`
   prints what it would add instead of sending it: try scripts on it first (`run.log_metrics(..., dry_run=False)` sends anyway).
   """
+  page = _runs_page(url, server) if url else None
+  if page is not None:
+    # the Runs page's address: what it lists, unless arguments say otherwise
+    if side != 'new' or commit is not None or branch is not None or batch is not None:
+      raise ValueError(f"{url} is a Runs page: it lists runs across commits, without commit=, branch=, batch= or side=")
+    found = _project_runs(
+      project or page['project'],
+      experiment=experiment if experiment is not None else page['experiment'],
+      since=since if since is not None else page['since'],
+      scope=scope if scope is not None else page['scope'],
+      user=user if user is not None else page['user'],
+      status=status if status is not None else page['status'],
+      include_ci=include_ci if include_ci is not None else page['include_ci'],
+      filter=filter if filter is not None else page['filter'],
+      limit=limit, server=page['server'], token=token,
+      include_deleted=include_deleted, include_hidden=include_hidden, dry_run=dry_run)
+    if page['selected']:
+      # runs selected in the table: the page plots those
+      found = Runs([r for r in found if r.id in page['selected']], server=found.server)
+    return found
+  across = {'experiment': experiment, 'since': since, 'scope': scope, 'user': user, 'status': status, 'include_ci': include_ci, 'limit': limit}
+  if any(value is not None for value in across.values()):
+    given = [name for name, value in (('url', url), ('commit', commit), ('branch', branch), ('batch', batch)) if value is not None]
+    if given or side != 'new':
+      raise ValueError(f"runs(experiment=, since=, scope=...) lists runs across commits: without {', '.join(given) or 'side'}. "
+                       "For the runs of one commit, use runs(project=, commit=, batch=), or a web app URL.")
+    if not project:
+      raise ValueError("Which project? runs(project='group/repo', experiment='backbone/lr-sweep')")
+    return _project_runs(project, experiment=experiment, since=since, scope=scope, user=user, status=status,
+                         include_ci=include_ci, filter=filter, limit=limit, server=server, token=token,
+                         include_deleted=include_deleted, include_hidden=include_hidden, dry_run=dry_run)
   if side not in SIDES:
     raise ValueError(f"side={side!r}: expected one of {', '.join(map(repr, SIDES))}. 'new' gives the runs compared, 'reference' those of the reference bar.")
   selected: _Side

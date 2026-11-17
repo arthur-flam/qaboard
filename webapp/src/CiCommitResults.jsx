@@ -373,7 +373,7 @@ const CiCommitResults = () => {
               </Card>
               {/* what the runs logged while they ran (qaboard.start_run()): all the runs on the same plots */}
               {has_logged_runs && <Suspense fallback={null}>
-                <SeriesComparison new_batch={new_batch} ref_batch={ref_batch} controls={controls} onControlsChange={updateControls} labels={comparison.labels}/>
+                <SeriesComparison project={new_project} new_batch={new_batch} ref_batch={ref_batch} controls={controls} onControlsChange={updateControls} labels={comparison.labels}/>
               </Suspense>}
              </ViewSection>}
 

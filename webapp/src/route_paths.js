@@ -16,6 +16,9 @@ export const route_paths = {
   project_admin: "/:project_id+/admin/:section(gate)",
   // who can see and change the project
   access: "/:project_id+/access",
+  // a project's runs across commits, by experiment: /<project>/runs/<experiment with slashes> (src/runs/). After the
+  // other pages: experiments can't have levels named like them (commit, commits, history, milestone...)
+  runs: "/:project_id+/runs/:name*",
   project: "/:project_id+",
 };
 

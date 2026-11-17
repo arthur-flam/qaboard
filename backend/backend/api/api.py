@@ -692,6 +692,7 @@ def get_project():
     return jsonify({"error": f"There is no project {project_id}."}), 404
 
   # Milestones from older versions, kept for rollbacks: they are in their own table, see /api/v1/milestones
+  # (data.has_runs_from_code: the project's code creates runs, the sidebar shows the Runs page, see backend/runs_list.py)
   return jsonify({k: v for k, v in project.data.items() if k != 'milestones'})
 
 

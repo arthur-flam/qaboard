@@ -9,6 +9,8 @@ const CiCommitList = lazy(() => import("./CiCommitList"));
 const CiCommitResults = lazy(() => import("./CiCommitResults"));
 const Dashboard = lazy(() => import("./Dashboard"));
 const MilestonePage = lazy(() => import("./milestones/MilestonePage"));
+const RunsPage = lazy(() => import("./runs/RunsPage"));
+const ProjectHome = lazy(() => import("./runs/ProjectHome"));
 const AccessPage = lazy(() => import("./access/AccessPage"));
 const GatePage = lazy(() => import("./projectAdmin/GatePage"));
 const SettingsPage = lazy(() => import("./settings/SettingsPage"));
@@ -29,10 +31,12 @@ const pages = {
   dashboard: Dashboard,
   history_branch: Dashboard,
   history: Dashboard,
+  runs: RunsPage,
   milestone: MilestonePage,
   project_admin: GatePage,
   access: AccessPage,
-  project: CiCommitList,
+  // the commits, or the runs for projects that train (qaboard.yaml's project.home)
+  project: ProjectHome,
 };
 
 // Project pages, in matching order: the first match wins

@@ -183,3 +183,6 @@ export const format_duration = seconds => {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${String(Math.round(seconds % 60)).padStart(2, '0')}s`;
   return `${Math.floor(seconds / 3600)}h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}m`;
 };
+
+// The options of plots of series: smoothing (0 to 0.99), log scale, by step or by time (SeriesOptions.jsx)
+export const default_options = { smoothing: 0, log: false, x: 'step' };

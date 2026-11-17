@@ -83,6 +83,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'user-guide/finding-results',
+        'user-guide/runs',
         'user-guide/commit-page',
         'user-guide/metrics',
         'user-guide/comparing-results',

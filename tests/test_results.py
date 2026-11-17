@@ -576,3 +576,134 @@ class TestCli(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main()
+
+
+def project_runs_page(ids, experiment='backbone/lr-sweep'):
+  """GET /api/v1/runs: runs with their batch and commit"""
+  return [{
+    'id': id, 'test_input_path': 'train/coco-mini', 'test_input_database': '/data', 'platform': 'linux',
+    'configurations': [{'lr': id / 1000}], 'extra_parameters': {}, 'metrics': {'val/loss': 1 / id}, 'data': {'sdk': {}},
+    'is_pending': False, 'is_running': False, 'is_failed': False, 'deleted': id == 13,
+    'output_dir_url': f"/s/mnt/qaboard/{id}", 'created_date': '2026-11-01T10:00:00',
+    'batch': {'id': 1, 'label': f'@alice| {experiment}', 'experiment': experiment, 'origin': 'local', 'user_name': 'alice'},
+    'commit': {'id': f'{id:040d}', 'branch': 'main'},
+  } for id in ids]
+
+
+class TestRunsAcrossCommits(unittest.TestCase):
+  def setUp(self):
+    server = mock.patch('qaboard.results.default_server', return_value=('http://qaboard:5151', '$QABOARD_URL'))
+    server.start()
+    self.addCleanup(server.stop)
+
+  def test_an_experiment(self):
+    with mock_get(project_runs_page([11, 12, 13])) as get:
+      found = runs(project='kitefin/detector', experiment='backbone/lr-sweep/', since=7, status='running')
+    params = get.call_args.kwargs['params']
+    self.assertEqual(get.call_args.args[1], 'http://qaboard:5151/api/v1/runs')
+    self.assertEqual(params, {'project': 'kitefin/detector', 'experiment': 'backbone/lr-sweep', 'since_days': 7, 'status': 'running', 'origin': 'webapp,local', 'limit': 500, 'offset': 0})
+    # deleted runs are left out, like for a commit's
+    self.assertEqual([r.id for r in found], [11, 12])
+    run = found[0]
+    self.assertEqual((run.commit, run.batch, run.experiment), (f'{11:040d}', '@alice| backbone/lr-sweep', 'backbone/lr-sweep'))
+    self.assertEqual(run.params, {'lr': 0.011})
+
+  def test_the_ci_is_left_out_unless_asked(self):
+    with mock_get([]) as get:
+      runs(project='kitefin/detector', scope='mine', status=['running', 'failed'], filter='lr=0.01')
+    params = get.call_args.kwargs['params']
+    self.assertEqual((params['origin'], params['scope'], params['status'], params['q']), ('webapp,local', 'mine', 'running,failed', 'lr=0.01'))
+    with mock_get([]) as get:
+      runs(project='kitefin/detector', since=3, include_ci=True)
+    self.assertNotIn('origin', get.call_args.kwargs['params'])
+
+  def test_pages(self):
+    pages = [project_runs_page(range(1, 501)), project_runs_page(range(501, 503))]
+    responses = []
+    for page in pages:
+      r = mock.Mock(status_code=200)
+      r.json.return_value = page
+      responses.append(r)
+    with mock.patch('requests.request', side_effect=responses) as get:
+      found = runs(project='kitefin/detector', experiment='x', include_deleted=True)
+    self.assertEqual(len(found), 502)
+    self.assertEqual([c.kwargs['params']['offset'] for c in get.call_args_list], [0, 500])
+    with mock_get(project_runs_page(range(1, 4))) as get:
+      found = runs(project='kitefin/detector', experiment='x', limit=3)
+    self.assertEqual(get.call_args.kwargs['params']['limit'], 3)
+    self.assertEqual(len(found), 3)
+
+  def test_pages_stop_when_nothing_new_comes(self):
+    r = mock.Mock(status_code=200, headers={'X-Scanned': '5000'})
+    r.json.return_value = project_runs_page(range(1, 501))
+    stderr = io.StringIO()
+    with mock.patch('requests.request', return_value=r) as get, redirect_stderr(stderr):
+      found = runs(project='kitefin/detector', experiment='x', filter='lr', include_deleted=True)
+    self.assertEqual((len(found), get.call_count), (500, 2))
+    self.assertIn('only looked at the 5000 latest runs', stderr.getvalue())
+
+  def test_since(self):
+    import datetime
+    with mock_get([]) as get:
+      runs(project='p', since=datetime.timedelta(hours=36))
+    self.assertEqual(get.call_args.kwargs['params']['since_days'], 2)
+    with mock_get([]) as get:
+      runs(project='p', since=datetime.date.today() - datetime.timedelta(days=10))
+    self.assertIn(get.call_args.kwargs['params']['since_days'], (10, 11))
+    with self.assertRaises(ValueError):
+      runs(project='p', since=datetime.datetime.now() + datetime.timedelta(days=1))
+    with self.assertRaises(TypeError):
+      runs(project='p', since='last week')
+
+  def test_mistakes(self):
+    with self.assertRaisesRegex(ValueError, 'across commits: without commit'):
+      runs(project='p', commit='abc', experiment='x')
+    with self.assertRaisesRegex(ValueError, 'Which project'):
+      runs(experiment='x')
+    with self.assertRaisesRegex(ValueError, 'scope'):
+      runs(project='p', scope='team')
+    with self.assertRaisesRegex(ValueError, 'status'):
+      runs(project='p', status='done')
+
+
+class TestRunsPageUrl(unittest.TestCase):
+  def test_the_runs_page(self):
+    url = "https://qaboard.example.com/kitefin/detector/runs/backbone/lr-sweep?scope=mine&days=7&status=running,failed&q=lr%3D0.01&ci=1&selected=11,12&run=11"
+    with mock_get(project_runs_page([11, 12, 14])) as get:
+      found = runs(url)
+    self.assertEqual(get.call_args.args[1], 'https://qaboard.example.com/api/v1/runs')
+    # ci=1: with the CI's runs
+    self.assertEqual(get.call_args.kwargs['params'], {
+      'project': 'kitefin/detector', 'experiment': 'backbone/lr-sweep', 'since_days': 7, 'scope': 'mine',
+      'status': 'running,failed', 'q': 'lr=0.01', 'limit': 500, 'offset': 0,
+    })
+    # the selected rows: what the page plots
+    self.assertEqual([r.id for r in found], [11, 12])
+
+  def test_defaults_and_overrides(self):
+    with mock_get([]) as get:
+      runs("https://qaboard/kitefin/detector/runs", since=3)
+    params = get.call_args.kwargs['params']
+    self.assertEqual((params['project'], params['since_days'], params['scope'], params['origin']), ('kitefin/detector', 3, 'all', 'webapp,local'))
+    self.assertNotIn('experiment', params)
+    with self.assertRaisesRegex(ValueError, 'Runs page'):
+      runs("https://qaboard/kitefin/detector/runs", commit='abc')
+
+  def test_commit_pages_stay_commit_pages(self):
+    with mock_get(commit_response()) as get:
+      runs("https://qaboard/ml/runs/commit/abc?batch=ci")
+    self.assertEqual(get.call_args.args[1], 'https://qaboard/api/v1/commit/abc')
+    self.assertEqual(get.call_args.kwargs['params']['project'], 'ml/runs')
+
+  def test_like_the_web_app(self):
+    with mock_get([]) as get:
+      runs("https://qaboard/p/runs?days=0&scope=others&status=done,failed")
+    params = get.call_args.kwargs['params']
+    self.assertEqual((params['since_days'], params['status']), (30, 'failed'))
+    self.assertNotIn('scope', {k: v for k, v in params.items() if v != 'all'})
+
+  def test_under_a_prefix(self):
+    with mock_get([]) as get:
+      runs("https://tools.example.com/qaboard/a/b/runs/x", server="https://tools.example.com/qaboard")
+    self.assertEqual(get.call_args.args[1], 'https://tools.example.com/qaboard/api/v1/runs')
+    self.assertEqual(get.call_args.kwargs['params']['project'], 'a/b')

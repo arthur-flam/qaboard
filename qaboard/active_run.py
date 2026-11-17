@@ -295,8 +295,8 @@ class _Setup:
     self.outputs_commit = self._outputs_dir(resolved, outputs_project_root) if outputs_project_root else None
 
 
-def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] = None, batch: Optional[str] = None,
-              project: Optional[str] = None, commit: Optional[str] = None, output_dir: Union[str, Path, None] = None,
+def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] = None, experiment: Optional[str] = None,
+              batch: Optional[str] = None, project: Optional[str] = None, commit: Optional[str] = None, output_dir: Union[str, Path, None] = None,
               share: Optional[bool] = None, resume: bool = False, summary: Union[str, Mapping[str, str]] = 'last',
               database: Union[str, Path, None] = None, platform: Optional[str] = None, capture_output: bool = True,
               server: Optional[str] = None, token: Optional[str] = None) -> 'ActiveRun':
@@ -308,8 +308,11 @@ def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] =
     the same input and configurations are compared from a commit to the next. Default: the script's name.
   - `configs`: the configurations, texts and mappings like `qa --config`: `["resnet50", {"lr": 1e-3}]`. They make the
     run: other configurations are another run. `run.params` merges the mappings.
-  - `batch`: the experiment the run belongs to, a batch in the web app. Default: "default". Like with `qa --share`,
-    runs you start outside the CI go to your own batch, "@you| <batch>".
+  - `experiment`: what the run belongs to, e.g. "backbone/lr-sweep". Slashes make a hierarchy: the web app's Runs page
+    shows experiments as a tree, and a level has the runs of everything under it. Name them `<area>/<question>`, and
+    put seeds and trials in `configs`, not in the name. Default: "default". It is the run's batch in the web app
+    (`batch=` is the same argument, by its other name). Like with `qa --share`, the runs you start outside the CI go
+    to your own batch, "@you| <experiment>", in the same experiment as everyone's.
   - `project`, `commit`: by default the project of the qaboard.yaml above the current directory, and the git HEAD.
     Without a qaboard.yaml, give `project="group/repo"`. `commit` attaches the run to another commit.
   - `share`: save the files in the shared storage and show the run in the web app. Default: in the CI, and when a
@@ -323,6 +326,11 @@ def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] =
   - `capture_output`: also save what the process prints in the run's log.txt, shown in the web app's Logs.
   - `server`, `token`: by default those `qa` uses (QABOARD_URL..., `qa auth login`).
   """
+  if experiment is not None and batch is not None and experiment != batch:
+    raise TypeError(f"start_run(experiment={experiment!r}, batch={batch!r}): they are the same argument, give one of them")
+  experiment = experiment if experiment is not None else batch
+  if experiment is not None and not isinstance(experiment, str):
+    raise TypeError(f"start_run(experiment=...) is a name like 'backbone/lr-sweep', not {experiment!r}")
   if input is not None and (not isinstance(input, (str, os.PathLike)) or not str(input).strip()):
     raise TypeError(f"start_run(input=...) is a name or a path, like 'train/coco-mini', not {input!r}")
   configurations = list(configs) if configs is not None and not isinstance(configs, (str, Mapping)) else ([configs] if configs is not None else [])
@@ -358,7 +366,8 @@ def start_run(input: Optional[str] = None, *, configs: Optional[Sequence[Any]] =
     raise ValueError(f"start_run(input={input!r}): the input is a name or a path under its database, without '..'")
   input_name = input_path.as_posix()
 
-  raw_batch = batch or 'default'
+  # as named, like `qa --label`: '' is the default
+  raw_batch = experiment or 'default'
   batch_label = raw_batch if (not share or setup.is_ci) else f"@{setup.user}| {raw_batch}"
   platform = platform or setup.platform
 
@@ -414,6 +423,8 @@ class ActiveRun:
     self.project = setup.project
     self.commit = setup.commit
     self.batch = batch
+    # the experiment, as named: the batch without "@you| ", the Runs page's tree
+    self.experiment = raw_batch
     self.input = input
     self.database = database
     self.platform = platform

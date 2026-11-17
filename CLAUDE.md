@@ -98,6 +98,11 @@ uv sync --extra dev     # Install with dev dependencies
 `viewers/series/series.js` reads the same files: both are tested on `tests/fixtures/series/`). Design and what's left
 out: `docs/rfcs/python-sdk-runs.md` (next steps: `python-sdk-runs-follow-ups.md`); user docs: `website/docs/logging-from-code.mdx`.
 What `qa` and the SDK send with results is built in one place, `qaboard/payloads.py`.
+The **Runs** page lists a project's runs across commits by experiment (the batch's label without `@user| `, folded by
+slashes): `webapp/src/runs/` (its URL state in `state.js`, which `qaboard/results.py` `runs(url)` also reads), the
+endpoints `GET /api/v1/runs` and `/experiments` (`backend/backend/api/runs.py`, SQL in `backend/backend/runs_list.py`,
+tested on PostgreSQL with `QABOARD_TEST_DATABASE_URL`). Its mocked playground: `webapp/e2e/fixtures/runs.js`, used by
+`e2e/runs.spec.js`. Design and what's left: "What shipped of part A" in `docs/rfcs/python-sdk-runs-follow-ups.md`.
 
 ### Runners
 `qa batch` starts runs with a runner (`qaboard/runners/`): local, lsf, celery, dask (workers on LSF, Slurm, PBS, SGE,

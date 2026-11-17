@@ -23,7 +23,7 @@ In a project (a folder with a *qaboard.yaml*, see [Start a project](/docs/projec
 ```python title="train.py"
 import qaboard as qb
 
-with qb.start_run(input="train/coco-mini", configs=["resnet50", {"lr": 1e-3}], batch="lr-sweep") as run:
+with qb.start_run(input="train/coco-mini", configs=["resnet50", {"lr": 1e-3}], experiment="detector/lr-sweep") as run:
     for step, batch in enumerate(loader):
         loss = train_step(batch)
         run.log({"train/loss": loss, "lr": scheduler.lr}, step=step)   # a point of each series
@@ -34,8 +34,8 @@ with qb.start_run(input="train/coco-mini", configs=["resnet50", {"lr": 1e-3}], b
 
 Run it with `python train.py`. It prints where the run's files are and its address in the web app. Open it: in the
 **Visualizations** view, the run's card plots `train/loss` and `lr` as they are logged, with the reference run's
-curves dashed on the same axes. The **Summary** view plots all the runs of the batch together, one color per run
-([Logged series](/docs/user-guide/other-viewers#logged-series) in the user guide).
+curves dashed on the same axes. The project's **Runs** page lists your experiments as a tree, and plots the runs of
+each together, whatever their commit ([Runs across commits](/docs/user-guide/runs) in the user guide).
 Leaving the `with` block ends the run; an exception ends it as failed, with the error in its log.
 
 You need what `qa --share` needs: the `qaboard` package, a server (`QABOARD_URL`, or your site's package), the shared
@@ -51,7 +51,7 @@ If you come from an experiment tracker:
 | You know | In QA-Board | With `start_run()` |
 |---|---|---|
 | Project | The project | The one of the *qaboard.yaml* above the current folder, or `project="group/repo"` without one |
-| Experiment, group | A batch | `batch="lr-sweep"`. Outside the CI, your runs go to your own batch, shown as yours, like with `qa --share` |
+| Experiment, group | An experiment, a batch | `experiment="detector/lr-sweep"` (or `batch=`, its other name). Slashes make levels. Outside the CI, your runs go to your own batch, shown as yours, in the same experiment as everyone's |
 | Run name | The input and the configurations | `input="train/coco-mini"`: what the run works on, a dataset or any name. Default: the script's name |
 | Config, hyperparameters | Configurations | `configs=["resnet50", {"lr": 1e-3}]`: names and mappings, like `qa --config`. `run.params` merges the mappings |
 | Code version | The commit | The git `HEAD`, or the CI's commit. A run whose tracked files differ from the commit is recorded as such (`data.dirty`) |
@@ -60,6 +60,15 @@ If you come from an experiment tracker:
 
 Two runs with other configurations are two runs, shown side by side in the batch. Starting the same run again is a
 new attempt of it: see [run again, or resume](#attempts).
+
+### Name your experiments {#experiments}
+Name experiments like folders, `<area>/<question>`: `backbone/lr-sweep`, `backbone/resnet-vs-convnext`,
+`quantization/int8-calibration`. The [Runs page](/docs/user-guide/runs) shows them as a tree: open `backbone` to see
+the runs of everything under it, and every level has an address to share. Keep what varies between the runs of an
+experiment in `configs`, the seed or the trial included, not in its name: the runs of an experiment then compare,
+and the page colors and groups them by those parameters. Your runs and your teammates' of the same experiment are
+one level, whoever ran them. Levels can't be named like the web app's pages: `commit`, `commits`, `committer`,
+`history`, `dashboard`, `milestone` or `runs`.
 
 ## Log values, metrics, parameters and files {#logging}
 
@@ -175,7 +184,7 @@ run.finish()          # or run.fail("the loss diverged")
 |---|---|---|
 | `input` | The script's name | What the run works on: a path relative to the inputs' database, or any name. |
 | `configs` | `[]` | The configurations: names and mappings. |
-| `batch` | `"default"` | The batch. Outside the CI, runs go to your own batch of that name. |
+| `experiment` | `"default"` | What the run belongs to, e.g. `"backbone/lr-sweep"`: slashes make levels of the [Runs page](/docs/user-guide/runs). Outside the CI, runs go to your own batch of that name. `batch=` is the same argument. |
 | `project` | The *qaboard.yaml*'s | Required without a *qaboard.yaml*. |
 | `commit` | The git `HEAD`, or the CI's | A full commit id, or a branch, tag or short id of the folder's repository. |
 | `share` | In the CI, or with a server and storage | `False` keeps the run local. `QA_OFFLINE=1` does it for a whole process. |
@@ -190,8 +199,9 @@ run.finish()          # or run.fail("the loss diverged")
 </details>
 
 ## What it doesn't do yet {#limits}
-- **Compare runs across batches or commits on one plot.** The **Summary** view plots the runs of one batch
-  together, up to 40, and each with its reference run.
+- **More than 40 runs on one plot.** The [Runs page](/docs/user-guide/runs) plots the first 40 runs of an
+  experiment, or those you tick, whatever their commit; group them by a parameter to see the mean and range of each
+  value.
 - **Images per step, system metrics (GPU, memory), alerts, a model registry.** Save images as files of the run;
   link to your registry with [badges](/docs/deep-learning#workflows).
 - **Sweeps.** Loop over configurations in your script, or use [automated tuning](/docs/auto-optimization) with

@@ -12,7 +12,8 @@ import { DateTime } from "luxon";
 import { http } from "../api/http";
 import { matchRoutes } from "../router";
 import { app_paths, project_routes } from "../route_paths";
-import { useProjects, useSiteConfig, useUser } from "../hooks";
+import { useProjectData, useProjects, useSiteConfig, useUser } from "../hooks";
+import { has_runs_page } from "../runs/state";
 import { usePrefsStore } from "../stores/prefs";
 import { useIsDark } from "../theme";
 import { is_typing, useHelpSheet } from "../components/HelpSheet";
@@ -204,7 +205,10 @@ const PaletteContent = ({ onClose, typing }) => {
   const sha = project && looks_like_sha(debounced) ? debounced.toLowerCase() : null;
   const commits = useQuery({ ...commitsQuery(project, sha), enabled: !!sha });
 
-  const pages = useMemo(() => app_items({ user, docs_root, is_dark }), [user, docs_root, is_dark]);
+  // the project's own pages too, e.g. its runs
+  const project_data = useProjectData(project);
+  const has_runs = has_runs_page(project_data);
+  const pages = useMemo(() => app_items({ user, docs_root, is_dark, project, has_runs }), [user, docs_root, is_dark, project, has_runs]);
   const sections = useMemo(() => group_sections([
     ...rank_commits(project, commits.data, trimmed),
     ...rank_projects(projects.data, trimmed, { favorites, now }),

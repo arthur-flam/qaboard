@@ -134,6 +134,98 @@ export const highlight_update = (traces, highlighted) => {
   const none = highlighted === null || highlighted === undefined;
   return {
     opacity: traces.map(trace => !none && trace.run !== highlighted ? 0.12 : (trace.is_ref ? REF_OPACITY : 1)),
-    'line.width': traces.map(trace => trace.is_ref ? REF_WIDTH : (!none && trace.run === highlighted ? 3 : WIDTH)),
+    // bands have no line
+    'line.width': traces.map(trace => trace.is_band ? 0 : trace.is_ref ? REF_WIDTH : (!none && trace.run === highlighted ? 3 : WIDTH)),
   };
+};
+
+// Steps where we compute a group's mean: all the steps its runs logged, at most this many (evenly picked)
+const MAX_BAND_POINTS = 600;
+
+// The value of a run's series at x, linearly between its points; undefined outside of them
+const value_at = (xs, ys, x, from) => {
+  // from: where to start looking, xs are sorted: the caller walks forward
+  let i = from;
+  while (i < xs.length - 1 && xs[i + 1] < x) i += 1;
+  if (x < xs[0] || x > xs[xs.length - 1]) return { value: undefined, index: i };
+  if (xs[i] === x) return { value: ys[i], index: i };
+  const j = Math.min(i + 1, xs.length - 1);
+  if (xs[j] === x) return { value: ys[j], index: i };
+  const t = (x - xs[i]) / (xs[j] - xs[i]);
+  return { value: ys[i] + t * (ys[j] - ys[i]), index: i };
+};
+
+// The mean, min and max of several runs' series at each step: runs are compared where they have values (a run that
+// stopped early leaves the others). NaN values (diverged) are skipped. { x, mean, min, max, count }
+export const group_band = (series_list, { x = 'step', smoothing = 0 } = {}) => {
+  const curves = series_list
+    .filter(Boolean)
+    .map(series => {
+      const xs = x === 'time' ? series.time : series.step;
+      const ys = smooth(series.value, smoothing);
+      // sorted by x, without missing values
+      const points = xs.map((v, i) => [v, ys[i]]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b)).sort((a, b) => a[0] - b[0]);
+      return { xs: points.map(p => p[0]), ys: points.map(p => p[1]) };
+    })
+    .filter(curve => curve.xs.length > 0);
+  if (curves.length === 0) return { x: [], mean: [], min: [], max: [], count: [] };
+  let grid = [...new Set(curves.flatMap(curve => curve.xs))].sort((a, b) => a - b);
+  if (grid.length > MAX_BAND_POINTS) {
+    const step = (grid.length - 1) / (MAX_BAND_POINTS - 1);
+    grid = Array.from({ length: MAX_BAND_POINTS }, (_, i) => grid[Math.round(i * step)]);
+  }
+  const cursors = curves.map(() => 0);
+  const band = { x: [], mean: [], min: [], max: [], count: [] };
+  for (const at of grid) {
+    const values = [];
+    curves.forEach((curve, c) => {
+      const { value, index } = value_at(curve.xs, curve.ys, at, cursors[c]);
+      cursors[c] = index;
+      if (value !== undefined && Number.isFinite(value)) values.push(value);
+    });
+    if (values.length === 0) continue;
+    band.x.push(at);
+    band.mean.push(values.reduce((a, b) => a + b, 0) / values.length);
+    band.min.push(Math.min(...values));
+    band.max.push(Math.max(...values));
+    band.count.push(values.length);
+  }
+  return band;
+};
+
+// A translucent version of a color, for bands
+const with_alpha = (hex, alpha) => {
+  const value = parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+};
+
+// The traces of one series, a group per value of a parameter: the mean of its runs as a line, their range as a band.
+// groups: [{ value, label, style, ids }], runs: [{ id, model }]. Groups whose runs are all hidden are left out.
+// Groups of one run are a plain line. A trace's `run` is its group's key, for highlight_update.
+export const group_traces = (key, { groups, runs, hidden, options }) => {
+  const models = new Map(runs.map(run => [run.id, run.model]));
+  const traces = [];
+  for (const group of groups) {
+    const series = group.ids.filter(id => !hidden?.has(id)).map(id => models.get(id)?.series?.[key]).filter(Boolean);
+    if (series.length === 0) continue;
+    const band = group_band(series, options);
+    if (band.x.length === 0) continue;
+    const name = `${group.label} (${series.length} run${series.length === 1 ? '' : 's'})`;
+    const id = `group:${group.value}`;
+    if (series.length > 1) {
+      // the range: the lower edge, then the upper one filled down to it
+      traces.push(
+        { x: band.x, y: band.min, type: 'scatter', mode: 'lines', line: { width: 0, color: group.style.color }, hoverinfo: 'skip', showlegend: false, run: id, is_band: true, opacity: 1 },
+        { x: band.x, y: band.max, type: 'scatter', mode: 'lines', fill: 'tonexty', fillcolor: with_alpha(group.style.color, 0.18), line: { width: 0, color: group.style.color }, hoverinfo: 'skip', showlegend: false, run: id, is_band: true, opacity: 1 },
+      );
+    }
+    traces.push({
+      x: band.x, y: band.mean, type: 'scatter', mode: band.x.length > 1 ? 'lines' : 'markers', name, run: id, is_ref: false, opacity: 1,
+      line: { color: group.style.color, width: WIDTH, dash: 'solid' },
+      marker: { color: group.style.color, size: 6 },
+      customdata: band.min.map((min, i) => [min, band.max[i], band.count[i]]),
+      hovertemplate: `%{y:.5g} (%{customdata[0]:.4g} to %{customdata[1]:.4g}, %{customdata[2]} runs)<extra>${name}</extra>`,
+    });
+  }
+  return traces;
 };

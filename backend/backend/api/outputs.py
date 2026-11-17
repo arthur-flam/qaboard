@@ -20,6 +20,7 @@ from ..metrics_definitions import save_metrics_definitions
 from ..notifications.batches import on_run_ended
 from ..attempts import record_attempt
 from ..access import invalid_project
+from ..runs_list import mark_runs_from_code
 from .auth import login_required, is_authorized_user, ingest_access, forbidden_project, require_project_access
 
 # Keys of a run's data that only the server sets
@@ -496,6 +497,13 @@ def new_output_webhook():
   db_session.add(ci_commit)
   db_session.add(output)
   db_session.commit()
+  # Runs started from code (qaboard.start_run()): their batch says so, and their project gets the Runs page
+  if isinstance(data.get('data'), dict) and data['data'].get('sdk'):
+    try:
+      mark_runs_from_code(db_session, batch.id, ci_commit.project_id)
+    except Exception as e:
+      db_session.rollback()
+      print(f"WARNING: could not mark the batch {batch.id} as having runs from code: {e}")
   if not output.is_pending:
     # maybe the batch's last run: users may want to know
     on_run_ended(db_session, output.data.get('root_command_id'))

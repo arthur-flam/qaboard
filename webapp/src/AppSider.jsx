@@ -27,6 +27,7 @@ import { useHelpSheet, is_typing } from "./components/HelpSheet"
 import { PaletteButton } from "./palette/CommandPalette"
 import { LogsMenuItem, logs_hint_class } from "./AppSiderLogsItem"
 import { project_admin_pages } from "./projectAdmin/ProjectAdminTabs"
+import { has_runs_page, project_home, runs_path } from "./runs/state"
 
 import { useCommitsList, useComparison, useProjects, useSiteConfig, useUser } from "./hooks"
 import { path_segments } from "./explore/tree"
@@ -621,10 +622,17 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
   const branch = selected.branch ?? reference_branch;
   const commits_url = branch ? `/${path_segment(project)}/commits/${path_segment(branch)}` : `/${path_segment(project)}/commits`;
   const history_url = branch ? `/${path_segment(project)}/history/${path_segment(branch)}` : `/${path_segment(project)}/history`;
+  // Runs across commits: for projects with runs started from code, first for those that train (project.home: runs)
+  const is_runs = selected.route.is_runs;
+  const runs_first = project_home(project_data) === 'runs';
+  const runs_item = (is_runs || has_runs_page(project_data)) && <SiderHint name="Runs" content="Your experiments: every run of the project whatever its commit, their curves on the same plots, the best, each run opened in place. (Runs activity is what waits and runs on the servers now.)">
+    <MenuItemLink to={runs_path(project)} active={is_runs} icon="lab-test" text="Runs"/>
+  </SiderHint>;
   return <>
+    {runs_first && runs_item}
     {/* The branch's commits: highlighted on their page, a link elsewhere */}
     <SiderHint name={branch ? `Commits on ${branch}` : tag && !is_branch && !(is_project_home || is_history) ? `Commits by ${tag}` : 'All commits'}>
-      {(is_project_home || is_history || is_admin)
+      {(is_project_home || is_history || is_admin || is_runs)
         ? <MenuItemLink to={commits_url} text={(is_branch || project_data.is_loaded) ? branch ?? 'All commits' : <span className={Classes.SKELETON}>branch</span>} title={branch ? `Commits on ${branch}` : 'Commits on all branches'} icon='git-branch'/>
         : <MenuItem icon={is_branch ? "git-branch" : 'user'} active text={tag ?? 'All commits'} title={is_branch ? `Commits on ${tag}` : tag && `Commits by ${tag}`}/>
       }
@@ -633,6 +641,7 @@ const ProjectSideCommitList = ({ project, project_data = {}, commit = {}, ref_co
     <SiderHint name="History" content="The metrics of the branch over time.">
       <MenuItemLink to={history_url} active={is_history} icon="history" text="History"/>
     </SiderHint>
+    {!runs_first && runs_item}
     <SectionDivider />
     <IntegrationsMenus
       single_menu
@@ -808,7 +817,7 @@ const AppSider = () => {
 
       {/* Navigation Section: views of the results on commit pages, else (commit lists, history, admin) the project's pages */}
       <SiderSection>
-        {(route.is_list || route.is_history || route.is_access || route.is_project_admin) && (
+        {(route.is_list || route.is_history || route.is_access || route.is_project_admin || route.is_runs) && (
           <>
             <SiderMenu>
               <ProjectSideCommitList

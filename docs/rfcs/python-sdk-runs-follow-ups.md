@@ -1,6 +1,7 @@
 # Follow-ups to "creating runs from Python": what is left for training teams
 
-Status: notes for discussion, November 2026. Nothing here is implemented or decided.
+Status: notes for discussion, November 2026. Part A's first version is implemented (experimental): see
+"What shipped of part A" at its end. The rest is not implemented or decided.
 Follows `docs/rfcs/python-sdk-runs.md`, whose first version shipped as experimental (`qaboard.start_run()`, the series
 viewer on run cards, the comparison of a batch's runs in the Summary view).
 Three parts: (A) a run-centric view of a project, (B) the screenshots the new docs miss, (C) the gaps against a
@@ -153,6 +154,42 @@ that opens with its outputs in full viewers and against a reference.
 3. The Runs page: tree, table, quick filters, a run opening in place with its card. No plots yet.
 4. The plots above the table, driven by visibility, selection and hover; the URL state.
 5. Group by with mean and band; delete from a node; milestones that hold runs; the page as a project's home.
+
+### What shipped of part A (November 2026)
+Steps 1 to 4 of the order above, and parts of 5. Code: `backend/backend/runs_list.py` (the queries, plain SQL tested on
+PostgreSQL in `backend/tests/test_runs_list.py`), `backend/backend/api/runs.py`, `webapp/src/runs/`, `qaboard/results.py`.
+User docs: `website/docs/user-guide/runs.mdx`.
+
+- **Endpoints**: `GET /api/v1/experiments` (the tree's rows: counts per experiment, from the project's batches with
+  runs in the window, then their runs by `batch_id`) and `GET /api/v1/runs` (a page of runs, the running first, then
+  the latest by `coalesce(started_at, created_date)`). Both start from `batches.latest_output_datetime` (indexed) for
+  the project and a window (30 days by default): they never scan a project's runs. The text filter is the web app's,
+  in Python, over at most the 5000 latest runs of the selection (`X-Scanned` says when it stopped). Not measured on a
+  production copy yet: do it before making the page a default for big projects.
+- **Which projects get the page**: the server marks a batch (`data.sdk`) and its project (`data.has_runs_from_code`)
+  when it gets a run started from code; the migration `c4e6a8b0d2f3` marks those of the runs since October. The
+  sidebar shows **Runs** under **History**. Open question 1:
+  `project.home: runs` in *qaboard.yaml* puts it first and opens the project on it. No share-of-runs heuristic.
+- **Python**: `start_run(experiment=)`, `batch=` its alias; `qaboard.runs(project=, experiment=, since=, scope=,
+  status=, user=, filter=)` and the Runs page's address in `qaboard.runs(url)` / `qa runs` (also `--experiment`,
+  `--since`, `--mine`); `run.experiment`.
+- **Web app**: the tree (levels with one child are merged, like folders in editors), the table (status, a name with
+  what differs, experiment under the level, metrics with the best in bold (direction declared, else guessed from the
+  name), the varying parameters, who, when, duration, commit with `*` when dirty), the plots above it driven by the
+  eye, the selection and hover, group by a parameter with each value's mean and range, quick filters, the run in a
+  drawer with the commit page's card and **Compare with…** any other run, a Python snippet. The URL holds everything
+  (`webapp/src/runs/state.js`, which `qaboard/results.py` reads too).
+- **Decisions taken while building it**: the CI's runs are hidden by default (`?ci=1`); metrics and parameters come
+  right after the run's name, before who/when/commit, since they are what people compare; sorting orders the runs
+  loaded (no server-side sort by a JSON metric: open question on scale); the route is `/<project>/runs/<experiment>`,
+  matched after the other project pages, with the project before the *last* `/runs/`: experiments can't have levels
+  named `commit`, `commits`, `committer`, `history`, `dashboard`, `milestone` or `runs`, and a project named
+  `.../runs` loses its own page to its parent's Runs page.
+- **Bounds, after a review**: offsets past 100000 are refused; with the CI's runs, at most 90 days; queries stop after
+  30 s (503, with what to narrow); the text filter reads the 5000 latest runs of the selection in one query. The
+  markers are written in SQL, once (`mark_runs_from_code`), not by rewriting rows.
+- **Not done**: deleting an experiment's files from its node (point 1), milestones that hold runs (point 6), a
+  reference for training runs (open question 3), the shots (part B).
 
 ## B. Screenshots the docs miss
 

@@ -65,6 +65,13 @@ says, and `side="reference"` gives the runs of the reference bar (`?reference=`)
 the iterations of [automated tunings](/docs/auto-optimization), are left out unless you ask
 (`include_deleted`, `include_hidden`).
 
+**Runs across commits**, like the [Runs page](/docs/user-guide/runs): give the project and an experiment, a time
+window, whose runs or their status, without a commit.
+`qb.runs(project="kitefin/detector", experiment="detector/lr-sweep", since=7)` gives the runs of that experiment and of
+those under it, on any commit, the running first, then the latest; `scope="mine"`, `status="failed"`, `user=` and
+`filter=` narrow them. Like on the page, the CI's runs are left out unless you ask (`include_ci=True`). The Runs page's address works as a URL, and `qa runs --project <p> --experiment <e> --since 7`
+does the same from a shell. `run.experiment` is the run's experiment.
+
 Save it as *sharpness.py* and run `uv run sharpness.py`: the `# /// script` header says what to install, and `uv`
 does it in a throwaway environment. Or install the packages yourself (`pip install qaboard imageio`) and run
 `python sharpness.py`. **The header must list your site's package too** when your QA-Board has one, next to
