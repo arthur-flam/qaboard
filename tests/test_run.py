@@ -77,5 +77,36 @@ class TestIsFailed(unittest.TestCase):
       self.assertTrue(run_context([], {}, output_dir=Path(tmp)).is_failed())
 
 
+class TestWindowsExtendedPaths(unittest.TestCase):
+  """On Windows, Path.resolve() keeps the `\\\\?\\UNC\\` prefix for paths that don't exist yet"""
+  def test_normalize(self):
+    from pathlib import PureWindowsPath as P
+    from qaboard.run import _win_normalize
+    self.assertEqual(_win_normalize(P(r'\\?\UNC\server\share\db\in.raw')), P(r'\\server\share\db\in.raw'))
+    self.assertEqual(_win_normalize(P(r'\\?\C:\db\in.raw')), P(r'C:\db\in.raw'))
+    self.assertEqual(_win_normalize(P(r'\\server\share\db')), P(r'\\server\share\db'))
+    self.assertEqual(_win_normalize(Path('/db/in.raw')), Path('/db/in.raw'))
+
+  def test_mismatched_prefixes_compare(self):
+    from pathlib import PureWindowsPath as P
+    from qaboard.run import _win_normalize
+    output_dir, base = P(r'\\?\UNC\server\share\out\batch\in'), P(r'\\server\share\out')
+    with self.assertRaises(ValueError):
+      output_dir.relative_to(base)
+    self.assertEqual(_win_normalize(output_dir).relative_to(_win_normalize(base)), P(r'batch\in'))
+    # escaping with ../ is still refused
+    with self.assertRaises(ValueError):
+      _win_normalize(P(r'\\?\UNC\server\share\elsewhere')).relative_to(_win_normalize(base))
+
+  def test_rel_input_path(self):
+    from pathlib import PureWindowsPath as P
+    from qaboard.run import RunContext
+    context = RunContext(
+      type='default', input_path=P(r'\\?\UNC\server\share\db\images\in.raw'), database=P(r'\\server\share\db'),
+      platform='windows', configurations=[], extra_parameters={}, output_dir=Path(),
+    )
+    self.assertEqual(context.rel_input_path, P(r'images\in.raw'))
+
+
 if __name__ == '__main__':
   unittest.main()
