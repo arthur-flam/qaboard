@@ -1,0 +1,97 @@
+---
+id: rerun
+title: "QA-Board and Rerun: compare every commit, or explore one recording"
+sidebar_label: Rerun
+description: "How QA-Board and Rerun differ for robotics teams: Rerun logs and explores multimodal recordings, QA-Board compares each commit's runs with the reference."
+---
+As of November 2026, Rerun (open source, MIT or Apache 2.0) is an SDK and a viewer to log, explore and query
+multimodal data from robots and simulations: images, point clouds, transforms, time series and video on one timeline.
+QA-Board (open source, Apache 2.0) runs your test sequences on every commit and compares each run's metrics,
+trajectories, maps and videos with the reference's. Use Rerun to see what happened in one recording, and QA-Board to
+see what a change did to all of them; the two fit together.
+
+## The short answer
+| If your question is... | Reach for |
+|---|---|
+| What did the robot see and do, sensor by sensor, at this moment? | Rerun |
+| I want to stream live from a running robot or simulation | Rerun |
+| I need to query thousands of recordings, as dataframes, to train on them | Rerun |
+| Did this commit make any test sequence worse than the reference? | QA-Board |
+| Which commit made the figure-8 drift? | QA-Board |
+
+## Side by side
+As of November 2026:
+
+| | Rerun | QA-Board |
+|---|---|---|
+| What one view is about | A recording: many streams on one timeline | A commit's runs, each against the reference's and the ground truth |
+| License and hosting | SDK and viewer: MIT or Apache 2.0. Rerun Hub, a commercial backend, keeps a catalog of recordings in your object storage | Apache 2.0, every feature; self-hosted only, with Docker Compose or Kubernetes |
+| How data gets in | The SDK, from Python, Rust or C++, to the viewer live or to *.rrd* files; MCAP, URDF and LeRobot data | Files your code writes in each run's folder, and the metrics it returns |
+| 3D | Point clouds, meshes, transforms, depth images, in views you arrange | *.pcd* point clouds (x, y, z) and 6DoF trajectories, against the ground truth and the reference's |
+| Video and images | Video, images and depth on the same timeline | Videos in sync with the reference's, frame by frame; images down to pixel values |
+| Several recordings | Open at once, one shown at a time; queries across recordings | New and reference side by side; **History** across commits |
+| Metrics | Scalar time series you log | Metrics per run, compared with the reference's, with targets |
+| Where code runs | Your process | Your laptop, CI, LSF, Kubernetes, Celery, Dask (on Slurm too) |
+| In CI | Your scripts | `qa batch` on every commit; `qa gate` (experimental) fails the job and comments on the pull request |
+
+## What Rerun does best
+- **Many streams, one timeline.** Log images, depth, point clouds, transforms, meshes, joint states and scalars at
+  their own rates, and scrub through time with every view in sync.
+- **Live.** Stream to the viewer from a robot or a simulation while it runs, or save *.rrd* files and open them
+  later, in the native viewer or on the web.
+- **Layouts as code.** Blueprints arrange the views from your code, the same for everyone.
+- **Data you can query.** The same recordings are dataframes: query them with SQL or Python, across recordings,
+  down to one sensor reading, and stream them to training.
+- **Robotics formats.** It opens MCAP files, URDF models and LeRobot datasets.
+
+QA-Board's 3D viewer reads *.pcd* point clouds and trajectories; it doesn't play sensor streams on a timeline.
+
+## Where QA-Board differs
+### Every sequence, on every commit
+QA-Board runs your test sequences on every commit, on your cluster, and compares each with the same sequence on the
+reference branch, or on a release saved as a milestone. Each trajectory shows against the ground truth and the
+reference's, per axis and in 3D.
+
+<Shot id="commit/trajectory-6dof" />
+
+### The map and the sensors, against the reference
+The point cloud the robot built shows against the true one; sensor videos play next to the reference's, frame by
+frame, so you see the moment the estimate leaves the truth ([robotics](/docs/use-cases/robotics-3d)).
+
+<Clip id="commit/video-sync" />
+
+### Metrics with History and a gate
+Each run returns its metrics, like the absolute trajectory error, the drift at the end and the time per frame. The
+**Metrics Diff** shows each sequence's change, **History** follows one sequence across commits to find the commit
+that changed it, and `qa gate` (experimental) fails the CI when one sequence gets much worse, even when the average
+doesn't ([quality gate](/docs/quality-gate)).
+
+### Tuning from the browser
+Start a sweep of thresholds and keyframe distances from the web app, and read which parameters matter in **Tuning
+Analysis** ([tuning](/docs/user-guide/tuning)).
+
+## Use both
+1. **Log to Rerun in `run()`.** Your evaluation keeps logging with the Rerun SDK, and saves the recording in the
+   run's folder, e.g. `rr.save(str(context.output_dir / "recording.rrd"))` before logging
+   ([run your code](/docs/running-your-code)).
+2. **Save what QA-Board compares.** The trajectory as tab-separated poses, the map as a *.pcd* file, a video of the
+   sensors, and the metrics you return ([point clouds and trajectories](/docs/viewers#point-clouds-and-trajectories)).
+3. **Run it on every commit**: `qa batch ci` in CI, with a gate on the trajectory metrics
+   ([CI integration](/docs/ci-integration)).
+4. **Open the recording when a sequence regresses.** In **Output Files**, download the new run's *recording.rrd*
+   and the reference run's, and open them in the Rerun viewer to see why ([files](/docs/user-guide/files)).
+
+## Sources
+Last reviewed November 2026. QA-Board's features are described in these docs and in the
+[repository](https://github.com/Samsung/qaboard).
+- What is Rerun: [rerun.io/docs/overview/what-is-rerun](https://rerun.io/docs/overview/what-is-rerun)
+- Repository and licenses: [github.com/rerun-io/rerun](https://github.com/rerun-io/rerun)
+- Recordings in the viewer: [rerun.io/docs/concepts/apps-and-recordings](https://rerun.io/docs/concepts/apps-and-recordings)
+- Rerun Hub: [rerun.io/pricing](https://rerun.io/pricing)
+
+## Where next
+<Cards>
+  <Card title="Robotics and 3D" to="/docs/use-cases/robotics-3d" eyebrow="Use case">A warehouse robot's odometry, sequence by sequence, on every commit.</Card>
+  <Card title="Quickstart" to="/docs/get-started/quickstart" eyebrow="Get started">A server with demo projects in a few commands.</Card>
+  <Card title="Compared with other tools" to="/docs/alternatives" eyebrow="Overview">Foxglove, FiftyOne, experiment trackers and more.</Card>
+</Cards>

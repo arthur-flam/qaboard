@@ -121,7 +121,7 @@ your code and inputs from the shared storage. Remove the `{replaced-with-...}` p
 QA-Board sets the name, image and command. Your environment variables reach the pods, but not secrets like
 `MLFLOW_TRACKING_TOKEN`: add them to the template from a Secret, see
 [give the runs a token](/docs/kubernetes-runner#token). MLflow's tracking stays useful for training; QA-Board
-compares the outputs of every input, commit after commit.
+compares the outputs of every input, commit after commit (see [QA-Board and MLflow](/docs/compare/mlflow)).
 
 ## W&B Launch {#wandb-launch}
 **You have** a launch queue whose configuration is a Kubernetes Job spec, with variables like `${image_uri}`, a launch
@@ -145,7 +145,7 @@ People without them start batches from the web app: the QA-Board server starts `
 as them, and that pod creates the Jobs with a ServiceAccount the admins set up, see
 [Run batches from the web app](/docs/backend-admin/runners#kubernetes). Like a launch queue, a namespace is shared by
 a team: its users trust each other. Launch builds images from your code; QA-Board uses one image and the shared
-storage.
+storage. W&B stays useful for training (see [QA-Board and Weights & Biases](/docs/compare/weights-and-biases)).
 
 ## ClearML Agent {#clearml-agent}
 **You have** agents on your GPU machines (`clearml-agent daemon --queue default --docker --gpus 0`), or the ClearML

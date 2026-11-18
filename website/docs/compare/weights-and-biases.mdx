@@ -1,0 +1,107 @@
+---
+id: weights-and-biases
+title: "QA-Board and Weights & Biases: a self-hosted review of every change"
+sidebar_label: Weights & Biases
+description: "W&B tracks experiments; QA-Board, open source and self-hosted, compares each commit's outputs and metrics with the reference. What each does, how to use both."
+---
+As of November 2026, Weights & Biases (W&B, part of CoreWeave since 2025 and of its CoreWeave Forge platform since
+September 2026) is a commercial platform to track experiments, run sweeps and register models, as a hosted service or
+on your own infrastructure. QA-Board (open source, Apache 2.0, self-hosted) compares every commit's outputs and
+metrics with a reference's, input by input, in CI and in a web app for the team. If you look for a self-hosted,
+open-source alternative to W&B for training, QA-Board isn't it; most teams keep W&B for training and use QA-Board to
+review what they'd ship.
+
+## The short answer
+| If your question is... | Reach for |
+|---|---|
+| Which of these hundreds of training runs converged best, and why? | W&B |
+| Which hyperparameters should the next trainings try? | W&B Sweeps |
+| Is this candidate better than the shipped model, on every input, and where is it worse? | QA-Board |
+| Did this commit change the outputs of the whole pipeline, not only the model? | QA-Board |
+| We need everything on our own servers, open source, on a network without internet access | QA-Board, or W&B's self-managed server with an enterprise license |
+
+## Side by side
+As of November 2026:
+
+| | Weights & Biases | QA-Board |
+|---|---|---|
+| What one comparison is about | Runs of a project, in workspaces, reports and tables | A commit's runs, each against the same input's run on the reference |
+| License and hosting | Commercial. Hosted (multi-tenant or dedicated), or self-managed with an enterprise license; the `wandb` client is MIT | Apache 2.0, every feature; self-hosted only, with Docker Compose or Kubernetes |
+| Logging | `wandb.log()` from any script or notebook: metrics per step, system metrics, media | What `run()` returns and writes; experimental: `qaboard.start_run()` logs values per step from any script |
+| Media | Images with masks and boxes, video, audio, 3D point clouds, HTML, tables; compared across runs and steps in media panels | Images down to pixel values (deep zoom on a 113 MP image), videos frame by frame, point clouds and trajectories, flame graphs, plots overlaid, logs, HTML, each against the reference's |
+| Sweeps | Grid, random and Bayesian, run by agents on your machines | Batches with a `matrix`, sweeps from the web app, `qa optimize` (Optuna) |
+| Models | Registry: versioned models and datasets, lineage, automations | None: a run links to your registry with a badge |
+| Compared with what | The runs you select or group | The reference branch's latest results, a milestone, or any commit, by default |
+| Where code runs | Your machines; W&B Launch sends jobs to queues | Your laptop, CI, LSF, Kubernetes, Celery, Dask (on Slurm too); started from the web app too |
+| In CI | Your scripts; registry automations, e.g. webhooks | `qa batch` on every commit; `qa gate` (experimental) fails the job and comments on the pull request |
+
+## What W&B does best
+- **Logging with nothing to set up.** `wandb.init()` and `wandb.log()` in a training loop or a notebook, and the run
+  shows live, with system metrics logged every 15 seconds.
+- **Many runs at once.** Plot, group and filter many runs' curves side by side.
+- **Sweeps.** Bayesian, grid and random searches, run in parallel by agents on your machines.
+- **Media in context.** Images with masks and boxes, videos, point clouds and tables of predictions, compared across
+  runs and steps.
+- **Registry and lineage.** Versioned models and datasets, their lineage, and automations for model CI/CD.
+- **A hosted service.** No server to run.
+
+For training, W&B is the better tool. QA-Board's own logging from code is experimental: it plots the runs of one batch
+together, up to 40, and has no system metrics or images per step yet ([what it doesn't do yet](/docs/log-from-code#limits)).
+
+## Where QA-Board differs
+### Open source and self-hosted, with every feature
+The server is Apache 2.0, with sign-in (LDAP, SAML, OpenID Connect), project roles, and a Helm chart tested in CI. It
+runs on networks without internet access. Results stay on your storage: runs save them in a folder the server reads,
+or send them to your server over HTTP (experimental, see [without a shared storage](/docs/storage/uploads)).
+
+### Each commit against the release
+QA-Board opens on "what did this change do?": every commit is compared with the latest results of your reference
+branch, or with a release saved as a milestone. The **Metrics Diff** shows each input's change.
+
+<Shot id="commit/metrics-diff" />
+
+### Heavy outputs, in sync with the reference
+Images open next to the reference's with synced deep zoom, a wipe or their difference, down to the pixel values your
+code saved; videos step frame by frame together and show where their frames differ
+([video viewer](/docs/user-guide/video-viewer)).
+
+<Clip id="commit/video-compare" />
+
+### Beyond training
+The same review covers the code around the model, a camera pipeline, a service's latency or a robot, so one server
+serves every team that measures quality ([use cases](/docs/use-cases)).
+
+## Use both
+1. **Keep training in W&B.**
+2. **Evaluate the model you'd ship in `run()`.** Read its name from `context.params`, fetch it from the W&B registry,
+   run it on the input, save what you want to look at, and return the metrics
+   ([evaluate a model from your training runs](/docs/deep-learning#evaluate-a-model)).
+3. **Link each run to its training.** Return a badge in `params` that links to the W&B run or the registry's version
+   ([show each run's model](/docs/deep-learning#workflows)).
+4. **Gate releases in CI.** `qa batch ci` on every commit, and `qa gate` (experimental) fails the job when a metric
+   regresses against the reference ([gate model releases](/docs/deep-learning#mlops)).
+5. **Optional, experimental: curves in both.** In the training loop, `qaboard.start_run()` and `run.log()` next to
+   `wandb.log()` plot the run's curves against the reference run's in QA-Board ([log from your code](/docs/log-from-code)).
+   A shim that mirrors `wandb.log()` calls is on the [roadmap](/docs/roadmap#log-from-your-code).
+
+## Moving from W&B Launch
+If you run evaluations with W&B Launch on Kubernetes, [Coming from another tool](/docs/coming-from-other-tools#wandb-launch)
+maps the queue's Job spec, the agent's limits and `wandb launch` to the kubernetes runner and `qa batch`.
+
+## Sources
+Last reviewed November 2026. QA-Board's features are described in these docs and in the
+[repository](https://github.com/Samsung/qaboard). W&B's docs moved to docs.coreweave.com.
+- W&B and CoreWeave Forge: [coreweave.com/companies/weights-and-biases](https://www.coreweave.com/companies/weights-and-biases)
+- Deployment options: [docs.coreweave.com/models/hosting](https://docs.coreweave.com/models/hosting)
+- Logging media: [docs.coreweave.com/models/track/log/media](https://docs.coreweave.com/models/track/log/media)
+- Sweeps: [docs.coreweave.com/models/sweeps](https://docs.coreweave.com/models/sweeps)
+- Registry: [docs.coreweave.com/models/registry](https://docs.coreweave.com/models/registry)
+- System metrics: [docs.coreweave.com/models/ref/python/experiments/system-metrics](https://docs.coreweave.com/models/ref/python/experiments/system-metrics)
+- The `wandb` client's license: [PyPI](https://pypi.org/project/wandb/)
+
+## Where next
+<Cards>
+  <Card title="Deep learning and MLOps" to="/docs/deep-learning" eyebrow="Project integration">Evaluate models next to the tracker you already use.</Card>
+  <Card title="Quickstart" to="/docs/get-started/quickstart" eyebrow="Get started">A server with demo projects in a few commands.</Card>
+  <Card title="Compared with other tools" to="/docs/alternatives" eyebrow="Overview">MLflow, FiftyOne, test dashboards and more.</Card>
+</Cards>

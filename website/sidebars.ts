@@ -56,8 +56,21 @@ const sidebars: SidebarsConfig = {
         'use-cases/robotics-3d',
         'use-cases/agent-evals',
         'use-cases/software-quality',
-        // Where QA-Board fits next to experiment trackers, LLM eval platforms and test dashboards
-        'alternatives',
+        // Where QA-Board fits next to experiment trackers, LLM eval platforms and test dashboards, and a page per
+        // tool with real overlap (docs/compare/)
+        {
+          type: 'category',
+          label: 'Compared with other tools',
+          link: {type: 'doc', id: 'alternatives'},
+          collapsed: true,
+          items: [
+            'compare/fiftyone',
+            'compare/rerun',
+            'compare/mlflow',
+            'compare/weights-and-biases',
+            'compare/continuous-benchmarking',
+          ],
+        },
       ],
     },
     // The other sidebars are at the top of every sidebar: src/components/DocsSwitcher
