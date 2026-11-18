@@ -1,0 +1,109 @@
+---
+id: mlflow
+title: "QA-Board and MLflow: release review next to experiment tracking"
+sidebar_label: MLflow
+description: "Use MLflow to track training runs and QA-Board to compare each candidate's outputs with the shipped model, input by input. What each does, and how to use both."
+---
+As of November 2026, MLflow (open source, Apache 2.0) tracks experiments, registers models and evaluates them, for
+classic ML and for LLM applications. QA-Board (open source, Apache 2.0) compares every commit's outputs and metrics
+with a reference's, input by input, in CI and in a web app for the team. Most teams that ask whether they need both
+keep MLflow for training and the model registry, and use QA-Board to decide whether a candidate is better than what
+they ship.
+
+## The short answer
+| If your question is... | Reach for |
+|---|---|
+| Which training run, with which parameters, converged best? | MLflow |
+| Which model version is in production, and what produced it? | MLflow |
+| Does this candidate do better than the shipped model on every slice, and where does it do worse? | QA-Board |
+| What changed in the outputs: images, videos, point clouds, latency? | QA-Board |
+| Can someone without a terminal rerun the evaluation with other thresholds? | QA-Board |
+
+## Side by side
+As of November 2026:
+
+| | MLflow | QA-Board |
+|---|---|---|
+| What one comparison is about | Runs of an experiment, picked in a table | A commit's runs, each against the same input's run on the reference |
+| License and hosting | Apache 2.0, a tracking server you run, or managed services like Amazon SageMaker AI's | Apache 2.0, every feature; self-hosted only, with Docker Compose or Kubernetes |
+| Logging | Parameters, metrics per step, artifacts, images per step, models; autologging for common libraries | What `run()` returns and writes; experimental: `qaboard.start_run()` logs values per step from any script |
+| Outputs | Artifacts, browsed per run | Images down to pixel values (deep zoom on a 113 MP image), videos frame by frame, point clouds, flame graphs, plots overlaid, logs, HTML, each against the reference's |
+| Evaluation | `mlflow.models.evaluate()` for classifiers and regressors; checks against thresholds; GenAI evaluation with scorers | Your code computes any metric; the web app compares it with the reference's, input by input |
+| Models | Model Registry: versions and where each came from | None: a run links to your registry with a badge |
+| Compared with what | The runs you select | The reference branch's latest results, a milestone, or any commit, by default |
+| Where code runs | Your process; MLflow Projects on Kubernetes or Databricks | Your laptop, CI, LSF, Kubernetes, Celery, Dask (on Slurm too); started from the web app too |
+| In CI | Your scripts | `qa batch` on every commit; `qa gate` (experimental) fails the job and comments on the pull request |
+| Sign-in | Basic authentication with roles in the tracking server | LDAP, SAML, OpenID Connect, project roles |
+
+## What MLflow does best
+- **Tracking training.** A few lines, or `mlflow.autolog()`, log a training script's parameters, metrics at each
+  step, artifacts and model, and the UI compares many runs in charts and tables.
+- **The model registry.** Every model version, where it came from, and which one is in production.
+- **Standard evaluations.** Classifier and regressor metrics, plots and explanations from one call, and checks of the
+  results against thresholds.
+- **LLM applications.** Tracing, evaluation with scorers, prompt management and an AI gateway.
+- **Integrations.** Autologging for scikit-learn, XGBoost, PyTorch, Keras, Spark and more.
+
+For tracking hundreds of trainings at once, MLflow is the better tool. QA-Board's own logging from code is
+experimental and plots the runs of one batch together, up to 40 ([what it doesn't do yet](/docs/log-from-code#limits)).
+
+## Where QA-Board differs
+### Against the release, by default
+Every commit is compared with the latest results of your reference branch, or with a release saved as a milestone.
+The **Metrics Diff** shows each input's change, so a slice that got worse doesn't hide in the average.
+
+<Shot id="commit/metrics-diff" />
+
+### The outputs, at full size
+MLflow keeps artifacts; QA-Board compares them. Images open next to the reference's with synced zoom, a wipe or
+their difference, down to the pixel values your code saved; videos step frame by frame together; plots overlay the
+reference's curves ([image viewer](/docs/user-guide/image-viewer)).
+
+<Clip id="commit/image-diff" />
+
+### The whole pipeline, per commit
+Pre-processing, quantization, the runtime on the device, the service around the model: `qa` runs what ships, on your
+cluster, and the same review covers latency, robots or test suites ([use cases](/docs/use-cases)).
+
+### Rerun and tune from the browser
+Anyone with the developer role starts a batch with other parameters, a sweep or an automated tuning (`qa optimize`,
+with Optuna) from the web app, on your cluster, and reads what it found in **Tuning Analysis**
+([tuning](/docs/user-guide/tuning)).
+
+<Shot id="tuning/analysis" />
+
+## Use both
+1. **Keep training in MLflow**, with its tracking and registry.
+2. **Evaluate a registered model in `run()`.** Read the model's version from `context.params`, load it from
+   the registry, run it on the input, save what you want to look at, and return the metrics. Run any version from a
+   terminal or the web app with `--tuning '{"model": "..."}'`
+   ([evaluate a model from your training runs](/docs/deep-learning#evaluate-a-model)).
+3. **Link each run to its training.** Return the model's version in `params` and a badge that links to its MLflow run
+   ([show each run's model](/docs/deep-learning#workflows)).
+4. **Gate releases in CI.** `qa batch ci` on every commit, and `qa gate` (experimental) fails the job when a metric
+   regresses against the reference ([gate model releases](/docs/deep-learning#mlops)).
+5. **Optional, experimental: curves in both.** In a training loop, `qaboard.start_run()` and `run.log()` next to
+   `mlflow.log_metric()` plot the run's curves against the reference run's in QA-Board
+   ([log from your code](/docs/log-from-code)).
+
+## Moving from MLflow Projects
+If you run evaluations as MLflow Projects on Kubernetes, [Coming from another tool](/docs/coming-from-other-tools#mlflow-projects)
+maps the *MLproject* entry point, its parameters and the Kubernetes backend to *qaboard.yaml*, a batch and the
+kubernetes runner.
+
+## Sources
+Last reviewed November 2026. QA-Board's features are described in these docs and in the
+[repository](https://github.com/Samsung/qaboard).
+- MLflow: [mlflow.org](https://mlflow.org/), and its license on [PyPI](https://pypi.org/project/mlflow/)
+- Tracking: [mlflow.org/docs/latest/ml/tracking](https://mlflow.org/docs/latest/ml/tracking/)
+- `mlflow.log_image`: [Python API](https://mlflow.org/docs/latest/api_reference/python_api/mlflow.html)
+- Model evaluation: [mlflow.org/docs/latest/ml/evaluation](https://mlflow.org/docs/latest/ml/evaluation/)
+- Authentication: [basic HTTP auth](https://mlflow.org/docs/latest/self-hosting/security/basic-http-auth/)
+- Managed MLflow on Amazon SageMaker AI: [AWS docs](https://docs.aws.amazon.com/sagemaker/latest/dg/mlflow.html)
+
+## Where next
+<Cards>
+  <Card title="Deep learning and MLOps" to="/docs/deep-learning" eyebrow="Project integration">Evaluate models next to the tracker you already use.</Card>
+  <Card title="Model evaluation" to="/docs/use-cases/detection-eval" eyebrow="Use case">A detector's int8 model against the fp32 release, slice by slice.</Card>
+  <Card title="Compared with other tools" to="/docs/alternatives" eyebrow="Overview">Weights & Biases, FiftyOne, test dashboards and more.</Card>
+</Cards>

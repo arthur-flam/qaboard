@@ -1,0 +1,113 @@
+---
+id: fiftyone
+title: "QA-Board and FiftyOne: commits against a reference, or datasets in depth"
+sidebar_label: FiftyOne
+description: "How QA-Board and FiftyOne differ for computer vision teams: datasets and model evaluation in FiftyOne, each commit's outputs against the release in QA-Board."
+---
+As of November 2026, FiftyOne (open source, Apache 2.0, by Voxel51) is a tool to curate visual datasets and evaluate
+models sample by sample, in Python and in its app. QA-Board (open source, Apache 2.0) compares every commit's outputs
+and metrics with a reference's, in CI and in a web app for the team. Teams use FiftyOne to understand their data and
+their model's failures, and QA-Board to decide whether a change ships; many use both.
+
+## The short answer
+| If your question is... | Reach for |
+|---|---|
+| Which samples are mislabeled, duplicated or missing from our dataset? | FiftyOne |
+| Where does this model fail, on which samples, and which ones look alike? | FiftyOne |
+| Is this commit better than the model we ship, on every slice of our test set? | QA-Board |
+| Did quantization, pre-processing or the runtime on the device change the results? | QA-Board |
+| Which commit made the indoor slice worse? | QA-Board |
+
+## Side by side
+As of November 2026:
+
+| | FiftyOne, and Voxel51 | QA-Board |
+|---|---|---|
+| What one comparison is about | A dataset, its samples, and the predictions or evaluations you add to it | A commit's runs, each against the same input's run on the reference |
+| License and hosting | FiftyOne: Apache 2.0, runs on your machine for one user. Voxel51 (named FiftyOne Enterprise until October 2026): commercial, hosted or deployed in your cloud, on premises or air-gapped | Apache 2.0, every feature; self-hosted only, with Docker Compose or Kubernetes |
+| Labels on images | Drawn by the app from label fields, shown and filtered field by field | Drawn by your code in the images or an HTML report, compared with the reference's |
+| Evaluation | Built in: detection, classification, segmentation, regression; true and false positives per sample, confusion matrices, PR curves | Your code computes the metrics, per input and slice; the web app compares them with the reference's |
+| Compared with what | Another evaluation you pick | The reference branch's latest results, a milestone, or any commit, by default |
+| Over time | Dataset versions (Voxel51) | **History**: a metric across commits, per test, and the commit that changed it |
+| Outputs beyond predictions | Images, videos, 3D scenes with their labels | Images down to pixel values (deep zoom on a 113 MP image), videos frame by frame, plots, point clouds, flame graphs, logs, HTML |
+| Where code runs | Your Python process; Voxel51 adds a scheduler for long tasks | Your laptop, CI, LSF, Kubernetes, Celery, Dask (on Slurm too) |
+| In CI | Your scripts | `qa batch` on every commit; `qa gate` (experimental) fails the job and comments on the pull request |
+| Team features | Voxel51: users, roles, single sign-on | Sign-in (LDAP, SAML, OpenID Connect), project roles |
+
+## What FiftyOne does best
+- **Curating data.** Browse images, videos and 3D scenes with their labels, filter them by any field, and find label
+  mistakes, duplicates and edge cases, with similarity search on embeddings.
+- **Evaluating on a dataset.** `evaluate_detections()` and its siblings record true and false positives on each sample,
+  so you sort by the samples with the most false positives, click a cell of a confusion matrix to see its objects,
+  and compare two evaluations in the Model Evaluation panel.
+- **Working from Python.** Every view of the app is a query you write in a notebook, and the app follows it.
+- **Annotation and plugins.** Label in the app or in an annotation tool it connects to; extend it with plugins.
+- **At scale, for teams.** Voxel51 adds collaboration, dataset versions, labeling with models and search over very
+  large datasets.
+
+QA-Board does none of these: it doesn't manage labels, curate data or compute embeddings.
+
+## Where QA-Board differs
+### Every commit, against the release
+Each commit's runs are compared with the reference branch's, or with a release saved as a milestone, without picking
+anything. The **Metrics Diff** shows each slice's change, green when it got better and red when it got worse, so
+an average can't hide the slice that dropped.
+
+<Shot id="commit/metrics-diff" />
+
+### The pipeline, not only the model
+Quantization, pre-processing, the input size, the runtime on the device: QA-Board evaluates the code that ships,
+commit after commit. The same server reviews a camera pipeline's images down to their pixel values, the latency of a
+service, or a robot's trajectories ([use cases](/docs/use-cases)).
+
+### Your code draws the evidence
+Your `run()` draws its detections, outlines what it missed, and writes the plots and the report you want. The web app
+shows them next to the reference's, in sync, and overlays the reference's curves on the new ones.
+
+<Shot id="commit/plotly-overlay" />
+
+FiftyOne is better at the opposite: drawing labels itself, from any field, and filtering them as you look.
+
+### The commit that changed it
+**History** follows a metric of one test across commits; hover the jump to see the commit, and click to compare later
+commits with it ([History](/docs/user-guide/history-and-dashboards)).
+
+<Clip id="history/find-regression" />
+
+### Tuning and releases from the browser
+Start a sweep or an automated tuning of thresholds and quantization settings from the web app, on your cluster, and
+read which parameters matter in **Tuning Analysis**. Save the release as a milestone, the next reference
+([model evaluation](/docs/use-cases/detection-eval)).
+
+## Use both
+1. **Curate the test set in FiftyOne.** Save the slices that matter as views (indoor, small objects...), and export
+   each with `view.export()` to a folder: each folder is an input of a QA-Board batch, like the slices of the
+   [detector example](/docs/use-cases/detection-eval#run-this-example).
+2. **Evaluate in `run()`.** Run the model on the slice, save its predictions (the detector example writes
+   *detections.json*) and the images it draws, and return the metrics ([run your code](/docs/running-your-code)).
+3. **Link each run to its data.** Return a [badge](/docs/computing-quantitative-metrics#metrics-shown-as-a-run-time-configuration)
+   in `params`, a link to the slice's dataset in FiftyOne or Voxel51.
+4. **Run it on every commit**: `qa batch ci` in CI, and `qa gate` (experimental) to fail the CI when a slice regresses
+   ([quality gate](/docs/quality-gate)).
+5. **Dig into a regression in FiftyOne.** `qaboard.runs(url)` gives the runs a commit page shows, and
+   `side='reference'` the reference's, with their metrics and where their files are
+   ([runs in scripts](/docs/apis#runs-in-scripts)). Load both runs' predictions into FiftyOne as two fields, evaluate
+   each, and compare the evaluations sample by sample.
+
+## Sources
+Last reviewed November 2026. QA-Board's features are described in these docs and in the
+[repository](https://github.com/Samsung/qaboard).
+- FiftyOne repository and license: [github.com/voxel51/fiftyone](https://github.com/voxel51/fiftyone)
+- Evaluating models: [docs.voxel51.com/user_guide/evaluation](https://docs.voxel51.com/user_guide/evaluation/index.html)
+- Exporting datasets and views: [docs.voxel51.com/user_guide/export_datasets.html](https://docs.voxel51.com/user_guide/export_datasets.html)
+- Voxel51 (enterprise): [docs.voxel51.com/enterprise](https://docs.voxel51.com/enterprise/), and
+  [Voxel51 compared with FiftyOne](https://voxel51.com/compare/voxel51-vs-fiftyone)
+- The rename, with Voxel51 3.0 on October 15, 2026:
+  [Unite.AI on the Voxel51 3.0 launch](https://www.unite.ai/voxel51-unveils-unified-data-platform-3-0-aimed-at-physical-ai-teams/)
+
+## Where next
+<Cards>
+  <Card title="Model evaluation" to="/docs/use-cases/detection-eval" eyebrow="Use case">A detector's int8 model against the fp32 release, slice by slice.</Card>
+  <Card title="Quickstart" to="/docs/get-started/quickstart" eyebrow="Get started">A server with demo projects in a few commands.</Card>
+  <Card title="Compared with other tools" to="/docs/alternatives" eyebrow="Overview">Experiment trackers, robotics viewers, test dashboards and more.</Card>
+</Cards>

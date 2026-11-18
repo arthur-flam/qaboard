@@ -1,0 +1,102 @@
+---
+id: continuous-benchmarking
+title: "Continuous benchmarking: QA-Board, CodSpeed and Bencher"
+sidebar_label: CodSpeed and Bencher
+description: "Catch performance regressions in CI with CodSpeed, Bencher or QA-Board: microbenchmarks, end-to-end latency and flame graph diffs against the reference."
+---
+As of November 2026, CodSpeed (a hosted service) and Bencher (open source, with a hosted service) run your
+benchmarks on every change, decide whether a result is a regression, and report it on the pull request. QA-Board
+(open source, Apache 2.0, self-hosted) reads the files your benchmark harness and your profiler already write, and
+shows them against the reference's, next to end-to-end latency, flame graph diffs and the rest of a change's review.
+For stable microbenchmark numbers, use CodSpeed or Bencher; QA-Board adds the system-level view, and the two fit
+together.
+
+## The short answer
+| If your question is... | Reach for |
+|---|---|
+| Is this function a few percent slower, with numbers stable on shared CI runners? | CodSpeed |
+| Is this benchmark beyond its noise, judged on its history, with our own runners or self-hosted? | Bencher |
+| Did this change make the service's p99 worse under load, and where did the time go? | QA-Board |
+| How do our benchmarks compare with the reference's, next to the product's other metrics? | QA-Board |
+
+## Side by side
+As of November 2026:
+
+| | CodSpeed | Bencher | QA-Board |
+|---|---|---|---|
+| License and hosting | Hosted service; on premises on its Enterprise plan | Apache 2.0 or MIT, with Bencher Plus features under their own license; hosted or self-hosted (containers) | Apache 2.0, every feature; self-hosted only |
+| Measurements | Runs your benchmarks with its instruments: CPU simulation (one run, independent of the machine; leaves out system calls), wall time, memory | Records what your harness measures, on your runners or its bare-metal runners | Reads what your harness measures; doesn't run, repeat or stabilize benchmarks |
+| Harnesses | Its integrations for Rust, Python, Node.js, Go, C++ and more | Adapters for C#, C++, Dart, Go, Java, JavaScript, Python, Ruby, Rust and hyperfine | pytest-benchmark, Google Benchmark, hyperfine, Criterion, JMH, `go test`, or its JSON format |
+| Is it a regression? | Its report on each pull request | Thresholds with statistical tests on past results: t-test, z-score, IQR, percentage... | Each benchmark against the reference's, gray within the spread the harness reported; gate thresholds you set |
+| Profiles | Differential flame graphs per benchmark | Not in its docs | Differential flame graphs of your profiler's files (folded stacks, speedscope, `.cpuprofile`, perf and pprof through a helper), with a table of the top functions |
+| End to end | Its wall time instrument and macro runners | Any number your harness writes | Latency distributions under load, CPU per core, and any output of the run |
+| In CI | Pull request comments and checks; GitHub Actions, GitLab | `bencher run` fails the job on an alert | `qa gate` (experimental) fails the job and comments on the pull request |
+| Over time | History of each benchmark | History and plots per branch and testbed | **History** per benchmark or profile, and the commit that changed it |
+
+## What CodSpeed and Bencher do best
+- **Numbers you can trust on shared runners.** CodSpeed's CPU simulation measures a benchmark once, independently of
+  the machine's noise; for code that makes system calls, its wall time instrument and macro runners measure real
+  time.
+- **Deciding what's noise.** Bencher's thresholds compare each new result with past ones, with a statistical test
+  you pick, per branch and machine, and fail the CI on an alert.
+- **Benchmarks first.** They run your harness, keep each benchmark's history, and say on the pull request which
+  benchmarks changed.
+- **Every harness.** Bencher's adapters read many languages' harnesses, asv included; CodSpeed integrates with the
+  usual frameworks of Rust, Python, Node.js, Go and C++.
+- **Profiles per benchmark.** CodSpeed draws a differential flame graph of the benchmark that got slower.
+
+QA-Board doesn't estimate noise from past runs, and its gate doesn't decide whether a change is noise: repeat your
+measurements, and set thresholds above it. A noise floor per metric is on the [roadmap](/docs/roadmap).
+
+## Where QA-Board differs
+### The system, not only the function
+A change can make a function faster and the service slower. QA-Board runs the same load profiles on every commit and
+shows the whole latency distribution against the reference's, from p50 to p99.9
+([performance](/docs/use-cases/serving-latency)).
+
+<Shot id="commit/latency-cdf" />
+
+### Where the time went, against the reference
+Save what your profiler writes, and the web app draws a differential flame graph against the reference run's
+profile, with **Top functions** ranked by how much their share changed ([flame graphs](/docs/flame-graphs)).
+
+<Shot id="commit/flame-top-functions" />
+
+### Your harness's files, next to everything else
+Each benchmark shows next to the reference's, with the change in %, gray when it's within the spread the harness
+measured, and a warning when the two files come from different CPUs. `benchmark_metrics()` makes each benchmark a
+metric, in the **Metrics Diff**, on **History** and in the gate ([benchmarks](/docs/benchmarks)).
+
+<Shot id="commit/benchmarks" />
+
+### One review for the change
+Benchmarks, latency, profiles, test results and output files are reviewed on the same commit page, with the same
+reference, by people and coding agents alike: an agent that says "it's faster" meets the same gate.
+
+## Use both
+1. **Keep CodSpeed or Bencher for microbenchmarks**, on the runners they recommend.
+2. **Send the harness's file to QA-Board too.** In the same CI job, `qa upload pytest.benchmarks.json` (experimental)
+   saves it as a run, with each benchmark as a metric, compared with the reference branch's
+   ([upload results](/docs/upload-results)).
+3. **Add the system view.** Have `run()` drive your load profiles and save a profile, e.g. *cpu.folded* from py-spy
+   or perf, so each commit gets its latency distribution and its flame graph diff
+   ([performance](/docs/use-cases/serving-latency), [flame graphs](/docs/flame-graphs)).
+4. **Gate on what users see.** `qa gate` (experimental) fails the CI when p99 or throughput regress beyond your
+   thresholds, and posts its table on the pull request ([quality gate](/docs/quality-gate)).
+
+## Sources
+Last reviewed November 2026. QA-Board's features are described in these docs and in the
+[repository](https://github.com/Samsung/qaboard).
+- CodSpeed: [codspeed.io](https://codspeed.io/), [CPU simulation](https://codspeed.io/docs/instruments/cpu),
+  [plans](https://codspeed.io/pricing)
+- Bencher: [adapters](https://bencher.dev/docs/explanation/adapters/),
+  [thresholds](https://bencher.dev/docs/explanation/thresholds/),
+  [self-hosted](https://bencher.dev/docs/explanation/bencher-self-hosted/),
+  [license](https://bencher.dev/legal/license/), [plans](https://bencher.dev/pricing/)
+
+## Where next
+<Cards>
+  <Card title="Performance" to="/docs/use-cases/serving-latency" eyebrow="Use case">Tail latency, flame graph diffs and benchmarks of an inference gateway, on every commit.</Card>
+  <Card title="Benchmark suites" to="/docs/benchmarks" eyebrow="Project integration">Bring your harness's files in.</Card>
+  <Card title="Compared with other tools" to="/docs/alternatives" eyebrow="Overview">Experiment trackers, test dashboards and more.</Card>
+</Cards>

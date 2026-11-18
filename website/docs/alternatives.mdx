@@ -15,13 +15,13 @@ Most teams end up with QA-Board next to one of them, not instead of it.
 | If your main question is... | Reach for | Where QA-Board fits |
 |---|---|---|
 | Is this change better than what we ship, on every input, and why? | **QA-Board** | What it's built for. |
-| Which training run converged best? | An experiment tracker: Weights & Biases, MLflow, TensorBoard | After training: the checkpoint you'd ship, against the model you shipped, input by input. |
-| Which samples are mislabeled, and where does the model fail on our dataset? | Dataset curation: FiftyOne, or Voxel51 for teams | Every commit's evaluation against the release's, and the outputs of the code around the model. |
-| What did the robot see and do in this recording? | A robotics data viewer: Rerun, Foxglove | Every sequence replayed on every commit, against the reference's and the ground truth. |
+| Which training run converged best? | An experiment tracker: [Weights & Biases](/docs/compare/weights-and-biases), [MLflow](/docs/compare/mlflow), TensorBoard | After training: the checkpoint you'd ship, against the model you shipped, input by input. |
+| Which samples are mislabeled, and where does the model fail on our dataset? | Dataset curation: [FiftyOne](/docs/compare/fiftyone), or Voxel51 for teams | Every commit's evaluation against the release's, and the outputs of the code around the model. |
+| What did the robot see and do in this recording? | A robotics data viewer: [Rerun](/docs/compare/rerun), Foxglove | Every sequence replayed on every commit, against the reference's and the ground truth. |
 | Which data and parameters produced this model? | Data versioning: DVC, lakeFS | Reads your inputs where they are, and compares each commit's outputs in the browser. |
 | How does our LLM app behave with real users? | An LLM observability platform: Langfuse, LangSmith, Arize Phoenix | Before release: your eval suite, task by task, on every commit. |
 | Which of our 50,000 tests are flaky? | Test analytics: ReportPortal, Develocity, your CI's test insights | Suites next to your other metrics, tests against the reference's, a gate on deleted tests, retries on record. |
-| Is this function 3% slower? | Continuous benchmarking: CodSpeed, Bencher, asv | Your harness's files against the reference's, within its spread or not; end to end, latency under load and flame graph diffs. |
+| Is this function 3% slower? | [Continuous benchmarking](/docs/compare/continuous-benchmarking): CodSpeed, Bencher, asv | Your harness's files against the reference's, within its spread or not; end to end, latency under load and flame graph diffs. |
 | Is production healthy right now? | Monitoring and APM | Not QA-Board's job: it catches regressions before they ship. |
 
 ## What QA-Board does differently
@@ -63,82 +63,41 @@ it very well:
   yourself (MLflow, TensorBoard, Aim). ClearML's server is source-available (SSPL), with single sign-on and roles in
   its paid plans. Neptune's hosted service closed in March 2026, after OpenAI acquired the company.
 
-QA-Board's place is **after training**, when the question becomes "should we ship this model?":
-- **Against the release, on every slice.** The candidate next to the model you shipped, per slice, class and object
-  size, on every commit: see [model evaluation](/docs/use-cases/detection-eval).
-- **The outputs, at full size.** Trackers log images and media too, and some compare them across runs in tables.
-  QA-Board goes further for heavy outputs: synced deep zoom, image and video differences, the pixel values your code
-  saved, point clouds and trajectories.
-- **The code around the model.** Pre- and post-processing, quantization, the runtime on the device: the whole
-  pipeline is evaluated per commit, like the rest of your product.
-- **Your data stays in place.** Evaluations run on your cluster and read your test set where it is.
+QA-Board's place is **after training**, when the question becomes "should we ship this model?": the candidate
+against the model you shipped, on every slice and every commit, with its heavy outputs (images down to the pixel,
+videos, point clouds) in sync with the reference's, and the code around the model evaluated with it (see
+[model evaluation](/docs/use-cases/detection-eval)). Logging from training loops and notebooks, with values per step,
+is experimental ([log from your code](/docs/log-from-code)); importers from W&B, MLflow and TensorBoard are on the
+[roadmap](/docs/roadmap#log-from-your-code). Many teams use both: the tracker for training, QA-Board to evaluate what
+they'd ship, each run linking to its training page ([deep learning and MLOps](/docs/deep-learning)).
 
-| | Experiment trackers | QA-Board, November 2026 |
-|---|---|---|
-| Training curves, logged per step | Their core, for hundreds of runs at once | Experimental: `run.log()` plots each run's series against its reference's, live, and the runs of a batch together, up to 40 |
-| Logging from any script or notebook | Two lines of code | Experimental: `qaboard.start_run()` ([log from your code](/docs/log-from-code)), with a QA-Board server to send results to; or wrap your code with `qa run` |
-| Comparing hundreds of runs at once | Their core | New against one reference at a time, or the image viewer with every stacked reference; a batch's logged series together; a tuning experiment's runs in **Tuning Analysis** |
-| System metrics, images per step, sweeps with early stopping | Yes | No: images are files of the run; sweeps are batches and `qa optimize` |
-| Hosted service | Weights & Biases, Comet, managed MLflow | Self-hosted only |
-| Model registry and lineage | Yes | No: runs link to your registry with badges |
-| Each commit against the release, by default | By convention | Yes |
-| Heavy outputs in sync with the reference: 100 MP images, videos, point clouds, flame graphs | Media panels and tables | Yes, down to pixel values |
-| Starting evaluations from the browser, on your own cluster | Some, with job launchers | Yes: on the server, LSF, Kubernetes, Dask or Celery |
-| Beyond ML: imaging, performance, robotics, tests | Possible, not the focus | The same review for anything measured |
-| Open source, with every feature | MLflow, TensorBoard, Aim | Yes, Apache 2.0 |
-
-Many teams use both: the tracker for training, QA-Board to evaluate what they'd ship, each run linking to its
-training page. See [deep learning and MLOps](/docs/deep-learning). Logging from training loops and notebooks, with
-values per step, is experimental ([log from your code](/docs/log-from-code)); importers from W&B, MLflow and
-TensorBoard are on the [roadmap](/docs/roadmap#log-from-your-code).
+Details: [QA-Board and MLflow](/docs/compare/mlflow), [QA-Board and Weights & Biases](/docs/compare/weights-and-biases).
 
 ## Visual data and robotics tools {#visual-data}
 ### FiftyOne and Voxel51 {#fiftyone}
-FiftyOne is built around datasets for visual AI, and does what QA-Board doesn't:
-- Browse images, videos and 3D scenes with their labels and predictions drawn on top, field by field, and query them
-  from Python or a notebook: by label, confidence, tag or metadata.
-- Find label mistakes, duplicates and edge cases, and search by similarity with embeddings.
-- Evaluate detection, classification and segmentation on a dataset: true and false positives per sample, confusion
-  matrices, precision-recall curves, and two evaluations compared in the Model Evaluation panel.
-- Annotate in the app or in an annotation tool it connects to, and add features with plugins.
+FiftyOne (open source, Apache 2.0) curates visual datasets and evaluates models sample by sample: labels drawn on
+images, videos and 3D scenes, label mistakes and duplicates, embeddings, confusion matrices and two evaluations
+compared. Voxel51, its commercial platform (named FiftyOne Enterprise until October 2026), adds teams, dataset
+versions and single sign-on, hosted or on your own infrastructure. QA-Board doesn't curate data: it runs your
+evaluation on every commit, compares each slice and each output with the release's, and follows them on **History**.
+Use FiftyOne to build the test set and dig into failures, and QA-Board to decide whether a change ships.
 
-FiftyOne is open source (Apache 2.0) and runs on your machine, for one user. Voxel51, the commercial platform built on
-it (named FiftyOne Enterprise until October 2026), adds work in teams, dataset versions, single sign-on and labeling
-with models, hosted with a free tier, or deployed in your cloud, on premises or air-gapped.
-
-QA-Board answers another question: did this commit make things better or worse?
-- **The commit, not the dataset.** FiftyOne evaluates the predictions you add to a dataset, when you run it.
-  QA-Board runs your evaluation on every commit, compares each input with the reference's, follows the metrics on
-  **History**, and can fail the CI with `qa gate` (experimental).
-- **The whole pipeline's outputs.** Beyond predictions: a camera pipeline's images down to pixel values, with deep
-  zoom on a 113 MP image, videos frame by frame, latency and flame graphs, reviewed the same way.
-- **Your code draws the labels.** Detections are images or HTML your code writes, compared with the reference's in
-  sync ([model evaluation](/docs/use-cases/detection-eval)). FiftyOne draws labels itself, and filters them as you
-  look.
-- **Tuning from the browser.** Start a sweep or an automated tuning of thresholds and settings, and read which
-  parameters matter.
-
-Use both: FiftyOne or Voxel51 to build the test set, check its labels and dig into failure modes; QA-Board to run
-the evaluation on every commit against the release. A [badge](/docs/deep-learning#workflows) on each run can link
-to the matching dataset in FiftyOne.
+Details: [QA-Board and FiftyOne](/docs/compare/fiftyone).
 
 ### Rerun and Foxglove {#robotics-viewers}
-Rerun and Foxglove are built to explore what a robot recorded, and do it better than QA-Board:
-- Images, point clouds, transforms, time series and video on one timeline, in 3D and 2D views you arrange, live from
-  a running robot or simulation, or from a recording. QA-Board's 3D viewer reads *.pcd* point clouds and 6DoF
-  trajectories.
-- **Rerun** logs from Python, Rust or C++ to *.rrd* files that you also query as dataframes, and opens MCAP and LeRobot
-  data. Its SDK and viewer are open source (MIT or Apache 2.0); Rerun Hub, its commercial backend, keeps a catalog of
-  recordings in your object storage. Its viewer shows one recording at a time.
+Rerun and Foxglove are built to explore what a robot recorded, and do it better than QA-Board: many streams on one
+timeline, in 3D and 2D views, live or from a recording. QA-Board's 3D viewer reads *.pcd* point clouds and 6DoF
+trajectories.
+- **Rerun** (SDK and viewer under MIT or Apache 2.0, and Rerun Hub, a commercial backend) logs from Python, Rust or
+  C++ to *.rrd* files that you also query as dataframes. Details: [QA-Board and Rerun](/docs/compare/rerun).
 - **Foxglove** reads ROS 1, ROS 2 and MCAP, has more than 20 panels, overlays several recordings on one timeline in
   its comparison mode (paid plans), and manages a fleet's recordings. It has a free plan; running its data plane in
   your own cluster takes the Enterprise plan. Its app has been closed source since 2024; MCAP stays open source.
 
-QA-Board reviews each change, not each recording: every sequence of your test set, run again on every commit, with
-its trajectory against the ground truth and the reference's, the map it built, sensor videos in sync, and
-trajectory metrics on **History** with a gate when one sequence gets worse (see [robotics](/docs/use-cases/robotics-3d)).
-Use both: let QA-Board say which sequences got worse with a change, and save the *.rrd* or *.mcap* with the run, so
-people download it from **Output Files** and open it in Rerun or Foxglove to see why.
+QA-Board reviews each change, not each recording: every sequence of your test set, run again on every commit, against
+the ground truth and the reference's, with a gate when one sequence gets worse (see [robotics](/docs/use-cases/robotics-3d)).
+Save the *.rrd* or *.mcap* with the run, and people download it from **Output Files** to see why in Rerun or
+Foxglove.
 
 ## Data versioning and experiments in git: DVC {#dvc}
 DVC versions datasets and models next to your code, in git, and runs again the steps of a pipeline whose inputs
@@ -176,23 +135,17 @@ done again keeps how its earlier attempts ended and their logs. QA-Board has no 
 doesn't group failures by cause across builds.
 
 ## Benchmarking and profiling tools {#benchmarking}
-CodSpeed and Bencher run your benchmarks on every change, on runners set up for stable measurements, flag
-regressions of a few percent, and comment on pull requests; CodSpeed also draws differential flame graphs of each
-benchmark. asv keeps a website of each benchmark's history and finds the commit that made one slower. Continuous
-profilers and APM tools watch production.
+CodSpeed and Bencher run your benchmarks on every change, decide what's a regression and what's noise, and comment
+on pull requests; CodSpeed also draws differential flame graphs of each benchmark. asv keeps a website of each
+benchmark's history and finds the commit that made one slower. Continuous profilers and APM tools watch production.
 
 QA-Board puts performance next to the rest of a change's review: latency distributions under the same load profiles
-on every commit, flame graph diffs from the files your profiler writes (folded stacks, speedscope, `.cpuprofile`), CPU
-per core, History per profile, and tuning frontiers (see [performance](/docs/use-cases/serving-latency)). The gate's
-verdict goes to the pull request too, as [a comment](/docs/quality-gate-pull-requests) (experimental) that
-also says when runs only passed after being done again. The gate doesn't decide whether a change is noise: repeat your
-measurements, and set its thresholds above the noise.
+on every commit, flame graph diffs from the files your profiler writes, and your harness's files (pytest-benchmark,
+Google Benchmark, hyperfine, Criterion, JMH, `go test`) against the reference's, gray within the spread they report
+(see [performance](/docs/use-cases/serving-latency)). It doesn't run, repeat or stabilize benchmarks, nor estimate
+noise from past runs: that's those tools' strength.
 
-QA-Board reads the files of the usual benchmark harnesses: pytest-benchmark, Google Benchmark, hyperfine, Criterion,
-JMH and `go test` (Bencher reads more). Each benchmark shows next to the reference's, gray when the change is within the
-spread the harness reported, and becomes a metric in one line (see [benchmarks](/docs/benchmarks)); `qa upload`
-saves a benchmark file as a run from any CI job (experimental). It still doesn't run, repeat or stabilize benchmarks,
-and doesn't estimate noise from past runs: that's the harness's job, and those tools' strength.
+Details: [Continuous benchmarking: QA-Board, CodSpeed and Bencher](/docs/compare/continuous-benchmarking).
 
 ## Notebooks, spreadsheets and in-house dashboards {#in-house}
 A notebook answers a new question in an afternoon, and nothing replaces that. Then results get pasted into a
