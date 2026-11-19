@@ -7,6 +7,54 @@ description: Follow metrics over time on a branch, find the commit that caused a
 The **History** page shows how a metric evolved over a branch's commits, test by test. Use it to answer "which commit
 made this worse?" or "is this input getting better?".
 
+## See tests and benchmarks over time {#tests-and-benchmarks}
+:::note Prototype
+This view is new: it may change.
+:::
+
+When a branch's runs have test reports or benchmark files, for instance from `qa upload junit.xml benchmarks.json` in
+CI, History starts with **Tests and benchmarks over time**. There is nothing to configure. Branch pages show its
+headline numbers above their commits: click one to open History there.
+
+Here a *test* is a test case of your reports, like `test_decode_empty`, not an input of your project.
+
+- **Tests**: the tests each commit passed or skipped, and below, on its own scale, those that didn't pass: failed,
+  errors, and *flaky* ones, which the test runner says passed only when run again. Hover a commit to read its numbers,
+  click it to open it.
+- **Each test over the commits**: click **Read the test reports** to read the commits' reports (at most 100 commits,
+  spread over the dates you picked, and the first 20 runs of each):
+  - **Failing now** says since which commit, the tests that just broke first.
+  - **Flaky** lists the tests that failed, passed, then failed again, or passed only when run again.
+  - **Fixed** lists the tests that failed in these commits and pass now, then **Slower**, **Added**, **Removed**
+    and **Slowest**.
+
+  Click a package to look only at its tests.
+- **Benchmarks**: how many got worse or better, the geometric mean of the benchmarks against the first commit, one
+  small chart per group (click it to open the group), and the benchmarks that moved, worst first. **Where** names the
+  commit when one move stands out. **Worse**, **Better**, **Added** and **Removed** show only those, and
+  **Latest vs. the commit before** compares the last two commits instead of the whole period.
+
+<details>
+<summary>Are these the same benchmarks from start to end?</summary>
+
+The line under the title says how many benchmarks are in every commit, and how many were added or removed. The summary
+only covers those in every commit, so it doesn't move because a slow benchmark was added. Turn **Summarize the same
+scope only** off to average whatever each commit measured. Commits without any benchmark, when the job didn't run,
+are left out. **Added** and **Removed** list the others.
+</details>
+
+<details>
+<summary>What counts as "moved"?</summary>
+
+A benchmark is listed when it changed by over 3 times what it usually moves from a commit to the next. With fewer than
+4 commits there is nothing to compare with: every change of 0.5% or more is listed. This keeps wobble out of the list,
+it is not a statistical test: QA-Board doesn't know how noisy your machines are. See
+[Stable benchmarks in CI](/docs/benchmarking-in-ci).
+</details>
+
+Your own metrics show the same way when their definitions say how they group:
+[grouping metrics](/docs/computing-quantitative-metrics#grouping-metrics).
+
 ## Find the commit that caused a regression {#find-a-regression}
 Say the inference gateway's p99 latency got worse on one load profile, heavy-tail-high, while the median over all
 profiles barely moved. To find the commit that did it:
@@ -51,7 +99,8 @@ the branch's commits, **Code**, **Integrations** and **Milestones**.
 
 ## Choose what the chart shows {#performance-over-time}
 **Performance over time** has one point per commit, for the selected **metric** (pick another at the top left; the
-project's configuration chooses which ones are offered, else all the metrics of the runs).
+project's configuration chooses which ones are offered, else all the metrics of the runs). Counts, like a test
+report's, add up over a commit's runs by default; other metrics show their median.
 
 <Shot
   id="history/performance-over-time"
