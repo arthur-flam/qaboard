@@ -213,7 +213,8 @@ describe('the Code menu', () => {
     expect(await screen.findByText(/Not pushed: the git host doesn't have/)).toHaveTextContent("Not pushed: the git host doesn't have 01234567 yet");
     // links to the commit would 404: the menu goes to the repository, and to the last pushed commit
     expect(screen.getByRole('menuitem', { name: /Changes in/ })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('menuitem', { name: /^Code/ }).closest('a') ?? screen.getByRole('menuitem', { name: /^Code/ })).toHaveAttribute('href', 'https://github.com/kitefin/isp');
+    const code = screen.getByRole('menuitem', { name: /^Code/ });
+    expect((code.closest('a') ?? code.querySelector('a')).getAttribute('href')).toBe('https://github.com/kitefin/isp');
   });
 
   it('links to the last pushed commit', async () => {
@@ -223,6 +224,6 @@ describe('the Code menu', () => {
     renderWithProviders(<Menu><CodeMenu project="kitefin/isp" project_data={project_data} commit={{ id: '0123456789abcdef' }} unpushed={{ sha: '0123456789abcdef', base: 'bbbbbbbbcccc' }}/></Menu>);
     fireEvent.mouseEnter(screen.getByRole('menuitem', { name: /Code/ }));
     const item = await screen.findByRole('menuitem', { name: /Last pushed commit, bbbbbbbb/ });
-    expect(item.closest('a') ?? item).toHaveAttribute('href', 'https://github.com/kitefin/isp/commit/bbbbbbbbcccc');
+    expect((item.closest('a') ?? item.querySelector('a')).getAttribute('href')).toBe('https://github.com/kitefin/isp/commit/bbbbbbbbcccc');
   });
 });
