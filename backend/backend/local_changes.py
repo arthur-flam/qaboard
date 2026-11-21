@@ -76,6 +76,9 @@ def cleaned(state: Any, current: str) -> Optional[Dict[str, Any]]:
   for key in NAMES:
     if isinstance(state.get(key), list):
       kept[key] = [_text(name, MAX_PATH) for name in state[key][:MAX_NAMES] if isinstance(name, str)]
+  if isinstance(state.get('unpushed_log'), list):
+    kept['unpushed_log'] = [{'sha': c['sha'], 'subject': _text(c.get('subject'), 200) or ''} for c in state['unpushed_log'][:50]
+                            if isinstance(c, dict) and isinstance(c.get('sha'), str) and SHA.fullmatch(c['sha'])]
   for key, path in PATCHES.items():
     patch = state.get(key)
     if not isinstance(patch, dict):

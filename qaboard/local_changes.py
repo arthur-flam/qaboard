@@ -41,6 +41,8 @@ DEFAULT_TIMEOUT = 10.0
 # changed files listed by path, and excluded files listed by name
 MAX_FILES = 500
 MAX_EXCLUDED = 100
+# unpushed commits listed by their subject
+MAX_UNPUSHED_LOG = 50
 # with more untracked files than this (a build folder that isn't ignored), their contents are left out
 MAX_UNTRACKED_CONTENTS = 200
 # untracked files larger than this are listed, but their contents left out
@@ -555,7 +557,12 @@ def capture(root: Path, config: Settings = Settings(), *, ignore: Sequence[str] 
       state['files'] = []
       state['files_total'] = state['added'] = state['deleted'] = 0
 
-    # The commits others can't fetch, as a patch from the merge-base with what's pushed
+    # The commits others can't fetch: their subjects, and a patch from the last pushed commit
+    if state.get('base') and status.head:
+      log = _git(root, ['log', '--no-color', f'--max-count={MAX_UNPUSHED_LOG}', '--format=%H%x00%s', f"{state['base']}..{status.head}", '--'], budget)
+      if log is not None:
+        entries = [line.split('\0', 1) for line in log.decode('utf-8', errors='replace').splitlines() if '\0' in line]
+        state['unpushed_log'] = [{'sha': sha, 'subject': subject[:200]} for sha, subject in entries]
     if config.level == 'patch' and state.get('base') and status.head:
       sha256, kept, size = _stream_diff(root, ['diff', state['base'], status.head, *DIFF_FLAGS], budget, config.max_patch_bytes)
       if sha256 and kept is not None:

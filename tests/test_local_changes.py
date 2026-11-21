@@ -234,6 +234,7 @@ class TestCapture(Repository):
     self.assertEqual((state['pushed'], state['unpushed_commits'], state['base'], state['upstream']), (False, 1, self.head, 'origin/main'))
     self.assertIs(state['dirty'], False)
     self.assertIn(b'+lr = 0.3', captured.unpushed)
+    self.assertEqual([c['subject'] for c in state['unpushed_log']], ['local'])
     self.assertEqual(state['unpushed']['path'], lc.UNPUSHED_FILE)
 
   def test_unpushed_without_upstream(self):

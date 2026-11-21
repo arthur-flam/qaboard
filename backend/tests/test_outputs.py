@@ -549,6 +549,12 @@ def test_local_changes_are_kept_as_the_web_app_expects_them(outputs_api, dummy_a
   assert kept["dirty"] is None and outputs_api.test_output.data["dirty"] is None
 
 
+def test_unpushed_commits_are_listed_by_sha_and_subject(outputs_api, dummy_app):
+  log = [{"sha": "c" * 40, "subject": "Tune the filter"}, {"sha": "HEAD", "subject": "x"}, "nope"]
+  post(outputs_api, dummy_app, data={"local_changes": {**LOCAL_CHANGES, "unpushed_log": log}})
+  assert outputs_api.test_output.data["local_changes"]["unpushed_log"] == [{"sha": "c" * 40, "subject": "Tune the filter"}]
+
+
 def test_clients_cant_say_their_patch_is_allowed(outputs_api, dummy_app, monkeypatch):
   from backend import local_changes
   monkeypatch.setattr(local_changes, "setting", lambda key: "summary" if key == "runs.local_changes" else None)
