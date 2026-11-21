@@ -106,6 +106,10 @@ class TestRestore(unittest.TestCase):
     self.assertEqual(git('rev-parse', 'HEAD', cwd=clone), self.pushed)
     self.assertEqual((clone / 'train.py').read_text(), "lr = 0.2\n")
     self.assertEqual((clone / 'augment.py').read_text(), "flip = True\n")
+    # new files show in git diff with the others
+    self.assertIn('augment.py', git('diff', '--stat', cwd=clone))
+    self.assertIn('read it before you run it', out.stdout)
+    self.assertIn('New files: augment.py', out.stdout)
 
   def test_unpushed_commits(self):
     (self.work / 'train.py').write_text("lr = 0.3\n")
@@ -117,6 +121,7 @@ class TestRestore(unittest.TestCase):
     out = self.qa(f"{server.url}/group/repo/commit/{captured.state['head']}?filter=id%3A42", cwd=clone)
     self.assertEqual(out.returncode, 0, out.stderr + out.stdout)
     self.assertEqual(git('rev-parse', 'HEAD~1', cwd=clone), self.pushed)
+    self.assertEqual(git('log', '-1', '--format=%an', cwd=clone), 'qa restore')
     self.assertEqual(git('show', 'HEAD:train.py', cwd=clone), "lr = 0.3")
     self.assertEqual((clone / 'train.py').read_text(), "lr = 0.4\n")
 
@@ -138,7 +143,7 @@ class TestRestore(unittest.TestCase):
     out = self.qa('42', '--server', server.url, '--download', cwd=folder)
     self.assertEqual(out.returncode, 0, out.stderr)
     self.assertEqual((folder / 'run-42-local-changes.patch').read_bytes(), captured.patch)
-    self.assertIn(f"git checkout {self.pushed[:10]} && git apply run-42-local-changes.patch", out.stdout)
+    self.assertIn(f"git checkout {self.pushed[:12]} && git apply run-42-local-changes.patch", out.stdout)
 
   def test_runs_without_local_changes(self):
     output = {'id': 7, 'output_dir_url': '/s/run', 'data': {'ci': True}}
@@ -153,11 +158,20 @@ class TestPlan(unittest.TestCase):
   def test_plans(self):
     from qaboard.restore import plan, parse_run
     has = lambda known: (lambda sha: sha in known)
-    changes = {'head': 'h', 'base': 'b', 'pushed': False, 'unpushed': {'path': 'x'}}
-    self.assertEqual(plan(changes, has({'h', 'b'})), ('h', False, None))
-    self.assertEqual(plan(changes, has({'b'})), ('b', True, None))
+    h, b = 'a' * 40, 'b' * 40
+    changes = {'head': h, 'base': b, 'pushed': False, 'unpushed': {'path': 'x'}}
+    self.assertEqual(plan(changes, has({h, b})), (h, False, None))
+    self.assertEqual(plan(changes, has({b})), (b, True, None))
     self.assertIn('git fetch', plan(changes, has(set()))[2])
-    self.assertIn('never pushed', plan({'head': 'h', 'pushed': False}, has(set()))[2])
+    self.assertIn('never pushed', plan({'head': h, 'pushed': False}, has(set()))[2])
+    # only commit ids: not your HEAD, a branch, or an option
+    for head in ('HEAD', 'main', '--orphan'):
+      self.assertIsNone(plan({'head': head}, lambda sha: True)[0])
+
+  def test_what_runs_say_is_printed_safely(self):
+    from qaboard.restore import _safe, _glob_literal, parse_run
+    self.assertEqual(_safe("a\x1b]52;c;ZXZp\x07b"), "a]52;c;ZXZpb")
+    self.assertEqual(_glob_literal("*"), "[*]")
     self.assertEqual(parse_run('12', None), (12, None))
     self.assertEqual(parse_run('https://qa.example.com/a/b/commit/c?batch=x&filter=id:12', None), (12, 'https://qa.example.com'))
 

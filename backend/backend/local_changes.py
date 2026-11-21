@@ -9,6 +9,7 @@ We keep what runs send in `data.local_changes` up to that level, with the fields
 them), refuse the patches they upload above it, and tell them the level when they start, so that the ones writing in
 a storage shared with us don't write patches either.
 """
+import re
 from typing import Any, Dict, Optional
 
 from qaboard.local_changes import LEVELS, FOLDER, PATCH_FILE, UNPUSHED_FILE, lowest
@@ -36,8 +37,15 @@ def _count(value) -> Optional[int]:
   return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
+CONTROL = re.compile(r'[\x00-\x1f\x7f-\x9f]')
+# commits: people copy commands made of them (git checkout <head>)
+SHAS = ('head', 'base')
+SHA = re.compile(r'[0-9a-f]{40}([0-9a-f]{24})?')
+
+
 def _text(value, size=MAX_TEXT) -> Optional[str]:
-  return value[:size] if isinstance(value, str) else None
+  """Text, without control characters (terminals and logs show them)"""
+  return CONTROL.sub('', value[:size]) if isinstance(value, str) else None
 
 
 def cleaned(state: Any, current: str) -> Optional[Dict[str, Any]]:
@@ -49,7 +57,7 @@ def cleaned(state: Any, current: str) -> Optional[Dict[str, Any]]:
     if key in state:
       kept[key] = state[key] if isinstance(state[key], bool) else None
   for key in TEXTS:
-    if _text(state.get(key)) is not None:
+    if _text(state.get(key)) is not None and (key not in SHAS or SHA.fullmatch(state[key])):
       kept[key] = _text(state[key])
   for key in COUNTS:
     if _count(state.get(key)) is not None:
@@ -59,7 +67,7 @@ def cleaned(state: Any, current: str) -> Optional[Dict[str, Any]]:
     for f in state['files'][:MAX_FILES]:
       if not isinstance(f, dict) or not isinstance(f.get('path'), str):
         continue
-      entry: Dict[str, Any] = {'path': f['path'][:MAX_PATH], 'status': _text(f.get('status'), 2) or 'M',
+      entry: Dict[str, Any] = {'path': _text(f['path'], MAX_PATH), 'status': _text(f.get('status'), 2) or 'M',
                                'added': _count(f.get('added')), 'deleted': _count(f.get('deleted'))}
       if f.get('binary') is True:
         entry['binary'] = True
@@ -67,7 +75,7 @@ def cleaned(state: Any, current: str) -> Optional[Dict[str, Any]]:
     kept['files'] = files
   for key in NAMES:
     if isinstance(state.get(key), list):
-      kept[key] = [name[:MAX_PATH] for name in state[key][:MAX_NAMES] if isinstance(name, str)]
+      kept[key] = [_text(name, MAX_PATH) for name in state[key][:MAX_NAMES] if isinstance(name, str)]
   for key, path in PATCHES.items():
     patch = state.get(key)
     if not isinstance(patch, dict):

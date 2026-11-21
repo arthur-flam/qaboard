@@ -21,6 +21,8 @@ from urllib.parse import unquote, urlsplit
 
 import click
 
+from .local_changes import PATCH_FILE, UNPUSHED_FILE
+
 
 def parse_run(run: str, server: Optional[str]) -> Tuple[int, Optional[str]]:
   """(run id, server) from a run id, or a web app URL that names one run (filter=id:<n>, or /output/<n>)"""
@@ -35,8 +37,28 @@ def parse_run(run: str, server: Optional[str]) -> Tuple[int, Optional[str]]:
   return int(found.group(1)), server or f"{parts.scheme}://{parts.netloc}"
 
 
-def _git(args: List[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
-  return subprocess.run(['git', *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', errors='replace', check=check)
+SHA = re.compile(r'[0-9a-f]{40}([0-9a-f]{24})?')
+CONTROL = re.compile(r'[\x00-\x1f\x7f-\x9f]')
+
+
+def _safe(value: Any) -> str:
+  """What a run says, printed: without control characters (they could hide lines or rewrite the terminal)"""
+  return CONTROL.sub('', str(value))
+
+
+def _glob_literal(path: str) -> str:
+  """A path as a glob that matches only itself, for git apply --exclude"""
+  return re.sub(r'([*?\[\\])', r'[\1]', path)
+
+
+def _git(args: List[str], cwd: Path, check: bool = True, input: Optional[str] = None) -> subprocess.CompletedProcess:
+  return subprocess.run(['git', *args], cwd=cwd, input=input, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', errors='replace', check=check)
+
+
+def _created(repo: Path, patch: Path, excluded: List[str]) -> List[str]:
+  """The files a patch creates (git apply --summary), and which of them are executable"""
+  summary = _git(['apply', '--summary', *excluded, str(patch)], repo, check=False).stdout
+  return [m.group(2) for m in re.finditer(r'^ create mode (\d+) (.+)$', summary, re.MULTILINE)]
 
 
 def _has_commit(repo: Path, sha: Optional[str]) -> bool:
@@ -48,14 +70,16 @@ def plan(changes: Dict[str, Any], has_commit) -> Tuple[Optional[str], bool, Opti
   (where to start, whether to apply the unpushed commits' patch, why we can't) for a run's local changes.
   `has_commit(sha)` says whether this repository has a commit.
   """
-  head, base = changes.get('head'), changes.get('base')
+  # only commits: a run that says "HEAD" or "main" would restore someone else's code on your branch
+  head = changes.get('head') if isinstance(changes.get('head'), str) and SHA.fullmatch(changes['head']) else None
+  base = changes.get('base') if isinstance(changes.get('base'), str) and SHA.fullmatch(changes['base']) else None
   unpushed_saved = bool((changes.get('unpushed') or {}).get('path'))
   if head and has_commit(head):
     return head, False, None
   if base and unpushed_saved and has_commit(base):
     return base, True, None
   if not head:
-    return None, False, "The run didn't record its commit."
+    return None, False, "The run didn't record its commit (or not as a commit id)."
   if base and unpushed_saved:
     return None, False, f"This repository has neither the run's commit {head[:10]} nor {base[:10]}: `git fetch`, then try again."
   return None, False, f"This repository doesn't have the run's commit {head[:10]}{', which was never pushed' if changes.get('pushed') is False else ''}: `git fetch`, then try again."
@@ -101,7 +125,8 @@ def restore(run, server, branch, download):
     click.secho(f"Run {run_id} didn't record its local changes: {why}.", fg='yellow', err=True)
     sys.exit(1)
 
-  saved = {key: (changes.get(key) or {}).get('path') for key in ('patch', 'unpushed')}
+  # only where qa saves them
+  saved = {key: name for key, name in (('patch', PATCH_FILE), ('unpushed', UNPUSHED_FILE)) if (changes.get(key) or {}).get('path') == name}
   if changes.get('dirty') and not saved['patch']:
     omitted = (changes.get('patch') or {}).get('omitted')
     why = {'too_large': "it was too large", 'level': "the server keeps only a summary of runs' local changes", 'timeout': "git took too long"}.get(omitted, "it couldn't be saved")
@@ -128,13 +153,15 @@ def restore(run, server, branch, download):
         destination = Path(f"run-{run_id}-{path.name}")
         destination.write_bytes(path.read_bytes())
         click.echo(f"Saved {destination}")
-      head = changes.get('head') or '<commit>'
+      sha = lambda key: changes[key] if isinstance(changes.get(key), str) and SHA.fullmatch(changes[key]) else f'<{key}>'
+      applies = ' && '.join(f"git apply run-{run_id}-{patches[key].name}" for key in ('unpushed', 'patch') if key in patches)
       if 'unpushed' in patches:
-        click.echo(f"To apply them: git checkout {(changes.get('base') or '<base>')[:10]} && git apply run-{run_id}-unpushed.patch && git apply run-{run_id}-local-changes.patch")
+        click.echo(f"To apply them: git checkout {sha('base')[:12]} && {applies}")
       elif patches:
-        click.echo(f"To apply it: git checkout {head[:10]} && git apply run-{run_id}-local-changes.patch")
+        click.echo(f"To apply it: git checkout {sha('head')[:12]} && {applies}")
       else:
-        click.echo(f"Run {run_id} had no local changes: it ran {head[:10]}.")
+        click.echo(f"Run {run_id} had no local changes: it ran {sha('head')[:12]}.")
+      click.secho(f"It is code from {_safe((output.get('data') or {}).get('user') or 'whoever sent the run')}: read it before you run it.", fg='yellow')
       return
 
     found = _git(['rev-parse', '--show-toplevel'], Path.cwd(), check=False)
@@ -157,35 +184,48 @@ def restore(run, server, branch, download):
       click.secho(f"ERROR: can't create the branch {branch}: {created.stderr.strip()}\nGive another name with --branch.", fg='red', bold=True, err=True)
       sys.exit(1)
 
-    excluded = [f'--exclude={path}' for path in binary_files(changes)]
+    excluded = [f'--exclude={_glob_literal(path)}' for path in binary_files(changes)]
+    who = _safe((output.get('data') or {}).get('user') or 'whoever sent the run')
+    created_files: List[str] = []
     if apply_unpushed:
       applied = _git(['apply', '--index', *excluded, str(patches['unpushed'])], repo, check=False)
       if applied.returncode != 0:
-        click.secho(f"ERROR: the run's unpushed commits don't apply on {start[:10]}: {applied.stderr.strip()}", fg='red', bold=True, err=True)
+        click.secho(f"ERROR: the run's unpushed commits don't apply on {start[:10]}: {_safe(applied.stderr.strip())}", fg='red', bold=True, err=True)
         sys.exit(1)
-      _git(['commit', '-q', '--no-verify', '-m', f"The unpushed commits of run {run_id}, up to {changes.get('head', '')[:10]}"], repo)
+      created_files += _created(repo, patches['unpushed'], excluded)
+      # not signed with your key: it's someone else's code
+      _git(['commit', '-q', '--no-verify', '--no-gpg-sign', '--author=qa restore <qa-restore@localhost>',
+            '-m', f"The unpushed commits of run {run_id}, by {who}, up to {(changes.get('head') or '')[:12]}"], repo)
     if 'patch' in patches:
+      new_files = _created(repo, patches['patch'], excluded)
       applied = _git(['apply', *excluded, str(patches['patch'])], repo, check=False)
       if applied.returncode != 0:
-        click.secho(f"ERROR: the run's local changes don't apply: {applied.stderr.strip()}", fg='red', bold=True, err=True)
+        click.secho(f"ERROR: the run's local changes don't apply: {_safe(applied.stderr.strip())}", fg='red', bold=True, err=True)
         click.secho(f"The branch {branch} is at {start[:10]}{' with the unpushed commits' if apply_unpushed else ''}.", fg='yellow', err=True)
         sys.exit(1)
+      # new files, as "intent to add": `git diff` shows them with the other changes
+      if new_files:
+        _git(['add', '--intent-to-add', '--pathspec-from-file=-', '--pathspec-file-nul', '--'], repo, check=False, input=''.join(f + '\0' for f in new_files))
+      created_files += new_files
 
   click.secho(f"On the branch {branch}: the code of run {run_id}", fg='green', bold=True)
+  click.secho(f"  It is code from {who}: read it before you run it (git diff {start[:12]}).", fg='yellow')
+  if created_files:
+    click.echo(f"  New files: {', '.join(_safe(f) for f in created_files[:10])}{'...' if len(created_files) > 10 else ''}")
   details = [f"commit {(changes.get('head') or start)[:10]}"]
   if apply_unpushed:
     details.append(f"{changes.get('unpushed_commits') or 'its'} unpushed commit(s), committed as one")
   if 'patch' in patches:
-    details.append(f"{changes.get('files_total', '?')} changed files, not committed (git diff shows them)")
+    details.append(f"{_safe(changes.get('files_total', '?'))} changed files, not committed (git diff shows them)")
   click.echo("  " + ", ".join(details))
   skipped = binary_files(changes)
   if skipped:
-    click.secho(f"  Binary files aren't saved with runs, they are as in the commit: {', '.join(skipped[:5])}{'...' if len(skipped) > 5 else ''}", fg='yellow')
+    click.secho(f"  Binary files aren't saved with runs, they are as in the commit: {', '.join(_safe(p) for p in skipped[:5])}{'...' if len(skipped) > 5 else ''}", fg='yellow')
   if changes.get('excluded'):
-    click.secho(f"  Left out when the run started (they look like secrets, or outputs.local_changes.exclude): {', '.join(changes['excluded'][:5])}", fg='yellow')
+    click.secho(f"  Left out when the run started (they look like secrets, or outputs.local_changes.exclude): {', '.join(_safe(p) for p in changes['excluded'][:5])}", fg='yellow')
   if changes.get('untracked_contents') == 'too_many':
     click.secho("  The run had too many untracked files to save their contents: they are missing.", fg='yellow')
   inputs = output.get('test_input_path')
   if inputs:
     configurations = output.get('configurations') or []
-    click.echo(f"  It ran on {inputs}" + (f", with {configurations}" if configurations else '') + (f" and {output['extra_parameters']}" if output.get('extra_parameters') else ''))
+    click.echo(_safe(f"  It ran on {inputs}" + (f", with {configurations}" if configurations else '') + (f" and {output['extra_parameters']}" if output.get('extra_parameters') else '')))
