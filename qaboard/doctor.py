@@ -725,6 +725,36 @@ def check_storage_setting(config: Dict[str, Any], project: Path, subproject: Pat
   return Check("Results storage", ERROR, problem, fix=fix)
 
 
+SLOW_LOCAL_CHANGES_MS = 3000
+
+
+def check_local_changes(value: Any, repo_root: Path, is_ci: bool, site: Optional[Dict[str, Any]], ignore: Iterable[Path] = ()) -> Check:
+  """What local runs record of their changes compared with their commit, and how long it takes (qaboard/local_changes.py)"""
+  from . import local_changes
+  name = "Local changes"
+  settings, problems = local_changes.settings(value, is_ci=is_ci)
+  if problems:
+    return Check(name, WARNING, problems[0], fix=f"Docs: {docs('local-changes')}")
+  server_level = (site or {}).get('local_changes')
+  level = local_changes.lowest(settings.level, server_level) if server_level in local_changes.LEVELS else settings.level
+  if level == 'off':
+    why = "in CI, checkouts are clean" if is_ci and settings.level == 'off' and not os.environ.get(local_changes.ENV_LEVEL) else \
+          "the server's administrators turned it off" if server_level == 'off' else "outputs.local_changes or $QA_LOCAL_CHANGES is off"
+    return Check(name, OK, f"Not recorded: {why}.")
+  captured = local_changes.capture(repo_root, settings._replace(level=level), ignore=local_changes.inside(repo_root, list(ignore)))
+  state = captured.state if captured else {}
+  limited = f" (the server allows {server_level}, the project asks for {settings.level})" if server_level and level != settings.level else ''
+  ms = state.get('ms', 0)
+  if state.get('timed_out') or ms > SLOW_LOCAL_CHANGES_MS:
+    return Check(name, WARNING, f"git took {ms / 1000:.1f}s to compare the working tree with HEAD{' and gave up' if state.get('timed_out') else ''}: every local run waits for it.",
+                 fix="Make git status faster on big repositories:\n  git config feature.manyFiles true\n  git config core.untrackedCache true\n"
+                     "  git config core.fsmonitor true   # git >= 2.37 on macOS and Windows; on Linux, a hook like watchman's\n"
+                     f"Or record less: outputs.local_changes: summary, or a lower timeout. Docs: {docs('local-changes')}")
+  if state.get('error') and state.get('dirty') is None:
+    return Check(name, WARNING, f"Can't tell what runs change: {state['error']}")
+  return Check(name, OK, f"{level}{limited}: {local_changes.describe(state)} ({ms} ms)")
+
+
 def check_database(database: Path, input_type: str = 'default', configured: bool = True) -> Check:
   """The inputs database (the folder input paths are relative to) exists and is readable."""
   name = "Inputs database" if input_type == 'default' else f"Inputs database ({input_type})"
@@ -978,6 +1008,9 @@ def run_doctor(obj: Dict[str, Any], runner: str, test_job: bool = False, echo=cl
       else:
         yield from shared_storage_checks(label, platform, configurations, extra_parameters)
     yield from database_checks(config, obj)
+    if qaboard_config.is_in_git_repo:
+      yield check_local_changes((config.get('outputs') or {}).get('local_changes'), Path(qaboard_config.repo_root), is_ci, state['site'],
+                                ignore=[root / 'output'])
 
   def shared_storage_checks(label, platform, configurations, extra_parameters) -> Iterator[Check]:
     batch_label = label if is_ci else f"@{user}| {label}"

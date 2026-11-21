@@ -288,6 +288,11 @@ DEFINITIONS = {
     'token', str, env='QABOARD_INGEST_AUTH', choices=('off', 'warn', 'token'),
     label="Authenticate results sent by qa", group='tokens', docs="/docs/backend-admin/user-management#results-sent-by-qa",
   ),
+  'runs.local_changes': Definition(
+    "What local runs record of how their code differs from their commit, at most (projects can ask for less in qaboard.yaml): \"patch\" (the default) the changed files and the patch, saved with the run; \"summary\" only the changed files' paths, line counts and a hash, no code, e.g. for a server that must not receive source code; \"off\" nothing.",
+    'patch', str, env='QABOARD_LOCAL_CHANGES', choices=('patch', 'summary', 'off'),
+    label="Local changes runs record", group='tokens', docs="/docs/backend-admin/settings#local-changes",
+  ),
   'tokens.default_lifetime_days': Definition(
     "The default lifetime of the tokens users create in the web app.",
     90, int, minimum=1, label="Default token lifetime", group='tokens', unit='days',

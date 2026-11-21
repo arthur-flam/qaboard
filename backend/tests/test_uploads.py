@@ -888,3 +888,16 @@ def test_stale_temporary_files_are_removed(run_dir, upload_root, tmp_path):
   assert uploads.remove_stale_temporary_files() == 3
   assert not any(path.exists() for path in stale)
   assert receiving.exists() and outside.exists() and elsewhere.exists() and (run_dir / "log.txt").exists()
+
+
+@pytest.mark.parametrize("level, status", [("patch", 200), ("summary", 403), ("off", 403)])
+def test_patches_of_local_changes_are_refused_above_the_level(outputs_api, dummy_app, upload_root, monkeypatch, level, status):
+  from backend import local_changes
+  monkeypatch.setattr(local_changes, "setting", lambda key: level if key == "runs.local_changes" else None)
+  start(outputs_api, dummy_app)
+  body, got = put(outputs_api, dummy_app, ".qaboard/local-changes.patch", content=b"diff --git a/x b/x\n")
+  assert got == status, body
+  if status == 403:
+    assert body["reason"] == "local_changes_not_allowed"
+  # the run's other files are still taken
+  assert put(outputs_api, dummy_app, "metrics.json", content=b"{}")[1] == 200
