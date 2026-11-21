@@ -3,7 +3,7 @@ import { lazy, Suspense, useContext, useState } from "react";
 import { Classes, Intent, Tag, Tooltip } from "@blueprintjs/core";
 
 import {
-  LocalChangesSharedContext, changes_summary, is_dirty, local_changes_of, omitted_message, saved_file, state_key, unpushed_text,
+  LocalChangesSharedContext, changes_lines, changes_sentence, is_dirty, local_changes_of, omitted_message, saved_file, state_key, unpushed_text,
 } from "./localChanges";
 
 // The dialog shows the patch in Monaco: the commit page doesn't pay for it until someone opens it
@@ -20,7 +20,7 @@ const TagTooltip = ({ changes }) => {
   return <div style={{ maxWidth: 360 }}>
     {is_dirty(changes) === null
       ? <div>git couldn't tell whether this run had uncommitted changes{changes.timed_out ? ' (it took too long)' : ''}.</div>
-      : <div>This run had uncommitted changes.</div>}
+      : <div>Uncommitted changes: {changes_sentence(changes)}</div>}
     {changes.branch && <div>Branch: <code>{String(changes.branch)}</code></div>}
     {unpushed && <div>Its commit: {unpushed}</div>}
     <div className={Classes.TEXT_MUTED}>
@@ -40,18 +40,20 @@ export const LocalChangesTag = ({ output, output_ref, style }) => {
   if (dirty === false) return null;
   // the batch's callout already says it for all the runs
   if (shared !== null && shared === state_key(changes, output.id)?.key) return null;
-  const text = dirty === null ? 'local changes unknown' : changes_summary(changes);
+  const text = dirty === null ? 'local changes unknown' : `uncommitted ${changes_lines(changes)}`;
+  // a fact, quiet; a warning only when we can't say which code ran
+  const warn = dirty === null || !saved_file(changes, 'patch');
   return <>
     <Tooltip content={<TagTooltip changes={changes}/>} hoverOpenDelay={300} placement="bottom">
       <Tag
         minimal
         interactive
         icon="git-new-branch"
-        intent={dirty === null ? Intent.NONE : Intent.WARNING}
+        intent={warn ? Intent.WARNING : Intent.NONE}
         style={{ ...tag_style, ...style }}
         role="button"
         tabIndex={0}
-        aria-label={dirty === null ? 'Local changes unknown: show details' : `Local changes ${text}: show them`}
+        aria-label={dirty === null ? 'Local changes unknown: show details' : `Uncommitted changes, ${changes_sentence(changes)}: show them`}
         onClick={() => setOpen(true)}
         onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setOpen(true); } }}
       >

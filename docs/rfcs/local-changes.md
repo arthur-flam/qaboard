@@ -128,7 +128,7 @@ The cost is `git status` walking the working tree, not the patch's size. One `gi
   why when it couldn't. The runs of a batch say it once, unless the code changed while it ran.
 
 ### In the web app
-- **A tag on runs with local changes**: "+40 −12 · 3 files". It opens the changes.
+- **A tag on runs with local changes**: "uncommitted +40 −12". It opens the changes.
 - **Batches whose runs share a state say it once**, above the runs, instead of the old warning:
   "Local runs on 3f2a1b9c with uncommitted changes: 3 files, +40 −12 — View", or "Local runs on 3f2a1b9c, without
   local changes", a fact instead of a doubt. When runs differ, the callout says how many states there are, and each

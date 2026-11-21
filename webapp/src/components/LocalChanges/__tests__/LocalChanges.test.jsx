@@ -46,7 +46,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe('LocalChangesTag', () => {
   it('counts the changes, and opens them', async () => {
     renderWithProviders(<LocalChangesTag output={run(1, changes())}/>);
-    fireEvent.click(screen.getByRole('button', { name: /Local changes \+40 −12 · 3 files/ }));
+    expect(screen.getByText('uncommitted +40 −12')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Uncommitted changes, 3 files, \+40 −12/ }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(await screen.findByTestId('editor')).toHaveTextContent('+new');
   });
@@ -64,7 +65,7 @@ describe('LocalChangesTag', () => {
     </>);
     expect(container).toBeEmptyDOMElement();
     renderWithProviders(<LocalChangesSharedContext value="3f2a1b9c0d1e2f30:aaa"><LocalChangesTag output={run(4, changes({ sha256: 'bbb' }))}/></LocalChangesSharedContext>);
-    expect(screen.getByText('+40 −12 · 3 files')).toBeInTheDocument();
+    expect(screen.getByText('uncommitted +40 −12')).toBeInTheDocument();
   });
 });
 
@@ -80,7 +81,7 @@ describe('the batch callout', () => {
   it('counts runs that differ only by their unpushed commits as different states', () => {
     renderBatch([run(1, changes()), run(2, changes({ pushed: false, unpushed_commits: 2 }))]);
     // they differ by their unpushed commits
-    expect(screen.getByText('These local runs used 2 different sets of local changes')).toBeInTheDocument();
+    expect(screen.getByText("These runs didn't all run the same code: 2 with different uncommitted changes")).toBeInTheDocument();
   });
 
   it('shared changes', async () => {
@@ -98,9 +99,9 @@ describe('the batch callout', () => {
   });
 
   it('runs that differ open the list of states', async () => {
-    renderBatch([run(1, changes()), run(2, changes({ sha256: 'bbb' })), run(3, changes({ dirty: false }))]);
-    expect(screen.getByText('These local runs used 3 different sets of local changes')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    renderBatch([run(1, changes()), run(2, changes({ sha256: 'bbb' })), run(3, changes({ dirty: false })), run(4, changes({ dirty: null })), run(5)]);
+    expect(screen.getByText("These runs didn't all run the same code: 2 with different uncommitted changes, 1 without, 1 unknown, 1 didn't record it")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'See which runs' }));
     await waitFor(() => expect(new URLSearchParams(window.location.search).get('selected_views')).toBe('local-changes'));
   });
 
@@ -121,51 +122,90 @@ describe('LocalChangesDialog', () => {
   const open = (output, output_ref) => renderWithProviders(<LocalChangesDialog isOpen onClose={() => {}} output={output} output_ref={output_ref}/>, { siteConfig: { docs_root: '/qa/' } });
 
   it('lists the files, shows the patch, and how to reproduce', async () => {
-    open(run(1, changes({ excluded: ['secrets.env', '.env'] })));
+    open(run(1, changes({ excluded: ['secrets.env', '.env'], scope: 'batch' })));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('On 3f2a1b9c on feature/x · uncommitted changes: 3 files, +40 −12');
+    expect(dialog).toHaveTextContent('Local changes of in1.raw');
+    expect(dialog).toHaveTextContent('Commit3f2a1b9c');
+    expect(dialog).toHaveTextContent('Branchfeature/x');
+    expect(dialog).toHaveTextContent('Uncommitted3 files, +40 −12');
+    expect(dialog).toHaveTextContent('Recorded when the batch started');
     expect(await screen.findByTestId('editor')).toHaveAttribute('data-language', 'diff');
     const list = within(screen.getByRole('list', { name: 'Changed files' }));
     // the files in the patch scroll it to their changes, the others are listed
     expect(list.getByRole('button', { name: 'src/a.py' })).toBeInTheDocument();
     expect(list.getByText('img.png')).toBeInTheDocument();
     expect(list.getByText('binary')).toBeInTheDocument();
-    expect(screen.getByText(/Left out: secrets.env, .env/)).toBeInTheDocument();
+    expect(list.getByText('New')).toBeInTheDocument();
+    expect(list.getByLabelText('30 lines added')).toHaveTextContent('+30');
+    expect(screen.getByText(/Not saved, they look like secrets or the project excludes them: secrets.env, .env/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Docs' })).toHaveAttribute('href', '/qa/docs/local-changes');
-    expect(screen.getByRole('button', { name: /Download/ })).toHaveAttribute('href', '/s/1/.qaboard/local-changes.patch');
-    expect(screen.getByText('git checkout 3f2a1b9c0d1e2f30 && git apply local-changes.patch')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Copy reproduce command/ }));
+    const download = screen.getByRole('button', { name: 'Download run-1-local-changes.patch' });
+    expect(download).toHaveAttribute('href', '/s/1/.qaboard/local-changes.patch');
+    expect(download).toHaveAttribute('download', 'run-1-local-changes.patch');
+    expect(screen.getByText('qa restore 1')).toBeInTheDocument();
+    expect(screen.getByText('git checkout 3f2a1b9c0d1e2f30 && git apply run-1-local-changes.patch')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Copy the command' })[0]);
     expect(copyWithToast).toHaveBeenCalledWith('qa restore 1', expect.anything());
   });
 
   it.each([
     [{ omitted: 'too_large', bytes: 2048 * 1024 }, 'The patch is 2048 KB: too large to save (outputs.local_changes.max_patch_kb).'],
     [{ omitted: 'level' }, 'This server keeps only a summary of the code changes.'],
-    [{ omitted: 'timeout' }, "git took too long to make the patch: it wasn't saved."],
+    [{ omitted: 'timeout' }, 'git took too long to compute the patch (outputs.local_changes.timeout, qa doctor).'],
+    [{ omitted: 'no_answer' }, "The server didn't answer when the run started: the patch wasn't saved."],
   ])('says why the patch is missing: %o', (patch, message) => {
     open(run(1, changes({ patch })));
     expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.getByText(/The exact code can't be restored/)).toHaveTextContent("The exact code can't be restored: only the commit 3f2a1b9c and the list of changed files are known.");
     expect(screen.queryByTestId('editor')).toBeNull();
     expect(screen.queryByRole('button', { name: /Download/ })).toBeNull();
+    expect(screen.queryByText(/qa restore/)).toBeNull();
+  });
+
+  it('says when the patch file is gone', async () => {
+    open(run(3, changes()));
+    expect(await screen.findByText("The patch file is missing: the run's files may have been deleted.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Download/ })).toBeNull());
   });
 
   it('says when there were too many untracked files', () => {
     open(run(1, changes({ untracked_contents: 'too_many' })));
-    expect(screen.getByText(/too many untracked files/)).toBeInTheDocument();
+    expect(screen.getByText(/1 new file listed without their contents: too many/)).toBeInTheDocument();
   });
 
+  const unpushed = { pushed: false, unpushed_commits: 2, base: 'bbbbbbbb', unpushed: { path: '.qaboard/unpushed.patch', bytes: 10, sha256: 'u' },
+    unpushed_log: [{ sha: 'c'.repeat(40), subject: 'Faster demosaic' }, { sha: '$(x)', subject: 'not a sha' }] };
   it('shows the unpushed commits', async () => {
-    open(run(1, changes({ pushed: false, unpushed_commits: 2, base: 'bbbbbbbb', unpushed: { path: '.qaboard/unpushed.patch', bytes: 10, sha256: 'u' } })));
-    expect(screen.getByText('git checkout bbbbbbbb && git apply unpushed.patch && git apply local-changes.patch')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('radio', { name: /Unpushed commits \(2\)/ }));
+    open(run(1, changes(unpushed)));
+    expect(screen.getByText('git checkout bbbbbbbb && git apply run-1-unpushed.patch && git apply run-1-local-changes.patch')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download run-1-unpushed.patch' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Not pushed (2 commits)' }));
     expect(await screen.findByText(/\+unpushed/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'c.py' })).toBeInTheDocument();
+    expect(screen.getByText(/Changes from/)).toHaveTextContent('Changes from bbbbbbbb (last pushed) to 3f2a1b9c');
+    const log = within(screen.getByRole('list', { name: 'Unpushed commits' }));
+    expect(log.getAllByRole('listitem')).toHaveLength(1);
+    expect(log.getByRole('listitem')).toHaveTextContent('cccccccc Faster demosaic');
+  });
+
+  it('opens clean runs on their unpushed commits', async () => {
+    open(run(1, changes({ ...unpushed, dirty: false, files: [], files_total: 0, patch: undefined })));
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(await screen.findByText(/\+unpushed/)).toBeInTheDocument();
   });
 
   it("compares with the reference's changes", async () => {
     open(run(1, changes()), run(9, changes({ sha256: 'old' })));
     fireEvent.click(screen.getByRole('button', { name: "Compare with the reference's changes" }));
     expect(await screen.findByTestId('diff')).toHaveTextContent('+old ➡️ diff --git a/src/a.py b/src/a.py +new');
+    expect(screen.getByText(/Left: the changes of reference/)).toBeInTheDocument();
+    expect(screen.queryByText(/starts from other code/)).toBeNull();
+  });
+
+  it('warns when the reference ran another commit', async () => {
+    open(run(1, changes()), run(9, changes({ sha256: 'old', head: 'dddddddd' })));
+    fireEvent.click(screen.getByRole('button', { name: "Compare with the reference's changes" }));
+    expect(await screen.findByText(/starts from other code/)).toHaveTextContent('The reference ran dddddddd: its patch starts from other code.');
   });
 
   it('only shows patches small enough', async () => {
@@ -190,15 +230,20 @@ describe('LocalChangesDialog', () => {
 
 
 describe('LocalChangesView', () => {
-  it('lists the distinct states, with their runs', () => {
-    const groups = group_local_changes([run(1, changes()), run(2, changes()), run(3, changes({ dirty: false, pushed: true })), run(4)]);
+  it('lists the distinct states, with their runs', async () => {
+    const groups = group_local_changes([run(1, changes({ sha256: 'abcdef0123' })), run(2, changes({ sha256: 'abcdef0123' })), run(3, changes({ dirty: false, pushed: true })), run(4)]);
     renderWithProviders(<LocalChangesView groups={groups}/>);
-    expect(screen.getByText('The runs shown recorded 2 different sets of local changes. 1 run didn\'t record their local changes.')).toBeInTheDocument();
+    expect(screen.getByText('The runs shown recorded 2 different sets of local changes.')).toBeInTheDocument();
+    expect(screen.getByText(/Didn't record their local changes/)).toBeInTheDocument();
+
     expect(screen.getByText('Uncommitted changes: 3 files, +40 −12')).toBeInTheDocument();
     expect(screen.getByText('No local changes')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '2 runs' }));
     expect(screen.getByText('in1.raw')).toBeInTheDocument();
     expect(screen.getByText('in2.raw')).toBeInTheDocument();
+    expect(screen.getByText('abcdef0')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show only these 2 runs' }));
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('filter')).toBe('id:(1|2)(?!\\d)'));
   });
 });
 

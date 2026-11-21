@@ -9,26 +9,30 @@ committed yet. QA-Board shows those changes, so you know what produced a result,
 of the same commit. CI runs run their commit: they have no local changes.
 
 ## See what a run changed {#see}
-Runs with local changes are tagged on their card with their size, like **+40 −12 · 3 files**. Click the tag:
+Runs with local changes are tagged on their card, like **uncommitted +40 −12**. Click the tag:
 
-- the changed files, with their added and removed lines. New files are marked **?**, deleted ones **D**;
-- the patch, highlighted. Click a file to go to its changes;
-- **Unpushed commits**, when the run's commit was never pushed: the commits the git host doesn't know;
-- **Download** saves the patch, and **Copy reproduce command** gives `qa restore <run id>`, which gets that code back
-  in a branch ([get the code back](/docs/local-changes#restore)).
+- the run's commit and branch, and whether the batch recorded the changes when it started;
+- **Get this code**: `qa restore <run id>`, to copy, makes a branch with that code in your clone
+  ([get the code back](/docs/local-changes#restore)), and the patches to download;
+- the changed files, with their added and removed lines, marked **M**odified, **New** or **D**eleted;
+- the patch, added lines in green, removed ones in red. Click a file to go to its changes;
+- **Not pushed (2 commits)**, when the run's commit was never pushed: the commits the git host doesn't know, and
+  their changes.
 
 When all the runs shown ran the same code, the tags are hidden: a message above the runs says it once, e.g.
-*Local runs on 3f2a1b9c with uncommitted changes: 3 files, +40 −12*, or that they ran the commit without changes.
+*Local runs on 3f2a1b9c with uncommitted changes: 3 files, +40 −12*, or *Local runs on 3f2a1b9c, without local
+changes*.
 
 ## Compare with the reference's changes {#compare}
 When the run and its reference run both have local changes, and they differ, click **Compare with the reference's
-changes** in the run's changes: the two patches side by side, the reference's on the left. It answers "what did I
-change between these two experiments?".
+changes** in the run's changes: the two patches side by side. It answers "what did I change between these two
+experiments?". When the reference ran another commit, a note says so: its patch starts from other code.
 
 ## Runs that ran different code {#different}
 A batch can mix runs that ran different code, e.g. when someone edited the code between two `qa run`. The message
-above the runs then says how many versions of the code there are. **Local changes** in the sidebar's **Source**
-section lists them, with how many runs ran each: open one to see its changes.
+above the runs then says so: *These runs didn't all run the same code: 2 with different uncommitted changes, 1
+without*. **See which runs**, or **Local changes** in the sidebar's **Source** section, lists the versions of the
+code, with how many runs ran each: open one to see its changes, or **Show only these runs**.
 
 To keep only some runs, type in the runs' filter:
 
@@ -39,7 +43,8 @@ To keep only some runs, type in the runs' filter:
 | `changes:unknown` | runs where git couldn't tell in time |
 
 ## When the patch isn't there {#missing}
-The run still says which files changed, and why the patch is missing:
+The run still says which files changed, and why the patch is missing: the exact code can't be restored, only the
+commit and the list of changed files are known.
 
 - **Too large to save**: the project saves patches up to a size (`outputs.local_changes.max_patch_kb`).
 - **This server keeps only a summary**: its administrators chose not to keep code.

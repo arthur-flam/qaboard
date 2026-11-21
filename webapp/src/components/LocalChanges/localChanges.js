@@ -29,12 +29,8 @@ const number = value => typeof value === 'number' && Number.isFinite(value) ? va
 
 const files_count = changes => number(changes?.files_total) || (Array.isArray(changes?.files) ? changes.files.length : 0);
 
-// "+40 −12 · 3 files"
-export const changes_summary = changes => {
-  const files = files_count(changes);
-  const lines = `+${number(changes?.added)} −${number(changes?.deleted)}`;
-  return `${lines} · ${files} file${files === 1 ? '' : 's'}`;
-};
+// "+40 −12"
+export const changes_lines = changes => `+${number(changes?.added)} −${number(changes?.deleted)}`;
 
 // "3 files, +40 −12", for sentences
 export const changes_sentence = changes => {
@@ -146,7 +142,7 @@ export const max_compared = 2 * 1024 * 1024;
 // The patch's text, { text }, or { too_large, bytes } past `limit` bytes, without reading more than that
 export const fetch_capped_text = async (url, limit, signal) => {
   const response = await fetch(url, { signal, credentials: 'same-origin' });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  if (!response.ok) throw Object.assign(new Error(`${response.status} ${response.statusText}`), { status: response.status });
   const length = Number(response.headers.get('content-length'));
   if (Number.isFinite(length) && length > limit) {
     response.body?.cancel?.().catch(() => {});
@@ -182,7 +178,8 @@ export const patchQuery = (url, limit = max_shown) => queryOptions({
 
 const kb = bytes => Math.max(1, Math.round(number(bytes) / 1024));
 
-// Why a patch isn't saved, in words. null when it is, or there was nothing to save.
+// Why a patch isn't saved, in words (the CLI says the same, qaboard/local_changes.py describe()). null when it is, or
+// there was nothing to save.
 export const omitted_message = (file, { what = 'patch' } = {}) => {
   const reason = file?.omitted;
   if (!reason) return null;
@@ -191,31 +188,52 @@ export const omitted_message = (file, { what = 'patch' } = {}) => {
       ? `The ${what} is ${kb(file.bytes)} KB: too large to save (outputs.local_changes.max_patch_kb).`
       : `The ${what} was too large to save (outputs.local_changes.max_patch_kb).`;
   if (reason === 'level') return "This server keeps only a summary of the code changes.";
-  if (reason === 'timeout') return `git took too long to make the ${what}: it wasn't saved.`;
-  if (reason === 'unreadable') return `Some changed files couldn't be read: the ${what} wasn't saved.`;
-  if (reason === 'error') return `git failed to make the ${what}: it wasn't saved.`;
   if (reason === 'no_answer') return `The server didn't answer when the run started: the ${what} wasn't saved.`;
+  if (reason === 'timeout') return `git took too long to compute the ${what} (outputs.local_changes.timeout, qa doctor).`;
+  if (reason === 'unreadable') return `The ${what} the batch saved couldn't be read on the machine that ran this run.`;
+  if (reason === 'error') return `The ${what} couldn't be saved.`;
   return `The ${what} wasn't saved (${String(reason).slice(0, 40)}).`;
 };
 
+// What a status letter means, as shown: A, M, D, New
+export const status_label = status => status === '?' ? 'New' : typeof status === 'string' && status ? status.slice(0, 1) : '·';
 export const status_names = { M: 'modified', A: 'added', D: 'deleted', '?': 'new, untracked', R: 'renamed', C: 'copied', T: 'type changed', U: 'unmerged' };
 
+// The unpushed commits, newest first: [{ sha, subject }], only those with a sha
+export const unpushed_log_of = changes => (Array.isArray(changes?.unpushed_log) ? changes.unpushed_log : [])
+  .filter(commit => is_sha(commit?.sha))
+  .slice(0, 50)
+  .map(commit => ({ sha: commit.sha, subject: typeof commit.subject === 'string' ? commit.subject.slice(0, 200) : '' }));
+
 // How to get the run's code back. null when the run's id isn't a number
-export const restore_command = output => {
+const run_id = output => {
   const id = output?.id;
-  return (Number.isInteger(id) && id >= 0) || (typeof id === 'string' && /^\d+$/.test(id)) ? `qa restore ${id}` : null;
+  return (Number.isInteger(id) && id >= 0) || (typeof id === 'string' && /^\d+$/.test(id)) ? String(id) : null;
+};
+export const restore_command = output => {
+  const id = run_id(output);
+  return id ? `qa restore ${id}` : null;
+};
+
+// What downloads are called, like `qa restore --download`: run-12-local-changes.patch, run-12-unpushed.patch
+export const download_name = (output, which = 'patch') => {
+  const name = which === 'unpushed' ? 'unpushed.patch' : 'local-changes.patch';
+  const id = run_id(output);
+  return id ? `run-${id}-${name}` : name;
 };
 
 // The git commands that recreate the run's code from the patches it saved, [] when it saved none (or its commit isn't
 // a sha). Only shas and fixed names: people paste them in a shell.
-export const git_commands = changes => {
+// output: the run, for the patches' names (download_name)
+export const git_commands = (changes, output) => {
   const patch = !!saved_file(changes, 'patch');
   const unpushed = !!saved_file(changes, 'unpushed');
+  const apply_patch = `git apply ${download_name(output, 'patch')}`;
   const commands = [];
   if (patch && is_sha(changes?.head))
-    commands.push(`git checkout ${changes.head} && git apply local-changes.patch`);
+    commands.push(`git checkout ${changes.head} && ${apply_patch}`);
   if (unpushed && is_sha(changes?.base))
-    commands.push(`git checkout ${changes.base} && git apply unpushed.patch${patch ? ' && git apply local-changes.patch' : ''}`);
+    commands.push(`git checkout ${changes.base} && git apply ${download_name(output, 'unpushed')}${patch ? ` && ${apply_patch}` : ''}`);
   return commands;
 };
 
@@ -233,23 +251,40 @@ const header_path = header => {
   return b === -1 ? null : rest.slice(b + 3);
 };
 
-// The lines of a patch, and where each file starts ("diff --git a/x b/x"): { lines, files: Map(path => line number) }.
+// The lines of a patch, where each file starts ("diff --git a/x b/x"), and which lines its hunks add and remove, for the
+// editor to tint them: { lines, files: Map(path => line number), headers, inserted, deleted } (line numbers, from 1).
 // One pass, without splitting the text.
 export const index_patch = text => {
   const files = new Map();
-  if (typeof text !== 'string' || !text) return { lines: 1, files };
+  const headers = [];
+  const inserted = [];
+  const deleted = [];
+  if (typeof text !== 'string' || !text) return { lines: 1, files, headers, inserted, deleted };
   let line = 1;
   let start = 0;
+  let in_hunk = false;
   while (start <= text.length) {
+    const char = text[start];
     if (text.startsWith('diff --git ', start)) {
+      in_hunk = false;
+      headers.push(line);
       const end = text.indexOf('\n', start);
       const path = header_path(text.slice(start, end === -1 ? undefined : end));
       if (path !== null && !files.has(path)) files.set(path, line);
+    } else if (char === '@' && text.startsWith('@@', start)) {
+      in_hunk = true;
+    } else if (in_hunk && char === '+') {
+      inserted.push(line);
+    } else if (in_hunk && char === '-') {
+      deleted.push(line);
+    } else if (in_hunk && char !== ' ' && char !== '\\' && char !== '\n' && char !== '\r') {
+      // e.g. the next commit's message, in unpushed.patch
+      in_hunk = false;
     }
     const next = text.indexOf('\n', start);
     if (next === -1) break;
     line += 1;
     start = next + 1;
   }
-  return { lines: line, files };
+  return { lines: line, files, headers, inserted, deleted };
 };

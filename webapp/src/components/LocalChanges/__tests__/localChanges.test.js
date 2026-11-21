@@ -3,7 +3,7 @@
  * Run with: cd webapp && npm test -- localChanges
  */
 import {
-  changes_summary, changes_sentence, fetch_capped_text, git_commands, group_local_changes, index_patch, omitted_message,
+  changes_lines, changes_sentence, download_name, fetch_capped_text, git_commands, group_local_changes, index_patch, omitted_message,
   patch_url, restore_command, state_key, unpushed_commit, unpushed_text,
 } from '../localChanges';
 import { filter_batch } from '../../../utils';
@@ -20,8 +20,8 @@ const run = (id, local_changes) => ({ id, test_input_path: `in${id}.raw`, output
 
 describe('wording', () => {
   it('counts lines and files', () => {
-    expect(changes_summary(changes())).toBe('+40 −12 · 3 files');
-    expect(changes_summary(changes({ files_total: 1, added: 1, deleted: 0 }))).toBe('+1 −0 · 1 file');
+    expect(changes_lines(changes())).toBe('+40 −12');
+    expect(changes_sentence(changes({ files_total: 1, added: 1, deleted: 0 }))).toBe('1 file, +1 −0');
     expect(changes_sentence(changes())).toBe('3 files, +40 −12');
   });
 
@@ -36,14 +36,18 @@ describe('wording', () => {
     expect(omitted_message({ path: 'x' })).toBeNull();
     expect(omitted_message({ omitted: 'too_large', bytes: 3 * 1024 * 1024 })).toBe('The patch is 3072 KB: too large to save (outputs.local_changes.max_patch_kb).');
     expect(omitted_message({ omitted: 'level' })).toBe('This server keeps only a summary of the code changes.');
-    expect(omitted_message({ omitted: 'timeout' })).toMatch(/took too long/);
-    expect(omitted_message({ omitted: 'unreadable' })).toMatch(/couldn't be read/);
-    expect(omitted_message({ omitted: 'error' })).toMatch(/git failed/);
+    expect(omitted_message({ omitted: 'timeout' })).toBe('git took too long to compute the patch (outputs.local_changes.timeout, qa doctor).');
+    expect(omitted_message({ omitted: 'unreadable' })).toBe("The patch the batch saved couldn't be read on the machine that ran this run.");
+    expect(omitted_message({ omitted: 'error' })).toBe("The patch couldn't be saved.");
     expect(omitted_message({ omitted: 'no_answer' })).toBe("The server didn't answer when the run started: the patch wasn't saved.");
   });
 
   it('says how to reproduce with git, from the patches saved', () => {
     expect(git_commands(changes())).toEqual(['git checkout 3f2a1b9c0d1e2f30 && git apply local-changes.patch']);
+    // named like the downloads
+    expect(git_commands(changes(), { id: 12 })).toEqual(['git checkout 3f2a1b9c0d1e2f30 && git apply run-12-local-changes.patch']);
+    expect(download_name({ id: 12 }, 'unpushed')).toBe('run-12-unpushed.patch');
+    expect(download_name({ id: 'x;y' })).toBe('local-changes.patch');
     const unpushed = { base: 'bbbbbbbb', pushed: false, unpushed: { path: '.qaboard/unpushed.patch', bytes: 10, sha256: 'u' } };
     expect(git_commands(changes(unpushed))).toEqual([
       'git checkout 3f2a1b9c0d1e2f30 && git apply local-changes.patch',
@@ -132,6 +136,9 @@ describe('index_patch', () => {
     // paths with " b/" in them, and CRLF
     const tricky = index_patch('diff --git a/x b/y.txt b/x b/y.txt\r\n+1\r\n');
     expect([...tricky.files.keys()]).toEqual(['x b/y.txt']);
+    // the lines hunks add and remove, not the headers
+    const hunks = index_patch('diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,2 +1,2 @@\n-old\n+new\n same\n');
+    expect(hunks).toMatchObject({ headers: [1], deleted: [5], inserted: [6] });
   });
 });
 
