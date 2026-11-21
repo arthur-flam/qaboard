@@ -63,13 +63,16 @@ When a patch isn't stored, `patch` says why: `{"omitted": "too_large" | "level" 
 `data.dirty` stays, a boolean, for compatibility.
 
 ### What is in the patch
-- Tracked files: `git diff HEAD`, with `--no-ext-diff --no-textconv --no-color` (no program from the repository's or
-  the user's configuration runs) and `--submodule=short`. Binary files appear as "Binary files differ", not as content.
+- Tracked files: `git diff HEAD`, with `--no-ext-diff --no-textconv --no-color` (no diff program runs; what the
+  user's own configuration installs, git-lfs's filters or an fsmonitor hook, runs as with any git command),
+  `--no-renames` and `--submodule=short --ignore-submodules=dirty` (changes inside submodules aren't recorded).
+  Binary files appear as "Binary files differ", not as content.
 - **New files that aren't ignored are included** (as `git add -N` would show them), computed on a copy of the
   index (`GIT_INDEX_FILE`): the user's index is never written.
-- Untracked files that look like secrets aren't: `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`,
-  `*credentials*`, `*secret*` (and the project's `exclude` globs). They are listed as `excluded`, by name. Tracked
-  files are already in git and are included as they are.
+- Untracked files that look like secrets aren't: `.env*`, `*.pem`, `*.key`, `id_rsa*`, `*.tfvars`, files in
+  `.ssh/`, `.aws/`, `secrets/`..., and files that aren't code with `secret`, `token`, `password` or `credential` in
+  their names. They are listed as `excluded`, by name. The project's `exclude` globs apply to tracked and untracked
+  files. Other tracked files are already in git and are included as they are.
 - When there are too many untracked files (more than 200, a build folder that isn't ignored), their contents are left
   out and the count says so.
 - Size: at most 2 MB per patch (`max_patch_kb`). The hash is of the whole patch even when it is too large, so equal
@@ -80,14 +83,18 @@ When a patch isn't stored, `patch` says why: `{"omitted": "too_large" | "level" 
   `QA_LOCAL_CHANGES=summary|patch` forces it.
 - **`qa run` and `start_run()`**: per run, when the run starts. In experiment tracking each run needs its own:
   people edit between runs.
-- **`qa batch`**: once, when the batch starts, passed to its runs (`QA_LOCAL_CHANGES_FILE`: a JSON file with the
-  state, next to the patch, in a temporary folder). The runs copy it into their own folder. We draw the line at the
-  start: people who edit while their batch runs get the state it started with. Runners whose runs can't read the
-  file (Kubernetes, Dask on another machine) keep the summary, without the patch. Those runs use the commit's image or
-  artifacts anyway, not the working tree.
+- **`qa batch`**: the patch is computed once, when the batch starts, and passed to its runs
+  (`QA_LOCAL_CHANGES_STATE`: a JSON file in the user's cache, `~/.cache/qaboard/local-changes/`, named by its
+  content, the patches next to it, removed after 7 days unused). Each run checks the working tree's fingerprint
+  (`git status`, and the size and time of the files it lists), cheaper than the patch: unchanged, it copies the
+  batch's patch; changed (people edited while their batch ran), it captures again and says so. Runs on machines
+  that can't read the file (Kubernetes, Dask elsewhere) capture their own checkout: they run the commit's image or
+  artifacts, not the working tree.
 - Every run keeps its own copy of the patch: a run moved, exported or deleted takes its code with it, and the files
   follow the storage's rules (retention, permissions, uploads). Patches are small; the database only holds the
-  summary and the hash (the content address). The web app fetches one copy per hash.
+  summary and the hash (the content address). The web app groups runs by it.
+- Before the server answers the run's first request, the run sends the summary without the patches. If the server
+  never answers, no patch is written (it may not want them).
 
 ### Cost on big repositories
 The cost is `git status` walking the working tree, not the patch's size. One `git status --porcelain=v2 -z --branch
@@ -111,12 +118,14 @@ The cost is `git status` walking the working tree, not the patch's size. One `gi
     #   exclude: ["*.ckpt", "data/**"]
   ```
   `$QA_LOCAL_CHANGES` overrides the level for one command.
-- **The server enforces it**: it drops what's above its level from `data.local_changes` and refuses `.qaboard/*.patch`
-  uploads (reason `local_changes_not_allowed`). That is a real boundary for runs that upload their files, the only
+- **The server enforces it**: it keeps only the fields and types it knows of `data.local_changes`, drops the
+  patches' paths above its level whatever the client says, and refuses `.qaboard/*.patch|diff` uploads (422, reason
+  `local_changes_not_allowed`: the client skips that file, not the run's others). That is a real boundary for runs that upload their files, the only
   kind a hosted server gets. With a storage shared with the server, `qa` writes the files itself: it learns the
   server's level from the answer to the run's (or the batch's) first request (`local_changes_level`) and writes no
   patch above it, but nothing prevents a modified client from writing files in a storage it can write to.
-- `qa` says what it recorded: `Local changes: 3 files, +40 -12 (saved in the run)`, and why when it couldn't.
+- `qa` says what it recorded: `Local changes: 3 files (1 new), +40 -12, saved in output/.../local-changes.patch`, and
+  why when it couldn't. The runs of a batch say it once, unless the code changed while it ran.
 
 ### In the web app
 - **A tag on runs with local changes**: "+40 −12 · 3 files". It opens the changes.
@@ -151,8 +160,22 @@ when the commit is unknown locally (`git fetch`). It is `wandb restore`.
   `refs/qaboard/snapshots/<hash>` on the project's own remote. QA-Board would store only its sha: full
   reproducibility without code on the server, and runners on other machines could run uncommitted code. It needs
   push rights and a cleanup policy for the refs.
-- Deduplicating patch files on the storage (they are small, so we haven't).
-- The run's environment: a hash of the lockfile, `pip freeze` (W&B saves `requirements.txt`).
+- **The run's environment**: a hash of the lockfile, `pip freeze`, the Python version (W&B saves
+  `requirements.txt`): the next thing people miss to reproduce a run.
+- **Notebooks**: a patch of an `.ipynb` is hard to read, and an unsaved notebook isn't in it. Save the notebook's
+  code with `start_run()`'s run, like W&B's `save_code`.
+- **The remote's URL**, so that `qa restore` on another machine says what to clone.
+- **Warn when the web app redoes or tunes a run with local changes**: it runs the bare commit.
+- Deduplicating patch files on the storage (they are small, so we haven't); a single diff pass for the counts and the
+  patch.
+- Saving the patch later when the server didn't answer the run's first request.
 
 ## What ships
-Filled in when the work lands.
+- `qaboard/local_changes.py` (standalone, standard library only): capture, levels, fingerprint, the batch's shared
+  capture, `describe()`. Used by `qa run`, `qa batch` and `start_run()`; `qa doctor` measures it.
+- `qa restore <run>` (`qaboard/restore.py`): `wandb restore`.
+- Server: `runs.local_changes` (Admin → Settings, Security), `backend/backend/local_changes.py`.
+- Web app: `webapp/src/components/LocalChanges/`: the run tag, the batch callout, the changes dialog (files,
+  patch, unpushed commits, compare with the reference's, download, reproduce), the sidebar's **Local changes** view,
+  `changes:local|none|unknown` in the runs' filter (and `qaboard/filters.py`).
+- Docs: `website/docs/local-changes.mdx`, `website/docs/user-guide/local-changes.mdx`, the admin setting.
