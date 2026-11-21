@@ -960,14 +960,15 @@ class ActiveRun:
     if self._local_changes is None or self._local_changes.capture is None:
       return
     try:
-      state = self._local_changes.save(self.output_dir, self._local_changes_level)
+      unanswered = not self._offline and bool(self.server) and self.id is None
+      state = self._local_changes.save(self.output_dir, self._local_changes_level, unanswered=unanswered)
     except Exception as e:  # the run matters more
       self._warn_once('local_changes', f"WARNING: can't save the run's local changes: {e!r}")
       return
     with self._lock:
       self._data.update(self._local_changes.data())
       self._changed = True
-    line = local_changes.describe(state)
+    line = local_changes.describe(state, saved_in=str(self.output_dir / local_changes.PATCH_FILE) if (state or {}).get('patch', {}).get('path') else None)
     if line:
       _say(f"local changes: {line}")
 

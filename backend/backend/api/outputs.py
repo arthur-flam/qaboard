@@ -459,7 +459,7 @@ def upload_output_file(output_id, path):
   if not output.is_pending:
     return jsonify({"error": "The run has ended: its files don't change anymore.", "reason": Reason.NOT_RUNNING}), 409
   if local_changes.refuses_file(path):
-    return jsonify({"error": "This server doesn't keep the code of the runs' local changes (runs.local_changes): only their summary.", "reason": Reason.LOCAL_CHANGES_NOT_ALLOWED}), 403
+    return jsonify({"error": "This server doesn't keep the code of the runs' local changes (runs.local_changes): only their summary.", "reason": Reason.LOCAL_CHANGES_NOT_ALLOWED}), 422
   started = time.monotonic()
   try:
     size = uploads.save_file(Path(directory), path, request.stream, request.content_length, sha256=request.headers.get('X-Content-SHA256'), offset=offset)

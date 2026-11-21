@@ -522,7 +522,7 @@ LOCAL_CHANGES = {
 
 @pytest.mark.parametrize("level, expected", [
   ("patch", LOCAL_CHANGES),
-  ("summary", {**{k: v for k, v in LOCAL_CHANGES.items() if k != "patch"}, "level": "summary", "patch": {"omitted": "level"}}),
+  ("summary", {**{k: v for k, v in LOCAL_CHANGES.items() if k != "patch"}, "level": "summary", "patch": {"bytes": 10, "omitted": "level"}}),
   ("off", None),
 ])
 def test_runs_record_as_much_of_their_local_changes_as_allowed(outputs_api, dummy_app, monkeypatch, level, expected):
@@ -535,8 +535,18 @@ def test_runs_record_as_much_of_their_local_changes_as_allowed(outputs_api, dumm
   assert outputs_api.test_output.data.get("dirty") is (None if level == "off" else True)
 
 
-def test_local_changes_too_large_are_dropped(outputs_api, dummy_app):
-  huge = {**LOCAL_CHANGES, "files": [{"path": "x" * 1000}] * 500}
-  post(outputs_api, dummy_app, data={"local_changes": huge, "dirty": True})
-  assert "local_changes" not in outputs_api.test_output.data
-  assert outputs_api.test_output.data["dirty"] is True
+def test_local_changes_are_kept_as_the_web_app_expects_them(outputs_api, dummy_app):
+  hostile = {**LOCAL_CHANGES, "files": [{"path": "x" * 10_000, "added": "1", "status": "Mxx"}, "a.py", {"path": 3}] + [{"path": "b"}] * 600,
+             "excluded": "nope", "code": "print('hi')", "dirty": "yes", "branch": ["main"]}
+  post(outputs_api, dummy_app, data={"local_changes": hostile, "dirty": "yes"})
+  kept = outputs_api.test_output.data["local_changes"]
+  assert len(kept["files"]) == 498 and kept["files"][0] == {"path": "x" * 4096, "status": "Mx", "added": None, "deleted": None}
+  assert "code" not in kept and "excluded" not in kept and "branch" not in kept
+  assert kept["dirty"] is None and outputs_api.test_output.data["dirty"] is None
+
+
+def test_clients_cant_say_their_patch_is_allowed(outputs_api, dummy_app, monkeypatch):
+  from backend import local_changes
+  monkeypatch.setattr(local_changes, "setting", lambda key: "summary" if key == "runs.local_changes" else None)
+  post(outputs_api, dummy_app, data={"local_changes": {**LOCAL_CHANGES, "level": "off"}})
+  assert outputs_api.test_output.data["local_changes"]["patch"] == {"bytes": 10, "omitted": "level"}

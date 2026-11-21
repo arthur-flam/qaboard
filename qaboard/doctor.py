@@ -734,25 +734,39 @@ def check_local_changes(value: Any, repo_root: Path, is_ci: bool, site: Optional
   name = "Local changes"
   settings, problems = local_changes.settings(value, is_ci=is_ci)
   if problems:
-    return Check(name, WARNING, problems[0], fix=f"Docs: {docs('local-changes')}")
+    return Check(name, WARNING, problems[0], fix=f"Docs: {docs('local-changes#settings')}")
   server_level = (site or {}).get('local_changes')
   level = local_changes.lowest(settings.level, server_level) if server_level in local_changes.LEVELS else settings.level
   if level == 'off':
-    why = "in CI, checkouts are clean" if is_ci and settings.level == 'off' and not os.environ.get(local_changes.ENV_LEVEL) else \
-          "the server's administrators turned it off" if server_level == 'off' else "outputs.local_changes or $QA_LOCAL_CHANGES is off"
+    forced = os.environ.get(local_changes.ENV_LEVEL)
+    why = f"${local_changes.ENV_LEVEL} is {forced}" if forced else \
+          "in CI, checkouts are clean" if is_ci else \
+          "the server's administrators turned it off (runs.local_changes)" if server_level == 'off' else "outputs.local_changes is off in qaboard.yaml"
     return Check(name, OK, f"Not recorded: {why}.")
   captured = local_changes.capture(repo_root, settings._replace(level=level), ignore=local_changes.inside(repo_root, list(ignore)))
   state = captured.state if captured else {}
-  limited = f" (the server allows {server_level}, the project asks for {settings.level})" if server_level and level != settings.level else ''
+  what = "Runs save the patch of their uncommitted changes" if level == 'patch' else "Runs save which files they changed, not the code"
+  if server_level and level != settings.level:
+    what += f" (the server allows {server_level})"
   ms = state.get('ms', 0)
+  if state.get('timed_out') and settings.timeout < 1:
+    return Check(name, WARNING, f"outputs.local_changes.timeout is {settings.timeout:g}s: too short for git to compare the working tree with HEAD.",
+                 fix=f"Raise it, or remove it to use the default ({local_changes.DEFAULT_TIMEOUT:g}s). Docs: {docs('local-changes#settings')}")
   if state.get('timed_out') or ms > SLOW_LOCAL_CHANGES_MS:
-    return Check(name, WARNING, f"git took {ms / 1000:.1f}s to compare the working tree with HEAD{' and gave up' if state.get('timed_out') else ''}: every local run waits for it.",
+    gave_up = f", and gave up after outputs.local_changes.timeout ({settings.timeout:g}s)" if state.get('timed_out') else ''
+    return Check(name, WARNING, f"git took {ms / 1000:.1f}s to compare the working tree with HEAD{gave_up}: every local run waits for it.",
                  fix="Make git status faster on big repositories:\n  git config feature.manyFiles true\n  git config core.untrackedCache true\n"
                      "  git config core.fsmonitor true   # git >= 2.37 on macOS and Windows; on Linux, a hook like watchman's\n"
-                     f"Or record less: outputs.local_changes: summary, or a lower timeout. Docs: {docs('local-changes')}")
+                     f"Or add big untracked folders to .gitignore. Docs: {docs('local-changes#performance')}")
   if state.get('error') and state.get('dirty') is None:
     return Check(name, WARNING, f"Can't tell what runs change: {state['error']}")
-  return Check(name, OK, f"{level}{limited}: {local_changes.describe(state)} ({ms} ms)")
+  now = local_changes.describe(state, saving=False)
+  patch = state.get('patch') or {}
+  if patch.get('omitted') == 'too_large':
+    size = -(-patch.get('bytes', 0) // 1024)
+    return Check(name, WARNING, f"{what}, but your changes' patch is {size} KB, above outputs.local_changes.max_patch_kb ({settings.max_patch_bytes / 1024:g}): runs would only save the summary. Now: {now}.",
+                 fix=f"Commit some changes, exclude big files (outputs.local_changes.exclude), or raise max_patch_kb. Docs: {docs('local-changes#settings')}")
+  return Check(name, OK, f"{what}. Now: {now} ({ms} ms).")
 
 
 def check_database(database: Path, input_type: str = 'default', configured: bool = True) -> Check:

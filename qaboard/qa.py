@@ -307,7 +307,7 @@ def run(ctx, input_path, output_path, keep_previous, no_postprocess, forwarded_a
                 run_reporter(run_context).start(run_context.id)
               # in CI, results QA-Board refuses are lost: don't compute them
               exit_if_results_refused()
-          save_local_changes(run_context, qa_run_data)
+          save_local_changes(run_context, qa_run_data, offline=ctx.obj['offline'])
         except KeyboardInterrupt:
           mark_aborted(run_context)
           raise
@@ -416,13 +416,23 @@ def start_local_changes(run_context):
   return _local_changes
 
 
-def save_local_changes(run_context, answer=None):
-  """Saves the patches in the run's folder, as far as the server allows (its answer when the run started)"""
+def save_local_changes(run_context, answer=None, offline=False):
+  """
+  Saves the patches in the run's folder, as far as the server allows (its answer when the run started). The runs
+  of a batch say it only when the code changed since the batch said it.
+  """
   from . import local_changes
   if _local_changes is None or _local_changes.capture is None:
     return
-  state = _local_changes.save(run_context.output_dir, (answer or {}).get('local_changes_level'))
-  line = local_changes.describe(state)
+  state = _local_changes.save(run_context.output_dir, (answer or {}).get('local_changes_level'), unanswered=not offline and answer is None)
+  if 'QA_BATCH' in os.environ and not _local_changes.changed_since_batch:
+    return
+  patch = run_context.output_dir / local_changes.PATCH_FILE
+  try:
+    saved_in = os.path.relpath(patch) if patch.exists() else None
+  except ValueError:  # another drive, on Windows
+    saved_in = str(patch)
+  line = local_changes.describe(state, saved_in=saved_in)
   if line:
     click.secho(f"Local changes: {line}", fg='cyan', err=True)
 

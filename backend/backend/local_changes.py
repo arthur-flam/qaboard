@@ -5,18 +5,26 @@ How much runs may record of their local changes (docs/rfcs/local-changes.md): th
 - "summary": the summary only, no code: what a server that must not receive source code allows
 - "off": nothing
 
-We keep what runs send in `data.local_changes` up to that level, refuse the patches they upload above it, and tell
-them the level when they start, so that the ones writing in a storage shared with us don't write patches either.
+We keep what runs send in `data.local_changes` up to that level, with the fields and types we know (the web app shows
+them), refuse the patches they upload above it, and tell them the level when they start, so that the ones writing in
+a storage shared with us don't write patches either.
 """
-import json
 from typing import Any, Dict, Optional
 
-from qaboard.local_changes import LEVELS, FOLDER, at_level
+from qaboard.local_changes import LEVELS, FOLDER, PATCH_FILE, UNPUSHED_FILE, lowest
 
 from .settings import setting
 
-# What a run's local changes take at most in the database, as JSON: 500 files' paths and counts fit
-MAX_STATE_SIZE = 200_000
+MAX_FILES = 500
+MAX_NAMES = 100
+MAX_PATH = 4096
+MAX_TEXT = 500
+
+FLAGS = ('dirty', 'pushed', 'timed_out')
+TEXTS = ('scope', 'head', 'branch', 'upstream', 'base', 'sha256', 'error', 'untracked_contents')
+COUNTS = ('unpushed_commits', 'files_total', 'added', 'deleted', 'untracked', 'ms')
+NAMES = ('excluded', 'untracked_too_large')
+PATCHES = {'patch': PATCH_FILE, 'unpushed': UNPUSHED_FILE}
 
 
 def level() -> str:
@@ -24,24 +32,77 @@ def level() -> str:
   return value if value in LEVELS else 'patch'
 
 
+def _count(value) -> Optional[int]:
+  return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _text(value, size=MAX_TEXT) -> Optional[str]:
+  return value[:size] if isinstance(value, str) else None
+
+
+def cleaned(state: Any, current: str) -> Optional[Dict[str, Any]]:
+  """What we keep of a run's local changes at the server's level: the fields we know, of the types we expect"""
+  if not isinstance(state, dict) or current == 'off':
+    return None
+  kept: Dict[str, Any] = {'level': lowest(state.get('level') if state.get('level') in LEVELS else 'patch', current)}
+  for key in FLAGS:
+    if key in state:
+      kept[key] = state[key] if isinstance(state[key], bool) else None
+  for key in TEXTS:
+    if _text(state.get(key)) is not None:
+      kept[key] = _text(state[key])
+  for key in COUNTS:
+    if _count(state.get(key)) is not None:
+      kept[key] = state[key]
+  if isinstance(state.get('files'), list):
+    files = []
+    for f in state['files'][:MAX_FILES]:
+      if not isinstance(f, dict) or not isinstance(f.get('path'), str):
+        continue
+      entry: Dict[str, Any] = {'path': f['path'][:MAX_PATH], 'status': _text(f.get('status'), 2) or 'M',
+                               'added': _count(f.get('added')), 'deleted': _count(f.get('deleted'))}
+      if f.get('binary') is True:
+        entry['binary'] = True
+      files.append(entry)
+    kept['files'] = files
+  for key in NAMES:
+    if isinstance(state.get(key), list):
+      kept[key] = [name[:MAX_PATH] for name in state[key][:MAX_NAMES] if isinstance(name, str)]
+  for key, path in PATCHES.items():
+    patch = state.get(key)
+    if not isinstance(patch, dict):
+      continue
+    entry = {k: v for k, v in (('bytes', _count(patch.get('bytes'))), ('sha256', _text(patch.get('sha256'), 64))) if v is not None}
+    # only where qa saves them: the web app fetches them from the run's folder
+    if current == 'patch' and patch.get('path') == path:
+      entry['path'] = path
+    elif current != 'patch':
+      entry['omitted'] = 'level'
+    else:
+      entry['omitted'] = _text(patch.get('omitted'), 32) or 'error'
+    kept[key] = entry
+  return kept
+
+
 def allowed_data(data: Dict[str, Any], current: Optional[str] = None) -> Dict[str, Any]:
   """What we keep of the local changes a run sends in its `data` (changed in place, and returned)"""
   current = current or level()
-  if 'local_changes' not in data:
+  if 'dirty' in data:
     if current == 'off':
-      data.pop('dirty', None)
-    return data
-  state = data['local_changes']
-  if current == 'off' or not isinstance(state, dict) or len(json.dumps(state, default=str)) > MAX_STATE_SIZE:
-    data.pop('local_changes')
-    if current == 'off':
-      data.pop('dirty', None)
-    return data
-  data['local_changes'] = at_level(state, current)
+      data.pop('dirty')
+    elif not isinstance(data['dirty'], bool):
+      data['dirty'] = None
+  if 'local_changes' in data:
+    state = cleaned(data['local_changes'], current)
+    if state is None:
+      data.pop('local_changes')
+    else:
+      data['local_changes'] = state
   return data
 
 
 def refuses_file(path: str, current: Optional[str] = None) -> bool:
-  """Whether a run can't send us this file of its folder: its patches, above the level"""
+  """Whether a run can't send us this file of its folder: anything in .qaboard/ that looks like a patch, above the level"""
   current = current or level()
-  return current != 'patch' and path.split('/', 1)[0] == FOLDER and path.endswith('.patch')
+  lowered = path.lower()
+  return current != 'patch' and lowered.split('/', 1)[0] == FOLDER and lowered.endswith(('.patch', '.diff'))

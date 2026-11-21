@@ -158,7 +158,6 @@ write to. Runs that send their files to the server can't get around it.
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
 | `ingest.auth` | `QABOARD_INGEST_AUTH` | `token` | How runs, batches and commits sent by `qa` are authenticated: "off" accepts anonymous results (they're marked unverified), "warn" also warns the senders, "token" requires a token with the ingest scope (the default). |
-| `runs.local_changes` | `QABOARD_LOCAL_CHANGES` | `patch` | What local runs record of how their code differs from their commit, at most (projects can ask for less in qaboard.yaml): "patch" (the default) the changed files and the patch, saved with the run; "summary" only the changed files' paths, line counts and a hash, no code, e.g. for a server that must not receive source code; "off" nothing. See [Local changes](#local-changes). |
 | `tokens.default_lifetime_days` |  | `90` days | The default lifetime of the tokens users create in the web app. |
 | `tokens.max_lifetime_days` |  | `365` | The longest lifetime users may choose for their tokens: tokens without an expiry date can't be created. |
 | `tokens.cli_idle_expiry_days` |  | `180` days | Tokens created by `qa auth login` expire after this many days without being used. |
@@ -229,6 +228,7 @@ write to. Runs that send their files to the server can't get around it.
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
+| `runs.local_changes` | `QABOARD_LOCAL_CHANGES` | `patch` | The most that runs from people's computers record of their uncommitted code changes. "patch" (the default): the changed files and the patch, saved with the run. "summary": only the changed files' paths, line counts and a hash, no code, for a server that must not receive source code. "off": nothing. Projects can record less in qaboard.yaml. See [Local changes](#local-changes). |
 | `auth.allowed_origins` | `QABOARD_ALLOWED_ORIGINS` | none | Other origins (e.g. https://dashboards.example.com) allowed to make changes with the users' cookies. The server's own origin is always allowed. |
 | `audit.retention_days` |  | `730` days | Audit events older than this are deleted by `qaboard-admin purge-audit` (run it from a scheduled job). |
 

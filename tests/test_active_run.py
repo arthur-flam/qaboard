@@ -327,7 +327,7 @@ with qb.start_run(input="train/coco-mini") as run:
     (self.project / 'augment.py').write_text("flip = True\n")
     result = self.python(server=server)
     self.assertEqual(result.returncode, 0, result.stderr)
-    self.assertIn("local changes: 2 files, +3 -0 (saved with the run)", result.stderr)
+    self.assertIn("local changes: 2 files (1 new), +3 -0, saved in ", result.stderr)
     started, *_, finished = server.outputs()
     self.assertIs(started['data']['dirty'], True)
     # before the server answers, the run doesn't say where its patch is

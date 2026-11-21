@@ -18,6 +18,8 @@ import { track } from "../analytics"
 import { SubmissionCallout } from "./logs/BatchSubmissions"
 import { ArtifactsCallout } from "./ArtifactsCallout"
 import { LoginHint } from "./authentication/login"
+import { LocalChangesCallout } from "./LocalChanges/LocalChangesCallout"
+import { group_local_changes } from "./LocalChanges/localChanges"
 
 
 const CommitWarningMessages = ({ project, commit }) => {
@@ -126,7 +128,7 @@ const FailedRunsCallout = ({ runs, filter, onShowLogs }) => {
 }
 
 
-const BatchStatusMessages = ({ project, commit, batch, filter }) => {
+const BatchStatusMessages = ({ project, commit, batch, ref_batch, filter }) => {
   const [waiting_stop, setWaitingStop] = useState(false);
   const [waiting_redo, setWaitingRedo] = useState(false);
   const refreshCommit = useRefreshCommit();
@@ -185,7 +187,13 @@ const BatchStatusMessages = ({ project, commit, batch, filter }) => {
   if (batch === null || batch === undefined  || batch.batch_dir_url === undefined)
     return <span></span>
 
-  let local_batch_message = (batch.data && batch.data.type === 'local') && (
+  const outputs = batch.filtered.outputs.map(id => batch.outputs[id])
+  // Runs that recorded their local changes say which code they ran. Older local runs: we can only warn.
+  const local_changes = group_local_changes(outputs)
+  const find_reference = output => ref_batch?.outputs?.[output.reference_id]
+  let local_batch_message = local_changes.has_data
+    ? <LocalChangesCallout groups={local_changes} find_reference={find_reference}/>
+    : (batch.data && batch.data.type === 'local') && (
     <Callout
       icon="eye-off"
       intent={Intent.WARNING}
@@ -196,7 +204,6 @@ const BatchStatusMessages = ({ project, commit, batch, filter }) => {
     </Callout>
   )
 
-  const outputs = batch.filtered.outputs.map(id => batch.outputs[id])
   let some_pending = outputs.some(o => o.is_pending);
   const nb_running = batch.filtered.running_outputs;
   const nb_pending = batch.filtered.pending_outputs - batch.filtered.running_outputs;

@@ -123,6 +123,61 @@ class TestCapture(Repository):
     self.assertEqual(captured.state['excluded'], ['.env', 'deploy.pem'])
     self.assertIsNone(captured.patch)
 
+  def test_edits_right_after_the_index_was_written(self):
+    # git trusts the index's stat data unless the file is as recent as the index ("racy git"): the copy keeps its time
+    (self.repo / 'train.py').write_text("lr = 0.2\n")
+    git('add', 'train.py', cwd=self.repo)
+    git('commit', '-q', '-m', 'second', cwd=self.repo)
+    (self.repo / 'train.py').write_text("lr = 0.3\n")
+    captured = lc.capture(self.repo)
+    self.assertIn(b'+lr = 0.3', captured.patch)
+    self.assertEqual(captured.state['files'], [{'path': 'train.py', 'status': 'M', 'added': 1, 'deleted': 1}])
+
+  def test_nothing_is_written_in_the_repository(self):
+    git('config', 'core.splitIndex', 'true', cwd=self.repo)
+    git('update-index', '--split-index', cwd=self.repo)
+    (self.repo / 'model.py').write_text("layers = 3\n")
+    before = sorted(p.name for p in (self.repo / '.git').iterdir())
+    lc.capture(self.repo)
+    self.assertEqual(sorted(p.name for p in (self.repo / '.git').iterdir()), before)
+
+  def test_what_looks_like_a_secret(self):
+    for path in ('.env', 'deploy/prod.env', 'id_rsa', 'my_api_token.txt', '.aws/config', 'secrets/db.yaml', 'infra/main.tfvars'):
+      self.assertTrue(lc._looks_secret(path), path)
+    for path in ('tokenizer.py', 'auth/password_policy.cpp', 'README.md', 'train.py', 'notes/secret_sauce.md'):
+      self.assertFalse(lc._looks_secret(path), path)
+
+  def test_excluded_tracked_files_are_out_of_the_patch(self):
+    (self.repo / 'models').mkdir()
+    (self.repo / 'models' / 'a.ckpt').write_text("v1\n")
+    git('add', '.', cwd=self.repo)
+    git('commit', '-q', '-m', 'checkpoint', cwd=self.repo)
+    (self.repo / 'models' / 'a.ckpt').write_text("v2\n")
+    (self.repo / 'train.py').write_text("lr = 0.2\n")
+    captured = lc.capture(self.repo, lc.Settings(exclude=('*.ckpt',)))
+    self.assertNotIn(b'a.ckpt', captured.patch)
+    self.assertEqual([f['path'] for f in captured.state['files']], ['train.py'])
+    self.assertEqual(captured.state['excluded'], ['models/a.ckpt'])
+
+  def test_renamed_files_are_added_and_deleted(self):
+    git('mv', 'train.py', 'fit.py', cwd=self.repo)
+    files = {f['path']: f['status'] for f in lc.capture(self.repo).state['files']}
+    self.assertEqual(files, {'fit.py': 'A', 'train.py': 'D'})
+
+  def test_staged_then_reverted_is_not_a_change(self):
+    (self.repo / 'train.py').write_text("lr = 0.2\n")
+    git('add', 'train.py', cwd=self.repo)
+    (self.repo / 'train.py').write_text("lr = 0.1\n")
+    state = lc.capture(self.repo).state
+    self.assertIs(state['dirty'], False)
+    self.assertNotIn('patch', state)
+
+  def test_a_local_upstream_isnt_pushed(self):
+    git('checkout', '-q', '-b', 'feature', '--track', 'main', cwd=self.repo)
+    (self.repo / 'train.py').write_text("lr = 0.3\n")
+    git('commit', '-q', '-am', 'local', cwd=self.repo)
+    self.assertNotIn('pushed', lc.capture(self.repo).state)
+
   def test_excluded_globs(self):
     (self.repo / 'data').mkdir()
     (self.repo / 'data' / 'big.csv').write_text("1,2\n")
@@ -284,6 +339,36 @@ class TestSaving(Repository):
     run = lc.ForRun('patch', repo_root=self.repo, is_ci=False, commit=self.head, environ=environ)
     self.assertEqual(run.capture.state['patch']['omitted'], 'unreadable')
 
+  def test_runs_of_a_batch_see_when_the_code_changed(self):
+    (self.repo / 'train.py').write_text("lr = 0.2\n")
+    captured = lc.capture(self.repo)
+    old = os.environ.get('XDG_CACHE_HOME')
+    os.environ['XDG_CACHE_HOME'] = str(self.tmp / 'cache')
+    try:
+      path = lc.share(captured)
+    finally:
+      if old is None:
+        del os.environ['XDG_CACHE_HOME']
+      else:
+        os.environ['XDG_CACHE_HOME'] = old
+    environ = {lc.ENV_STATE: str(path)}
+    same = lc.ForRun('patch', repo_root=self.repo, is_ci=False, commit=self.head, environ=environ)
+    self.assertEqual((same.capture.state['scope'], same.changed_since_batch), ('batch', False))
+    # edited while the batch runs: the run records what it ran
+    (self.repo / 'train.py').write_text("lr = 0.9\n")
+    changed = lc.ForRun('patch', repo_root=self.repo, is_ci=False, commit=self.head, environ=environ)
+    self.assertTrue(changed.changed_since_batch)
+    self.assertEqual(changed.capture.state['scope'], 'run')
+    self.assertIn(b'+lr = 0.9', changed.capture.patch)
+    self.assertIn('the code changed since the batch started', lc.describe(changed.capture.state))
+
+  def test_without_the_servers_answer_no_patch_is_saved(self):
+    (self.repo / 'train.py').write_text("lr = 0.2\n")
+    run = lc.ForRun('patch', repo_root=self.repo, is_ci=False, commit=self.head, environ={})
+    state = run.save(self.tmp / 'run', None, unanswered=True)
+    self.assertEqual(state['patch'], {'omitted': 'no_answer'})
+    self.assertFalse((self.tmp / 'run' / lc.PATCH_FILE).exists())
+
   def test_runs_of_another_commit_record_nothing(self):
     (self.repo / 'train.py').write_text("lr = 0.2\n")
     run = lc.ForRun('patch', repo_root=self.repo, is_ci=False, commit='a' * 40, environ={})
@@ -297,10 +382,15 @@ class TestSaving(Repository):
     self.assertFalse((self.tmp / 'run' / lc.PATCH_FILE).exists())
 
   def test_describe(self):
-    self.assertEqual(lc.describe({'dirty': False}), 'none')
-    self.assertEqual(lc.describe({'dirty': True, 'files_total': 3, 'added': 40, 'deleted': 12, 'patch': {'path': 'x'}}),
-                     '3 files, +40 -12 (saved with the run)')
-    self.assertEqual(lc.describe({'dirty': False, 'pushed': False, 'unpushed_commits': 2}), 'none, 2 unpushed commits')
+    self.assertEqual(lc.describe({'dirty': False}), "none, the code is the commit's")
+    self.assertEqual(lc.describe({'dirty': True, 'files_total': 3, 'added': 40, 'deleted': 12, 'files': [{'status': '?'}], 'patch': {'path': 'x'}}),
+                     '3 files (1 new), +40 -12, saved with the run')
+    self.assertEqual(lc.describe({'dirty': False, 'pushed': False, 'unpushed_commits': 2, 'unpushed': {'path': 'x'}}, batch=True),
+                     "none, the code is the commit's; 2 commits not pushed, saved with each run")
+    self.assertIn('too large to save', lc.describe({'dirty': True, 'files_total': 1, 'patch': {'omitted': 'too_large', 'bytes': 10}}))
+    self.assertIn('the server keeps no code', lc.describe({'dirty': True, 'files_total': 1, 'level': 'summary', 'patch': {'omitted': 'level'}}))
+    self.assertEqual(lc.describe({'dirty': True, 'timed_out': True}), "the code differs from the commit, but git took too long to say how")
+    self.assertIn('without their contents', lc.describe({'dirty': True, 'files_total': 300, 'untracked': 300, 'untracked_contents': 'too_many', 'patch': {'path': 'x'}}))
 
 
 class TestIsolation(unittest.TestCase):
@@ -318,9 +408,6 @@ class TestIsolation(unittest.TestCase):
       for name in names:
         self.assertIn(name.split('.')[0], sys.stdlib_module_names, f'local_changes.py imports {name}')
 
-
-if __name__ == '__main__':
-  unittest.main()
 
 
 class TestQa(unittest.TestCase):
@@ -353,7 +440,7 @@ class TestQa(unittest.TestCase):
 
   def test_qa_run(self):
     out = self.qa('run', '--input', 'a.txt')
-    self.assertIn('Local changes: 1 file, +1 -1 (saved with the run)', out)
+    self.assertIn('Local changes: 1 file, +1 -1, saved in output/linux/a/.qaboard/local-changes.patch', out)
     patch, = self.patches()
     self.assertIn('+  return {"loss": 2}', patch.read_text())
     # the runs' own outputs aren't changes, and the patch isn't an output
@@ -363,7 +450,9 @@ class TestQa(unittest.TestCase):
 
   def test_qa_batch_captures_once(self):
     out = self.qa('batch', '--batches-file', 'batches.yaml', 'both', '--runner', 'local')
-    self.assertEqual(out.count('Local changes: 1 file, +1 -1 (saved with each run)'), 1, out)
+    # said once: the runs say nothing more when the code didn't change
+    self.assertEqual(out.count('Local changes:'), 1, out)
+    self.assertIn('Local changes: 1 file, +1 -1, saved with each run', out)
     patches = self.patches()
     self.assertEqual(len(patches), 2)
     self.assertEqual(patches[0].read_bytes(), patches[1].read_bytes())
@@ -372,3 +461,7 @@ class TestQa(unittest.TestCase):
     out = self.qa('run', '--input', 'a.txt', CI='true')
     self.assertNotIn('Local changes', out)
     self.assertEqual(self.patches(), [])
+
+
+if __name__ == '__main__':
+  unittest.main()

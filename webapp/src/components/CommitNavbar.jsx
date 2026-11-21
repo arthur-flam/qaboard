@@ -508,6 +508,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
     <li>You can use negative filters: <code>-2X5</code></li>
     <li>You can use regular expressions: <code>2X5|GW1</code>, <code>.*</code></li>
     <li>You can filter runs by all their properties: path, batch, parameters (key:value), metadata, platform...</li>
+    <li>Local runs: <code>changes:local</code> (with uncommitted changes), <code>changes:none</code> (without)</li>
     <li>Redo and Move apply to the runs that match. Delete applies to the whole batch.</li>
   </ul>
   return <>

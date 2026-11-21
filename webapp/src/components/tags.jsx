@@ -27,6 +27,7 @@ import { hidden_keys } from "../configurations/tokens"
 import { ConfigurationsTags, ConfigurationDiff } from "../configurations/ConfigurationsTags"
 import { RunInfoMenuItems } from "./RunInfoMenu"
 import { AttemptTag } from "./AttemptTag"
+import { LocalChangesTag } from "./LocalChanges/LocalChangesTag"
 import { LazyPopover } from "./LazyPopover"
 import { runName } from "../utils/runName"
 import { PickReferenceMenuItem } from "../matching/PickReferenceMenuItem"
@@ -289,6 +290,7 @@ const OutputTags = ({ output, output_ref, mismatch, manifests, project, commit, 
       <ConfigurationsTags configurations={configurations} tuning={output.extra_parameters} mismatch={mismatch} />
     </>}
     <AttemptTag data={output.data} style={{ marginLeft: "5px" }}/>
+    <LocalChangesTag output={output} output_ref={output_ref}/>
 
     {output_type !== "batch" && <RunMenuButton output={output} project={project} commit={commit} type={type} style={{ marginLeft: "5px" }} pick_reference/>}
 

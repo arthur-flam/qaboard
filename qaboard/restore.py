@@ -21,8 +21,6 @@ from urllib.parse import unquote, urlsplit
 
 import click
 
-from .local_changes import PATCH_FILE, UNPUSHED_FILE
-
 
 def parse_run(run: str, server: Optional[str]) -> Tuple[int, Optional[str]]:
   """(run id, server) from a run id, or a web app URL that names one run (filter=id:<n>, or /output/<n>)"""
