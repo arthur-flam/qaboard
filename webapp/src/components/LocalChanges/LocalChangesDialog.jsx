@@ -7,12 +7,11 @@ import {
 } from "@blueprintjs/core";
 
 import MonacoEditor, { MonacoDiffEditor } from "../MonacoEditor";
-import { fileQuery } from "../../api/queries";
 import { useSiteConfig } from "../../hooks";
 import { copyWithToast } from "../../utils/clipboard";
 import {
-  changes_sentence, git_commands, index_patch, is_dirty, local_changes_of, omitted_message, patch_url, restore_command,
-  saved_file, short_sha, status_names, unpushed_text,
+  changes_sentence, git_commands, index_patch, is_dirty, local_changes_of, max_compared, max_shown, omitted_message, patchQuery,
+  patch_url, restore_command, saved_file, short_sha, status_names, unpushed_text,
 } from "./localChanges";
 
 
@@ -91,8 +90,10 @@ const Notes = ({ changes, which }) => {
 
 const Reproduce = ({ output, changes }) => {
   const commands = git_commands(changes);
+  const restore = restore_command(output);
+  if (commands.length === 0 && !restore) return null;
   return <div style={{ marginTop: 10 }}>
-    <details>
+    {commands.length > 0 && <details>
       <summary style={{ cursor: 'pointer' }}>With git</summary>
       <p className={Classes.TEXT_MUTED} style={{ margin: '6px 0' }}>
         In a clean checkout, after downloading the patch{commands.length > 1 ? 'es' : ''} next to it:
@@ -101,20 +102,27 @@ const Reproduce = ({ output, changes }) => {
         <code className={Classes.CODE_BLOCK} style={{ flex: 1, margin: '2px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{command}</code>
         <Button size="small" variant="minimal" icon="duplicate" aria-label={`Copy: ${command}`} onClick={() => copyWithToast(command, { what: 'the command' })}/>
       </div>)}
-    </details>
-    <span className={Classes.TEXT_MUTED} style={{ fontSize: 12 }}>
-      <code>{restore_command(output)}</code> makes a branch with the run's code.
-    </span>
+    </details>}
+    {restore && <span className={Classes.TEXT_MUTED} style={{ fontSize: 12 }}>
+      <code>{restore}</code> makes a branch with the run's code.
+    </span>}
   </div>;
 };
 
 const files_of = patch => [...patch.files.keys()].map(path => ({ path }));
 
 // The files, then the patch: clicking a file scrolls the patch to its changes
+const mb = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+const TooLarge = ({ bytes, url, what = 'show here' }) => <Callout compact icon="info-sign" style={{ marginBottom: 10 }}>
+  The patch is {bytes ? `over ${mb(bytes)}` : 'large'}: too large to {what}.{' '}
+  {url && <AnchorButton size="small" variant="minimal" icon="download" text="Download" href={url} download/>}
+</Callout>;
+
 const PatchText = ({ url, files, total }) => {
   const editor = useRef(null);
-  const query = useQuery({ ...fileQuery(url, { responseType: 'text' }), enabled: !!url });
-  const patch = index_patch(query.data);
+  const query = useQuery(patchQuery(url, max_shown));
+  const patch = index_patch(query.data?.text);
   const reveal = path => {
     const line = patch.files.get(path);
     if (!editor.current || !line) return;
@@ -128,8 +136,10 @@ const PatchText = ({ url, files, total }) => {
     text = <div style={{ height: editor_height(10), display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner size={20}/></div>;
   else if (query.isError)
     text = <Callout compact intent={Intent.WARNING} icon="error">Could not load the patch: {String(query.error?.message ?? query.error)}</Callout>;
+  else if (query.data.too_large)
+    text = <TooLarge bytes={query.data.bytes} url={url}/>;
   else
-    text = <MonacoEditor value={query.data} language="diff" height={editor_height(patch.lines)} options={editor_options} editorDidMount={instance => { editor.current = instance; }}/>;
+    text = <MonacoEditor value={query.data.text} language="diff" height={editor_height(patch.lines)} options={editor_options} editorDidMount={instance => { editor.current = instance; }}/>;
   return <>
     {/* the unpushed commits' files are those of their patch */}
     <FileList files={files.length > 0 ? files : files_of(patch)} total={total} onReveal={reveal} revealable={revealable}/>
@@ -138,13 +148,15 @@ const PatchText = ({ url, files, total }) => {
 };
 
 const ComparePatches = ({ url, url_ref }) => {
-  const query = useQuery({ ...fileQuery(url, { responseType: 'text' }), enabled: !!url });
-  const query_ref = useQuery({ ...fileQuery(url_ref, { responseType: 'text' }), enabled: !!url_ref });
+  const query = useQuery(patchQuery(url, max_compared));
+  const query_ref = useQuery(patchQuery(url_ref, max_compared));
   if (query.isPending || query_ref.isPending) return <Spinner size={20}/>;
   if (query.isError || query_ref.isError) return <Callout compact intent={Intent.WARNING} icon="error">Could not load the patches.</Callout>;
+  if (query.data.too_large || query_ref.data.too_large)
+    return <TooLarge bytes={query.data.too_large ? query.data.bytes : query_ref.data.bytes} what="compare here"/>;
   return <>
     <p className={Classes.TEXT_MUTED} style={{ margin: '0 0 6px' }}>Left: the reference's changes. Right: this run's.</p>
-    <MonacoDiffEditor original={query_ref.data} value={query.data} language="diff" height="55vh" options={diff_options}/>
+    <MonacoDiffEditor original={query_ref.data.text} value={query.data.text} language="diff" height="55vh" options={diff_options}/>
   </>;
 };
 
@@ -218,7 +230,7 @@ const LocalChangesDialog = ({ isOpen, onClose, output, output_ref }) => {
     </DialogBody>
     <DialogFooter actions={<>
       {url && <AnchorButton icon="download" text="Download" href={url} download={saved_file(changes, which)?.split('/').pop() ?? 'local-changes.patch'}/>}
-      <Button icon="duplicate" text="Copy reproduce command" title={restore_command(output)} onClick={() => copyWithToast(restore_command(output), { what: 'the command' })}/>
+      {restore_command(output) && <Button icon="duplicate" text="Copy reproduce command" title={restore_command(output)} onClick={() => copyWithToast(restore_command(output), { what: 'the command' })}/>}
       <Button text="Close" onClick={onClose}/>
     </>}/>
   </Dialog>;

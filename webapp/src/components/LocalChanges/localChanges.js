@@ -2,6 +2,9 @@
 // `qaboard.start_run()` send them as `output.data.local_changes`, CI runs don't). Design: docs/rfcs/local-changes.md.
 // Everything here is untrusted text from whoever ran the code: shown as text, never as HTML.
 import { createContext } from "react";
+import { queryOptions } from "@tanstack/react-query";
+
+import { fileUrl } from "../../viewers/videos/utils";
 
 // The state all the runs shown share (state_key), when they share one: the batch's callout says it once, and the runs'
 // tags don't repeat it. null elsewhere (e.g. History): each run shows its tag.
@@ -15,14 +18,16 @@ export const local_changes_of = output => {
   return changes && typeof changes === 'object' ? changes : null;
 };
 
-export const short_sha = sha => typeof sha === 'string' ? sha.slice(0, 8) : '';
+// Commits are only shown, and put in commands people copy, when they are shas: anything else could be a shell command
+export const is_sha = sha => typeof sha === 'string' && /^[0-9a-f]{7,64}$/.test(sha);
+export const short_sha = sha => is_sha(sha) ? sha.slice(0, 8) : '';
 
 // true / false, or null when unknown (git was too slow, or failed)
 export const is_dirty = changes => changes?.dirty === true ? true : changes?.dirty === false ? false : null;
 
 const number = value => typeof value === 'number' && Number.isFinite(value) ? value : 0;
 
-export const files_count = changes => number(changes?.files_total) || (Array.isArray(changes?.files) ? changes.files.length : 0);
+const files_count = changes => number(changes?.files_total) || (Array.isArray(changes?.files) ? changes.files.length : 0);
 
 // "+40 −12 · 3 files"
 export const changes_summary = changes => {
@@ -37,7 +42,7 @@ export const changes_sentence = changes => {
   return `${files} file${files === 1 ? '' : 's'}, +${number(changes?.added)} −${number(changes?.deleted)}`;
 };
 
-export const unpushed_count = changes => number(changes?.unpushed_commits);
+const unpushed_count = changes => number(changes?.unpushed_commits);
 
 // "· 2 unpushed commits" is said only when we know the commit isn't on the remote
 export const unpushed_text = changes => {
@@ -46,58 +51,61 @@ export const unpushed_text = changes => {
   return n > 0 ? `${n} unpushed commit${n === 1 ? '' : 's'}` : 'not pushed';
 };
 
-// What identifies a set of changes: the patch's content address. Runs with the same key ran the same code.
-export const state_key = changes => {
+// What identifies a set of changes: the commit, and the patch's content address. Runs with the same key ran the same
+// code. Without a content address (summary only, unknown, a commit that isn't a sha) we can't tell: each run has its own
+// key (`id`), and is never "shared". { key, exact }
+export const state_key = (changes, id) => {
   if (!changes) return null;
   const dirty = is_dirty(changes);
-  if (dirty === null) return 'unknown';
+  const head = is_sha(changes.head) ? changes.head : null;
   const unpushed = changes.pushed === false ? `+${changes.unpushed?.sha256 ?? unpushed_count(changes)}` : '';
-  if (dirty === false) return `clean${unpushed}`;
-  const sha256 = typeof changes.sha256 === 'string' && changes.sha256
-    ? changes.sha256
-    : `summary:${files_count(changes)}:${number(changes.added)}:${number(changes.deleted)}`;
-  return `${sha256}${unpushed}`;
+  if (dirty === false && head) return { key: `${head}:clean${unpushed}`, exact: true };
+  if (dirty === true && head && typeof changes.sha256 === 'string' && changes.sha256)
+    return { key: `${head}:${changes.sha256}${unpushed}`, exact: true };
+  // runs whose changes are unknown are listed together, but aren't known to be the same
+  if (dirty === null) return { key: `${head ?? '?'}:unknown`, exact: false };
+  return { key: `run:${id}`, exact: false };
 };
 
-export const kind_of = changes => {
+const kind_of = changes => {
   const dirty = is_dirty(changes);
   return dirty === null ? 'unknown' : dirty ? 'changes' : 'clean';
 };
 
-// The distinct states of these runs, in one pass: { groups: [{ key, kind, changes, output, outputs, count }], missing,
-// shared } — groups with the most runs first, `missing` the runs that didn't record their changes (CI, older runs),
-// `shared` the key when all the runs recorded the same state.
+// The distinct states of these runs, in one pass: { groups: [{ key, exact, kind, changes, output, outputs, count }],
+// missing, shared } — groups with the most runs first, `missing` the runs that didn't record their changes (CI, older
+// runs), `shared` the key when all the runs are known to have run the same code.
 export const group_local_changes = outputs => {
   const by_key = new Map();
   let missing = 0;
-  let total = 0;
   for (const output of outputs) {
     if (!output) continue;
-    total += 1;
     const changes = local_changes_of(output);
     if (!changes) {
       missing += 1;
       continue;
     }
-    const key = state_key(changes);
+    const { key, exact } = state_key(changes, output.id);
     const group = by_key.get(key);
     if (group) {
       group.outputs.push(output);
       group.count += 1;
     } else {
-      by_key.set(key, { key, kind: kind_of(changes), changes, output, outputs: [output], count: 1 });
+      by_key.set(key, { key, exact, kind: kind_of(changes), changes, output, outputs: [output], count: 1 });
     }
   }
   const groups = [...by_key.values()].sort((a, b) => b.count - a.count);
-  const shared = groups.length === 1 && missing === 0 ? groups[0].key : null;
-  return { groups, missing, total, shared, has_data: groups.length > 0 };
+  // one state for all the runs: the batch's callout says it
+  const single = groups.length === 1 && missing === 0;
+  const shared = single && groups[0].exact ? groups[0].key : null;
+  return { groups, missing, single, shared, has_data: groups.length > 0 };
 };
 
 // Whether any run says its commit isn't pushed: { sha } of the first, or null. Stops at the first.
 export const unpushed_commit = outputs => {
   for (const output of outputs) {
     const changes = local_changes_of(output);
-    if (changes?.pushed === false) return { sha: changes.head ?? null, changes };
+    if (changes?.pushed === false) return { sha: is_sha(changes.head) ? changes.head : null, base: is_sha(changes.base) ? changes.base : null };
   }
   return null;
 };
@@ -111,7 +119,7 @@ export const has_local_changes_data = outputs => {
 
 // A file the run saved, as a URL next to its other files. The path comes from the run: only a relative path inside
 // its folder, nothing that would point elsewhere.
-export const safe_relative_path = path => {
+const safe_relative_path = path => {
   if (typeof path !== 'string' || !path || path.length > 500) return null;
   if (path.startsWith('/') || path.includes('\\') || /^[a-z][a-z0-9+.-]*:/i.test(path)) return null;
   if (path.split('/').some(part => part === '..' || part === '')) return null;
@@ -127,9 +135,50 @@ export const saved_file = (changes, which = 'patch') => {
 
 export const patch_url = (output, changes, which = 'patch') => {
   const path = saved_file(changes, which);
-  if (!path || !output?.output_dir_url) return null;
-  return `${output.output_dir_url}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  return path && output?.output_dir_url ? fileUrl(output, path) : null;
 };
+
+// Patches are shown up to this size (Monaco), compared up to max_compared per side; larger ones are only downloaded.
+// What the run says of their size isn't trusted: we count what we read.
+export const max_shown = 5 * 1024 * 1024;
+export const max_compared = 2 * 1024 * 1024;
+
+// The patch's text, { text }, or { too_large, bytes } past `limit` bytes, without reading more than that
+export const fetch_capped_text = async (url, limit, signal) => {
+  const response = await fetch(url, { signal, credentials: 'same-origin' });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  const length = Number(response.headers.get('content-length'));
+  if (Number.isFinite(length) && length > limit) {
+    response.body?.cancel?.().catch(() => {});
+    return { too_large: true, bytes: length };
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const text = await response.text();
+    return text.length > limit ? { too_large: true, bytes: text.length } : { text };
+  }
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > limit) {
+      reader.cancel().catch(() => {});
+      return { too_large: true, bytes: received };
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return { text: text + decoder.decode() };
+};
+
+export const patchQuery = (url, limit = max_shown) => queryOptions({
+  queryKey: ['file', url, 'text', 'capped', limit],
+  queryFn: ({ signal }) => fetch_capped_text(url, limit, signal),
+  enabled: !!url,
+  staleTime: Infinity,
+});
 
 const kb = bytes => Math.max(1, Math.round(number(bytes) / 1024));
 
@@ -145,19 +194,43 @@ export const omitted_message = (file, { what = 'patch' } = {}) => {
   if (reason === 'timeout') return `git took too long to make the ${what}: it wasn't saved.`;
   if (reason === 'unreadable') return `Some changed files couldn't be read: the ${what} wasn't saved.`;
   if (reason === 'error') return `git failed to make the ${what}: it wasn't saved.`;
+  if (reason === 'no_answer') return `The server didn't answer when the run started: the ${what} wasn't saved.`;
   return `The ${what} wasn't saved (${String(reason).slice(0, 40)}).`;
 };
 
 export const status_names = { M: 'modified', A: 'added', D: 'deleted', '?': 'new, untracked', R: 'renamed', C: 'copied', T: 'type changed', U: 'unmerged' };
 
-// How to get the run's code back
-export const restore_command = output => `qa restore ${output?.id ?? ''}`.trim();
+// How to get the run's code back. null when the run's id isn't a number
+export const restore_command = output => {
+  const id = output?.id;
+  return (Number.isInteger(id) && id >= 0) || (typeof id === 'string' && /^\d+$/.test(id)) ? `qa restore ${id}` : null;
+};
+
+// The git commands that recreate the run's code from the patches it saved, [] when it saved none (or its commit isn't
+// a sha). Only shas and fixed names: people paste them in a shell.
 export const git_commands = changes => {
-  const head = typeof changes?.head === 'string' ? changes.head : '<commit>';
-  const commands = [`git checkout ${head} && git apply local-changes.patch`];
-  if (saved_file(changes, 'unpushed') && typeof changes?.base === 'string')
-    commands.push(`git checkout ${changes.base} && git apply unpushed.patch && git apply local-changes.patch`);
+  const patch = !!saved_file(changes, 'patch');
+  const unpushed = !!saved_file(changes, 'unpushed');
+  const commands = [];
+  if (patch && is_sha(changes?.head))
+    commands.push(`git checkout ${changes.head} && git apply local-changes.patch`);
+  if (unpushed && is_sha(changes?.base))
+    commands.push(`git checkout ${changes.base} && git apply unpushed.patch${patch ? ' && git apply local-changes.patch' : ''}`);
   return commands;
+};
+
+// "diff --git a/src/a.py b/src/a.py": git writes the same path twice (renames are deletions and additions), so it is
+// the second half, even when the path has spaces
+const header_path = header => {
+  const rest = header.slice('diff --git '.length).replace(/\r$/, '');
+  const half = (rest.length - 1) / 2;
+  if (Number.isInteger(half) && rest[half] === ' ') {
+    const a = rest.slice(0, half);
+    const b = rest.slice(half + 1);
+    if (a.startsWith('a/') && b.startsWith('b/') && a.slice(2) === b.slice(2)) return b.slice(2);
+  }
+  const b = rest.lastIndexOf(' b/');
+  return b === -1 ? null : rest.slice(b + 3);
 };
 
 // The lines of a patch, and where each file starts ("diff --git a/x b/x"): { lines, files: Map(path => line number) }.
@@ -170,13 +243,8 @@ export const index_patch = text => {
   while (start <= text.length) {
     if (text.startsWith('diff --git ', start)) {
       const end = text.indexOf('\n', start);
-      const header = text.slice(start, end === -1 ? undefined : end);
-      // "diff --git a/src/a.py b/src/a.py": the new path
-      const b = header.lastIndexOf(' b/');
-      if (b !== -1) {
-        const path = header.slice(b + 3);
-        if (!files.has(path)) files.set(path, line);
-      }
+      const path = header_path(text.slice(start, end === -1 ? undefined : end));
+      if (path !== null && !files.has(path)) files.set(path, line);
     }
     const next = text.indexOf('\n', start);
     if (next === -1) break;

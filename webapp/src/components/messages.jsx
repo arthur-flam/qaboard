@@ -128,7 +128,8 @@ const FailedRunsCallout = ({ runs, filter, onShowLogs }) => {
 }
 
 
-const BatchStatusMessages = ({ project, commit, batch, ref_batch, filter }) => {
+// local_changes: group_local_changes(the runs shown), when the page computed it already
+const BatchStatusMessages = ({ project, commit, batch, ref_batch, filter, local_changes: local_changes_ }) => {
   const [waiting_stop, setWaitingStop] = useState(false);
   const [waiting_redo, setWaitingRedo] = useState(false);
   const refreshCommit = useRefreshCommit();
@@ -189,7 +190,7 @@ const BatchStatusMessages = ({ project, commit, batch, ref_batch, filter }) => {
 
   const outputs = batch.filtered.outputs.map(id => batch.outputs[id])
   // Runs that recorded their local changes say which code they ran. Older local runs: we can only warn.
-  const local_changes = group_local_changes(outputs)
+  const local_changes = local_changes_ ?? group_local_changes(outputs)
   const find_reference = output => ref_batch?.outputs?.[output.reference_id]
   let local_batch_message = local_changes.has_data
     ? <LocalChangesCallout groups={local_changes} find_reference={find_reference}/>

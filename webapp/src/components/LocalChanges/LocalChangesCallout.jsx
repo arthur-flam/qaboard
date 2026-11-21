@@ -6,17 +6,19 @@ import { updateSelected } from "../../hooks";
 import { LocalChangesDialogLoader } from "./LocalChangesTag";
 import { changes_sentence, local_changes_view, saved_file, short_sha, unpushed_text } from "./localChanges";
 
-export const showLocalChangesView = () => updateSelected({ selected_views: local_changes_view });
+const showLocalChangesView = () => updateSelected({ selected_views: local_changes_view });
 
 // groups: group_local_changes(the runs shown); find_reference: output => its reference run, for the dialog's comparison
 export const LocalChangesCallout = ({ groups, find_reference }) => {
   const [open, setOpen] = useState(false);
   if (!groups?.has_data) return null;
-  if (groups.shared === null) {
+  if (!groups.single) {
     const n = groups.groups.length;
     const title = n > 1 ? `These local runs used ${n} different sets of local changes` : 'Only some of these runs recorded their local changes';
+    const inexact = groups.groups.some(group => !group.exact);
     return <Callout icon="git-new-branch" intent={Intent.PRIMARY} title={title}>
       {groups.missing > 0 && <p>{groups.missing} of them didn't record their code changes.</p>}
+      {inexact && <p>Runs that saved only a summary of their changes, or whose changes are unknown, can't be told apart: each counts as its own set.</p>}
       <Button size="small" icon="list-detail-view" text="View" onClick={showLocalChangesView}/>
     </Callout>;
   }
@@ -24,7 +26,7 @@ export const LocalChangesCallout = ({ groups, find_reference }) => {
   const sha = <code>{short_sha(changes.head) || '?'}</code>;
   const unpushed = unpushed_text(changes);
   const unpushed_suffix = unpushed ? ` · ${unpushed}` : '';
-  const viewable = kind === 'changes' || !!saved_file(changes, 'unpushed');
+  const viewable = kind !== 'clean' || !!saved_file(changes, 'unpushed');
   const title = kind === 'changes'
     ? <>Local runs on {sha} with uncommitted changes: {changes_sentence(changes)}{unpushed_suffix}</>
     : kind === 'clean'

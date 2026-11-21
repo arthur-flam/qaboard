@@ -287,6 +287,8 @@ const CiCommitResults = () => {
   const run_origins = useRunOriginsValue(shown_outputs);
   // the local changes all the runs shown share, if any: the batch's callout says it, the runs' tags don't repeat it
   const local_changes = group_local_changes(shown_outputs);
+  // ...only when the callout shows (BatchStatusMessages below): otherwise nothing would say it
+  const shows_batch_messages = !!new_commit && !selected_views.includes('groups') && new_batch?.batch_dir_url !== undefined;
   const docs_link = <a target="_blank" rel="noopener noreferrer" href={`${docs_root}docs/visualizations`}>Read the docs</a>;
 
   // Until the commit loads, if it doesn't exist, or if it has no results yet, views of its results would look empty
@@ -388,7 +390,7 @@ const CiCommitResults = () => {
   return (
     <SharedConfigurationContext value={shared}>
     <RunOriginsContext value={run_origins}>
-    <LocalChangesSharedContext value={local_changes.shared}>
+    <LocalChangesSharedContext value={shows_batch_messages ? local_changes.shared : null}>
     <Container style={{ marginTop: 0, paddingTop: header_height + header_gap }}>
 
       {(!new_commit || !ref_commit) && show_ref_navbar && <Messages>
@@ -400,7 +402,7 @@ const CiCommitResults = () => {
             <Messages key="filters">
               {warning_messages}
               {/* the selected batch's runs are unrelated to editing batch definitions, and would push the editor down */}
-              {!selected_views.includes('groups') && <BatchStatusMessages project={new_project} commit={new_commit} batch={new_batch} ref_batch={ref_batch} filter={filter_batch_new} />}
+              {!selected_views.includes('groups') && <BatchStatusMessages project={new_project} commit={new_commit} batch={new_batch} ref_batch={ref_batch} filter={filter_batch_new} local_changes={local_changes} />}
               {shows_runs && <ConfigurationOverview new_batch={new_batch} />}
               {/* a batch that tried several parameters: the analysis compares them */}
               {(shows_runs || views.includes('summary')) && !views.includes('optimization') && <TuningBanner batch={new_batch}/>}

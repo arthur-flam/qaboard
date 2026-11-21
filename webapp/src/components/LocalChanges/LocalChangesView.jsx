@@ -17,7 +17,7 @@ const GroupRow = ({ group, ref_batch }) => {
   const [open, setOpen] = useState(false);
   const { changes, kind, count, outputs, output } = group;
   const unpushed = unpushed_text(changes);
-  const viewable = kind === 'changes' || kind === 'unknown' || !!saved_file(changes, 'unpushed');
+  const viewable = kind !== 'clean' || !!saved_file(changes, 'unpushed');
   return <>
     <tr>
       <td>
@@ -52,7 +52,7 @@ const LocalChangesView = ({ groups, ref_batch }) => {
     return <NonIdealState icon="git-new-branch" title="No local changes recorded" description="Runs started from your computer record their code changes. CI runs and older runs don't."/>;
   return <>
     <p>
-      {groups.groups.length === 1 ? 'The runs shown ran the same code.' : `The runs shown ran ${groups.groups.length} different versions of the code.`}
+      {groups.shared !== null ? 'The runs shown ran the same code.' : `The runs shown recorded ${groups.groups.length} different set${groups.groups.length === 1 ? '' : 's'} of local changes.`}
       {groups.missing > 0 && ` ${groups.missing} run${groups.missing === 1 ? '' : 's'} didn't record their local changes.`}
     </p>
     <HTMLTable compact striped style={{ width: '100%' }}>

