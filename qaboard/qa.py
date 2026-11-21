@@ -1658,6 +1658,8 @@ from .auth import auth
 qa.add_command(auth)
 from .upload_command import upload
 qa.add_command(upload)
+from .restore import restore
+qa.add_command(restore)
 
 
 @qa.command(name='runs')
