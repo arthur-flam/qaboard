@@ -1,0 +1,1128 @@
+<title>QA-Board Tweak Sessions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: QA-Board's shell (dark sider, light surfaces, Blueprint-like controls), dense three-pane tool views. */
+:root {
+  --qa-background: #f0f2f5;
+  --qa-surface: #ffffff;
+  --qa-surface-alt: #f6f7f9;
+  --qa-text: rgba(0,0,0,0.85);
+  --qa-text-secondary: rgba(0,0,0,0.65);
+  --qa-text-muted: #5f6b7c;
+  --qa-link: #1b69b6;
+  --qa-border: rgba(17,20,24,0.15);
+  --qa-hover: rgba(45,114,210,0.08);
+  --qa-sider: #1c2127;
+  --qa-sider-text: #c5cbd3;
+  --qa-primary: #2d72d2;
+  --qa-primary-fg: #ffffff;
+  --qa-danger: #ac2f33;
+  --qa-success: #1c6e42;
+  --qa-warning: #935610;
+  --qa-highlight: rgba(251,179,96,0.22);
+  --qa-patch: rgba(45,114,210,0.10);
+  --qa-cached: #8f99a8;
+  --qa-recompute: #2d72d2;
+  --qa-overhead: #d1980b;
+  --qa-tag: rgba(143,153,168,0.15);
+  --qa-viewer-bg: #111418;
+  --font: -apple-system, "BlinkMacSystemFont", "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Open Sans", "Helvetica Neue", "Icons16", sans-serif;
+  --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --qa-background: #1c2127; --qa-surface: #252a31; --qa-surface-alt: #2f343c; --qa-text: #f6f7f9;
+  --qa-text-secondary: rgba(255,255,255,0.72); --qa-text-muted: #abb3bf; --qa-link: #8abbff;
+  --qa-border: rgba(255,255,255,0.15); --qa-hover: rgba(138,187,255,0.1); --qa-sider: #111418; --qa-sider-text: #abb3bf;
+  --qa-primary: #4c90f0; --qa-primary-fg: #ffffff; --qa-danger: #fa999c; --qa-success: #72ca9b; --qa-warning: #fbb360;
+  --qa-highlight: rgba(251,179,96,0.16); --qa-patch: rgba(76,144,240,0.16); --qa-cached: #5f6b7c; --qa-recompute: #4c90f0;
+  --qa-overhead: #d1980b; --qa-tag: rgba(143,153,168,0.2); --qa-viewer-bg: #0b0d10; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --qa-background: #1c2127; --qa-surface: #252a31; --qa-surface-alt: #2f343c; --qa-text: #f6f7f9;
+  --qa-text-secondary: rgba(255,255,255,0.72); --qa-text-muted: #abb3bf; --qa-link: #8abbff;
+  --qa-border: rgba(255,255,255,0.15); --qa-hover: rgba(138,187,255,0.1); --qa-sider: #111418; --qa-sider-text: #abb3bf;
+  --qa-primary: #4c90f0; --qa-primary-fg: #ffffff; --qa-danger: #fa999c; --qa-success: #72ca9b; --qa-warning: #fbb360;
+  --qa-highlight: rgba(251,179,96,0.16); --qa-patch: rgba(76,144,240,0.16); --qa-cached: #5f6b7c; --qa-recompute: #4c90f0;
+  --qa-overhead: #d1980b; --qa-tag: rgba(143,153,168,0.2); --qa-viewer-bg: #0b0d10; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--qa-background); color: var(--qa-text); font: 13px/1.4 var(--font); }
+button, input, select { font: inherit; color: inherit; }
+code, .mono { font-family: var(--mono); font-size: 12px; }
+a { color: var(--qa-link); text-decoration: none; cursor: pointer; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--qa-primary); outline-offset: 1px; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--qa-text-muted); }
+.small { font-size: 12px; }
+
+/* shell */
+.app { display: grid; grid-template-columns: 184px minmax(0,1fr); height: 100%; }
+.sider { background: var(--qa-sider); color: var(--qa-sider-text); padding: 10px 0; display: flex; flex-direction: column; gap: 2px; }
+.sider .logo { color: #fff; font-weight: 600; padding: 4px 16px 14px; letter-spacing: .02em; }
+.sider .logo small { display: block; font-weight: 400; color: var(--qa-sider-text); font-size: 11px; }
+.sider a { color: var(--qa-sider-text); padding: 6px 16px; display: flex; gap: 8px; align-items: center; }
+.sider a:hover { background: rgba(255,255,255,.06); text-decoration: none; }
+.sider a.on { color: #fff; background: rgba(255,255,255,.1); box-shadow: inset 3px 0 0 #4c90f0; }
+.sider .sep { height: 1px; background: rgba(255,255,255,.08); margin: 8px 0; }
+.sider .hint { padding: 6px 16px; font-size: 11px; line-height: 1.45; color: #8f99a8; }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.navbar { background: var(--qa-surface); border-bottom: 1px solid var(--qa-border); display: flex; align-items: center; gap: 10px; padding: 6px max(16px, env(safe-area-inset-right, 0px)) 6px 16px; flex-wrap: wrap; min-height: 44px; }
+.crumbs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.crumbs .sep { color: var(--qa-text-muted); }
+.navbar .grow { flex: 1; }
+.content { flex: 1; min-height: 0; overflow: auto; padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px 16px; }
+
+/* blueprint-ish */
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--qa-border); background: var(--qa-surface); border-radius: 3px; padding: 3px 9px; min-height: 26px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--qa-hover); }
+.btn.primary { background: var(--qa-primary); color: var(--qa-primary-fg); border-color: transparent; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.minimal { border-color: transparent; background: transparent; }
+.btn.minimal:hover { background: var(--qa-hover); }
+.btn.small { min-height: 22px; padding: 1px 7px; font-size: 12px; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.btn.on { background: var(--qa-patch); border-color: var(--qa-primary); }
+.btn-group { display: inline-flex; }
+.btn-group .btn { border-radius: 0; margin-left: -1px; }
+.btn-group .btn:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+.btn-group .btn:last-child { border-radius: 0 3px 3px 0; }
+.tag { display: inline-flex; align-items: center; gap: 4px; background: var(--qa-tag); border-radius: 3px; padding: 0 6px; font-size: 12px; line-height: 18px; white-space: nowrap; }
+.tag.primary { background: var(--qa-patch); color: var(--qa-link); }
+.tag.success { background: color-mix(in srgb, var(--qa-success) 16%, transparent); color: var(--qa-success); }
+.tag.danger { background: color-mix(in srgb, var(--qa-danger) 14%, transparent); color: var(--qa-danger); }
+.tag.warning { background: color-mix(in srgb, var(--qa-warning) 16%, transparent); color: var(--qa-warning); }
+.tag.minimal { background: transparent; border: 1px solid var(--qa-border); }
+.card { background: var(--qa-surface); border: 1px solid var(--qa-border); border-radius: 3px; }
+.panel-h { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--qa-border); font-weight: 600; min-height: 34px; flex-wrap: wrap; }
+.panel-h .grow { flex: 1; }
+.label { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--qa-text-muted); font-weight: 600; }
+input[type=text], input[type=number], input[type=search], select { background: var(--qa-surface); border: 1px solid var(--qa-border); border-radius: 3px; padding: 2px 6px; min-height: 24px; }
+input[type=number] { width: 84px; font-family: var(--mono); font-size: 12px; }
+input[type=range] { accent-color: var(--qa-primary); width: 130px; }
+input[type=checkbox] { accent-color: var(--qa-primary); }
+.callout { border-radius: 3px; padding: 8px 10px; background: var(--qa-tag); display: flex; gap: 8px; align-items: flex-start; }
+.callout.primary { background: var(--qa-patch); }
+.callout.warning { background: color-mix(in srgb, var(--qa-warning) 12%, transparent); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.ico { width: 14px; height: 14px; flex: none; }
+
+/* run page */
+.commit-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.commit-head h2 { margin: 0; font-size: 16px; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--qa-border); margin-bottom: 10px; flex-wrap: wrap; }
+.tabs a { padding: 6px 10px; color: var(--qa-text-secondary); border-bottom: 2px solid transparent; }
+.tabs a.on { color: var(--qa-text); border-color: var(--qa-primary); font-weight: 600; }
+.tabs a:hover { text-decoration: none; color: var(--qa-text); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+.out-card .head { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--qa-border); }
+.out-card .title { display: flex; gap: 6px; align-items: center; font-weight: 600; min-width: 0; }
+.out-card .title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.out-card .row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.out-card .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 8px; padding: 6px 10px; border-bottom: 1px solid var(--qa-border); }
+.metric .k { font-size: 11px; color: var(--qa-text-muted); }
+.metric .v { font-family: var(--mono); font-size: 12px; }
+.out-card canvas, .viewer canvas { display: block; width: 100%; height: auto; background: var(--qa-viewer-bg); image-rendering: auto; }
+.new-btn { position: relative; }
+.new-btn::after { content: "new"; position: absolute; top: -7px; right: -6px; background: var(--qa-overhead); color: #1c2127; font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; text-transform: uppercase; }
+.sessions-strip { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-top: 1px solid var(--qa-border); }
+
+/* tweak view */
+.tweak { display: grid; grid-template-columns: 250px minmax(0, 1fr) minmax(300px, 0.9fr); gap: 10px; align-items: start; }
+.tweak > .card { min-width: 0; }
+.chain-list { list-style: none; margin: 0; padding: 4px 0; }
+.chain-list li { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 2px 8px; align-items: center; padding: 5px 10px; cursor: pointer; position: relative; }
+.chain-list li:hover { background: var(--qa-hover); }
+.chain-list li.on { background: var(--qa-patch); box-shadow: inset 3px 0 0 var(--qa-primary); }
+.chain-list .idx { font-family: var(--mono); font-size: 11px; color: var(--qa-text-muted); text-align: right; }
+.chain-list .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chain-list .id { font-family: var(--mono); font-size: 11px; color: var(--qa-text-muted); grid-column: 2; }
+.chain-list .rt { grid-row: 1 / span 2; grid-column: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.chain-list li:not(:last-child)::after { content: ""; position: absolute; left: 22px; bottom: -4px; height: 8px; border-left: 1px dashed var(--qa-border); }
+.search-wrap { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--qa-border); }
+.search-wrap input { width: 100%; }
+.suggest { position: absolute; left: 10px; right: -160px; top: 36px; z-index: 20; background: var(--qa-surface); border: 1px solid var(--qa-border); border-radius: 3px; box-shadow: 0 6px 20px rgba(0,0,0,.18); max-height: 340px; overflow: auto; }
+.suggest div { padding: 5px 8px; cursor: pointer; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; }
+.suggest div:hover, .suggest div.on { background: var(--qa-hover); }
+.suggest .d { grid-column: 1 / -1; font-size: 11px; color: var(--qa-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+mark { background: var(--qa-highlight); color: inherit; }
+.regs { width: 100%; border-collapse: collapse; }
+.regs td { border-top: 1px solid var(--qa-border); padding: 6px 10px; vertical-align: top; }
+.regs tr.mod td { background: var(--qa-patch); }
+.regs tr.flash td { animation: flash 1.2s; }
+@keyframes flash { from { background: var(--qa-highlight); } }
+.regs .k { width: 40%; min-width: 150px; }
+.regs .k .n { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+.regs .k .doc { color: var(--qa-text-muted); font-size: 12px; margin-top: 2px; }
+.regs .k .meta { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.arr { display: grid; gap: 3px; }
+.arr input[type=number] { width: 58px; padding: 1px 3px; }
+.src { font-size: 11px; }
+.switch { position: relative; width: 30px; height: 16px; display: inline-block; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch span { position: absolute; inset: 0; background: var(--qa-cached); border-radius: 8px; cursor: pointer; transition: background .15s; }
+.switch span::before { content: ""; position: absolute; width: 12px; height: 12px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform .15s; }
+.switch input:checked + span { background: var(--qa-primary); }
+.switch input:checked + span::before { transform: translateX(14px); }
+.switch input:focus-visible + span { outline: 2px solid var(--qa-primary); outline-offset: 1px; }
+.viewer { display: flex; flex-direction: column; gap: 4px; }
+.viewer .cap { display: flex; gap: 6px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+.viewer-wrap { position: relative; }
+.viewer-wrap .split-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; pointer-events: none; mix-blend-mode: difference; }
+.viewer-wrap .lbl { position: absolute; top: 4px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); padding: 0 5px; border-radius: 2px; }
+.viewers { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+
+/* pending bar */
+.pending { position: sticky; bottom: 0; z-index: 10; margin-top: 10px; background: var(--qa-surface); border: 1px solid var(--qa-border); border-top: 2px solid var(--qa-primary); border-radius: 3px; box-shadow: 0 -4px 14px rgba(0,0,0,.08); }
+.pending .bar { display: flex; gap: 10px; align-items: center; padding: 8px 10px; flex-wrap: wrap; }
+.pending .chips { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 200px; }
+.chip { display: inline-flex; gap: 4px; align-items: center; font-family: var(--mono); font-size: 12px; background: var(--qa-patch); border-radius: 3px; padding: 1px 4px 1px 6px; }
+.chip .old { color: var(--qa-text-muted); text-decoration: line-through; }
+.chip button { border: 0; background: transparent; cursor: pointer; padding: 0 2px; color: var(--qa-text-muted); }
+.estimate { display: flex; flex-direction: column; gap: 3px; min-width: 220px; }
+.stack { display: flex; height: 6px; border-radius: 2px; overflow: hidden; background: var(--qa-tag); width: 220px; max-width: 100%; }
+.stack i { display: block; height: 100%; }
+.patch-detail { border-top: 1px solid var(--qa-border); padding: 8px 10px; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+pre { margin: 0; background: var(--qa-surface-alt); border: 1px solid var(--qa-border); border-radius: 3px; padding: 8px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.45; }
+
+/* session view */
+.session { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 10px; align-items: start; }
+.tree { list-style: none; margin: 0; padding: 4px 0; }
+.tree li { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 0 6px; padding: 5px 10px 5px 6px; cursor: pointer; align-items: start; }
+.tree li:hover { background: var(--qa-hover); }
+.tree li.on { background: var(--qa-patch); box-shadow: inset 3px 0 0 var(--qa-primary); }
+.tree .gutter { font-family: var(--mono); color: var(--qa-text-muted); white-space: pre; font-size: 12px; line-height: 18px; }
+.tree .nm { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; line-height: 18px; }
+.tree .sub { display: block; font-family: var(--mono); font-size: 11px; color: var(--qa-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree .rt { text-align: right; font-size: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.kv { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 4px 12px; }
+table.t { width: 100%; border-collapse: collapse; }
+table.t th { text-align: left; font-weight: 600; font-size: 12px; color: var(--qa-text-muted); padding: 5px 10px; border-bottom: 1px solid var(--qa-border); white-space: nowrap; }
+table.t td { padding: 5px 10px; border-bottom: 1px solid var(--qa-border); vertical-align: middle; }
+table.t td.mono, table.t td .mono { font-family: var(--mono); font-size: 12px; }
+table.t tr.grp td { background: var(--qa-surface-alt); font-weight: 600; font-size: 12px; }
+.better { color: var(--qa-success); }
+.worse { color: var(--qa-danger); }
+.timing { position: relative; height: 14px; background: var(--qa-tag); border-radius: 2px; min-width: 120px; }
+.timing i { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; align-items: center; }
+.legend span { display: inline-flex; gap: 5px; align-items: center; }
+.scroll-x { overflow-x: auto; }
+.dialog-bg { position: fixed; inset: 0; background: rgba(17,20,24,.5); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dialog { background: var(--qa-surface); border-radius: 4px; width: min(760px, 100%); max-height: 90vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+.dialog .body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.dialog .foot { padding: 8px 12px; border-top: 1px solid var(--qa-border); display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.diff-add { color: var(--qa-success); }
+.diff-del { color: var(--qa-danger); }
+.toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); z-index: 60; background: var(--qa-sider); color: #f6f7f9; padding: 8px 12px; border-radius: 3px; box-shadow: 0 6px 20px rgba(0,0,0,.3); max-width: 380px; }
+.live { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--qa-border); border-radius: 12px; padding: 1px 9px 1px 7px; font-size: 12px; cursor: pointer; background: var(--qa-surface); }
+.pop { position: absolute; right: 16px; top: 46px; z-index: 30; width: min(360px, calc(100vw - 32px)); }
+.spin { width: 10px; height: 10px; border: 2px solid var(--qa-tag); border-top-color: var(--qa-primary); border-radius: 50%; animation: sp 0.8s linear infinite; display: inline-block; }
+@keyframes sp { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin, .regs tr.flash td { animation: none; } }
+.note-flag { font-size: 11px; color: var(--qa-warning); }
+
+@media (max-width: 1250px) { .tweak { grid-template-columns: 230px minmax(0,1fr); } .tweak .viewers-card { grid-column: 1 / -1; } .tweak .viewers { flex-direction: row; flex-wrap: wrap; } .tweak .viewers .viewer { flex: 1 1 300px; } }
+@media (max-width: 900px) { .session { grid-template-columns: minmax(0,1fr); } .patch-detail { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0,1fr); } .sider { display: none; }
+  .tweak { grid-template-columns: minmax(0,1fr); }
+  .navbar, .content { padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+  .regs .k { min-width: 0; width: auto; } .regs tr { display: grid; } .regs td { border-top: 0; } .regs tr td:first-child { border-top: 1px solid var(--qa-border); }
+  .suggest { right: 10px; }
+  .out-card .metrics { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+
+<div class="app">
+  <nav class="sider" aria-label="Project">
+    <div class="logo">QA-Board<small>isp/sim-pipeline</small></div>
+    <a data-go="run" id="nav-run">▤ Commits</a>
+    <a>⌁ History</a>
+    <a>⚑ Milestones</a>
+    <a>⚙ Tuning</a>
+    <a data-go="session" id="nav-session">⑂ Tweak sessions</a>
+    <div class="sep"></div>
+    <div class="hint">Mock-up with fake data. Nothing is saved or sent. Click through: run page → Tweak → Run → session.</div>
+    <div class="hint" style="margin-top:auto">Views: <a data-go="run" style="display:inline;padding:0">run</a> · <a data-go="tweak" style="display:inline;padding:0">tweak</a> · <a data-go="session" style="display:inline;padding:0">session</a></div>
+  </nav>
+  <div class="main">
+    <header class="navbar" id="navbar"></header>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+<div id="overlay"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------------------------------------------------
+// Fake data. Everything image-specific is here (the schema, the viewer's fake renderer); the UI code reads only the
+// schema contract: groups (blocks) in order, parameters with a type, range, default, doc and optional widget hint,
+// and the streams each group produces.
+// ---------------------------------------------------------------------------------------------------------------------
+const SCHEMA = {
+  group_label: "Block",           // what the project calls its stages
+  binary: "isp_sim v4.18.0 (from the commit's artifacts)",
+  groups: [
+    { id: "blc", name: "Black level", streams: ["out"], params: [
+      { k: "enable", t: "bool", d: true, doc: "Subtract the sensor's black level." },
+      { k: "offset_r", t: "int", min: 0, max: 1023, d: 64, unit: "DN", doc: "Black level of the R channel, in 10-bit DN." },
+      { k: "offset_gr", t: "int", min: 0, max: 1023, d: 64, unit: "DN", doc: "Black level of Gr." },
+      { k: "offset_gb", t: "int", min: 0, max: 1023, d: 64, unit: "DN", doc: "Black level of Gb." },
+      { k: "offset_b", t: "int", min: 0, max: 1023, d: 64, unit: "DN", doc: "Black level of B." },
+    ]},
+    { id: "lsc", name: "Lens shading", streams: ["out", "gain_map"], params: [
+      { k: "enable", t: "bool", d: true, doc: "Correct vignetting and color shading." },
+      { k: "mode", t: "enum", options: ["radial", "grid"], d: "grid", doc: "Radial polynomial, or a per-channel gain grid from calibration." },
+      { k: "strength", t: "float", min: 0, max: 1.5, step: 0.05, d: 1.0, doc: "1 corrects fully. Lower keeps some natural falloff." },
+      { k: "center_x", t: "int", min: 0, max: 4095, d: 2016, unit: "px", doc: "Optical center, horizontal." },
+      { k: "center_y", t: "int", min: 0, max: 3071, d: 1512, unit: "px", doc: "Optical center, vertical." },
+    ]},
+    { id: "dpc", name: "Defect pixels", streams: ["out", "defect_mask"], params: [
+      { k: "enable", t: "bool", d: true, doc: "Replace hot and dead pixels." },
+      { k: "mode", t: "enum", options: ["static", "dynamic", "both"], d: "both", doc: "Static uses the OTP defect list; dynamic detects outliers per frame." },
+      { k: "threshold", t: "int", min: 0, max: 4095, d: 200, unit: "DN", doc: "Deviation from neighbours above which a pixel is a defect." },
+      { k: "max_cluster", t: "int", min: 1, max: 4, d: 2, doc: "Largest cluster of adjacent defects corrected." },
+    ]},
+    { id: "awb", name: "White balance", streams: ["out", "stats"], params: [
+      { k: "mode", t: "enum", options: ["manual", "gray_world", "stats"], d: "stats", doc: "Where the gains come from. manual uses the gains below." },
+      { k: "r_gain", t: "float", min: 0.5, max: 4, step: 0.01, d: 1.85, doc: "Gain of R relative to G (manual mode, or the initial guess)." },
+      { k: "b_gain", t: "float", min: 0.5, max: 4, step: 0.01, d: 1.62, doc: "Gain of B relative to G." },
+      { k: "stats_grid", t: "enum", options: ["16x12", "32x24"], d: "16x12", doc: "Zones of the statistics." },
+    ]},
+    { id: "dms", name: "Demosaic", streams: ["out"], params: [
+      { k: "algo", t: "enum", options: ["bilinear", "ahd", "ml_v2"], d: "ahd", doc: "ml_v2 is the learned demosaic: sharper, about 2× slower." },
+      { k: "edge_threshold", t: "int", min: 0, max: 255, d: 24, doc: "Gradient above which interpolation follows the edge direction." },
+      { k: "fcs", t: "bool", d: true, doc: "False color suppression on high-frequency areas." },
+      { k: "fcs_strength", t: "float", min: 0, max: 1, step: 0.05, d: 0.6, doc: "How strongly false colors are desaturated." },
+    ]},
+    { id: "ccm", name: "Color matrix", streams: ["out"], params: [
+      { k: "matrix", t: "float[]", shape: [3, 3], d: [1.62, -0.48, -0.14, -0.22, 1.41, -0.19, -0.03, -0.55, 1.58], doc: "Sensor RGB to linear sRGB. Rows should sum to 1." },
+      { k: "saturation", t: "float", min: 0, max: 2, step: 0.05, d: 1.0, doc: "Applied after the matrix, in a luma-preserving way." },
+      { k: "hue_shift", t: "float", min: -30, max: 30, step: 0.5, d: 0, unit: "°", doc: "Global hue rotation." },
+    ]},
+    { id: "nr", name: "Denoise", streams: ["out", "noise_map"], params: [
+      { k: "enable", t: "bool", d: true, doc: "Spatial noise reduction." },
+      { k: "strength", t: "float", min: 0, max: 1, step: 0.01, d: 0.25, doc: "Blend between the input and the filtered image." },
+      { k: "radius", t: "int", min: 1, max: 5, d: 2, unit: "px", doc: "Filter support. Each step roughly doubles the block's time." },
+      { k: "luma_sigma", t: "float", min: 0, max: 64, step: 0.5, d: 8, doc: "Range kernel sigma on luma." },
+      { k: "chroma_sigma", t: "float", min: 0, max: 64, step: 0.5, d: 14, doc: "Range kernel sigma on chroma." },
+      { k: "temporal", t: "bool", d: false, doc: "Temporal filtering. Needs a multi-frame input; ignored otherwise." },
+      { k: "noise_profile", t: "int[]", shape: [8], d: [6, 7, 9, 12, 16, 21, 27, 34], doc: "Noise sigma per brightness bin (8 bins), from calibration." },
+    ]},
+    { id: "ee", name: "Sharpen", streams: ["out", "edge_map"], params: [
+      { k: "gain", t: "float", min: 0, max: 3, step: 0.05, d: 1.0, doc: "Edge enhancement gain." },
+      { k: "threshold", t: "int", min: 0, max: 255, d: 12, doc: "Coring: edges weaker than this are not enhanced." },
+      { k: "halo_limit", t: "float", min: 0, max: 1, step: 0.05, d: 0.4, doc: "Clamp of overshoot around strong edges." },
+      { k: "radius", t: "int", min: 1, max: 3, d: 1, unit: "px", doc: "Size of the detail band enhanced." },
+    ]},
+    { id: "gam", name: "Tone curve", streams: ["out"], params: [
+      { k: "preset", t: "enum", options: ["srgb", "rec709", "custom"], d: "srgb", doc: "custom uses the curve below." },
+      { k: "gamma", t: "float", min: 1, max: 3, step: 0.05, d: 2.2, doc: "Exponent of srgb and rec709 presets." },
+      { k: "curve", t: "int[]", shape: [9], d: [0, 46, 80, 109, 136, 161, 189, 220, 255], widget: "curve", doc: "Output (0–255) at 9 evenly spaced inputs. Custom preset only." },
+    ]},
+    { id: "csc", name: "Output format", streams: ["out"], params: [
+      { k: "format", t: "enum", options: ["nv12", "yuv444", "rgb888"], d: "nv12", doc: "Pixel format written by the simulation." },
+      { k: "range", t: "enum", options: ["full", "limited"], d: "full", doc: "limited maps to 16–235." },
+      { k: "matrix", t: "enum", options: ["bt601", "bt709"], d: "bt709", doc: "RGB to YUV matrix." },
+    ]},
+  ],
+};
+const GROUPS = SCHEMA.groups;
+const PARAMS = GROUPS.flatMap((g, gi) => g.params.map(p => ({ ...p, key: `${g.id}.${p.k}`, group: g.id, gi })));
+const PARAM = Object.fromEntries(PARAMS.map(p => [p.key, p]));
+// What the run's configuration files set ("base" then "outdoor"): QA-Board reads them, never writes them
+const CONFIG_VALUES = {
+  "nr.strength": { v: 0.35, src: "configs/outdoor.yaml" },
+  "ee.gain": { v: 1.2, src: "configs/outdoor.yaml" },
+  "lsc.strength": { v: 0.9, src: "configs/base.yaml" },
+  "awb.stats_grid": { v: "32x24", src: "configs/base.yaml" },
+};
+// Seconds to recompute each block from scratch, for this input (12 MP). The start includes queueing and loading.
+const BLOCK_SECS = { blc: 0.8, lsc: 1.6, dpc: 2.1, awb: 1.2, dms: 9.5, ccm: 1.0, nr: 18.4, ee: 3.6, gam: 0.9, csc: 1.1 };
+const START_SECS = 6.0;   // runner start + binary load, paid by every run
+const CACHE_READ = 0.15;  // reading a cached intermediate
+
+const COMMIT = { id: "a3f9c21e", branch: "feature/denoise-v2", msg: "nr: bilateral range kernel on chroma", author: "you", when: "2 hours ago" };
+const INPUT = "outdoor/DL65_street_0042.raw";
+const MILESTONES = [
+  { id: "m1", label: "v3.2 release", commit: "7c1e0b24", metrics: { noise_sigma: 0.0262, mtf50: 0.318, delta_e: 3.31, halo_px: 0.52 },
+    params: { "nr.strength": 0.3, "ee.gain": 1.1, "dms.algo": "ahd", "lsc.strength": 0.9, "awb.stats_grid": "32x24" } },
+  { id: "m2", label: "Customer demo (Sep)", commit: "51d9aa03", metrics: { noise_sigma: 0.0231, mtf50: 0.301, delta_e: 3.18, halo_px: 0.47 },
+    params: { "nr.strength": 0.45, "ee.gain": 1.0, "dms.algo": "ahd", "lsc.strength": 1.0 } },
+];
+const METRICS = [
+  { k: "noise_sigma", label: "Noise σ", fmt: v => v.toFixed(4), better: "lower" },
+  { k: "mtf50", label: "MTF50", unit: "cy/px", fmt: v => v.toFixed(3), better: "higher" },
+  { k: "delta_e", label: "ΔE2000", fmt: v => v.toFixed(2), better: "lower" },
+  { k: "halo_px", label: "Halo", unit: "px", fmt: v => v.toFixed(2), better: "lower" },
+];
+
+// The session: a tree of runs. `own` is each run's patch against its parent.
+const RUNS = {
+  r0: { id: "r0", n: 0, parent: null, own: {}, status: "done", at: "09:12", by: "CI", note: "CI run (commit's default batch)", run_id: 48211 },
+  r1: { id: "r1", n: 1, parent: "r0", own: { "nr.strength": 0.5, "nr.radius": 3 }, status: "done", at: "10:03", by: "you", note: "more NR on the sky", run_id: 48230 },
+  r2: { id: "r2", n: 2, parent: "r1", own: { "ee.gain": 0.9 }, status: "done", at: "10:06", by: "you", note: "", run_id: 48231 },
+  r3: { id: "r3", n: 3, parent: "r2", own: { "gam.preset": "custom", "gam.curve": [0, 52, 88, 116, 141, 165, 191, 221, 255] }, status: "done", at: "10:09", by: "you", note: "lift shadows", pinned: true, run_id: 48233 },
+  r4: { id: "r4", n: 4, parent: "r1", own: { "dms.algo": "ml_v2" }, status: "done", at: "10:15", by: "you", note: "try the learned demosaic", run_id: 48240 },
+  r5: { id: "r5", n: 5, parent: "r4", own: { "ee.gain": 1.0 }, status: "running", at: "10:22", by: "you", note: "", run_id: 48244, progress: 0 },
+};
+const SESSION = { name: "Denoise vs. detail on street scenes", commit: COMMIT.id, batch: "tweak/s14", started: "10:03" };
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Model helpers (these mirror the three contracts in NOTES.md)
+// ---------------------------------------------------------------------------------------------------------------------
+const lineage = id => { const out = []; let r = RUNS[id]; while (r) { out.unshift(r); r = RUNS[r.parent]; } return out; };
+const patchOf = id => Object.assign({}, ...lineage(id).map(r => r.own));     // the run's full patch, root to leaf
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function valueOf(id, key, extra) {
+  if (extra && key in extra) return { v: extra[key], src: "pending" };
+  const patch = id ? patchOf(id) : {};
+  if (key in patch) {
+    const from = lineage(id).slice().reverse().find(r => key in r.own);
+    return { v: patch[key], src: `patch #${from.n}` };
+  }
+  if (CONFIG_VALUES[key]) return CONFIG_VALUES[key];
+  return { v: PARAM[key].d, src: "default" };
+}
+const valuesOf = (id, extra) => Object.fromEntries(PARAMS.map(p => [p.key, valueOf(id, p.key, extra).v]));
+const changedGroups = patch => new Set(Object.keys(patch).map(k => PARAM[k].group));
+const firstChanged = patch => { const gs = changedGroups(patch); const i = GROUPS.findIndex(g => gs.has(g.id)); return i < 0 ? GROUPS.length : i; };
+
+function timingsOf(id) {
+  const r = RUNS[id];
+  const vals = valuesOf(id);
+  const first = r.parent ? firstChanged(r.own) : 0;
+  const start = r.parent ? START_SECS : 14.2; // CI runs wait on the cluster queue
+  return { start, blocks: GROUPS.map((g, i) => {
+    let s = BLOCK_SECS[g.id];
+    if (g.id === "dms" && vals["dms.algo"] === "ml_v2") s *= 2.2;
+    if (g.id === "nr") s *= vals["nr.radius"] / 2;
+    const jitter = 1 + ((r.n * 7 + i * 3) % 5 - 2) / 40;
+    return i < first ? { g, state: "cached", secs: CACHE_READ, from: r.parent } : { g, state: "recomputed", secs: s * jitter };
+  }) };
+}
+const total = t => t.start + t.blocks.reduce((a, b) => a + b.secs, 0);
+
+function estimateFor(baseId, pending) {
+  const vals = valuesOf(baseId, pending);
+  const first = firstChanged(pending);
+  const blocks = GROUPS.map((g, i) => {
+    let s = BLOCK_SECS[g.id];
+    if (g.id === "dms" && vals["dms.algo"] === "ml_v2") s *= 2.2;
+    if (g.id === "nr") s *= vals["nr.radius"] / 2;
+    return i < first ? { g, state: "cached", secs: CACHE_READ } : { g, state: "recomputed", secs: s };
+  });
+  return { start: START_SECS, blocks, first };
+}
+
+function metricsOf(vals) {
+  const nr = vals["nr.enable"] ? vals["nr.strength"] : 0;
+  const rad = vals["nr.radius"];
+  const ee = vals["ee.gain"];
+  const dms = { bilinear: -0.03, ahd: 0, ml_v2: 0.021 }[vals["dms.algo"]];
+  return {
+    noise_sigma: 0.0312 * (1 - 0.62 * nr * Math.min(1, rad / 3)) + 0.0021 * ee,
+    mtf50: 0.296 + 0.041 * ee - 0.052 * nr * (rad / 3) + dms + 0.004 * (vals["ee.radius"] - 1),
+    delta_e: 3.05 + 0.9 * Math.abs(vals["ccm.saturation"] - 1.05) + (vals["awb.mode"] === "stats" ? 0 : 0.42) + 0.15 * nr,
+    halo_px: 0.31 + 0.42 * Math.max(0, ee - 0.6) * (1 - vals["ee.halo_limit"]) * 1.6,
+  };
+}
+const metricsOfRun = id => RUNS[id].metrics || metricsOf(valuesOf(id));
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Fake image renderer: a synthetic scene pushed through a toy version of the chain. Stand-in for the image viewer.
+// ---------------------------------------------------------------------------------------------------------------------
+const W = 320, H = 200, N = W * H;
+let SCENE = null, NOISE = null, HOT = null;
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+function makeScene() {
+  const r = new Float32Array(N), g = new Float32Array(N), b = new Float32Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, t = y / H;
+    // sky, ground
+    let c = y < 118 ? [0.42 + 0.3 * t, 0.58 + 0.25 * t, 0.86 - 0.05 * t] : [0.32, 0.30, 0.28];
+    // buildings
+    const bl = [[18, 46, 60, 0.62, 0.55, 0.48], [70, 30, 52, 0.45, 0.47, 0.52], [128, 58, 40, 0.70, 0.66, 0.58], [176, 40, 58, 0.52, 0.42, 0.38]];
+    for (const [bx, by, bw, cr, cg, cb] of bl) if (x >= bx && x < bx + bw && y >= by && y < 118) {
+      c = [cr, cg, cb];
+      if ((x - bx) % 10 > 3 && (x - bx) % 10 < 8 && (y - by) % 12 > 3 && (y - by) % 12 < 9) c = [0.92, 0.86, 0.6];
+    }
+    // road stripes
+    if (y > 150 && y < 154 && x % 40 < 22) c = [0.9, 0.9, 0.85];
+    // siemens star (resolution target)
+    const dx = x - 268, dy = y - 70, rr = Math.hypot(dx, dy);
+    if (rr < 38) { const a = Math.atan2(dy, dx); const v = Math.sin(a * 18) > 0 ? 0.92 : 0.08; c = [v, v, v]; }
+    // color checker 6x4
+    const pal = [[.45,.32,.26],[.76,.58,.5],[.37,.48,.61],[.35,.42,.25],[.51,.5,.69],[.38,.74,.66],[.85,.47,.17],[.29,.36,.65],[.75,.33,.38],[.36,.24,.42],[.62,.74,.25],[.89,.63,.18],[.2,.24,.58],[.27,.58,.29],[.69,.2,.22],[.93,.78,.12],[.73,.33,.58],[0,.52,.63],[.95,.95,.95],[.78,.78,.78],[.63,.63,.63],[.47,.47,.47],[.33,.33,.33],[.2,.2,.2]];
+    const cx = x - 216, cy = y - 128;
+    if (cx >= 0 && cx < 96 && cy >= 0 && cy < 64 && cx % 16 < 14 && cy % 16 < 14) c = pal[Math.floor(cy / 16) * 6 + Math.floor(cx / 16)];
+    r[i] = c[0]; g[i] = c[1]; b[i] = c[2];
+  }
+  const rand = rng(7);
+  NOISE = [0, 1, 2].map(() => { const a = new Float32Array(N); for (let i = 0; i < N; i++) a[i] = (rand() + rand() + rand() - 1.5) * 1.2; return a; });
+  HOT = new Uint8Array(N); for (let k = 0; k < 140; k++) HOT[Math.floor(rand() * N)] = 1;
+  SCENE = [r, g, b];
+}
+function blur(ch, passes) {
+  let a = ch;
+  for (let p = 0; p < passes; p++) {
+    const o = new Float32Array(N);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let s = 0, n = 0;
+      for (let j = -1; j <= 1; j++) { const yy = y + j; if (yy < 0 || yy >= H) continue;
+        for (let i = -1; i <= 1; i++) { const xx = x + i; if (xx < 0 || xx >= W) continue; s += a[yy * W + xx]; n++; } }
+      o[y * W + x] = s / n;
+    }
+    a = o;
+  }
+  return a;
+}
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const vign = (x, y) => { const d = Math.hypot((x - W / 2) / (W / 2), (y - H / 2) / (H / 2)); return 1 - 0.45 * d * d; };
+const IMG_CACHE = new Map();
+// The image after `stage` blocks (0 = the raw input) for these values. Returns {rgb, mosaic, extra: {stream: gray}}
+function renderStage(vals, stage) {
+  const key = JSON.stringify([stage, GROUPS.slice(0, stage).map(g => g.params.map(p => vals[`${g.id}.${p.k}`]))]);
+  if (IMG_CACHE.has(key)) return IMG_CACHE.get(key);
+  if (!SCENE) makeScene();
+  let [r, g, b] = SCENE.map(c => new Float32Array(c));
+  const tint = [0.54, 1, 0.62], black = 64 / 1023;
+  for (let i = 0; i < N; i++) { const x = i % W, y = (i / W) | 0, v = vign(x, y);
+    const ch = [r, g, b];
+    for (let c = 0; c < 3; c++) ch[c][i] = ch[c][i] * tint[c] * v * 0.85 + black + NOISE[c][i] * (0.012 + 0.03 * Math.sqrt(ch[c][i] * tint[c] * v));
+    if (HOT[i]) { r[i] = g[i] = b[i] = 1; }
+  }
+  const extra = {};
+  const ids = GROUPS.slice(0, stage).map(gr => gr.id);
+  const on = id => ids.includes(id);
+  if (on("blc") && vals["blc.enable"]) { const o = [vals["blc.offset_r"], (vals["blc.offset_gr"] + vals["blc.offset_gb"]) / 2, vals["blc.offset_b"]].map(v => v / 1023);
+    for (let i = 0; i < N; i++) { r[i] -= o[0]; g[i] -= o[1]; b[i] -= o[2]; } }
+  if (on("lsc") && vals["lsc.enable"]) { const s = vals["lsc.strength"]; const gm = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const f = Math.pow(1 / vign(i % W, (i / W) | 0), s); gm[i] = (f - 1) * 1.5; r[i] *= f; g[i] *= f; b[i] *= f; }
+    extra.lsc_gain_map = gm; }
+  if (on("dpc") && vals["dpc.enable"]) { const m = new Float32Array(N);
+    for (let i = 0; i < N; i++) if (HOT[i]) { const j = i > W ? i - W : i + W; r[i] = r[j]; g[i] = g[j]; b[i] = b[j]; m[i] = 1; }
+    extra.dpc_defect_mask = m; }
+  if (on("awb")) { const rg = vals["awb.mode"] === "manual" ? vals["awb.r_gain"] : 1.85, bg = vals["awb.mode"] === "manual" ? vals["awb.b_gain"] : 1.62;
+    const stats = new Float32Array(N), z = vals["awb.stats_grid"] === "32x24" ? 10 : 20;
+    for (let i = 0; i < N; i++) { r[i] *= rg; b[i] *= bg; }
+    for (let i = 0; i < N; i++) { const x = i % W, y = (i / W) | 0; const j = (Math.floor(y / z) * z + z / 2) * W + Math.floor(x / z) * z + z / 2; stats[i] = j < N ? (r[j] + g[j] + b[j]) / 3 : 0; }
+    extra.awb_stats = stats; }
+  const mosaic = !on("dms");
+  if (on("dms")) { const a = vals["dms.algo"];
+    if (a === "bilinear") { r = blur(r, 1); b = blur(b, 1); g = blur(g, 1).map((v, i) => v * 0.6 + g[i] * 0.4); }
+    if (a === "ml_v2") { const bb = [r, g, b].map(c => blur(c, 1)); [r, g, b] = [r, g, b].map((c, k) => c.map((v, i) => v + 0.25 * (v - bb[k][i]))); } }
+  if (on("ccm")) { const s = vals["ccm.saturation"];
+    for (let i = 0; i < N; i++) { const y = 0.299 * r[i] + 0.587 * g[i] + 0.114 * b[i]; r[i] = y + (r[i] - y) * s * 1.1; g[i] = y + (g[i] - y) * s * 1.1; b[i] = y + (b[i] - y) * s * 1.1; } }
+  if (on("nr")) { const before = [r, g, b];
+    if (vals["nr.enable"]) { const s = vals["nr.strength"], p = vals["nr.radius"];
+      const bb = [r, g, b].map(c => blur(c, p)); [r, g, b] = [r, g, b].map((c, k) => c.map((v, i) => v * (1 - s) + bb[k][i] * s)); }
+    extra.nr_noise_map = before[1].map((v, i) => Math.abs(v - g[i]) * 12); }
+  if (on("ee")) { const a = vals["ee.gain"] * 0.9, th = vals["ee.threshold"] / 255 * 0.3, lim = 0.25 * (1 - vals["ee.halo_limit"]) + 0.03;
+    const bb = [r, g, b].map(c => blur(c, vals["ee.radius"]));
+    const em = new Float32Array(N);
+    [r, g, b] = [r, g, b].map((c, k) => c.map((v, i) => { let d = v - bb[k][i]; if (Math.abs(d) < th) d = 0; d = Math.max(-lim, Math.min(lim, d)); if (k === 1) em[i] = Math.abs(d) * 6; return v + a * d; }));
+    extra.ee_edge_map = em; }
+  if (on("gam")) { const custom = vals["gam.preset"] === "custom", c = vals["gam.curve"], ga = vals["gam.gamma"];
+    const f = v => { v = clamp01(v); if (!custom) return Math.pow(v, 1 / ga); const x = v * 8, i = Math.min(7, Math.floor(x)); return (c[i] + (c[i + 1] - c[i]) * (x - i)) / 255; };
+    [r, g, b] = [r, g, b].map(ch => ch.map(f)); }
+  else if (!mosaic) { [r, g, b] = [r, g, b].map(ch => ch.map(v => Math.pow(clamp01(v), 1 / 2.2))); } // display-only gamma before the tone curve
+  if (on("csc") && vals["csc.range"] === "limited") [r, g, b] = [r, g, b].map(ch => ch.map(v => 16 / 255 + clamp01(v) * 219 / 255));
+  const out = { rgb: [r, g, b], mosaic, extra };
+  IMG_CACHE.set(key, out);
+  if (IMG_CACHE.size > 120) IMG_CACHE.delete(IMG_CACHE.keys().next().value);
+  return out;
+}
+function toImageData(img, stream, gid, ctx) {
+  const d = ctx.createImageData(W, H);
+  const extraKey = `${gid}_${stream}`;
+  const gray = stream !== "out" ? img.extra[extraKey] : null;
+  const [r, g, b] = img.rgb;
+  for (let i = 0; i < N; i++) {
+    const x = i % W, y = (i / W) | 0;
+    let R, G, B;
+    if (gray) { R = G = B = clamp01(gray[i]); if (stream === "stats") { R = clamp01(gray[i] * 1.1); G = clamp01(gray[i]); B = clamp01(gray[i] * 0.9); } }
+    else if (img.mosaic) { const c = (y & 1) ? ((x & 1) ? b[i] : g[i]) : ((x & 1) ? g[i] : r[i]); R = G = B = Math.pow(clamp01(c), 1 / 2.2); }
+    else { R = clamp01(r[i]); G = clamp01(g[i]); B = clamp01(b[i]); }
+    d.data[4 * i] = R * 255; d.data[4 * i + 1] = G * 255; d.data[4 * i + 2] = B * 255; d.data[4 * i + 3] = 255;
+  }
+  return d;
+}
+// <canvas data-img='{"a":{"run":"r3","stage":7},"b":{...},"stream":"out","gid":"nr","split":50}'>
+function drawCanvases(root) {
+  root.querySelectorAll("canvas[data-img]").forEach(cv => {
+    const spec = JSON.parse(cv.dataset.img);
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    const imgA = renderStage(valuesOf(spec.a.run, spec.a.extra), spec.a.stage);
+    ctx.putImageData(toImageData(imgA, spec.stream, spec.gid, ctx), 0, 0);
+    if (spec.b) {
+      const imgB = renderStage(valuesOf(spec.b.run, spec.b.extra), spec.b.stage);
+      const cut = Math.round(W * spec.split / 100);
+      ctx.putImageData(toImageData(imgB, spec.stream, spec.gid, ctx), 0, 0, cut, 0, W - cut, H);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// UI state
+// ---------------------------------------------------------------------------------------------------------------------
+const S = {
+  view: "run",
+  base: "r3",          // the run being tweaked
+  group: "nr",         // the selected block
+  pending: {},         // the patch being written, against `base`
+  modifiedOnly: false,
+  q: "", qOpen: false, qIndex: 0,
+  outCompare: "parent", // what the output viewer splits against: none | parent
+  split: 50,
+  showPatch: false,
+  sel: "r3",           // the session's selected run
+  tab: "params",
+  diffAgainst: "parent", // parent | root | milestone
+  milestone: "m1",
+  stream: { gid: "nr", s: "out", io: "out", a: "r3", b: "r4", split: 50 },
+  dialog: null,
+  livePop: false,
+  flash: null,
+};
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtV = v => Array.isArray(v) ? `[${v.join(", ")}]` : typeof v === "number" ? (Number.isInteger(v) ? String(v) : String(+v.toFixed(3))) : String(v);
+const short = v => { const s = fmtV(v); return s.length > 18 ? s.slice(0, 16) + "…]" : s; };
+const secs = s => s < 1 ? `${(s * 1000).toFixed(0)} ms` : s < 90 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
+const groupOf = id => GROUPS.find(g => g.id === id);
+const stageOut = gid => GROUPS.findIndex(g => g.id === gid) + 1;
+const runLabel = id => `#${RUNS[id].n}`;
+function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); }
+function delta(m, a, b) {
+  if (a == null || b == null) return "";
+  const d = a - b; if (Math.abs(d) < 1e-9) return `<span class="muted">±0</span>`;
+  const good = m.better === "lower" ? d < 0 : d > 0;
+  const rel = b ? ` (${d > 0 ? "+" : ""}${(100 * d / Math.abs(b)).toFixed(1)}%)` : "";
+  return `<span class="${good ? "better" : "worse"}">${d > 0 ? "+" : ""}${m.fmt(d)}${rel}</span>`;
+}
+function statusTag(r) {
+  if (r.status === "running") return `<span class="tag primary"><span class="spin"></span> running ${Math.round((r.progress || 0) * 100)}%</span>`;
+  if (r.status === "queued") return `<span class="tag warning">queued</span>`;
+  if (r.status === "failed") return `<span class="tag danger">failed</span>`;
+  return `<span class="tag success">done</span>`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Navbar
+// ---------------------------------------------------------------------------------------------------------------------
+function navbar() {
+  const crumbs = {
+    run: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><span>default</span>`,
+    tweak: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><a data-go="session">${SESSION.batch}</a><span class="sep">/</span><b>Tweak from ${runLabel(S.base)}</b>`,
+    session: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><b>${SESSION.batch}</b><span class="muted">· ${esc(SESSION.name)}</span>`,
+  }[S.view];
+  const live = `<span class="live" data-act="livepop" role="button" tabindex="0" aria-expanded="${S.livePop}"><span class="dot" style="background:var(--qa-cached)"></span>Live: not connected</span>`;
+  const pop = S.livePop ? `<div class="card pop"><div class="panel-h">Live session<span class="grow"></span><button class="btn minimal small" data-act="livepop" aria-label="Close">✕</button></div>
+    <div style="padding:10px;display:flex;flex-direction:column;gap:8px">
+      <div>Runs of this session use the commit's build, on the server's runner. To tweak your own working copy instead, attach it:</div>
+      <pre>qa connect --session ${SESSION.batch}</pre>
+      <div class="small muted">Connected, runs start on your machine with your local changes, and are recorded as <span class="tag minimal">local changes</span> runs. Mocked here as a status only.</div>
+      <div class="kv small"><span class="muted">Commit</span><span class="mono">${COMMIT.id} (${COMMIT.branch})</span><span class="muted">Runner</span><span>server · local</span><span class="muted">Binary</span><span>${SCHEMA.binary}</span></div>
+    </div></div>` : "";
+  return `<div class="crumbs">${crumbs}</div><span class="grow"></span>
+    <span class="tag minimal mono">${COMMIT.branch}</span>${live}${pop}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Run page (the commit page's run cards, with the new entry point)
+// ---------------------------------------------------------------------------------------------------------------------
+function viewRun() {
+  const inputs = [
+    { input: INPUT, run: "r0", mainline: true },
+    { input: "outdoor/DL50_park_0007.raw", run: "r0", alt: { noise_sigma: 0.0241, mtf50: 0.322, delta_e: 3.4, halo_px: 0.49 } },
+    { input: "indoor/TL84_office_0113.raw", run: "r0", alt: { noise_sigma: 0.0388, mtf50: 0.287, delta_e: 3.9, halo_px: 0.41 } },
+  ];
+  const ref = MILESTONES[0].metrics;
+  const sessionRuns = Object.values(RUNS).filter(r => r.parent);
+  const cards = inputs.map((c, i) => {
+    const m = c.alt || metricsOfRun("r0");
+    return `<div class="card out-card">
+      <div class="head">
+        <div class="title"><span class="tag success">done</span><span class="mono" title="${c.input}">${c.input}</span></div>
+        <div class="row"><span class="tag">linux</span><span class="tag">base</span><span class="tag">outdoor</span><span class="grow" style="flex:1"></span>
+          <button class="btn small" title="Open in WebCDE">⧉ WebCDE</button>
+          <button class="btn small primary new-btn" data-act="tweak-from" data-run="r0" data-input="${i}" title="Change parameters and rerun, in QA-Board">✎ Tweak</button>
+          <button class="btn minimal small" aria-label="Run actions">⋯</button></div>
+      </div>
+      <div class="metrics">${METRICS.map(mm => `<div class="metric"><div class="k">${mm.label}</div><div class="v num">${mm.fmt(m[mm.k])}</div><div class="small num">${delta(mm, m[mm.k], ref[mm.k])}</div></div>`).join("")}</div>
+      ${i === 0 ? `<canvas data-img='${JSON.stringify({ a: { run: "r0", stage: GROUPS.length }, stream: "out", gid: "csc" })}' aria-label="Output image"></canvas>` : `<canvas data-img='${JSON.stringify({ a: { run: "r0", stage: GROUPS.length }, stream: "out", gid: "csc" })}' aria-label="Output image" style="filter:hue-rotate(${i * 12}deg) brightness(${1 - i * 0.12})"></canvas>`}
+      ${i === 0 ? `<div class="sessions-strip small"><div class="label">Tweak sessions from this run</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><a data-go="session">${SESSION.batch}</a><span class="muted">${esc(SESSION.name)} · ${sessionRuns.length} runs · you</span></div></div>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="commit-head"><h2>${esc(COMMIT.msg)}</h2><span class="tag mono">${COMMIT.id}</span><span class="muted">${COMMIT.author} · ${COMMIT.when}</span>
+      <span class="grow" style="flex:1"></span><span class="muted small">Reference</span><span class="tag primary">⚑ ${MILESTONES[0].label}</span></div>
+    <div class="tabs"><a class="on">Run cards</a><a>Metrics table</a><a>Parameters</a><a>Tuning</a><a>Logs</a></div>
+    <div class="callout primary small" style="margin-bottom:10px"><span>✎</span><span><b>Tweak</b> sits next to WebCDE on runs whose project describes its parameters (a schema for the run's binary). Without a schema the button is hidden, as WebCDE is without a <code>cde.sh</code>.</span></div>
+    <div class="cards">${cards}</div>`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Tweak view
+// ---------------------------------------------------------------------------------------------------------------------
+function searchResults() {
+  const q = S.q.trim().toLowerCase(); if (!q) return [];
+  const terms = q.split(/\s+/);
+  return PARAMS.map(p => {
+    const hay = `${p.key} ${groupOf(p.group).name} ${p.doc}`.toLowerCase();
+    if (!terms.every(t => hay.includes(t))) return null;
+    const score = (p.key.includes(q) ? 0 : 1) + (p.k.startsWith(terms[0]) ? 0 : 0.5);
+    return { p, score };
+  }).filter(Boolean).sort((a, b) => a.score - b.score).slice(0, 12).map(x => x.p);
+}
+const hl = (text, q) => { let s = esc(text); for (const t of q.trim().split(/\s+/).filter(Boolean)) s = s.replace(new RegExp(`(${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig"), "<mark>$1</mark>"); return s; };
+
+function chainPanel() {
+  const base = S.base, t = timingsOf(base);
+  const patch = patchOf(base);
+  const res = S.qOpen ? searchResults() : [];
+  return `<div class="card">
+    <div class="panel-h">Pipeline<span class="grow"></span><span class="muted small" style="font-weight:400">${GROUPS.length} blocks · ${PARAMS.length} params</span></div>
+    <div class="search-wrap">
+      <input type="search" id="regsearch" placeholder="Search parameters  ( / )" value="${esc(S.q)}" autocomplete="off" aria-label="Search parameters across blocks">
+      ${S.qOpen && S.q ? `<div class="suggest" role="listbox">${res.length ? res.map((p, i) => `<div class="${i === S.qIndex ? "on" : ""}" data-act="jump" data-key="${p.key}" role="option"><span class="mono">${hl(p.key, S.q)}</span><span class="muted small">${esc(groupOf(p.group).name)} · ${p.t}</span><span class="d">${hl(p.doc, S.q)}</span></div>`).join("") : `<div class="muted">No parameter matches “${esc(S.q)}”.</div>`}</div>` : ""}
+    </div>
+    <ul class="chain-list">${GROUPS.map((g, i) => {
+      const nPending = Object.keys(S.pending).filter(k => PARAM[k].group === g.id).length;
+      const nPatch = Object.keys(patch).filter(k => PARAM[k].group === g.id).length;
+      const b = t.blocks[i];
+      return `<li class="${S.group === g.id ? "on" : ""}" data-act="group" data-g="${g.id}" tabindex="0">
+        <span class="idx">${i + 1}</span><span class="nm">${esc(g.name)}</span>
+        <span class="rt">${nPending ? `<span class="tag primary">${nPending} edited</span>` : nPatch ? `<span class="tag minimal" title="Changed in this session">${nPatch} in patch</span>` : ""}
+          <span class="small muted num" title="${b.state === "cached" ? `Reused from ${runLabel(b.from)}` : "Recomputed"} in ${runLabel(base)}"><span class="dot" style="background:var(${b.state === "cached" ? "--qa-cached" : "--qa-recompute"})"></span> ${secs(b.secs)}</span></span>
+        <span class="id">${g.id} · ${g.params.length}${g.streams.length > 1 ? ` · +${g.streams.length - 1} stream` : ""}</span></li>`;
+    }).join("")}</ul>
+    <div class="legend small" style="padding:6px 10px;border-top:1px solid var(--qa-border)"><span><span class="dot" style="background:var(--qa-recompute)"></span>recomputed</span><span><span class="dot" style="background:var(--qa-cached)"></span>reused</span><span class="muted">in ${runLabel(base)}</span></div>
+  </div>`;
+}
+
+function control(p, cur) {
+  const id = `ctl-${p.key.replace(".", "-")}`;
+  if (p.t === "bool") return `<label class="switch"><input type="checkbox" id="${id}" data-reg="${p.key}" ${cur ? "checked" : ""}><span></span></label><span class="small muted">${cur ? "on" : "off"}</span>`;
+  if (p.t === "enum") return `<select id="${id}" data-reg="${p.key}">${p.options.map(o => `<option ${o === cur ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+  if (p.t === "int" || p.t === "float") {
+    const step = p.step || 1;
+    return `<input type="range" id="${id}-r" data-reg="${p.key}" data-pair="${id}" min="${p.min}" max="${p.max}" step="${step}" value="${cur}" aria-label="${p.key}">
+      <input type="number" id="${id}" data-reg="${p.key}" data-pair="${id}-r" min="${p.min}" max="${p.max}" step="${step}" value="${cur}" aria-label="${p.key} value">${p.unit ? `<span class="small muted">${p.unit}</span>` : ""}`;
+  }
+  if (p.t.endsWith("[]")) {
+    const cols = p.shape.length === 2 ? p.shape[1] : p.shape[0];
+    const grid = `<div class="arr" style="grid-template-columns:repeat(${Math.min(cols, 9)}, auto)">${cur.map((v, i) => `<input type="number" id="${id}-${i}" data-reg="${p.key}" data-i="${i}" step="${p.t === "float[]" ? 0.01 : 1}" value="${v}" aria-label="${p.key}[${i}]">`).join("")}</div>`;
+    if (p.widget === "curve") {
+      const pts = cur.map((v, i) => `${(i / 8) * 120},${60 - (v / 255) * 60}`).join(" ");
+      const def = p.d.map((v, i) => `${(i / 8) * 120},${60 - (v / 255) * 60}`).join(" ");
+      return `<div style="display:flex;flex-direction:column;gap:4px"><svg width="124" height="64" viewBox="-2 -2 124 64" role="img" aria-label="Tone curve">
+        <rect x="0" y="0" width="120" height="60" fill="var(--qa-surface-alt)" stroke="var(--qa-border)"></rect>
+        <polyline points="${def}" fill="none" stroke="var(--qa-cached)" stroke-dasharray="3 2"></polyline>
+        <polyline points="${pts}" fill="none" stroke="var(--qa-primary)" stroke-width="1.6"></polyline></svg>${grid}</div>`;
+    }
+    return grid;
+  }
+  return "";
+}
+
+function registerPanel() {
+  const g = groupOf(S.group);
+  const rows = g.params.map(p => {
+    const key = `${g.id}.${p.k}`;
+    const baseV = valueOf(S.base, key);
+    const cur = valueOf(S.base, key, S.pending);
+    const pend = key in S.pending;
+    if (S.modifiedOnly && !pend && baseV.src === "default") return "";
+    const range = p.min != null ? `${p.min}–${p.max}` : p.options ? `${p.options.length} options` : p.shape ? p.shape.join("×") : "";
+    const srcTag = pend ? `<span class="tag primary src">pending · was ${esc(short(baseV.v))}</span>`
+      : baseV.src === "default" ? `<span class="tag minimal src">default</span>`
+      : baseV.src.startsWith("patch") ? `<span class="tag primary src" title="Set by a run of this session">${baseV.src}</span>`
+      : `<span class="tag src" title="Set by the run's configuration">${esc(baseV.src)}</span>`;
+    return `<tr class="${pend ? "mod" : ""} ${S.flash === key ? "flash" : ""}" id="row-${key.replace(".", "-")}">
+      <td class="k"><div class="n">${p.k}</div><div class="doc">${esc(p.doc)}</div>
+        <div class="meta"><span class="tag minimal">${p.t}${range ? ` · ${range}` : ""}</span>${srcTag}${p.widget ? `<span class="tag warning" title="Widget from the site plugin">site widget: ${p.widget}</span>` : ""}</div></td>
+      <td><div class="ctl">${control(PARAM[key], cur.v)}${pend || !eq(cur.v, p.d) ? `<button class="btn minimal small" data-act="reset" data-key="${key}" title="${pend ? `Back to ${esc(short(baseV.v))}` : `Set to the default, ${esc(short(p.d))}`}">↺ ${pend ? "undo" : "default"}</button>` : ""}</div></td></tr>`;
+  }).join("");
+  const gi = GROUPS.indexOf(g);
+  return `<div class="card">
+    <div class="panel-h"><span class="muted" style="font-weight:400">${SCHEMA.group_label} ${gi + 1}</span>${esc(g.name)}<span class="tag minimal mono">${g.id}</span><span class="grow"></span>
+      <label class="small" style="font-weight:400;display:flex;gap:4px;align-items:center"><input type="checkbox" id="modonly" ${S.modifiedOnly ? "checked" : ""}> Changed only</label></div>
+    <div class="scroll-x"><table class="regs"><tbody>${rows || `<tr><td class="muted" style="padding:16px">Every parameter of this block has its default value.</td></tr>`}</tbody></table></div>
+    <div class="small muted" style="padding:6px 10px;border-top:1px solid var(--qa-border)">Values of ${runLabel(S.base)}: schema defaults, then the run's configurations (<span class="mono">base</span>, <span class="mono">outdoor</span>), then the session's patch. QA-Board never edits the files.</div>
+  </div>`;
+}
+
+function viewersPanel() {
+  const g = groupOf(S.group), gi = GROUPS.indexOf(g), parent = RUNS[S.base].parent;
+  const inSpec = { a: { run: S.base, stage: gi }, stream: "out", gid: g.id };
+  const outSpec = { a: { run: S.base, stage: gi + 1 }, stream: "out", gid: g.id };
+  if (S.outCompare === "parent" && parent) { outSpec.a = { run: parent, stage: gi + 1 }; outSpec.b = { run: S.base, stage: gi + 1 }; outSpec.split = S.split; }
+  const extraStreams = g.streams.filter(s => s !== "out");
+  const prevName = gi ? GROUPS[gi - 1].name : "the raw input";
+  return `<div class="card viewers-card">
+    <div class="panel-h">Streams<span class="grow"></span><span class="muted small" style="font-weight:400">of ${runLabel(S.base)}</span></div>
+    <div class="viewers">
+      <div class="viewer"><div class="cap"><b>Input</b><span class="muted">= output of ${esc(prevName)}</span></div>
+        <div class="viewer-wrap"><canvas data-img='${JSON.stringify(inSpec)}' aria-label="Block input"></canvas></div></div>
+      <div class="viewer"><div class="cap"><b>Output</b><span class="grow" style="flex:1"></span>
+          ${parent ? `<span class="btn-group"><button class="btn small ${S.outCompare === "none" ? "on" : ""}" data-act="outcmp" data-v="none">${runLabel(S.base)}</button><button class="btn small ${S.outCompare === "parent" ? "on" : ""}" data-act="outcmp" data-v="parent">vs parent ${runLabel(parent)}</button></span>` : ""}</div>
+        <div class="viewer-wrap"><canvas data-img='${JSON.stringify(outSpec)}' aria-label="Block output"></canvas>
+          ${outSpec.b ? `<div class="split-line" style="left:${S.split}%"></div><span class="lbl" style="left:4px">${runLabel(parent)}</span><span class="lbl" style="right:4px">${runLabel(S.base)}</span>` : ""}</div>
+        ${outSpec.b ? `<input type="range" id="splitter" min="0" max="100" value="${S.split}" aria-label="Split position" style="width:100%">` : ""}</div>
+      ${extraStreams.map(s => `<div class="viewer"><div class="cap"><b>${s}</b><span class="tag minimal">extra stream</span></div>
+        <div class="viewer-wrap"><canvas data-img='${JSON.stringify({ a: { run: S.base, stage: gi + 1 }, stream: s, gid: g.id })}' aria-label="${s}"></canvas></div></div>`).join("")}
+      <div class="small muted">Edits show here after you run them: QA-Board doesn't preview a block it can't execute. The real thing is the image viewer, with pixel values, zoom sync and the split view.</div>
+    </div></div>`;
+}
+
+function pendingBar() {
+  const keys = Object.keys(S.pending);
+  if (!keys.length) return `<div class="pending"><div class="bar"><span class="muted">No changes yet. Edit a parameter to start a patch against ${runLabel(S.base)}.</span><span style="flex:1"></span>
+    <button class="btn small" data-act="branch-pick">Tweak from another run…</button><button class="btn primary" disabled>▶ Run</button></div></div>`;
+  const est = estimateFor(S.base, S.pending);
+  const tot = total(est), recompute = est.blocks.filter(b => b.state === "recomputed");
+  const full = GROUPS.reduce((a, g) => a + BLOCK_SECS[g.id], 0) + START_SECS;
+  const pct = s => `${(100 * s / full).toFixed(1)}%`;
+  const cachedSecs = est.blocks.filter(b => b.state === "cached").reduce((a, b) => a + b.secs, 0);
+  const recSecs = recompute.reduce((a, b) => a + b.secs, 0);
+  const patchJson = JSON.stringify(Object.fromEntries(keys.map(k => [k, S.pending[k]])), null, 2);
+  return `<div class="pending">
+    <div class="bar">
+      <b>${keys.length} change${keys.length > 1 ? "s" : ""}</b>
+      <div class="chips">${keys.map(k => `<span class="chip">${k} <span class="old">${esc(short(valueOf(S.base, k).v))}</span>→ <b>${esc(short(S.pending[k]))}</b><button data-act="reset" data-key="${k}" aria-label="Remove ${k}">✕</button></span>`).join("")}</div>
+      <div class="estimate small">
+        <span>Reuses ${est.first} block${est.first === 1 ? "" : "s"} of ${runLabel(S.base)}, recomputes ${recompute.length} · <b class="num">≈ ${secs(tot)}</b></span>
+        <span class="stack" title="start ${secs(est.start)} · reused ${secs(cachedSecs)} · recomputed ${secs(recSecs)}"><i style="width:${pct(est.start)};background:var(--qa-overhead)"></i><i style="width:${pct(cachedSecs)};background:var(--qa-cached)"></i><i style="width:${pct(recSecs)};background:var(--qa-recompute)"></i></span>
+        <span class="muted">a full run takes ≈ ${secs(full)}${est.first === 0 ? " · this edit touches the first block" : ""}</span>
+      </div>
+      <button class="btn small" data-act="showpatch">${S.showPatch ? "Hide" : "View"} patch</button>
+      <button class="btn small" data-act="discard">Discard</button>
+      <button class="btn primary" data-act="launch">▶ Run as child of ${runLabel(S.base)}</button>
+    </div>
+    ${S.showPatch ? `<div class="patch-detail">
+      <div><div class="label" style="margin-bottom:4px">Patch (this run's own)</div><pre>${esc(patchJson)}</pre></div>
+      <div><div class="label" style="margin-bottom:4px">Same run from a shell</div><pre>qa --tuning '${esc(JSON.stringify({ ...patchOf(S.base), ...S.pending }))}' \\
+   --label ${SESSION.batch} \\
+   run --input ${INPUT}</pre>
+        <div class="small muted" style="margin-top:4px">The full patch goes to the runner (${runLabel(S.base)}'s lineage + these edits), stored as the run's tuning parameters, with <span class="mono">parent: ${RUNS[S.base].run_id}</span>.</div></div>
+    </div>` : ""}
+  </div>`;
+}
+
+function viewTweak() {
+  const base = RUNS[S.base];
+  return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span class="label">Tweaking</span><span class="mono">${INPUT}</span><span class="tag">linux</span><span class="tag">base</span><span class="tag">outdoor</span>
+      <span class="muted">from</span><select id="basepick" aria-label="Run to tweak from">${Object.values(RUNS).filter(r => r.status === "done").map(r => `<option value="${r.id}" ${r.id === S.base ? "selected" : ""}>${runLabel(r.id)} ${r.note ? `· ${esc(r.note)}` : ""}${r.pinned ? " · pinned" : ""}</option>`).join("")}</select>
+      ${base.parent ? `<span class="small muted">child of ${runLabel(base.parent)}</span>` : ""}
+      <span style="flex:1"></span><a data-go="session" class="small">Session history →</a></div>
+    <div class="tweak">${chainPanel()}${registerPanel()}${viewersPanel()}</div>
+    ${pendingBar()}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Session view
+// ---------------------------------------------------------------------------------------------------------------------
+function treeOrder() {
+  const out = [];
+  const walk = (id, prefix, last, depth) => {
+    out.push({ id, gutter: depth === 0 ? "" : prefix + (last ? "└─" : "├─") });
+    const kids = Object.values(RUNS).filter(r => r.parent === id);
+    kids.forEach((k, i) => walk(k.id, depth === 0 ? "" : prefix + (last ? "  " : "│ "), i === kids.length - 1, depth + 1));
+  };
+  walk("r0", "", true, 0);
+  return out;
+}
+function treePanel() {
+  const key = METRICS[0], key2 = METRICS[1];
+  return `<div class="card">
+    <div class="panel-h">Runs<span class="grow"></span><span class="small muted" style="font-weight:400">${Object.keys(RUNS).length} · started ${SESSION.started}</span></div>
+    <ul class="tree">${treeOrder().map(({ id, gutter }) => {
+      const r = RUNS[id], own = Object.keys(r.own), m = metricsOfRun(id), pm = r.parent ? metricsOfRun(r.parent) : null;
+      return `<li class="${S.sel === id ? "on" : ""}" data-act="sel" data-run="${id}" tabindex="0">
+        <span class="gutter">${gutter}</span>
+        <span style="min-width:0"><span class="nm"><b>${runLabel(id)}</b>${r.pinned ? `<span class="tag warning" title="Pinned">📌 pinned</span>` : ""}${r.parent ? "" : `<span class="tag minimal">root</span>`}${r.note ? `<span class="small">${esc(r.note)}</span>` : ""}</span>
+          <span class="sub" title="${esc(own.map(k => `${k}=${fmtV(r.own[k])}`).join(", "))}">${own.length ? own.map(k => `${k}=${short(r.own[k])}`).join(", ") : "run's configurations, no patch"}</span></span>
+        <span class="rt">${statusTag(r)}${r.status === "done" ? (pm ? [key, key2].map(mm => `<span class="num small" title="${mm.label} vs parent"><span class="muted">${mm.label}</span> ${delta(mm, m[mm.k], pm[mm.k])}</span>`).join("") : [key, key2].map(mm => `<span class="small muted num">${mm.label} ${mm.fmt(m[mm.k])}</span>`).join("")) : `<span class="small muted">${r.at}</span>`}</span>
+      </li>`;
+    }).join("")}</ul>
+    <div class="small muted" style="padding:6px 10px;border-top:1px solid var(--qa-border)">Deltas against each run's parent. Runs are ordinary runs of batch <span class="mono">${SESSION.batch}</span> on commit ${COMMIT.id}: they show up in the commit's batches, Tuning and the API.</div>
+  </div>`;
+}
+
+function diffRows(fromVals, toVals, fromLabel, onlyOwn) {
+  const rows = [];
+  GROUPS.forEach(g => {
+    const ks = g.params.map(p => `${g.id}.${p.k}`).filter(k => !eq(fromVals[k], toVals[k]) && (!onlyOwn || k in onlyOwn));
+    if (!ks.length) return;
+    rows.push(`<tr class="grp"><td colspan="3">${esc(g.name)} <span class="mono muted">${g.id}</span></td></tr>`);
+    ks.forEach(k => rows.push(`<tr><td class="mono">${k}</td><td class="mono diff-del">${esc(fmtV(fromVals[k]))}</td><td class="mono diff-add">${esc(fmtV(toVals[k]))}</td></tr>`));
+  });
+  return rows.length ? `<table class="t"><thead><tr><th>Parameter</th><th>${fromLabel}</th><th>${runLabel(S.sel)}</th></tr></thead><tbody>${rows.join("")}</tbody></table>`
+    : `<div class="muted" style="padding:12px">Same parameters.</div>`;
+}
+
+function againstOf(id) {
+  const r = RUNS[id];
+  if (S.diffAgainst === "milestone") { const m = MILESTONES.find(m => m.id === S.milestone); return { label: `⚑ ${m.label}`, vals: { ...valuesOf(null), ...m.params }, metrics: m.metrics, milestone: m }; }
+  if (S.diffAgainst === "root" || !r.parent) return { label: "#0 (root)", vals: valuesOf("r0"), metrics: metricsOfRun("r0") };
+  return { label: `parent ${runLabel(r.parent)}`, vals: valuesOf(r.parent), metrics: metricsOfRun(r.parent), own: r.own };
+}
+
+function detailPanel() {
+  const r = RUNS[S.sel], ag = againstOf(S.sel), m = r.status === "done" ? metricsOfRun(S.sel) : null;
+  const t = timingsOf(S.sel), tot = total(t);
+  const tabs = [["params", "Parameter diff"], ["blocks", "Blocks & timings"], ["metrics", "Metrics"], ["streams", "Compare streams"]];
+  let body = "";
+  if (S.tab === "params") {
+    body = `<div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px">
+      ${ag.milestone ? `<div class="callout warning small"><span>⚠</span><span>${esc(ag.milestone.label)} is on commit <span class="mono">${ag.milestone.commit}</span>. This diff compares effective parameter values only. Code and configuration-file changes between the commits are in the commit page's <a>Parameters</a> tab and the git diff.</span></div>` : ""}
+      ${ag.own ? `<div class="small muted">The run's own patch against its parent: what the person changed in this step. Switch to <a data-act="against" data-v="root">root</a> for the session's whole patch.</div>` : ""}</div>
+      ${diffRows(ag.vals, valuesOf(S.sel), ag.label, null)}`;
+  } else if (S.tab === "blocks") {
+    const scale = Math.max(tot, 20);
+    let acc = t.start;
+    body = `<div style="padding:8px 10px" class="legend"><span><span class="dot" style="background:var(--qa-overhead)"></span>start (runner + load)</span><span><span class="dot" style="background:var(--qa-cached)"></span>reused from parent</span><span><span class="dot" style="background:var(--qa-recompute)"></span>recomputed</span><span style="flex:1"></span><b class="num">${r.status === "running" ? `elapsed ${secs(tot * (r.progress || 0))} of ≈ ${secs(tot)}` : `total ${secs(tot)}`}</b></div>
+    <div class="scroll-x"><table class="t"><thead><tr><th>${SCHEMA.group_label}</th><th>State</th><th class="num" style="text-align:right">Time</th><th style="width:45%">Timeline</th></tr></thead><tbody>
+      <tr><td class="muted">start</td><td><span class="tag warning">overhead</span></td><td class="num" style="text-align:right">${secs(t.start)}</td><td><div class="timing"><i style="left:0;width:${100 * t.start / scale}%;background:var(--qa-overhead)"></i></div></td></tr>
+      ${t.blocks.map((b, i) => {
+        const left = acc; acc += b.secs;
+        const doneAt = (r.progress || 0) * tot;
+        const st = r.status === "running" ? (doneAt >= acc ? (b.state === "cached" ? `<span class="tag minimal">reused ${runLabel(b.from)}</span>` : `<span class="tag primary">recomputed</span>`) : doneAt >= left ? `<span class="tag primary"><span class="spin"></span> running</span>` : `<span class="tag minimal muted">waiting</span>`)
+          : b.state === "cached" ? `<span class="tag minimal">reused ${runLabel(b.from)}</span>` : `<span class="tag primary">recomputed</span>`;
+        return `<tr><td><b>${esc(b.g.name)}</b> <span class="mono muted">${b.g.id}</span></td><td>${st}</td><td class="num" style="text-align:right">${secs(b.secs)}</td>
+          <td><div class="timing"><i style="left:${100 * left / scale}%;width:${Math.max(0.6, 100 * b.secs / scale)}%;background:var(${b.state === "cached" ? "--qa-cached" : "--qa-recompute"})"></i></div></td></tr>`;
+      }).join("")}
+    </tbody></table></div>
+    <div class="small muted" style="padding:8px 10px">${r.parent ? `First changed block: <b>${esc(GROUPS[firstChanged(r.own)]?.name || "none")}</b>. Blocks before it were read from ${runLabel(r.parent)}'s intermediate outputs.` : "The root run computed every block."} The run reports these per-block states and times itself (a small <span class="mono">blocks.json</span>): QA-Board shows them, the binary decides what it can reuse.</div>`;
+  } else if (S.tab === "metrics") {
+    const ms = MILESTONES.find(x => x.id === S.milestone);
+    const p = r.parent ? metricsOfRun(r.parent) : null;
+    body = `<div class="scroll-x"><table class="t"><thead><tr><th>Metric</th><th class="num">${runLabel(S.sel)}</th><th>vs parent${r.parent ? ` ${runLabel(r.parent)}` : ""}</th><th>vs #0</th><th>vs ⚑ ${esc(ms.label)}</th></tr></thead><tbody>
+      ${METRICS.map(mm => `<tr><td>${mm.label}${mm.unit ? ` <span class="muted small">${mm.unit}</span>` : ""} <span class="muted small">${mm.better} is better</span></td>
+        <td class="mono num">${m ? mm.fmt(m[mm.k]) : "…"}</td><td class="num">${m && p ? delta(mm, m[mm.k], p[mm.k]) : "–"}</td><td class="num">${m ? delta(mm, m[mm.k], metricsOfRun("r0")[mm.k]) : "–"}</td><td class="num">${m ? delta(mm, m[mm.k], ms.metrics[mm.k]) : "–"}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="small muted" style="padding:8px 10px">Same input in the milestone: ${INPUT}. One run against one run: matching by input and platform, as the commit page does.</div>`;
+  } else {
+    const st = S.stream, g = groupOf(st.gid), gi = GROUPS.indexOf(g);
+    const done = Object.values(RUNS).filter(x => x.status === "done");
+    const stage = st.io === "in" ? gi : gi + 1;
+    const spec = { a: { run: st.a, stage }, b: { run: st.b, stage }, split: st.split, stream: st.io === "in" ? "out" : st.s, gid: g.id };
+    const sameA = lineage(st.a).length, cachedNote = (() => {
+      const ancA = new Set(lineage(st.a).map(x => x.id)), ancB = lineage(st.b);
+      const common = ancB.slice().reverse().find(x => ancA.has(x.id));
+      const pa = patchOf(st.a), pb = patchOf(st.b);
+      const diffKeys = [...new Set([...Object.keys(pa), ...Object.keys(pb)])].filter(k => !eq(pa[k], pb[k]));
+      const fc = diffKeys.length ? Math.min(...diffKeys.map(k => PARAM[k].gi)) : GROUPS.length;
+      return fc >= stage ? `These two runs have the same parameters up to this point: the images are identical (${runLabel(st.a)} and ${runLabel(st.b)} share ${common ? runLabel(common.id) : "no run"}).` : `They first differ at <b>${esc(GROUPS[fc].name)}</b>.`;
+    })();
+    body = `<div style="padding:8px 10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label class="small">${SCHEMA.group_label} <select id="st-g">${GROUPS.map(x => `<option value="${x.id}" ${x.id === st.gid ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+        <span class="btn-group"><button class="btn small ${st.io === "in" ? "on" : ""}" data-act="st-io" data-v="in">input</button><button class="btn small ${st.io === "out" ? "on" : ""}" data-act="st-io" data-v="out">output</button></span>
+        ${st.io === "out" ? `<label class="small">stream <select id="st-s">${g.streams.map(s => `<option ${s === st.s ? "selected" : ""}>${s}</option>`).join("")}</select></label>` : ""}
+        <label class="small">left <select id="st-a">${done.map(x => `<option value="${x.id}" ${x.id === st.a ? "selected" : ""}>${runLabel(x.id)}</option>`).join("")}</select></label>
+        <label class="small">right <select id="st-b">${done.map(x => `<option value="${x.id}" ${x.id === st.b ? "selected" : ""}>${runLabel(x.id)}</option>`).join("")}</select></label>
+        <span class="small muted">${cachedNote}</span></div>
+      <div style="padding:0 10px 10px"><div class="viewer-wrap"><canvas data-img='${JSON.stringify(spec)}' aria-label="Stream comparison"></canvas>
+        <div class="split-line" style="left:${st.split}%"></div><span class="lbl" style="left:4px">${runLabel(st.a)}</span><span class="lbl" style="right:4px">${runLabel(st.b)}</span></div>
+        <input type="range" id="st-split" min="0" max="100" value="${st.split}" aria-label="Split position" style="width:100%"></div>`;
+  }
+  return `<div class="card">
+    <div class="panel-h" style="font-weight:400"><b>${runLabel(S.sel)}</b>${statusTag(r)}${r.note ? `<span>${esc(r.note)}</span>` : ""}<span class="muted small">run ${r.run_id} · ${r.by} · ${r.at}${r.status === "done" ? ` · ${secs(tot)}` : ""}</span><span class="grow"></span>
+      <button class="btn small" data-act="pin">${r.pinned ? "📌 Unpin" : "📌 Pin"}</button>
+      <button class="btn small" data-act="writeback" ${r.parent ? "" : "disabled"}>Write back to config…</button>
+      <button class="btn small primary" data-act="tweak-from" data-run="${S.sel}" ${r.status === "done" ? "" : "disabled"}>✎ Tweak from ${runLabel(S.sel)}</button></div>
+    <div style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--qa-border);flex-wrap:wrap">
+      <span class="small muted">Compare with</span>
+      <span class="btn-group"><button class="btn small ${S.diffAgainst === "parent" ? "on" : ""}" data-act="against" data-v="parent" ${r.parent ? "" : "disabled"}>parent${r.parent ? ` ${runLabel(r.parent)}` : ""}</button><button class="btn small ${S.diffAgainst === "root" ? "on" : ""}" data-act="against" data-v="root">#0 root</button><button class="btn small ${S.diffAgainst === "milestone" ? "on" : ""}" data-act="against" data-v="milestone">milestone</button></span>
+      ${S.diffAgainst === "milestone" ? `<select id="mspick" aria-label="Milestone">${MILESTONES.map(x => `<option value="${x.id}" ${x.id === S.milestone ? "selected" : ""}>⚑ ${esc(x.label)} (${x.commit})</option>`).join("")}</select>` : ""}
+      <span style="flex:1"></span>
+      ${m ? METRICS.slice(0, 3).map(mm => `<span class="small"><span class="muted">${mm.label}</span> <span class="mono">${mm.fmt(m[mm.k])}</span> ${delta(mm, m[mm.k], ag.metrics[mm.k])}</span>`).join(" ") : ""}
+    </div>
+    <div class="tabs" style="padding:0 6px;margin:0">${tabs.map(([k, l]) => `<a class="${S.tab === k ? "on" : ""}" data-act="tab" data-v="${k}">${l}</a>`).join("")}</div>
+    ${body}
+  </div>`;
+}
+
+function viewSession() {
+  const running = Object.values(RUNS).filter(r => r.status === "running");
+  return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="margin:0;font-size:16px">${esc(SESSION.name)}</h2><span class="tag mono">${SESSION.batch}</span>
+      <span class="muted small">${INPUT} · linux · base + outdoor · commit ${COMMIT.id}</span><span style="flex:1"></span>
+      ${running.length ? `<span class="small muted">${running.length} running · you'll get a notification when ${running.length > 1 ? "they end" : "it ends"}</span>` : ""}
+      <button class="btn small" data-act="tweak-from" data-run="${S.base}">✎ Back to tweaking ${runLabel(S.base)}</button></div>
+    <div class="session">${treePanel()}${detailPanel()}</div>`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Write back dialog
+// ---------------------------------------------------------------------------------------------------------------------
+function dialog() {
+  if (S.dialog !== "writeback") return "";
+  const patch = patchOf(S.sel), keys = Object.keys(patch);
+  const target = S.wbTarget || "configs/outdoor.yaml";
+  const lines = [];
+  GROUPS.forEach(g => {
+    const ks = keys.filter(k => PARAM[k].group === g.id); if (!ks.length) return;
+    lines.push(`  ${g.id}:`);
+    ks.forEach(k => { const cv = CONFIG_VALUES[k]; if (cv && cv.src === target) lines.push(`<span class="diff-del">-    ${PARAM[k].k}: ${esc(fmtV(cv.v))}</span>`); lines.push(`<span class="diff-add">+    ${PARAM[k].k}: ${esc(fmtV(patch[k]))}</span>`); });
+  });
+  return `<div class="dialog-bg" data-act="close-bg"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="wb-t">
+    <div class="panel-h" id="wb-t">Write ${runLabel(S.sel)}'s parameters to a configuration file<span class="grow"></span><button class="btn minimal small" data-act="close" aria-label="Close">✕</button></div>
+    <div class="body">
+      <div class="small">${keys.length} parameters differ from the run's configurations. QA-Board doesn't change your repository: it gives you the change to apply, and checks it would reproduce ${runLabel(S.sel)}.</div>
+      <label class="small">Target <select id="wb-target"><option ${target === "configs/outdoor.yaml" ? "selected" : ""}>configs/outdoor.yaml</option><option ${target === "configs/base.yaml" ? "selected" : ""}>configs/base.yaml</option><option ${target === "new file" ? "selected" : ""} value="new file">a new file: configs/tweaks/s14-r${RUNS[S.sel].n}.yaml</option></select></label>
+      <pre>--- a/${target === "new file" ? "/dev/null" : target}  (at ${COMMIT.id})
++++ b/${target === "new file" ? `configs/tweaks/s14-r${RUNS[S.sel].n}.yaml` : target}
+@@ isp: @@
+${lines.join("\n")}</pre>
+      <div class="callout warning small"><span>⚠</span><span>Your branch has 2 commits after ${COMMIT.id}; one changes <span class="mono">${target === "new file" ? "configs/base.yaml" : target}</span>. The patch may not apply: <span class="mono">qa apply-tweak</span> tells you.</span></div>
+      <pre>qa apply-tweak ${RUNS[S.sel].run_id} --to ${target === "new file" ? `configs/tweaks/s14-r${RUNS[S.sel].n}.yaml` : target}</pre>
+    </div>
+    <div class="foot"><button class="btn" data-act="close">Cancel</button><button class="btn" data-act="copy-cmd">Copy command</button><button class="btn primary" data-act="copy-diff">Copy diff</button></div>
+  </div></div>`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Render + events
+// ---------------------------------------------------------------------------------------------------------------------
+const content = document.getElementById("content");
+function render() {
+  document.getElementById("navbar").innerHTML = navbar();
+  content.innerHTML = { run: viewRun, tweak: viewTweak, session: viewSession }[S.view]();
+  document.getElementById("overlay").innerHTML = dialog();
+  document.getElementById("nav-run").classList.toggle("on", S.view === "run");
+  document.getElementById("nav-session").classList.toggle("on", S.view !== "run");
+  drawCanvases(document.body);
+  if (S.qOpen) { const q = document.getElementById("regsearch"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
+}
+// Partial refresh while dragging a slider: keep focus, update the chain badges and the pending bar
+function refreshPending() {
+  const pend = document.querySelector(".pending"); if (pend) pend.outerHTML = pendingBar();
+  const chain = document.querySelector(".tweak > .card:first-child"); if (chain) chain.outerHTML = chainPanel();
+  document.querySelectorAll(".regs tr").forEach(tr => { const k = tr.id.replace("row-", "").replace("-", "."); tr.classList.toggle("mod", k in S.pending); });
+}
+function go(view) { S.view = view; S.livePop = false; try { history.replaceState(null, "", "#" + view); } catch (e) { location.hash = view; } render(); content.scrollTop = 0; }
+
+function setReg(key, raw, idx) {
+  const p = PARAM[key];
+  let v;
+  if (p.t === "bool") v = !!raw;
+  else if (p.t === "int") v = Math.round(+raw);
+  else if (p.t === "float") v = +(+raw).toFixed(4);
+  else if (p.t === "enum") v = raw;
+  else { const cur = valueOf(S.base, key, S.pending).v.slice(); cur[idx] = p.t === "int[]" ? Math.round(+raw) : +raw; v = cur; }
+  if ((p.t === "int" || p.t === "float") && (Number.isNaN(v) || v < p.min || v > p.max)) return false;
+  if (eq(v, valueOf(S.base, key).v)) delete S.pending[key]; else S.pending[key] = v;
+  return true;
+}
+
+document.addEventListener("click", e => {
+  const goEl = e.target.closest("[data-go]");
+  if (goEl) { e.preventDefault(); go(goEl.dataset.go); return; }
+  const el = e.target.closest("[data-act]");
+  if (!el) { if (S.qOpen && !e.target.closest(".search-wrap")) { S.qOpen = false; render(); } return; }
+  const a = el.dataset.act;
+  if (a === "close-bg" && e.target !== el) return;
+  switch (a) {
+    case "tweak-from": {
+      const id = el.dataset.run;
+      if (id !== S.base && Object.keys(S.pending).length) toast(`Your ${Object.keys(S.pending).length} pending change(s) now apply on top of ${runLabel(id)}.`);
+      S.base = id; S.outCompare = "parent";
+      if (el.dataset.input && el.dataset.input !== "0") toast("Mock-up: every card opens the same fake session.");
+      go("tweak"); break;
+    }
+    case "group": S.group = el.dataset.g; S.qOpen = false; render(); break;
+    case "jump": { const p = PARAM[el.dataset.key]; S.group = p.group; S.q = ""; S.qOpen = false; S.flash = p.key; render(); document.getElementById(`row-${p.key.replace(".", "-")}`)?.scrollIntoView({ block: "center" }); setTimeout(() => { S.flash = null; }, 1300); break; }
+    case "reset": { const k = el.dataset.key; if (k in S.pending) delete S.pending[k]; else { S.pending[k] = PARAM[k].d; if (eq(PARAM[k].d, valueOf(S.base, k).v)) delete S.pending[k]; } render(); break; }
+    case "discard": S.pending = {}; S.showPatch = false; render(); break;
+    case "showpatch": S.showPatch = !S.showPatch; render(); break;
+    case "outcmp": S.outCompare = el.dataset.v; render(); break;
+    case "launch": launch(); break;
+    case "branch-pick": go("session"); toast("Pick a run in the tree, then ✎ Tweak from it."); break;
+    case "sel": S.sel = el.dataset.run; if (!RUNS[S.sel].parent && S.diffAgainst === "parent") S.diffAgainst = "root"; render(); break;
+    case "tab": S.tab = el.dataset.v; render(); break;
+    case "against": S.diffAgainst = el.dataset.v; if (S.tab === "streams" || S.tab === "blocks") S.tab = "params"; render(); break;
+    case "pin": RUNS[S.sel].pinned = !RUNS[S.sel].pinned; toast(RUNS[S.sel].pinned ? `${runLabel(S.sel)} pinned: kept when the session is cleaned up.` : `${runLabel(S.sel)} unpinned.`); render(); break;
+    case "writeback": S.dialog = "writeback"; render(); break;
+    case "close": case "close-bg": S.dialog = null; render(); break;
+    case "copy-diff": case "copy-cmd": {
+      const txt = a === "copy-cmd" ? `qa apply-tweak ${RUNS[S.sel].run_id}` : JSON.stringify(patchOf(S.sel), null, 2);
+      navigator.clipboard?.writeText(txt).then(() => toast("Copied."), () => toast("Couldn't copy: select the text instead."));
+      break;
+    }
+    case "livepop": S.livePop = !S.livePop; render(); break;
+    case "st-io": S.stream.io = el.dataset.v; render(); break;
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { if (S.dialog) { S.dialog = null; render(); } else if (S.qOpen) { S.qOpen = false; render(); } else if (S.livePop) { S.livePop = false; render(); } }
+  if (e.key === "/" && S.view === "tweak" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); S.qOpen = true; render(); }
+  if (e.key === "Enter" && e.target.matches("[data-act=group], [data-act=sel]")) e.target.click();
+  if (e.target.id === "regsearch") {
+    const res = searchResults();
+    if (e.key === "ArrowDown") { S.qIndex = Math.min(res.length - 1, S.qIndex + 1); e.preventDefault(); render(); }
+    if (e.key === "ArrowUp") { S.qIndex = Math.max(0, S.qIndex - 1); e.preventDefault(); render(); }
+    if (e.key === "Enter" && res[S.qIndex]) { document.querySelector(`.suggest [data-key="${res[S.qIndex].key}"]`)?.click(); }
+  }
+});
+document.addEventListener("input", e => {
+  const t = e.target;
+  if (t.id === "regsearch") { S.q = t.value; S.qOpen = true; S.qIndex = 0; render(); return; }
+  if (t.id === "splitter") { S.split = +t.value; const wrap = t.previousElementSibling; const spec = JSON.parse(wrap.querySelector("canvas").dataset.img); spec.split = S.split; wrap.querySelector("canvas").dataset.img = JSON.stringify(spec); wrap.querySelector(".split-line").style.left = S.split + "%"; drawCanvases(wrap); return; }
+  if (t.id === "st-split") { S.stream.split = +t.value; const wrap = t.previousElementSibling; const spec = JSON.parse(wrap.querySelector("canvas").dataset.img); spec.split = S.stream.split; wrap.querySelector("canvas").dataset.img = JSON.stringify(spec); wrap.querySelector(".split-line").style.left = S.stream.split + "%"; drawCanvases(wrap); return; }
+  if (t.dataset.reg && (t.type === "range" || t.type === "number")) {
+    if (t.dataset.i != null) return; // arrays: on change
+    if (setReg(t.dataset.reg, t.value)) { const pair = document.getElementById(t.dataset.pair); if (pair) pair.value = t.value; refreshPending(); }
+  }
+});
+document.addEventListener("change", e => {
+  const t = e.target;
+  if (t.dataset.reg) {
+    if (t.type === "checkbox") setReg(t.dataset.reg, t.checked);
+    else if (t.dataset.i != null) setReg(t.dataset.reg, t.value, +t.dataset.i);
+    else if (!setReg(t.dataset.reg, t.value)) { toast(`${t.dataset.reg} must be between ${PARAM[t.dataset.reg].min} and ${PARAM[t.dataset.reg].max}.`); }
+    render(); return;
+  }
+  const map = { modonly: () => S.modifiedOnly = t.checked, basepick: () => { S.base = t.value; }, mspick: () => S.milestone = t.value,
+    "st-g": () => { S.stream.gid = t.value; S.stream.s = "out"; }, "st-s": () => S.stream.s = t.value, "st-a": () => S.stream.a = t.value, "st-b": () => S.stream.b = t.value,
+    "wb-target": () => S.wbTarget = t.value };
+  if (map[t.id]) { map[t.id](); render(); }
+});
+
+// Launch: a child run of the base, with the pending patch. Its blocks finish at a sped-up pace.
+let nextN = 6;
+function launch() {
+  const id = `r${nextN}`, parent = S.base;
+  const own = { ...S.pending };
+  RUNS[id] = { id, n: nextN, parent, own, status: "running", at: `10:${30 + nextN}`, by: "you", note: "", run_id: 48244 + nextN, progress: 0 };
+  nextN++;
+  S.pending = {}; S.showPatch = false; S.sel = id; S.tab = "blocks"; S.diffAgainst = "parent";
+  S.stream = { ...S.stream, gid: S.group, a: parent, b: id };
+  toast(`Started ${runLabel(id)}: child of ${runLabel(parent)}, ${Object.keys(own).length} change(s).`);
+  go("session");
+  animate(id, 4);
+}
+function animate(id, speed) {
+  const tot = total(timingsOf(id));
+  const tick = () => {
+    const r = RUNS[id]; if (!r || r.status !== "running") return;
+    r.progress = Math.min(1, r.progress + (0.5 * speed) / tot);
+    if (r.progress >= 1) { r.status = "done"; r.progress = 1; toast(`${runLabel(id)} is done (${secs(tot)}).`); if (S.view === "session" && S.sel === id) S.tab = S.tab === "blocks" ? "metrics" : S.tab; }
+    // don't close a select or steal focus while someone uses the page
+    const busy = /SELECT|INPUT/.test(document.activeElement?.tagName || "");
+    if (S.view === "session" && !S.dialog && (!busy || r.status === "done")) render();
+    if (r.status === "running") setTimeout(tick, 500);
+  };
+  setTimeout(tick, 500);
+}
+animate("r5", 1);
+
+const initial = (location.hash || "").replace("#", "");
+S.view = ["run", "tweak", "session"].includes(initial) ? initial : "run";
+render();
+</script>
