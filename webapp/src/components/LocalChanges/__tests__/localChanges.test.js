@@ -174,3 +174,18 @@ describe('file viewers', () => {
     expect(language('log.txt')).toBe('plaintext');
   });
 });
+
+
+describe('redo_local_note', () => {
+  it('says which runs would be redone without their local changes', async () => {
+    const { redo_local_note, ran_local_changes } = await import('../localChanges');
+    const dirty = { data: { local_changes: { dirty: true } } };
+    const unpushed = { data: { local_changes: { dirty: false, pushed: false } } };
+    const clean = { data: { local_changes: { dirty: false, pushed: true } } };
+    expect([dirty, unpushed, clean, {}].map(ran_local_changes)).toEqual([true, true, false, false]);
+    expect(redo_local_note([clean, {}])).toBeNull();
+    expect(redo_local_note([dirty])).toMatch(/^This run ran local changes/);
+    expect(redo_local_note([dirty, unpushed])).toMatch(/^These runs ran local changes/);
+    expect(redo_local_note([dirty, clean, {}])).toMatch(/^1 of these 3 runs ran local changes/);
+  });
+});

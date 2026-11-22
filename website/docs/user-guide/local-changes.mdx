@@ -42,6 +42,11 @@ To keep only some runs, type in the runs' filter:
 | `changes:none` | runs that ran their commit as it is |
 | `changes:unknown` | runs where git couldn't tell in time |
 
+## Redo a run that ran local changes {#redo}
+**Redo** runs the run's commit as it is, from QA-Board: without the local changes. QA-Board asks first, and the
+batch's **Redo runs** says how many of its runs ran local changes. Their new results can differ: to run them with
+their changes, get the code with `qa restore <run id>` and run them from your computer.
+
 ## When the patch isn't there {#missing}
 The run still says which files changed, and why the patch is missing: the exact code can't be restored, only the
 commit and the list of changed files are known.

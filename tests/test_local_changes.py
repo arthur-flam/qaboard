@@ -147,6 +147,30 @@ class TestCapture(Repository):
     for path in ('tokenizer.py', 'auth/password_policy.cpp', 'README.md', 'train.py', 'notes/secret_sauce.md'):
       self.assertFalse(lc._looks_secret(path), path)
 
+  def test_what_git_ignores_isnt_a_change(self):
+    (self.repo / '.gitignore').write_text("build/\n*.log\n")
+    git('add', '.gitignore', cwd=self.repo)
+    git('commit', '-q', '-m', 'ignore', cwd=self.repo)
+    (self.repo / 'build').mkdir()
+    (self.repo / 'build' / 'model.bin').write_bytes(b'\0' * 10)
+    (self.repo / 'train.log').write_text("loss 1\n")
+    (self.repo / '.git' / 'info').mkdir(exist_ok=True)
+    (self.repo / '.git' / 'info' / 'exclude').write_text("scratch.py\n")
+    (self.repo / 'scratch.py').write_text("x = 1\n")
+    captured = lc.capture(self.repo)
+    self.assertIs(captured.state['dirty'], False)
+    self.assertIsNone(captured.patch)
+    # with a real change, the ignored files are still out of the summary and the patch
+    (self.repo / 'train.py').write_text("lr = 0.2\n")
+    captured = lc.capture(self.repo)
+    self.assertEqual([f['path'] for f in captured.state['files']], ['train.py'])
+    for name in (b'build/', b'train.log', b'scratch.py'):
+      self.assertNotIn(name, captured.patch)
+    # the fingerprint ignores them too: a batch's runs writing logs don't look changed
+    before = lc.fingerprint(self.repo)
+    (self.repo / 'train.log').write_text("loss 0.5\n")
+    self.assertEqual(lc.fingerprint(self.repo), before)
+
   def test_excluded_tracked_files_are_out_of_the_patch(self):
     (self.repo / 'models').mkdir()
     (self.repo / 'models' / 'a.ckpt').write_text("v1\n")

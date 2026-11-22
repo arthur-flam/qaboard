@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import {
   Alert,
+  Callout,
   Classes,
   Icon,
   Intent,
@@ -39,6 +40,7 @@ import { commitQuery } from "../api/queries";
 import { useRefreshCommit, useUrlText, updateSelected, useSiteConfig, useUser } from "../hooks";
 import { is_default_name, remove_reference, switch_new_and_reference } from "../selection";
 import { LoginMenuItem } from "./authentication/login";
+import { redo_local_note } from "./LocalChanges/localChanges";
 import { toaster } from "../toaster"
 import { track } from "../analytics"
 import { copyDirectory } from "./logs/DirectoryActions"
@@ -494,6 +496,10 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
   const has_selected_batch = !!commit?.batches && !!batch && Object.keys(commit.batches).includes(batch.label)
   // With a filter, we only redo the runs that match it
   const redo_counts = (batch_filter ? batch?.filtered : batch) ?? {}
+  // runs that ran local changes run their commit without them when redone: the confirmation says so
+  const redo_note = confirming === 'redo-all'
+    ? redo_local_note((batch_filter ? (batch?.filtered?.outputs ?? []) : Object.keys(batch?.outputs ?? {})).map(id => batch?.outputs?.[id]).filter(Boolean))
+    : null
   const error_text = commit?.error ? commit_error_text(commit.error) : ''
   const confirmation = confirmations[confirming]
   const confirmation_counts = {
@@ -801,7 +807,10 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
           {!!confirmation && <>
             <p><strong>{confirmation.title(confirmation_counts)}</strong></p>
             {confirming === 'redo-all'
-              ? <p>{confirmation.body()}</p>
+              ? <>
+                <p>{confirmation.body()}</p>
+                {!!redo_note && <Callout intent={Intent.WARNING} compact>{redo_note} To run them with their changes, get their code with <code>qa restore &lt;run id&gt;</code>.</Callout>}
+              </>
               : <>
                 {soft_delete
                   ? <p>Their metrics are kept. {!!files_delete_filter && <>Only the files matching <code>{files_delete_filter}</code> are deleted.</>}</p>

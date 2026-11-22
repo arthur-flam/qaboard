@@ -18,6 +18,20 @@ export const local_changes_of = output => {
   return changes && typeof changes === 'object' ? changes : null;
 };
 
+// Whether a run ran code its commit doesn't have: redone from QA-Board, it runs the commit as it is
+export const ran_local_changes = output => {
+  const changes = local_changes_of(output);
+  return !!changes && (changes.dirty === true || changes.pushed === false);
+};
+
+// What to tell people before they redo runs that ran local changes, null when none did. The server says it too.
+export const redo_local_note = outputs => {
+  const n = outputs.filter(ran_local_changes).length;
+  if (n === 0) return null;
+  const who = n < outputs.length ? `${n} of these ${outputs.length} runs` : outputs.length === 1 ? 'This run' : 'These runs';
+  return `${who} ran local changes (uncommitted, or not pushed). Redone from QA-Board, they run their commit as it is, without those changes: their results can change.`;
+};
+
 // Commits are only shown, and put in commands people copy, when they are shas: anything else could be a shell command
 export const is_sha = sha => typeof sha === 'string' && /^[0-9a-f]{7,64}$/.test(sha);
 export const short_sha = sha => is_sha(sha) ? sha.slice(0, 8) : '';

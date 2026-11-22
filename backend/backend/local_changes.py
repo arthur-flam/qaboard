@@ -117,3 +117,19 @@ def refuses_file(path: str, current: Optional[str] = None) -> bool:
   current = current or level()
   lowered = path.lower()
   return current != 'patch' and lowered.split('/', 1)[0] == FOLDER and lowered.endswith(('.patch', '.diff'))
+
+
+def ran_local_changes(output) -> bool:
+  """Whether a run ran code its commit doesn't have: uncommitted changes, or commits that were never pushed"""
+  changes = (getattr(output, 'data', None) or {}).get('local_changes')
+  return isinstance(changes, dict) and (changes.get('dirty') is True or changes.get('pushed') is False)
+
+
+def redo_warning(outputs) -> Optional[str]:
+  """What to tell people who redo runs that ran local changes: QA-Board redoes them on their commit, as it is"""
+  local = [o for o in outputs if ran_local_changes(o)]
+  if not local:
+    return None
+  some = "This run" if len(outputs) == 1 else ("These runs" if len(local) == len(outputs) else f"{len(local)} of these {len(outputs)} runs")
+  return (f"{some} ran local changes (uncommitted, or not pushed). Redone from QA-Board, they run their commit as it is, "
+          "without those changes: their results can change. To run them with their changes, use `qa restore <run id>` and run them from there.")

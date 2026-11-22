@@ -165,7 +165,6 @@ when the commit is unknown locally (`git fetch`). It is `wandb restore`.
 - **Notebooks**: a patch of an `.ipynb` is hard to read, and an unsaved notebook isn't in it. Save the notebook's
   code with `start_run()`'s run, like W&B's `save_code`.
 - **The remote's URL**, so that `qa restore` on another machine says what to clone.
-- **Warn when the web app redoes or tunes a run with local changes**: it runs the bare commit.
 - Deduplicating patch files on the storage (they are small, so we haven't); a single diff pass for the counts and the
   patch.
 - Saving the patch later when the server didn't answer the run's first request.
@@ -178,4 +177,6 @@ when the commit is unknown locally (`git fetch`). It is `wandb restore`.
 - Web app: `webapp/src/components/LocalChanges/`: the run tag, the batch callout, the changes dialog (files,
   patch, unpushed commits, compare with the reference's, download, reproduce), the sidebar's **Local changes** view,
   `changes:local|none|unknown` in the runs' filter (and `qaboard/filters.py`).
+- Redoing runs that ran local changes (they run their commit as it is): the web app asks first, the server's answer
+  warns (`redo_warning` in `backend/backend/local_changes.py`).
 - Docs: `website/docs/local-changes.mdx`, `website/docs/user-guide/local-changes.mdx`, the admin setting.
