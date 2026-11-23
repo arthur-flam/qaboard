@@ -1,103 +1,141 @@
-# Tweak sessions: design notes
+# Tweak sessions and a parameter-aware Tuning tab: design notes
 
-Status: exploration. Mock-up: `index.html` in this folder (one file, fake data, open it in a browser). Nothing in the app
-changes.
+Status: exploration, second pass. Mock-up: `index.html` in this folder (one file, fake data). Nothing in the app
+changes. The next step is an RFC for phase 1 (see "What to build first").
 
-## What the code already has, and what it doesn't
+## The main idea: one model, two screens
 
-| Idea | Fits | Fights |
+Tweaking and tuning are the same thing at two sizes. Both are *tests × parameter rows*, where each row is one of:
+
+| A row is | Meaning | Today |
 |---|---|---|
-| Overrides as a flat patch | `outputs.extra_parameters` *is* this: the tuning parameters, set with `qa --tuning '{"nr.strength": 0.5}'`, part of the run's identity and of its folder's name. SIRC already uses `"block.register"` keys (the tuning form converts pasted CDE registers, `transformCDERegisters` in `components/tuning/forms.jsx`). | `context.params` merges configurations with `merge()`, which nests dicts. Dotted keys only work if they stay flat and the project's `run()` passes them to the binary. |
-| A session | A batch: `(commit, label)` is unique, so `tweak/s14` on the commit holds the session's runs, and the commit page, Tuning and the API see them for free. | A batch belongs to one commit. A session that spans rebuilds or worktrees doesn't fit. |
-| Lineage | `outputs.data` is free-form JSON: `data.tweak = {parent, own}` needs no migration. | Nothing models a parent today. Run identity is `(batch, input, configurations, extra_parameters, platform)`: two branches that end up with the same patch are **the same row**, so the next run of it becomes attempt 2 (`docs/rfcs/rerun-directories.md`). The tree is really a DAG. |
-| Launch from the web app | `POST /api/v1/commit/<sha>/batch` (`api/tuning.py`) runs `qa batch` on the commit's artifacts with the server's runner. | It's batch-sized: artifacts check, a script, a runner job, `qa batch`, then `qa run`. Fine for minutes, too slow for "live". It also needs `QABOARD_TUNING_RUNNER`, which is opt-in. |
-| Parameter schema | The closest thing is `qa optimize`'s `search_space` (Integer/Real/Categorical with bounds). | No per-binary schema anywhere. Nothing runs project code on demand on the server, except through a runner job. |
-| Per-block cache and timings | Nothing. `run()` is a black box to QA-Board. | The binary is the only thing that can tell what it reused. |
-| Intermediate streams | Viewers pick files by path patterns (`outputs.visualizations`). The image viewer already does split views and N-way tiles. | Every stream of every block of every run is stored. See Storage below. |
-| Compare to a milestone | A milestone is `(commit, batch, filter)`, and runs are matched by input and platform as on the commit page. | The milestone is on another commit, so its parameter diff and its code diff are different things. The mock-up shows them separately. |
+| **One value** | set it | a tweak, or a list with one value in the tuning form |
+| **Several values** | try each combination | the tuning form's grid |
+| **Search** | QA-Board picks values in a range | automated tuning (`qa optimize`) |
 
-One detail: the existing button is labelled **WebCDE**, and it only shows up when a run's files include a `cde.sh`. The
-mock-up shows **Tweak** only when the run has a schema.
+So both screens share the parameter list, the picker, the validation and the stored format (`extra_parameters`).
+They differ in what they show:
 
-## The three contracts
+- **Tuning tab: wide.** Whole batches, many values, and the results go to Tuning Analysis. No block view.
+- **Tweak screen: deep.** One image (a handful later), one value per parameter, every block's input, output, log
+  and timing, and a history of versions.
 
-**1. Parameter schema.** This is JSON that describes the binary the run used:
-`groups[] = {id, name, streams[], params[] = {k, type, min, max, step, default, options, shape, unit, doc, widget?}}`.
-The order of the groups is the order of the chain. Add an optional `needs: [group ids]` later, for pipelines that
-aren't chains.
+They hand over to each other. A version has **Run on more tests…**, which opens the Tuning tab filled with its
+values. The Tuning tab offers **Tweak instead** when the request is "one value each on a few images", and can
+start from a tweak version.
 
-- *Recommendation: the run writes it* (e.g. `qaboard/params.schema.json` in its folder, from an entrypoint hook
-  `def parameters(context)` that `qa run` calls). Don't use a server-side hook that runs the binary. A schema written
-  by the run always matches the binary that made the run. It's stored, and it works offline. A server hook would
-  need a runner job for every page view, plus a new trust decision.
-- Core: the types, validation, search across groups, a widget per type, and generic hints (`curve`, `matrix`, `lut`).
-  Site plugin: the register naming (`sim|`/`hal|` prefixes), import and export of CDE register dumps (move
-  `transformCDERegisters` there), and any custom widgets.
+I'd keep ranges out of the tweak screen and whole batches out of the session. Each addition is reasonable alone,
+but together they rebuild the Tuning tab inside a screen that is already dense.
 
-**2. Override patch.** `{ "group.param": value }`, validated against the schema.
+## Decided in the discussion
 
-- A run stores its **full** patch in `extra_parameters`, as today. Its **own** step goes in `data.tweak.own`. The
-  configuration files are never edited.
-- "Write back" generates a diff against one configuration file, plus `qa apply-tweak <run> --to <file>` to apply it
-  in a working copy. The server never commits.
+- A session is a batch (`tweak/<id>` on the commit). A version's full set of changes is its `extra_parameters`.
+- The tweak view is its own screen, not a panel.
+- No working copy per session. Runs use the commit's build and the changes only; files matter when saving.
+- No git words on the main path ("version", "previous", "original", "keep", "save", "send for review"). The git
+  terms appear once, in muted text, for those who know them.
+- Site widgets are compiled into each site's web app. Loading them at run time is a later question.
+- Parameters the user sets and flags that control execution are separate (`params` and `execution`, below).
+- The simulator can write intermediates and start at a given block with injected streams.
 
-**3. Rerun with lineage.** `POST start-run {parent_run_id, patch, session}`: one input, one configuration, one
-platform, the same commit as the parent.
+## Recommendations on what is still open
 
-- Core records the parent and gives the run its parent's folder (`context.parent_output_dir`). The run reports
-  `blocks.json = [{id, state: reused|computed, secs}]`, and core shows it.
-- The project's binary decides what it can reuse: a key per block, made from the upstream parameters, the input
-  and the binary's hash. QA-Board can't know which parameters are upstream of what, beyond the order in the schema.
-- If the patch matches an existing run of the session, QA-Board opens that run instead of starting it again. That's
-  the cheapest cache, and it makes the DAG problem visible.
+**1. The live service: allow it, but never depend on it.** One rule makes it safe to build step by step:
+*a cache miss may be slower, never different*. QA-Board describes every run the same way (commit, input,
+changes, execution hints), whoever executes it.
+
+- Three executors answer the same request: a cluster job (today), a warm pool (Dask workers that stay up), and a
+  live simulator (the CDE service, or `qa connect`). If the live one dies or loses its cache, the run falls back
+  to the next and gives the same result.
+- A cache bug can't reach anything that matters, because **saving goes through a clean full run**: "Send for
+  review" makes CI run the whole test suite on the saved settings. Tweak results are exploration.
+- A **Recompute from scratch** action on a version checks a doubtful result. A run that reused blocks says so.
+- So "degrade to losing the cache" is the right bar for your engineer's service, and it's much lower than "the
+  cache is always right".
+
+**2. How much stays on the user's side: three hooks, and QA-Board owns shapes, not meanings.**
+
+- `parameters(configurations) -> schema`: required for the rich form. Without it the form keeps free-text names.
+- `validate(changes) -> errors, warnings`: optional. This is the escape hatch that keeps the schema from growing
+  into a language: dependencies between parameters, per-sensor rules and "ignored unless…" are checks the project
+  writes in Python, and the form shows their messages.
+- `save(changes, how) -> file changes`: optional. Without it, QA-Board writes a new file with only the changes
+  (generic, since it's the same flat dict). Saving into the files where values are defined is entirely this hook.
+- **Schema v1 fields:** key, group (block) and its order, type (bool, int, float, enum, text, list, matrix),
+  default, min/max/step, unit, description, optional widget name, and the group's streams.
+- **Kept out on purpose:** conditional visibility, computed defaults, constraints between parameters,
+  per-input defaults. If `validate` proves too weak in practice, add fields then, with real cases.
+
+**3. What to build first, and for whom.**
+
+| Phase | What | For whom | Needs |
+|---|---|---|---|
+| 1 | `parameters` hook and the parameter-aware Tuning tab (picker, ranges, checks) | everyone who tunes today | no new infrastructure; builds on the tuning-form redesign |
+| 2 | Tweak screen on cluster runs: versions, start-at-block, logs, Save | IQV and algorithm engineers | simulator flags for start-at-block; a server runner |
+| 3 | Warm pool, then the live service, behind the same request | the same people, faster | measurements from phase 2 |
+| later | `qa connect` for a local working copy | engineers, other sites | local changes already recorded by `qa` |
+
+Phase 1 is useful alone, and it tests the schema on real binaries before any new screen depends on it. Phase 2
+is only as good as its start-up time, so measure before promising anything (see the questions).
+
+## The contracts
+
+**Schema**: see recommendation 2. One hook, two callers: the Tuning tab calls it for the chosen tests'
+configurations (the server already runs `qa batch --list` on the commit's build for that check), and `qa run`
+stores it with each run, so the tweak screen shows the schema of the binary that made the run.
+
+**Changes**: `{ "group.param": value }`. A run stores every change since the original in `extra_parameters`, and
+its own step plus the version it came from in `data.tweak`. Config files are never edited by the server.
+
+**Execution**: `execution = {start_at, inputs: {stream: path}, save_streams}`. Not part of the run's identity.
+QA-Board decides when reuse is valid: same commit, and no change in a block before `start_at` (the schema gives
+the order). The run reports per block whether it was reused or computed, how long it took, and where its log
+section starts. External files the algorithms load are invisible to this check: a build fingerprint in the run's
+metadata would at least show when they differ.
+
+**Saving**: where (a new file, or in place through the `save` hook) and then what (send for review, or copy).
+"Send for review" creates a branch from the session's commit with one commit, and a merge request.
+
+## What the code has today
+
+- Fits: `extra_parameters` and `qa --tuning` (flat keys, already used with `block.register` names); batches
+  unique per commit and label; `outputs.data` for lineage; the tuning endpoint for launching; the batch check for
+  calling a hook; local changes recorded for local runs; `search_space` of `qa optimize` for the Search rows.
+- Fights: two paths to the same changes are the same run (identity includes `extra_parameters`), so a rerun is
+  "attempt 2" and the history is not strictly a tree; launching is batch-sized and slow to start; retention goes
+  by commit age, not per run; nothing knows about blocks.
 
 ## Layout decisions I'm least sure about
 
-1. **Tweak is a page, not a side panel on the run card.** The chain, a form of 3–7 rows and two to four viewers
-   don't fit in a drawer. I rejected the drawer. The cost is one more navigation, which the breadcrumb and the
-   "Tweak from #n" buttons try to soften.
-2. **The chain is a vertical list on the left, not a horizontal strip or a node graph.** A strip of 10–12 blocks has
-   no room for the edit badges and the timings. A graph is only worth it for real DAGs. If pipelines branch, the
-   list needs indentation, and that's where it could break down.
-3. **No preview of pending edits.** The viewers only show results that ran. A pending bar shows the patch and an
-   estimate ("reuses 7 blocks, ≈ 13 s"), and nothing runs until you click Run. I rejected auto-running on every edit
-   (CDE's feel): each run costs a runner slot and storage. This can be revisited once a warm worker exists.
+1. **Three ways to try a parameter, as a per-row choice.** The alternative is today's two separate forms (choose
+   values / search). A per-row choice is simpler to explain, but "Search" on one row changes what the whole
+   request does (a budget and an objective appear). It may need to be a page-level switch after all.
+2. **History as a list that becomes a tree.** The mock-up has both views. The list hides structure, and the tree
+   may confuse people who never start again from an older version. Worth watching in a user test.
+3. **Save with two questions (where, then what).** The desktop app has one button. Defaults make it two clicks,
+   but "the files where each value is set" may be more than IQV users want to see at all.
 
-## Pushback
+## Questions to ask
 
-- **Live feel (#4) is the weakest idea as written.** QA-Board can show reuse and timings, but it can't make runs fast.
-  The start overhead (runner, queue, loading the binary) dominates late-block tweaks. The mock-up's estimate shows it
-  even with a 6 s start, and on LSF it takes minutes. Real "live" needs a warm process per session that keeps the
-  binary loaded and its intermediates in memory. That's rebuilding CDE's service. Ship the display and the
-  estimate, and don't promise live.
-- **`qa connect` is a product of its own** (a local agent, auth, a tunnel to a laptop, local changes). For v1, use
-  `qa run --parent <id>` from a working copy, which uploads its run like any local run.
-- **Custom widgets from a site plugin**: the web app loads no code at runtime. Site widgets would be compiled in per
-  site (like `QABOARD_SITE` docs). Start with the generic widgets.
-- **CDE's tabs (several chains or binaries at once)**: don't copy them. Use one session per browser tab, and compare
-  across sessions with the existing run comparison.
+**IQV users (with the mock-up, one realistic task each):**
+- When you tweak in CDE, how long does one change take to show? What would feel too slow?
+- How many images do you look at while tweaking: one, or always the same few?
+- What do you do after you find good values? Save a file, send values to someone, write them down?
+- Do you ever go back to an earlier try and continue from there?
+- Which block's log do you open, and when?
 
-## Open questions and risks
+**The simulator's engineer:**
+- Can the binary print every parameter with its type, range, default and description? Does the list change with
+  the sensor or the configuration?
+- How long are start-up and input loading, compared with one late block? (This decides whether a warm pool is
+  enough or only a live process will do.)
+- How common are parameters that depend on each other? Give five real examples: they test whether `validate` is
+  enough.
+- What would the live service do when its cache is lost or wrong? Can it always fall back to a cold run?
+- Which external files do algorithms load, and can a fingerprint cover them?
 
-- **Storage of short-lived runs.** With every intermediate stream stored, 10 blocks × 1–2 streams × 12 MP comes to
-  hundreds of MB per run, and 30 runs per session. Proposal: streams are opt-in per block, or kept only for the
-  last N runs. Unpinned session runs expire after N days (pinned and milestone runs stay). The parents' intermediates
-  are kept while their children could still branch. Retention today goes by the commit's age, and protects
-  milestone batches (`backend/clean.py`). This needs per-run rules.
-- **Several binaries or worktrees in one session.** v1: a session is one commit, one binary and one input. Branching
-  "on another commit" starts a new root that carries the patch, flags keys the new schema doesn't have, and reuses
-  no cache. Allowing parents across commits would make the parameter diff and the cache lie.
-- **Dirty git state.** Runs launched from the web app use the commit's artifacts, so they're clean. Local runs record
-  their changes already (`qaboard/local_changes.py`). The cache key must include that fingerprint, and the tree should
-  mark "code differs from parent".
-- **Minutes instead of seconds.** Show the estimate before Run. Allow queuing several children. Use the existing
-  batch notifications. Make the session page work as "come back later" (compare, pin, write back), not as a spinner.
-  This is likely the common case at SIRC.
-- **Same patch reached twice** (see Lineage above): decide whether a run can have several parents, or whether the
-  second path only links to the first run.
-- **Audit**: launching runs code, so it needs an audit event (`tweak.run`) and the same permission as tuning from
-  the web app.
-
-**To confirm with you:** does every SIRC binary already accept arbitrary `block.register` overrides through
-`run()`, as the tuning-form conversion suggests? And can it write and reuse per-block intermediates given a
-parent's folder? If it can't, ideas 4 and 5 depend on work in the simulator, not in QA-Board.
+**For you:**
+- Is the tuning-form redesign (values as a table, start from a previous batch) going to merge? Phase 1 should be
+  designed on top of it. That branch is not in this repository's remote, so I haven't read its code.
+- Who may "send for review": anyone who can tune from the web app, or a smaller group?
+- How long should session runs live before clean-up, and may QA-Board delete intermediates earlier than outputs?
