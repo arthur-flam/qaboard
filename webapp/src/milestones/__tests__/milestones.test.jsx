@@ -244,10 +244,10 @@ describe('MilestonesPanel', () => {
     const on_page = [...document.querySelectorAll('.bp6-menu-item .qa-milestone-name')].slice(0, 4).map(n => n.textContent);
     expect(on_page).toEqual(['Bob baseline', 'Release 1.0', 'Quick check', 'Best denoiser']);
     // where they are on the page, in their sides' colors
-    expect(within(item('Bob baseline')).getByText('new').closest('.qa-side-tag')).toHaveAttribute('title', 'The new results, in the top bar');
-    expect(within(item('Quick check')).getByText('ref 1').closest('.qa-side-tag')).toHaveAttribute('title', 'The reference shown, 1 of 2, in the bottom bar');
-    expect(within(item('Quick check')).getByText('ref 1').closest('.qa-side-tag').style.getPropertyValue('--side-color')).toBe('purple');
-    expect(within(item('Best denoiser')).getByText('ref 2')).toBeInTheDocument();
+    expect(within(item('Bob baseline')).getByText('new').closest('.qa-side-tag')).toHaveAttribute('title', 'The new results, in the first row');
+    expect(within(item('Quick check')).getByText('compared').closest('.qa-side-tag').getAttribute('title')).toMatch(/^The reference compared, /);
+    expect(within(item('Quick check')).getByText('compared').closest('.qa-side-tag').style.getPropertyValue('--side-color')).toBe('purple');
+    expect(within(item('Best denoiser')).getByText('reference')).toBeInTheDocument();
     expect(within(item('Best denoiser')).queryByLabelText('Stack as a reference')).toBeNull();
     // references can't be stacked again, the new results can
     expect(within(item('Quick check')).queryByLabelText('Stack as a reference')).toBeNull();
@@ -473,7 +473,7 @@ describe('managing milestones', () => {
     );
     const row = name => screen.getByLabelText(`Select ${name}`).closest('tr');
     expect(within(row('Bob baseline')).getByText('new')).toBeInTheDocument();
-    expect(within(row('Quick check')).getByText('ref')).toBeInTheDocument();
+    expect(within(row('Quick check')).getByText('reference')).toBeInTheDocument();
     fireEvent.click(within(row('Best denoiser')).getByText('Stack'));
     // shown, the other reference stays
     expect(window.location.search).toBe(`?reference=${SHA}&compare=${SHA}&batch_ref=sweep-3&filter_ref=gain%3A4&label_ref=ref%202&ref_index=1`);

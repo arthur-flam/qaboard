@@ -355,7 +355,7 @@ export const ManageMilestones = ({ isOpen, onClose, project }) => {
                 <td>
                   <div className="qa-name">
                     <Icon icon={m.shared ? 'crown' : 'star'} color={Colors.GOLD4} size={12} title={m.shared ? 'Shared with the project' : 'Personal'} style={{ marginRight: 6 }}/>
-                    <Link to={milestone_path(m)} onClick={onNameClick(m)} title={on_commit_page ? 'Show it in the top bar, keep the reference' : 'Open its results'}>{milestone_name(m)}</Link>
+                    <Link to={milestone_path(m)} onClick={onNameClick(m)} title={on_commit_page ? 'Show it as the new results, keep the reference' : 'Open its results'}>{milestone_name(m)}</Link>
                     {m.is_favorite && <Icon icon="heart" color={Colors.RED4} size={12} title="Favorite" style={{ marginLeft: 6 }}/>}
                     <SideTags sides={sides.filter(side => is_milestone_side(m, side))}/>
                   </div>
@@ -376,7 +376,7 @@ export const ManageMilestones = ({ isOpen, onClose, project }) => {
                 </td>
                 <td className="qa-actions">
                   {on_commit_page && <PageActions milestone={m} selected={selected} selectAsReference={selectAsReference} stack={stack}/>}
-                  <Button size="small" variant="minimal" icon="arrow-right" aria-label="Open" onClick={() => open(m)} title={on_commit_page ? 'Show it in the top bar, keep the reference' : 'Open its results'}/>
+                  <Button size="small" variant="minimal" icon="arrow-right" aria-label="Open" onClick={() => open(m)} title={on_commit_page ? 'Show it as the new results, keep the reference' : 'Open its results'}/>
                   {user.is_logged && <Button size="small" variant="minimal" icon={<Icon icon="heart" color={m.is_favorite ? Colors.RED4 : undefined}/>} aria-label={m.is_favorite ? 'Remove from favorites' : 'Add to favorites'} title={m.is_favorite ? 'Remove from favorites' : 'Add to favorites'} onClick={() => toggleFavorite(m).catch(() => {})}/>}
                   <Button size="small" variant="minimal" icon="link" aria-label="Copy the link" title="Copy the link" onClick={() => copyWithToast(milestone_url(m), { what: 'the link to the milestone' })}/>
                   <Button size="small" variant="minimal" icon={m.can_edit ? 'edit' : 'info-sign'} aria-label={m.can_edit ? 'Edit' : 'Details'} title={m.can_edit ? 'Edit' : 'Details'} onClick={() => openMilestoneDialog({ project, milestone: m })}/>

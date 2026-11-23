@@ -118,7 +118,7 @@ export const prefetch_milestone = (queryClient, m, { hover = false } = {}) => {
 
 // What the commit page compares, to say where milestones are: the new results, then each reference.
 // `comparison`: useComparison(), null outside the commit pages' providers. [] when no commit page is shown.
-// Each is {project, commit_id, batch, filter, role: "new", "ref" or "ref 2"..., color (CSS), title, is_shown}
+// Each is {project, commit_id, batch, filter, role: "new", "compared" (the reference compared) or "reference", color (CSS), title, is_shown}
 export const comparison_sides = comparison => {
   const { selected, compared, references } = comparison ?? {};
   if (!selected?.route?.is_commit || !compared) return [];
@@ -126,13 +126,13 @@ export const comparison_sides = comparison => {
   return [
     {
       project: compared[0].project, commit_id: compared[0].commit?.id ?? selected.new_commit_id, batch: selected.selected_batch_new, filter: selected.filter_batch_new,
-      role: 'new', color: compared[0].color?.css, title: 'The new results, in the top bar',
+      role: 'new', color: compared[0].color?.css, title: 'The new results, in the first row',
     },
     ...references.map((r, i) => ({
       project: r.project, commit_id: r.commit_id ?? r.commit?.id, batch: r.batch, filter: r.filter,
-      role: several ? `ref ${i + 1}` : 'ref', color: r.color?.css, is_shown: i === selected.ref_index, is_reference: true,
-      title: i === selected.ref_index ? `The reference${several ? ` shown, ${i + 1} of ${references.length},` : ''} in the bottom bar`
-        : `Stacked reference ${i + 1} of ${references.length}${r.together ? ', shown together' : ''}`,
+      role: several && i === selected.ref_index ? 'compared' : 'reference', color: r.color?.css, is_shown: i === selected.ref_index, is_reference: true,
+      title: i === selected.ref_index ? `The reference${several ? ' compared' : ''}, ${r.display_label ?? 'in its row'}`
+        : `Another reference, ${r.display_label ?? ''}${r.together ? ', shown together' : ''}`,
     })),
   ];
 };

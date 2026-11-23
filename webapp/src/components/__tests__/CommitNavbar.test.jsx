@@ -47,7 +47,9 @@ describe('CommitNavbar', () => {
   it('selects the latest commit on the branch', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(latest), { status: 200 })));
     const { queryClient } = renderNavbar();
-    expect(screen.getByDisplayValue('abcdef12')).toBeInTheDocument();
+    // the commit's id and branch are in its details
+    fireEvent.click(screen.getByLabelText('About the new commit'));
+    expect(await screen.findByDisplayValue('abcdef12')).toBeInTheDocument();
     fireEvent.click(screen.getAllByText('feature/denoise')[0]);
     await waitFor(() => expect(window.location.pathname).toBe(`/p/commit/${latest.id}`));
     expect(fetch.mock.calls[0][0]).toBe('/api/v1/commit/?project=p&branch=feature%2Fdenoise');
@@ -57,7 +59,8 @@ describe('CommitNavbar', () => {
 
   it('selects commits by id, once users pause typing', async () => {
     renderNavbar();
-    const input = screen.getByDisplayValue('abcdef12');
+    fireEvent.click(screen.getByLabelText('About the new commit'));
+    const input = await screen.findByDisplayValue('abcdef12');
     fireEvent.change(input, { target: { value: '1234' } });
     fireEvent.change(input, { target: { value: '1234abcd' } });
     expect(window.location.pathname).not.toBe('/p/commit/1234');

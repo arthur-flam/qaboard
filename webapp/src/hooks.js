@@ -8,7 +8,9 @@ import {
   siteConfigQuery, default_site_config, userQuery, logged_out_user,
   projectsQuery, projectQuery, branchesQuery, commitsQuery, commitsPagesQuery, commits_of, commits_page_size, commitQuery,
   commitSummaryQuery, findCachedCommit, invalidateCommit, batchesPagesQuery,
+  branchHeadQuery,
 } from "./api/queries";
+import { provenance, distinct_names } from "./comparison/provenance";
 import { errorMessage } from "./api/http";
 import { usePrefsStore } from "./stores/prefs";
 import { useSelected, updateSelected, reference_names, side_colors, is_default_name } from "./selection";
@@ -291,8 +293,9 @@ function useCommitIdsInUrl(selected, new_commit, ref_commit) {
 
 // Milestones are called by their name, unless users called them something else on this page (names we give, like
 // "ref 2", don't count)
-const side_label = (milestone, label, fallback) => label && !is_default_name(label) ? label
-  : milestone ? milestone_name(milestone) : label || fallback;
+// `given`: the name we give them, see src/comparison/provenance.js
+const side_label = (milestone, label, fallback, given) => label && !is_default_name(label) ? label
+  : milestone ? milestone_name(milestone) : given || label || fallback;
 
 // The references users selected (see `references` in src/selection.js), with what we know about them:
 // their commit (without its outputs, unless we have them already), their name, color...
@@ -319,7 +322,8 @@ const reference_ids = sides => {
   });
 };
 
-function useReferences(selected, ref_commit, milestones, enabled, together_mode) {
+// naming: what names the references users didn't name, see src/comparison/provenance.js
+function useReferences(selected, ref_commit, milestones, enabled, together_mode, naming) {
   const queryClient = useQueryClient();
   const { references, ref_index, color_new } = selected;
   const together = references.length > 1 && together_mode === 'all';
@@ -343,6 +347,13 @@ function useReferences(selected, ref_commit, milestones, enabled, together_mode)
   });
   return useMemo(() => {
     const names = reference_names(references);
+    // what we call those users didn't name: why they are there, e.g. "develop", "a3f9c21"
+    const commit_of = index => index === ref_index ? ref_commit : cached_others[index < ref_index ? index : index - 1]?.commit;
+    const origins = references.map((side, index) => {
+      const [milestone] = milestones_of(milestones, { project: side.project, commit: side.commit_id ?? commit_of(index)?.id ?? undefined, batch: side.batch, filter: side.filter });
+      return provenance({ ...side, milestone }, { ...naming, commit: commit_of(index) });
+    });
+    const given = distinct_names(origins.map(origin => origin.name), references, [naming?.new_label]);
     // what a reference is called if users clear its name
     const default_name = index => reference_names(references.map((r, i) => i === index ? { ...r, label: '' } : r))[index];
     const colors = side_colors(color_new, references).slice(1);
@@ -372,12 +383,13 @@ function useReferences(selected, ref_commit, milestones, enabled, together_mode)
         milestone,
         // what the tabs, the reference's bar and the viewers call it: its milestone's name, else what users called it,
         // else "ref", "ref 2"... (see reference_names). Numbers, not letters: blind tests call images A and B.
-        display_label: side_label(milestone, names[index]),
-        default_label: milestone ? milestone_name(milestone) : default_name(index),
+        display_label: side_label(milestone, names[index], undefined, given[index]),
+        default_label: milestone ? milestone_name(milestone) : given[index] || default_name(index),
+        origin: origins[index],
         color: side_color(colors[index]),
       };
     });
-  }, [references, ref_index, color_new, ref_commit, cached_others, milestones, together]);
+  }, [references, ref_index, color_new, ref_commit, cached_others, milestones, together, naming]);
 }
 
 
@@ -459,7 +471,22 @@ function useComparisonState() {
   const prefers_together = usePrefsStore(state => state.referencesTogether);
   // (then what the images are compared with is `anchor`: 'new' or 'reference', the one shown, see src/selection.js)
   const together_mode = selected.together_mode ?? (prefers_together ? 'all' : 'one');
-  const references = useReferences(selected, ref_commit, milestones, on_commit_page, together_mode);
+  // to say why the references are there: the latest commit of the reference branch...
+  const reference_branch = reference_branch_of(project_data, null) ?? undefined;
+  // The default reference is it: we have it already. Else we ask for it (without its runs), when a reference may be it.
+  const { data: default_head } = useQuery({ ...commitQuery({ project }), enabled: false });
+  const may_be_head = selected.references.length > 1 || (!!ref_commit?.branch && ref_commit.branch === reference_branch);
+  const { data: fetched_head } = useQuery({ ...branchHeadQuery({ project, branch: reference_branch }), enabled: on_commit_page && !!reference_branch && !default_head && may_be_head });
+  const head = default_head?.branch === reference_branch || (default_head && !default_head.branch) ? default_head : fetched_head;
+  const new_id_loaded = new_commit?.id, new_branch = new_commit?.branch, head_id = head?.id;
+  const { selected_batch_new: naming_batch, filter_batch_new: naming_filter, label_new: naming_label } = selected;
+  const naming = useMemo(() => ({
+    new_commit: new_id_loaded ? { id: new_id_loaded, branch: new_branch } : undefined,
+    new_batch: naming_batch, new_filter: naming_filter, reference_branch, head: head_id ? { id: head_id } : undefined,
+    // the references can't be called like the new results
+    new_label: naming_label || 'new',
+  }), [new_id_loaded, new_branch, naming_batch, naming_filter, reference_branch, head_id, naming_label]);
+  const references = useReferences(selected, ref_commit, milestones, on_commit_page, together_mode, naming);
   const together = useTogether(references, selected.reference_rules);
 
   // The configuration comes from the batch shown (not filtered), else its commit, else the project:

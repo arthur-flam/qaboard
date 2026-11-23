@@ -107,8 +107,15 @@ const Username = ({ item, style }) => item.username
   : null
 
 
-// milestone_batches: the labels of the commit's batches that are milestones
-const SelectBatchesNav = ({ commit, onChange, batch, milestone_batches }) => {
+// One line, for the rows of the comparison header: the batch, then how its runs are doing
+const BatchLine = ({ item }) => <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0, whiteSpace: 'nowrap' }}>
+  {item.is_milestone && <Icon icon="star" size={11} color={Colors.GOLD5} title="Milestone" style={{ alignSelf: 'center' }}/>}
+  <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', flex: '0 1 auto' }}>{item.title}</span>
+  <span className={Classes.TEXT_MUTED} style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', flex: '0 1 auto' }}><BatchStatus status={item.status}/></span>
+</span>
+
+// milestone_batches: the labels of the commit's batches that are milestones. compact: on one line
+const SelectBatchesNav = ({ commit, onChange, batch, milestone_batches, compact = false }) => {
   const batches = commit?.batches;
   const milestones_key = (milestone_batches ?? []).join('\n');
   // Store updates (e.g. project data or commit re-fetched) give us new objects with the same content.
@@ -182,7 +189,17 @@ const SelectBatchesNav = ({ commit, onChange, batch, milestone_batches }) => {
       popoverProps={selectPopoverProps}
       disabled={!has_batches}
     >
-      <Button
+      {compact ? <Button
+        endIcon="caret-down"
+        size="small"
+        variant="minimal"
+        aria-label={`Batch: ${selectedBatch?.title ?? pretty_label(batch)}`}
+        disabled={!has_batches}
+        style={{ maxWidth: '100%', minWidth: 0 }}
+      >
+        {selectedBatch ? <BatchLine item={selectedBatch}/>
+          : <span className={loading ? Classes.SKELETON : Classes.TEXT_MUTED}>{pretty_label(batch)}{loading ? '' : ' (no results)'}</span>}
+      </Button> : <Button
         endIcon="double-caret-vertical"
         aria-label={`Batch: ${selectedBatch?.title ?? pretty_label(batch)}`}
         disabled={!has_batches}
@@ -199,7 +216,7 @@ const SelectBatchesNav = ({ commit, onChange, batch, milestone_batches }) => {
           </div>
           {selectedBatch && <Username item={selectedBatch} style={{ marginRight: '8px' }} />}
         </div>
-      </Button>
+      </Button>}
     </Select>
     </Tooltip>
   );

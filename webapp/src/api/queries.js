@@ -259,6 +259,17 @@ export const commitSummaryQuery = ({ project, id }) => queryOptions({
   staleTime: 60 * 1000,
 });
 
+// The latest commit of a branch, without its outputs: the comparison header says when a reference is it
+export const branchHeadQuery = ({ project, branch }) => queryOptions({
+  queryKey: ['branch-head', project, branch],
+  queryFn: async ({ signal }) => {
+    const { data } = await http.get(`/api/v1/commit/`, { params: { project, branch, with_outputs: false }, signal });
+    return normalize_commit(data);
+  },
+  enabled: !!project && !!branch,
+  staleTime: 60 * 1000,
+});
+
 // How many outputs the commit has, in all its batches: what fetching it with its outputs costs
 export const nb_outputs = commit => Object.values(commit?.batches ?? {})
   .reduce((n, b) => n + (b.valid_outputs ?? 0) + (b.running_outputs ?? 0) + (b.pending_outputs ?? 0) + (b.failed_outputs ?? 0), 0);

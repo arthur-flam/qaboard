@@ -13,10 +13,8 @@ import {
   MenuDivider,
   Tag,
   Button,
-  FormGroup,
   InputGroup,
   ControlGroup,
-  NavbarGroup,
   Dialog,
   Tooltip,
   PopoverNext,
@@ -27,7 +25,7 @@ import { MultiSelect } from "@blueprintjs/select";
 import { CommitAvatar } from "./avatars";
 import { DoneAtTag } from "./DoneAtTag";
 import { SelectBatchesNav } from "./tuning/SelectBatches";
-import { openAddReference } from "./ReferenceTabs";
+import { openAddReference } from "./AddReference";
 import { SideLabel, milestone_label_hint } from "./SideLabel";
 import { MilestonesPanel } from "../milestones/MilestonesPanel"
 import { CommitMilestoneButton } from "../milestones/CommitMilestone"
@@ -192,7 +190,9 @@ const confirmations = {
 // references: for the reference, all those users selected (see useComparison), we show one at a time
 // side: what we compare, from useComparison().compared: its label, color, milestone...
 // link: {text, details} for the Copy link button, on the new commit's bar
-const CommitNavbar = ({ update, loading, commit, batch, filter, project, project_data, selected, type, same_as_new = false, references, side, link }) => {
+// slot: what's before the name (the swap button, the radio of the reference compared), context: what we say about
+// the commit instead of its message, extra: more actions at the end of the row
+const CommitNavbar = ({ update, loading, commit, batch, filter, project, project_data, selected, type, same_as_new = false, references, side, link, slot, context, extra }) => {
   const queryClient = useQueryClient();
   const refreshCommit = useRefreshCommit();
   const [waiting, setWaiting] = useState(false);
@@ -519,127 +519,120 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
     <li>Local runs: <code>changes:local</code> (with uncommitted changes), <code>changes:none</code> (without), <code>changes:unknown</code></li>
     <li>Redo and Move apply to the runs that match. Delete applies to the whole batch.</li>
   </ul>
+  const project_shown = selected[project_attr] ?? project
+  // What the commit is: shown on demand, next to its id (users paste ids to compare with other commits)
+  const details = <div style={{ padding: '10px 12px', width: 340, display: 'grid', gap: 8 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      <CommitAvatar size='20px' commit={commit} project={project_shown} />
+      <CommitMessage commit={commit} error={error_text} style={{ minWidth: 0, flex: '1 1 auto', fontWeight: 500 }} />
+    </div>
+    {(!error_text || !!commit?.authored_datetime) && <DoneAtTag project={project} commit={commit} className={Classes.TEXT_MUTED} />}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginLeft: -6 }}>
+      <InputGroup
+        leftIcon="git-commit"
+        style={{ width: '130px' }}
+        inputClassName={Classes.MONOSPACE_TEXT}
+        onChange={typeCommit}
+        onBlur={() => setTyping(false)}
+        size="small"
+        placeholder="commit id"
+        aria-label={`The ${type === 'new' ? 'new' : 'reference'} commit`}
+        defaultValue={commit?.id ? shortId(project, commit.id) : ''}
+        key={commit?.id ? shortId(project, commit.id) : ''}
+      />
+      <CommitBranchButton commit={commit} error={error_text} onClick={selectBranch} style={{ minWidth: 0 }} />
+    </div>
+    {!!selected[project_attr] && project !== selected[project_attr] && <div><Tag minimal icon="git-repo">{selected[project_attr]}</Tag></div>}
+  </div>
   return <>
-    <NavbarGroup className="commit-header-left">
-      <FormGroup style={{ marginBottom: '0px', minWidth: 0, flex: '1 1 auto' }}>
-        <div style={{ position: 'relative', maxWidth: '640px', marginBottom: '6px' }}>
-          <span style={{ display: 'flex', minWidth: 0 }}>
-            <SideLabel
-              className="commit-header-side"
-              color={side?.color.css}
-              label={own_label}
-              fallback={side?.default_label ?? type}
-              onRename={label => updateSelected({ [`label_${type}`]: label })}
-              tooltip={side?.milestone ? milestone_label_hint(milestone_name(side.milestone), own_label) : <span>
-                {type === 'new' ? "New: the results you're looking at." : "Reference: what the new results are compared to. Change it with “Change” or pick a milestone."}
-                {' '}Click to rename it{type === 'new' ? ', e.g. “ISP v2”' : ''}: {type === 'ref' && references?.length > 1 ? 'its tab and the viewers use' : 'viewers use'} its name.
-              </span>}
-            />
-            {(!error_text || !!commit?.committer_name) && <CommitAvatar size='20px' commit={commit} project={selected[project_attr] ?? project} style={{ marginRight: '5px' }} />}
-            <CommitMessage
-              commit={commit}
-              error={error_text}
-              style={{ minWidth: 0, flex: '0 1 auto' }}
-            />
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-
-          <CommitMilestoneButton
-            name_shown={side?.label}
-            project={project}
-            project_shown={selected[project_attr]}
-            commit={commit}
-            batch={batch}
-            filter={batch_filter}
-            runs={commit?.batches ? (batch_filter ? batch?.filtered?.outputs?.length : nb_runs(batch)) : undefined}
-            new_side={type === 'ref' ? {project: selected.new_project ?? project, commit: selected.new_commit_id, batch: selected.selected_batch_new, filter: selected.filter_batch_new} : undefined}
-          />
-          <div style={{ flex: '0 1 auto', alignSelf: 'center' }}>
-            <InputGroup
-              leftIcon="git-commit"
-              style={{ width: '120px' }}
-              inputClassName={Classes.MONOSPACE_TEXT}
-              onChange={typeCommit}
-              onBlur={() => setTyping(false)}
-              size="small"
-              placeholder="commit id"
-              aria-label={`The ${type === 'new' ? 'new' : 'reference'} commit`}
-              defaultValue={commit?.id ? shortId(project, commit.id) : ''}
-              key={commit?.id ? shortId(project, commit.id) : ''}
-            />
-          </div>
-          <PopoverNext
-            placement="bottom-start"
-            content={change_menu}
-          >
-            <Button size="small" variant="minimal" icon="edit" style={{ alignSelf: 'center', marginLeft: '2px' }} aria-label={`Change the ${type === 'new' ? 'new' : 'reference'} commit`}>
-              <span className="commit-header-optional">Change</span>
-            </Button>
-          </PopoverNext>
-          {!!selected[project_attr] && project !== selected[project_attr] && <Tooltip content={`Results from another project: ${selected[project_attr]}`} targetProps={{style: {alignSelf: "center"}}}>
-            <Tag style={{marginLeft: '10px', padding: '5px'}}>{selected[project_attr]}</Tag>
-          </Tooltip>}
-          <CommitBranchButton commit={commit} error={error_text} onClick={selectBranch} style={{ flex: '0 1 auto', alignSelf: 'center' }} />
-
-          {(!error_text || !!commit?.authored_datetime) && <DoneAtTag project={project} commit={commit} style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} />}{" "}
-          {same_as_new && <Tooltip content={references?.length > 1 ? "Both bars show the same runs: nothing to compare. Switch to another reference (r), or pick another one" : "Both bars show the same runs: nothing to compare. Pick another reference"} targetProps={{style: {alignSelf: "center"}}}>
-            <Tag minimal intent={Intent.WARNING} icon="duplicate" style={{ marginLeft: '5px' }}>Same runs</Tag>
-          </Tooltip>}
-          {!!error_text && <Tooltip content={
-            <span>
-              <code>{error_text}</code>
-              <br></br>
-              {error_text.startsWith('40') && <strong>Check the commit is correct? Or the runs belong to a different project?</strong>}
-              {error_text.startsWith('50') && <strong>This is a system error, contact QA-Board admins.</strong>}
-            </span>
-          } targetProps={{style: {alignSelf: "center"}}}>
-            <Tag
-              minimal
-              intent={Intent.DANGER}
-              icon="error"
-              style={{ marginRight: '5px', marginLeft: '5px' }}>
-                Error
-            </Tag>
-          </Tooltip>}
-        </div>
-      </FormGroup>
-    </NavbarGroup>
-    <NavbarGroup className="commit-header-right" style={{height: "auto"}}>
-      <FormGroup
-        labelFor={`filter-${type}-input`}
-        className="commit-header-filter"
-        style={{ marginBottom: '0px', marginRight: '10px' }}
-        helperText={<BatchTags batch={batch?.filtered}/>}
-      >
-        <InputGroup
-          id={`filter-${type}-input`}
-          value={filter_text}
-          intent={filter_text ? 'primary' : 'default'}
-          placeholder={type === 'ref' ? "Filter the reference's runs…" : "Filter runs…"}
-          onChange={onFilterChange}
-          type="text"
-          leftIcon="filter"
-          rightElement={<>
-            {!!filter_text && <Button size="small" variant="minimal" icon="cross" aria-label="Clear the filter" onClick={() => onFilterChange('')}/>}
-            <Tooltip content={filter_help}>
-              <Button size="small" variant="minimal" icon="help" className={Classes.TEXT_MUTED} aria-label="How to filter runs"/>
-            </Tooltip>
-          </>}
-        />
-      </FormGroup>
+    <span className="qa-row-slot">{slot}</span>
+    <span className="qa-row-label">
+      <SideLabel
+        className="commit-header-side"
+        color={side?.color.css}
+        label={own_label}
+        fallback={side?.default_label ?? type}
+        onRename={label => updateSelected({ [`label_${type}`]: label })}
+        tooltip={side?.milestone ? milestone_label_hint(milestone_name(side.milestone), own_label) : <span>
+          {type === 'new' ? "New: the results you're looking at." : "The reference the metrics and viewers compare with."}
+          {' '}Click to rename it{type === 'new' ? ', e.g. “ISP v2”' : ''}: viewers use its name.
+        </span>}
+      />
+    </span>
+    <span className="qa-row-context">
+      {context ?? <>
+        {(!error_text || !!commit?.committer_name) && <CommitAvatar size='18px' commit={commit} project={project_shown} style={{ marginRight: '6px', flex: 'none' }} />}
+        <CommitMessage commit={commit} error={error_text} style={{ minWidth: 0, flex: '0 1 auto' }} />
+      </>}
+      {same_as_new && <Tooltip content={references?.length > 1 ? "Both rows show the same runs: nothing to compare. Compare with another reference (r), or pick another one" : "Both rows show the same runs: nothing to compare. Pick another reference"} targetProps={{style: {alignSelf: "center", flex: 'none'}}}>
+        <Tag minimal intent={Intent.WARNING} icon="duplicate" style={{ marginLeft: '8px' }}>Same runs</Tag>
+      </Tooltip>}
+      {!!error_text && <Tooltip content={
+        <span>
+          <code>{error_text}</code>
+          <br></br>
+          {error_text.startsWith('40') && <strong>Check the commit is correct? Or the runs belong to a different project?</strong>}
+          {error_text.startsWith('50') && <strong>This is a system error, contact QA-Board admins.</strong>}
+        </span>
+      } targetProps={{style: {alignSelf: "center", flex: 'none'}}}>
+        <Tag minimal intent={Intent.DANGER} icon="error" style={{ marginLeft: '8px' }}>Error</Tag>
+      </Tooltip>}
+    </span>
+    <span className="qa-row-batch">
       <SelectBatchesNav
         commit={commit}
         batch={batch}
         project={project}
-        milestone_batches={milestones_of(milestones, {project: selected[project_attr] ?? project, commit: commit?.id}).map(m => m.batch || 'default')}
+        milestone_batches={milestones_of(milestones, {project: project_shown, commit: commit?.id}).map(m => m.batch || 'default')}
         onChange={update(`selected_batch_${type}`)}
-        hide_counts
+        compact
       />
+    </span>
+    <span className="qa-row-filter">
+      <InputGroup
+        id={`filter-${type}-input`}
+        size="small"
+        value={filter_text}
+        intent={filter_text ? 'primary' : 'default'}
+        placeholder="Filter runs…"
+        aria-label={type === 'ref' ? "Filter the reference's runs" : "Filter runs"}
+        onChange={onFilterChange}
+        type="text"
+        leftIcon="filter"
+        rightElement={<>
+          {!!filter_text && <Button size="small" variant="minimal" icon="cross" aria-label="Clear the filter" onClick={() => onFilterChange('')}/>}
+          <Tooltip content={filter_help}>
+            <Button size="small" variant="minimal" icon="help" className={`${Classes.TEXT_MUTED} qa-row-hover`} aria-label="How to filter runs"/>
+          </Tooltip>
+        </>}
+      />
+    </span>
+    <span className="qa-row-actions">
+      <CommitMilestoneButton
+        name_shown={side?.label}
+        project={project}
+        project_shown={selected[project_attr]}
+        commit={commit}
+        batch={batch}
+        filter={batch_filter}
+        runs={commit?.batches ? (batch_filter ? batch?.filtered?.outputs?.length : nb_runs(batch)) : undefined}
+        new_side={type === 'ref' ? {project: selected.new_project ?? project, commit: selected.new_commit_id, batch: selected.selected_batch_new, filter: selected.filter_batch_new} : undefined}
+      />
+      <PopoverNext placement="bottom-end" content={details}>
+        <Tooltip content="The commit: its id, message, author, branch" hoverOpenDelay={400}>
+          <Button size="small" variant="minimal" icon="info-sign" className={Classes.TEXT_MUTED} aria-label={`About the ${type === 'new' ? 'new' : 'reference'} commit`}/>
+        </Tooltip>
+      </PopoverNext>
+      <PopoverNext placement="bottom-end" content={change_menu}>
+        <Tooltip content="Another commit, a milestone, another project…" hoverOpenDelay={400}>
+          <Button size="small" variant="minimal" icon="edit" className={Classes.TEXT_MUTED} aria-label={`Change the ${type === 'new' ? 'new' : 'reference'} commit`}/>
+        </Tooltip>
+      </PopoverNext>
       {!!commit && <>
         {!!link && <CopyLinkButton {...link}/>}
         <Tooltip content="Reload this commit's results">
           <Button
+            size="small"
             className={Classes.TEXT_MUTED} minimal
             icon="refresh"
             aria-label="Reload this commit's results"
@@ -809,7 +802,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
         </>}
         </Menu>
         }>
-          <Button variant="minimal" icon="menu" className={Classes.TEXT_MUTED} aria-label="Commit and batch actions"/>
+          <Button size="small" variant="minimal" icon="more" className={Classes.TEXT_MUTED} aria-label="Commit and batch actions"/>
         </PopoverNext>
         <Alert
           isOpen={!!confirmation}
@@ -877,7 +870,8 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
             </div>
           </div>
         </Dialog>
-    </NavbarGroup>
+      {extra}
+    </span>
   </>;
 }
 

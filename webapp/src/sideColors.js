@@ -20,7 +20,13 @@ const text = ['#ffffff', '#ffffff', '#ffffff', '#111418', '#ffffff'];
 export const side_color_count = light.length;
 
 // slot n is the color number n, 0 (blue) for the new results by default, undefined: gray
-export const side_color = slot => ({
+// The same object for the same slot: what compares colors by identity doesn't change when the comparison is computed again
+const side_colors_cache = new Map();
+export const side_color = slot => {
+  if (!side_colors_cache.has(slot)) side_colors_cache.set(slot, Object.freeze(make_side_color(slot)));
+  return side_colors_cache.get(slot);
+};
+const make_side_color = slot => ({
   slot,
   // for the app's UI
   css: slot !== undefined && slot < light.length ? `var(--qa-side-${slot})` : 'var(--qa-side-other)',
