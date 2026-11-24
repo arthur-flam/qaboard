@@ -269,9 +269,9 @@ table.t tr.grp td { background: var(--qa-surface-alt); font-weight: 600; font-si
     <a>⌁ History</a>
     <a>⚑ Milestones</a>
     <a data-go="tuning" id="nav-tuning">⚙ Tuning</a>
-    <a data-go="session" id="nav-session">⑂ Tweak sessions</a>
+    <a data-go="session" id="nav-session">⑂ Tuning sessions</a>
     <div class="sep"></div>
-    <div class="hint">Mock-up with fake data. Nothing is saved or sent. Click through: run page → Tweak → Run → session → Save, or Tuning.</div>
+    <div class="hint">Mock-up with fake data. Nothing is saved or sent. Click through: run page → Tune this run → Run → session → Save, or Tuning.</div>
     <div class="hint" style="margin-top:auto">Views: <a data-go="run" style="display:inline;padding:0">run</a> · <a data-go="tweak" style="display:inline;padding:0">tweak</a> · <a data-go="session" style="display:inline;padding:0">session</a> · <a data-go="tuning" style="display:inline;padding:0">tuning</a></div>
   </nav>
   <div class="main">
@@ -396,7 +396,7 @@ const RUNS = {
   r5: { id: "r5", n: 5, parent: "r4", own: { "ee.gain": 1.0 }, status: "running", at: "10:22", by: "you", note: "", run_id: 48244, progress: 0 },
   r6: { id: "r6", n: 6, parent: "r3", own: { "ccm.saturation": 1.3, "ccm.matrix": [1.9, -0.48, -0.14, -0.22, 1.41, -0.19, -0.03, -0.55, 1.58] }, status: "failed", failed_at: "ccm", at: "10:26", by: "you", note: "more color", run_id: 48246 },
 };
-const SESSION = { name: "Denoise vs. detail on street scenes", commit: COMMIT.id, batch: "tweak/s14", started: "10:03" };
+const SESSION = { name: "Denoise vs. detail on street scenes", commit: COMMIT.id, batch: "tuning/s14", started: "10:03" };
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Model helpers (these mirror the three contracts in NOTES.md)
@@ -652,7 +652,7 @@ function statusTag(r) {
 function navbar() {
   const crumbs = {
     run: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><span>default</span>`,
-    tweak: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><a data-go="session">${SESSION.batch}</a><span class="sep">/</span><b>Tweak from ${runLabel(S.base)}</b>`,
+    tweak: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><a data-go="session">${SESSION.batch}</a><span class="sep">/</span><b>Tune from ${runLabel(S.base)}</b>`,
     session: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><b>${SESSION.batch}</b><span class="muted">· ${esc(SESSION.name)}</span>`,
     tuning: `<a data-go="run">${COMMIT.id}</a><span class="sep">/</span><b>Tuning</b>`,
   }[S.view];
@@ -686,19 +686,19 @@ function viewRun() {
         <div class="title"><span class="tag success">done</span><span class="mono" title="${c.input}">${c.input}</span></div>
         <div class="row"><span class="tag">linux</span><span class="tag">base</span><span class="tag">outdoor</span><span class="grow" style="flex:1"></span>
           <button class="btn small" title="Open in WebCDE">⧉ WebCDE</button>
-          <button class="btn small primary new-btn" data-act="tweak-from" data-run="r0" data-input="${i}" title="Change parameters and rerun, in QA-Board">✎ Tweak</button>
+          <button class="btn small primary new-btn" data-act="tweak-from" data-run="r0" data-input="${i}" title="Change parameters and rerun, in QA-Board">✎ Tune this run</button>
           <button class="btn minimal small" aria-label="Run actions">⋯</button></div>
       </div>
       <div class="metrics">${METRICS.map(mm => `<div class="metric"><div class="k">${mm.label}</div><div class="v num">${mm.fmt(m[mm.k])}</div><div class="small num">${delta(mm, m[mm.k], ref[mm.k])}</div></div>`).join("")}</div>
       ${i === 0 ? `<canvas data-img='${JSON.stringify({ a: { run: "r0", stage: GROUPS.length }, stream: "out", gid: "csc" })}' aria-label="Output image"></canvas>` : `<canvas data-img='${JSON.stringify({ a: { run: "r0", stage: GROUPS.length }, stream: "out", gid: "csc" })}' aria-label="Output image" style="filter:hue-rotate(${i * 12}deg) brightness(${1 - i * 0.12})"></canvas>`}
-      ${i === 0 ? `<div class="sessions-strip small"><div class="label">Tweak sessions from this run</div>
+      ${i === 0 ? `<div class="sessions-strip small"><div class="label">Tuning sessions from this run</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><a data-go="session">${SESSION.batch}</a><span class="muted">${esc(SESSION.name)} · ${sessionRuns.length} runs · you</span></div></div>` : ""}
     </div>`;
   }).join("");
   return `<div class="commit-head"><h2>${esc(COMMIT.msg)}</h2><span class="tag mono">${COMMIT.id}</span><span class="muted">${COMMIT.author} · ${COMMIT.when}</span>
       <span class="grow" style="flex:1"></span><span class="muted small">Reference</span><span class="tag primary">⚑ ${MILESTONES[0].label}</span></div>
     <div class="tabs"><a class="on">Run cards</a><a>Metrics table</a><a>Parameters</a><a data-go="tuning">Tuning</a><a>Logs</a></div>
-    <div class="callout primary small" style="margin-bottom:10px"><span>✎</span><span><b>Tweak</b> sits next to WebCDE on runs whose project describes its parameters (a schema for the run's binary). Without a schema the button is hidden, as WebCDE is without a <code>cde.sh</code>.</span></div>
+    <div class="callout primary small" style="margin-bottom:10px"><span>✎</span><span><b>Tune this run</b> sits next to WebCDE on runs whose project describes its parameters (a schema for the run's binary). Without a schema the button is hidden, as WebCDE is without a <code>cde.sh</code>.</span></div>
     <div class="cards">${cards}</div>`;
 }
 
@@ -853,8 +853,8 @@ function pendingBar() {
 function viewTweak() {
   const base = RUNS[S.base];
   return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-      <span class="label">Tweaking</span><span class="mono">${INPUT}</span><span class="tag">linux</span><span class="tag">base</span><span class="tag">outdoor</span>
-      <span class="muted">from</span><select id="basepick" aria-label="Run to tweak from">${Object.values(RUNS).filter(r => r.status === "done").map(r => `<option value="${r.id}" ${r.id === S.base ? "selected" : ""}>${runLabel(r.id)} ${r.note ? `· ${esc(r.note)}` : ""}${r.pinned ? " · kept" : ""}</option>`).join("")}</select>
+      <span class="label">Tuning one run</span><span class="mono">${INPUT}</span><span class="tag">linux</span><span class="tag">base</span><span class="tag">outdoor</span>
+      <span class="muted">from</span><select id="basepick" aria-label="Version to tune from">${Object.values(RUNS).filter(r => r.status === "done").map(r => `<option value="${r.id}" ${r.id === S.base ? "selected" : ""}>${runLabel(r.id)} ${r.note ? `· ${esc(r.note)}` : ""}${r.pinned ? " · kept" : ""}</option>`).join("")}</select>
       ${base.parent ? `<span class="small muted">made from ${runLabel(base.parent)}</span>` : ""}
       <span style="flex:1"></span><a data-go="session" class="small">Session history →</a></div>
     <div class="tweak">${chainPanel()}${registerPanel()}${viewersPanel()}</div>
@@ -978,7 +978,7 @@ function detailPanel() {
   } else if (S.tab === "blocks") {
     const scale = Math.max(tot, 20);
     let acc = t.start;
-    body = `<div style="padding:8px 10px" class="legend"><span><span class="dot" style="background:var(--qa-overhead)"></span>start (runner + load)</span><span><span class="dot" style="background:var(--qa-cached)"></span>reused from the previous version</span><span><span class="dot" style="background:var(--qa-recompute)"></span>recomputed</span><span style="flex:1"></span><b class="num">${r.status === "running" ? `elapsed ${secs(tot * (r.progress || 0))} of ≈ ${secs(tot)}` : `total ${secs(tot)}`}</b></div>
+    body = `<div style="padding:8px 10px" class="legend"><span><span class="dot" style="background:var(--qa-overhead)"></span>start (runner + load)</span><span><span class="dot" style="background:var(--qa-cached)"></span>reused from the previous version</span><span><span class="dot" style="background:var(--qa-recompute)"></span>recomputed</span><span style="flex:1"></span>${r.status === "done" && t.blocks.some(b => b.state === "cached") ? `<button class="btn small" data-act="recompute" title="Runs every block again, to check a result that reused earlier ones">Recompute from scratch</button>` : ""}<b class="num">${r.status === "running" ? `elapsed ${secs(tot * (r.progress || 0))} of ≈ ${secs(tot)}` : `total ${secs(tot)}`}</b></div>
     <div class="scroll-x"><table class="t"><thead><tr><th>${SCHEMA.group_label}</th><th>State</th><th class="num" style="text-align:right">Time</th><th style="width:45%">Timeline</th></tr></thead><tbody>
       <tr><td class="muted">start</td><td><span class="tag warning">overhead</span></td><td class="num" style="text-align:right">${secs(t.start)}</td><td><div class="timing"><i style="left:0;width:${100 * t.start / scale}%;background:var(--qa-overhead)"></i></div></td></tr>
       ${t.blocks.map((b, i) => {
@@ -991,7 +991,7 @@ function detailPanel() {
           <td><div class="timing"><i style="left:${100 * left / scale}%;width:${Math.max(0.6, 100 * b.secs / scale)}%;background:var(${stateColor(b.state)})"></i></div></td></tr>`;
       }).join("")}
     </tbody></table></div>
-    <div class="small muted" style="padding:8px 10px">${r.failed_at ? `<span style="color:var(--qa-danger)">Stopped at <b>${esc(groupOf(r.failed_at).name)}</b>: <a data-act="logjump" data-g="${r.failed_at}">see its log</a>.</span> ` : ""}${r.parent ? `First changed block: <b>${esc(GROUPS[firstChanged(r.own)]?.name || "none")}</b>. Blocks before it reuse ${runLabel(r.parent)}'s results.` : "The original run computed every block."} The run reports these per-block states and times itself (a small <span class="mono">blocks.json</span>): QA-Board shows them, the binary decides what it can reuse.</div>`;
+    <div class="small muted" style="padding:8px 10px">${r.failed_at ? `<span style="color:var(--qa-danger)">Stopped at <b>${esc(groupOf(r.failed_at).name)}</b>: <a data-act="logjump" data-g="${r.failed_at}">see its log</a>.</span> ` : ""}${r.parent ? `First changed block: <b>${esc(GROUPS[firstChanged(r.own)]?.name || "none")}</b>. Blocks before it reuse ${runLabel(r.parent)}'s results.` : "The original run computed every block."} The run reports these per-block states and times itself (a small <span class="mono">blocks.json</span>): QA-Board shows them, the binary decides what it can reuse. Block outputs of versions that aren't kept are removed after 7 days; the final outputs stay with the session.</div>`;
   } else if (S.tab === "metrics") {
     const ms = MILESTONES.find(x => x.id === S.milestone);
     const p = r.parent ? metricsOfRun(r.parent) : null;
@@ -1031,7 +1031,7 @@ function detailPanel() {
       <button class="btn small ${r.pinned ? "on" : ""}" data-act="pin" title="Kept versions aren't cleaned up with the session">${r.pinned ? "★ Kept" : "☆ Keep"}</button>
       <button class="btn small" data-act="to-tuning" ${r.status === "done" ? "" : "disabled"} title="Run these settings on whole batches of tests">Run on more tests…</button>
       <button class="btn small" data-act="save-open" ${r.parent && r.status === "done" ? "" : "disabled"}>${r.saved ? `Saved · ${r.saved}` : "Save…"}</button>
-      <button class="btn small primary" data-act="tweak-from" data-run="${S.sel}" ${r.status === "done" ? "" : "disabled"}>✎ Tweak from ${runLabel(S.sel)}</button></div>
+      <button class="btn small primary" data-act="tweak-from" data-run="${S.sel}" ${r.status === "done" ? "" : "disabled"}>✎ Tune from ${runLabel(S.sel)}</button></div>
     <div style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--qa-border);flex-wrap:wrap">
       <span class="small muted">Compare with</span>
       <span class="btn-group"><button class="btn small ${S.diffAgainst === "parent" ? "on" : ""}" data-act="against" data-v="parent" ${r.parent ? "" : "disabled"}>previous${r.parent ? ` ${runLabel(r.parent)}` : ""}</button><button class="btn small ${S.diffAgainst === "root" ? "on" : ""}" data-act="against" data-v="root">original #0</button><button class="btn small ${S.diffAgainst === "milestone" ? "on" : ""}" data-act="against" data-v="milestone">milestone</button></span>
@@ -1050,7 +1050,7 @@ function viewSession() {
       <h2 style="margin:0;font-size:16px">${esc(SESSION.name)}</h2><span class="tag mono">${SESSION.batch}</span>
       <span class="muted small">${INPUT} · linux · base + outdoor · commit ${COMMIT.id}</span><span style="flex:1"></span>
       ${running.length ? `<span class="small muted">${running.length} running · you'll get a notification when ${running.length > 1 ? "they end" : "it ends"}</span>` : ""}
-      <button class="btn small" data-act="tweak-from" data-run="${S.base}">✎ Back to tweaking ${runLabel(S.base)}</button></div>
+      <button class="btn small" data-act="tweak-from" data-run="${S.base}">✎ Back to tuning from ${runLabel(S.base)}</button></div>
     <div class="session">${treePanel()}${detailPanel()}</div>`;
 }
 
@@ -1060,7 +1060,7 @@ function viewSession() {
 function dialog() {
   if (S.dialog !== "save") return "";
   const sv = S.save, r = RUNS[S.sel], patch = patchOf(S.sel), keys = Object.keys(patch);
-  const newPath = () => `configs/tweaks/${sv.name || "my-settings"}.yaml`;
+  const newPath = () => `configs/tuned/${sv.name || "my-settings"}.yaml`;
   if (sv.done) return `<div class="dialog-bg" data-act="close-bg"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="sv-t">
     <div class="panel-h" id="sv-t">Saved<span class="grow"></span><button class="btn minimal small" data-act="close" aria-label="Close">✕</button></div>
     <div class="body">
@@ -1068,7 +1068,7 @@ function dialog() {
       <div class="kv small"><span class="muted">Now</span><span>The project's full tests are running with your settings. You get a notification when they end.</span>
         <span class="muted">Then</span><span>An engineer accepts the request, or answers in it. Nothing changes for others before that.</span>
         <span class="muted">Here</span><span>${runLabel(S.sel)} is kept, and marked <span class="tag success">saved</span>.</span></div>
-      <div class="small muted">For engineers: branch <span class="mono">tweak/s14-v${r.n}</span> from ${COMMIT.id}, one commit, merge request ${r.saved}.</div>
+      <div class="small muted">For engineers: branch <span class="mono">tuning/s14-v${r.n}</span> from ${COMMIT.id}, one commit, merge request ${r.saved}.</div>
     </div>
     <div class="foot"><button class="btn primary" data-act="close">Done</button></div></div></div>`;
   const byFile = {};
@@ -1094,7 +1094,7 @@ function dialog() {
       <div class="label">Then</div>
       <div role="radiogroup" style="display:grid;gap:6px">
         ${card("deliver", "review", "Send for review", "The full tests run with your settings, and an engineer accepts them. <span class='muted'>(a branch and a merge request)</span>")}
-        ${card("deliver", "copy", "Copy the changes", `To paste in a message, or apply yourself. <span class='muted'>(a diff, and <span class='mono'>qa apply-tweak ${r.run_id}</span>)</span>`)}
+        ${card("deliver", "copy", "Copy the changes", `To paste in a message, or apply yourself. <span class='muted'>(a diff, and <span class='mono'>qa apply-params ${r.run_id}</span>)</span>`)}
       </div>
       <a class="small" data-act="save-details">${sv.details ? "▾ Hide" : "▸ Show"} the file changes</a>
       ${sv.details ? `<pre>--- ${sv.how === "new" ? "/dev/null" : "a/configs/outdoor.yaml"}  (at ${COMMIT.id})
@@ -1189,7 +1189,7 @@ function viewTuning() {
   const t = S.tune, st = tuneStats();
   const fullSecs = GROUPS.reduce((a, g) => a + BLOCK_SECS[g.id], 0) + START_SECS;
   const compute = st.runs * fullSecs, machines = 8;
-  const froms = [["none", "Nothing: start empty"], ["prev", "Your last batch: nr-sweep-2 (yesterday)"], ...Object.values(RUNS).filter(r => r.parent && r.status === "done").map(r => [r.id, `Tweak ${SESSION.batch} ${runLabel(r.id)}${r.note ? ` · ${r.note}` : ""}${r.pinned ? " · kept" : ""}`])];
+  const froms = [["none", "Nothing: start empty"], ["prev", "Your last batch: nr-sweep-2 (yesterday)"], ...Object.values(RUNS).filter(r => r.parent && r.status === "done").map(r => [r.id, `Session ${SESSION.batch} ${runLabel(r.id)}${r.note ? ` · ${r.note}` : ""}${r.pinned ? " · kept" : ""}`])];
   return `<div class="commit-head"><h2>Run tests with other parameters</h2><span class="tag mono">${COMMIT.id}</span><span class="grow" style="flex:1"></span>
       <label class="small">Start from <select id="tunefrom">${froms.map(([v, l]) => `<option value="${v}" ${v === t.from ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>
     <div class="card" style="margin-bottom:10px"><div class="panel-h"><span class="stepn">1</span>Tests<span class="grow"></span><span class="muted small" style="font-weight:400">${st.tests} images chosen</span></div>
@@ -1210,7 +1210,7 @@ function viewTuning() {
         <span class="small muted num">≈ ${secs(compute)} of computing, ≈ ${secs(compute / machines + 40)} on ${machines} machines${st.runs > 600 ? " · that's a lot: fewer values, or Search" : ""}</span>
         ${st.errors.map(e => `<span class="small" style="color:var(--qa-danger)">${esc(e)}</span>`).join("")}</div>
       <label class="small">Name <input type="text" id="tunelabel" value="${esc(t.label)}" style="width:140px"></label>
-      ${st.runs === st.tests && st.tests && st.tests <= 3 && !st.search ? `<button class="btn small" data-act="tune-to-tweak" title="One value each on a few images: look at every step">✎ Tweak instead</button>` : ""}
+      ${st.runs === st.tests && st.tests && st.tests <= 3 && !st.search ? `<button class="btn small" data-act="tune-to-tweak" title="One value each on a few images: look at every block">✎ Tune one run instead</button>` : ""}
       <button class="btn primary" data-act="tune-start" ${st.errors.length ? "disabled" : ""}>▶ Start ${st.runs} runs</button>
     </div></div>`;
 }
@@ -1275,7 +1275,7 @@ document.addEventListener("click", e => {
     case "showpatch": S.showPatch = !S.showPatch; render(); break;
     case "outcmp": S.outCompare = el.dataset.v; render(); break;
     case "launch": launch(); break;
-    case "branch-pick": go("session"); toast("Pick a version, then ✎ Tweak from it."); break;
+    case "branch-pick": go("session"); toast("Pick a version, then ✎ Tune from it."); break;
     case "sel": S.sel = el.dataset.run; S.logOpen = null; if (!RUNS[S.sel].parent && S.diffAgainst === "parent") S.diffAgainst = "root"; render(); break;
     case "tab": S.tab = el.dataset.v; render(); break;
     case "against": S.diffAgainst = el.dataset.v; if (S.tab !== "params" && S.tab !== "metrics") S.tab = "params"; render(); break;
@@ -1287,6 +1287,7 @@ document.addEventListener("click", e => {
       if (S.save.deliver === "copy") { navigator.clipboard?.writeText(JSON.stringify(patchOf(S.sel), null, 2)).then(() => toast("Copied."), () => toast("Couldn't copy: open “Show the file changes” and select the text.")); S.dialog = null; render(); break; }
       RUNS[S.sel].saved = "!412"; RUNS[S.sel].pinned = true; S.save.done = true; render(); break;
     }
+    case "recompute": toast(`Mock-up: would run every block of ${runLabel(S.sel)} again and say if any output differs.`); break;
     case "hist": S.hist = el.dataset.v; render(); break;
     case "logopen": S.logOpen = S.logOpen === el.dataset.g ? "none" : el.dataset.g; render(); break;
     case "logjump": S.tab = "log"; S.logOpen = el.dataset.g; render(); break;
@@ -1344,7 +1345,7 @@ function addTuneValue(t) {
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.id === "tuneq") { S.tune.q = t.value; S.tune.focus = "tuneq"; render(); return; }
-  if (t.id === "save-name") { S.save.name = t.value.replace(/[^\w.-]+/g, "-"); const el = document.getElementById("save-path"); if (el) el.textContent = `configs/tweaks/${S.save.name || "my-settings"}.yaml`; return; }
+  if (t.id === "save-name") { S.save.name = t.value.replace(/[^\w.-]+/g, "-"); const el = document.getElementById("save-path"); if (el) el.textContent = `configs/tuned/${S.save.name || "my-settings"}.yaml`; return; }
   if (t.id === "regsearch") { S.q = t.value; S.qOpen = true; S.qIndex = 0; render(); return; }
   if (t.id === "splitter") { S.split = +t.value; const wrap = t.previousElementSibling; const spec = JSON.parse(wrap.querySelector("canvas").dataset.img); spec.split = S.split; wrap.querySelector("canvas").dataset.img = JSON.stringify(spec); wrap.querySelector(".split-line").style.left = S.split + "%"; drawCanvases(wrap); return; }
   if (t.id === "st-split") { S.stream.split = +t.value; const wrap = t.previousElementSibling; const spec = JSON.parse(wrap.querySelector("canvas").dataset.img); spec.split = S.stream.split; wrap.querySelector("canvas").dataset.img = JSON.stringify(spec); wrap.querySelector(".split-line").style.left = S.stream.split + "%"; drawCanvases(wrap); return; }

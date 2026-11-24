@@ -78,6 +78,52 @@ changes, execution hints), whoever executes it.
 Phase 1 is useful alone, and it tests the schema on real binaries before any new screen depends on it. Phase 2
 is only as good as its start-up time, so measure before promising anything (see the questions).
 
+## Third pass: naming, where the line is, and staying generic
+
+**Naming.** The team prefers "tuning" for both sizes: the Tuning tab tunes batches, **Tune this run** opens a
+tuning session on one run. The mock-up now says so. This folder keeps its name.
+
+**Where the line is between a generic screen and custom behaviour.** There are not two worlds to choose from.
+There are two layers, and the lower one comes first:
+
+- **The record** is QA-Board's product: a session, its runs, which run each came from, what changed, the outputs,
+  the comparisons. Anything can write to it through the same API: the built-in screen, a script, an agent, the
+  CDE service, a custom screen.
+- **The built-in screen** is one client of the record. It covers what a parameter list can describe.
+
+So the rule for any request: *whatever happens must end as a run or an output in the record*. How it happened is
+free. Customisation then climbs a ladder, and each rung is tried before the next:
+
+1. **Data**: the parameter list (what to show and edit).
+2. **Project checks**: `validate` and `save` (what is allowed, where it is written).
+3. **Named actions**: the project lists actions with their own small parameter list ("dump the statistics of
+   this block", "run in fast mode"). QA-Board shows a button and passes the request through. This is the remote
+   call, and it is one generic call, not an API per feature. The answer comes back as outputs or a new run.
+4. **Site widgets and site screens**, built into the site's web app, talking to the same record.
+
+A request that needs state QA-Board can't see (modes of a live process, a multi-step dialogue) is rung 3 or 4,
+never a new core concept. If rung 4 fills up for one project, that project has its own front end on QA-Board's
+record, which is a fine outcome.
+
+**Order.** Add lineage to the record (a run names the run it came from, through `qa` and the SDK) *before* the
+single-run screen. It is small, generic, and it gives real sessions to design with, including sessions driven by
+agents. The full order is in `ROADMAP-2027.md`.
+
+**Cache and storage.**
+- Start with reuse from the previous version of the same session. A shared cache across the organisation needs
+  per-block hashing of inputs, settings, sources and files read: a separate project, not on this path.
+- The long-lived simulator is one optional way to run. Nothing saved depends on it. The mock-up has
+  **Recompute from scratch** to check a result that reused blocks.
+- Block streams of versions nobody kept expire in days. Final outputs follow the session. Saved versions are
+  ordinary CI results. Decide the numbers before the single-run screen ships.
+
+**Staying a generic product.**
+- Core words: parameters, steps (a project may call them blocks), streams, versions. Nothing about images.
+- It works with no hook, and each hook adds something: parameter list → rich form; per-step report → timeline
+  and logs; start-at-step → fast reruns; a connected tool → live use.
+- Each step ships with a public example that is not an image pipeline, and docs for an outside reader.
+- Out of scope: a debugger (breakpoints, stepping inside a step).
+
 ## The contracts
 
 **Schema**: see recommendation 2. One hook, two callers: the Tuning tab calls it for the chosen tests'
