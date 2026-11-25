@@ -108,11 +108,23 @@ const Username = ({ item, style }) => item.username
 
 
 // One line, for the rows of the comparison header: the batch, then how its runs are doing
-const BatchLine = ({ item }) => <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0, whiteSpace: 'nowrap' }}>
-  {item.is_milestone && <Icon icon="star" size={11} color={Colors.GOLD5} title="Milestone" style={{ alignSelf: 'center' }}/>}
+// (the row says it's a milestone, its batch doesn't need a star)
+export const BatchLine = ({ item }) => <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0, whiteSpace: 'nowrap' }}>
   <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', flex: '0 1 auto' }}>{item.title}</span>
   <span className={Classes.TEXT_MUTED} style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', flex: '0 1 auto' }}><BatchStatus status={item.status}/></span>
 </span>
+
+// The same, from a batch's counts, e.g. of commits loaded without their runs
+export const batch_line_item = (batch, label) => ({
+  title: pretty_label({ label: label || 'default' }),
+  status: {
+    total: (batch?.valid_outputs ?? 0) + (batch?.failed_outputs ?? 0) + (batch?.pending_outputs ?? 0),
+    success: batch?.valid_outputs ?? 0,
+    failed: batch?.failed_outputs ?? 0,
+    running: batch?.running_outputs ?? 0,
+    iteration: null,
+  },
+});
 
 // milestone_batches: the labels of the commit's batches that are milestones. compact: on one line
 const SelectBatchesNav = ({ commit, onChange, batch, milestone_batches, compact = false }) => {

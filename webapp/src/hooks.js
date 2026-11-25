@@ -351,7 +351,8 @@ function useReferences(selected, ref_commit, milestones, enabled, together_mode,
     const commit_of = index => index === ref_index ? ref_commit : cached_others[index < ref_index ? index : index - 1]?.commit;
     const origins = references.map((side, index) => {
       const [milestone] = milestones_of(milestones, { project: side.project, commit: side.commit_id ?? commit_of(index)?.id ?? undefined, batch: side.batch, filter: side.filter });
-      return provenance({ ...side, milestone }, { ...naming, commit: commit_of(index) });
+      const error = index === ref_index ? ref_commit?.error : cached_others[index < ref_index ? index : index - 1]?.error;
+      return provenance({ ...side, milestone, error }, { ...naming, commit: commit_of(index)?.id ? commit_of(index) : undefined });
     });
     const given = distinct_names(origins.map(origin => origin.name), references, [naming?.new_label]);
     // what a reference is called if users clear its name
@@ -474,18 +475,22 @@ function useComparisonState() {
   // to say why the references are there: the latest commit of the reference branch...
   const reference_branch = reference_branch_of(project_data, null) ?? undefined;
   // The default reference is it: we have it already. Else we ask for it (without its runs), when a reference may be it.
-  const { data: default_head } = useQuery({ ...commitQuery({ project }), enabled: false });
+  const { data: cached_default } = useQuery({ ...commitQuery({ project }), enabled: false });
+  // without a reference branch in qaboard.yaml, the server's default reference may be on another branch
+  const default_head = cached_default?.id && (!cached_default.branch || cached_default.branch === reference_branch) ? cached_default : undefined;
   const may_be_head = selected.references.length > 1 || (!!ref_commit?.branch && ref_commit.branch === reference_branch);
-  const { data: fetched_head } = useQuery({ ...branchHeadQuery({ project, branch: reference_branch }), enabled: on_commit_page && !!reference_branch && !default_head && may_be_head });
-  const head = default_head?.branch === reference_branch || (default_head && !default_head.branch) ? default_head : fetched_head;
-  const new_id_loaded = new_commit?.id, new_branch = new_commit?.branch, head_id = head?.id;
+  const head_query = useQuery({ ...branchHeadQuery({ project, branch: reference_branch }), enabled: on_commit_page && !!reference_branch && !default_head && may_be_head });
+  const head = default_head ?? head_query.data;
+  const head_pending = !head && head_query.isFetching;
+  const new_id_loaded = new_commit?.id, new_branch = new_commit?.branch, new_date = new_commit?.authored_datetime, head_id = head?.id;
   const { selected_batch_new: naming_batch, filter_batch_new: naming_filter, label_new: naming_label } = selected;
   const naming = useMemo(() => ({
-    new_commit: new_id_loaded ? { id: new_id_loaded, branch: new_branch } : undefined,
-    new_batch: naming_batch, new_filter: naming_filter, reference_branch, head: head_id ? { id: head_id } : undefined,
+    new_commit: new_id_loaded ? { id: new_id_loaded, branch: new_branch, authored_datetime: new_date } : undefined,
+    new_project, new_batch: naming_batch, new_filter: naming_filter, reference_branch,
+    head: head_id ? { id: head_id } : undefined, head_pending,
     // the references can't be called like the new results
     new_label: naming_label || 'new',
-  }), [new_id_loaded, new_branch, naming_batch, naming_filter, reference_branch, head_id, naming_label]);
+  }), [new_id_loaded, new_branch, new_date, new_project, naming_batch, naming_filter, reference_branch, head_id, head_pending, naming_label]);
   const references = useReferences(selected, ref_commit, milestones, on_commit_page, together_mode, naming);
   const together = useTogether(references, selected.reference_rules);
 

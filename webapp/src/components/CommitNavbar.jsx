@@ -25,7 +25,8 @@ import { MultiSelect } from "@blueprintjs/select";
 import { CommitAvatar } from "./avatars";
 import { DoneAtTag } from "./DoneAtTag";
 import { SelectBatchesNav } from "./tuning/SelectBatches";
-import { openAddReference } from "./AddReference";
+import { openAddReference, removeReference } from "./AddReference";
+import { CommitId } from "./CommitId";
 import { SideLabel, milestone_label_hint } from "./SideLabel";
 import { MilestonesPanel } from "../milestones/MilestonesPanel"
 import { CommitMilestoneButton } from "../milestones/CommitMilestone"
@@ -36,7 +37,7 @@ import { shortId, pretty_label, is_placeholder_commit } from "../utils";
 import { http, errorMessage, isArtifactsError } from "../api/http";
 import { commitQuery } from "../api/queries";
 import { useRefreshCommit, useUrlText, updateSelected, useSiteConfig, useUser } from "../hooks";
-import { is_default_name, remove_reference, switch_new_and_reference } from "../selection";
+import { is_default_name, switch_new_and_reference } from "../selection";
 import { LoginMenuItem } from "./authentication/login";
 import { redo_local_note } from "./LocalChanges/localChanges";
 import { toaster } from "../toaster"
@@ -80,86 +81,6 @@ const CommitBranchButton = ({ commit, error, onClick, style }) => {
 // How the header fits the content area (it's a container, see AppNavbar): the left side shrinks and truncates,
 // then labels that have an icon or a tooltip hide, then the filter and the batch selector get narrower.
 // (Container queries style the container's descendants only: the variables are set on the groups.)
-export const commit_header_styles = `
-  .commit-header-left {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-left: 20px;
-  }
-  .commit-header-right {
-    flex: none;
-    margin-left: auto;
-  }
-  .commit-header-filter {
-    width: 260px;
-  }
-  .commit-header-branch {
-    display: inline-block;
-    max-width: 240px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    vertical-align: bottom;
-  }
-  @container commit-header (max-width: 1150px) {
-    .commit-header-right {
-      --batch-select-max-width: 260px;
-    }
-    .commit-header-filter {
-      width: 210px;
-    }
-    .commit-header-branch {
-      max-width: 140px;
-    }
-  }
-  @container commit-header (max-width: 1000px) {
-    .commit-header-optional, .commit-header-branch {
-      display: none;
-    }
-    .done-at-by {
-      display: none;
-    }
-  }
-  @container commit-header (max-width: 860px) {
-    .commit-header-right {
-      --batch-select-max-width: 200px;
-    }
-    .commit-header-filter {
-      width: 170px;
-    }
-  }
-`;
-
-const BatchTags = ({ batch }) => {
-  if (batch === undefined || batch === null)
-    return <span/>
-  const { valid_outputs, running_outputs, pending_outputs, failed_outputs } = batch;
-  return <>
-    {valid_outputs > 0 && (
-      <Tag intent={Intent.SUCCESS} minimal round>
-        {valid_outputs} run{valid_outputs === 1 ? '' : 's'}
-      </Tag>
-    )}{" "}
-    {running_outputs > 0 && (
-      <Tag intent={Intent.PRIMARY} minimal round title="Running now">
-        {running_outputs} running
-      </Tag>
-    )}{" "}
-    {pending_outputs - running_outputs > 0 && (
-      <Tag minimal round title="Waiting for a runner">
-        {pending_outputs - running_outputs}{" "}
-        pending
-      </Tag>
-    )}{" "}
-    {failed_outputs > 0 && (
-      <Tag intent={Intent.DANGER} minimal round title="Failed: open the logs to see why">
-        {failed_outputs} failed
-      </Tag>
-    )}
-  </>
-}
-
-
 // useCommit gives errors as strings like "404 ..."
 const commit_error_text = error => typeof error === 'string' ? error : errorMessage(error)
 
@@ -191,8 +112,8 @@ const confirmations = {
 // side: what we compare, from useComparison().compared: its label, color, milestone...
 // link: {text, details} for the Copy link button, on the new commit's bar
 // slot: what's before the name (the swap button, the radio of the reference compared), context: what we say about
-// the commit instead of its message, extra: more actions at the end of the row
-const CommitNavbar = ({ update, loading, commit, batch, filter, project, project_data, selected, type, same_as_new = false, references, side, link, slot, context, extra }) => {
+// the commit instead of its message, extra: more actions at the end of the row, handle: to drag the row by its name
+const CommitNavbar = ({ update, loading, commit, batch, filter, project, project_data, selected, type, same_as_new = false, references, side, link, slot, context, extra, handle }) => {
   const queryClient = useQueryClient();
   const refreshCommit = useRefreshCommit();
   const [waiting, setWaiting] = useState(false);
@@ -202,7 +123,8 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
   const milestones = useMilestones(project);
   // what users called the results, if they did: milestones are called by their name, also instead of "ref 2"
   const raw_label = selected[`label_${type}`] ?? '';
-  const own_label = side?.milestone && is_default_name(raw_label) ? '' : raw_label;
+  // ("ref 2" isn't a name: we call it by why it's there)
+  const own_label = is_default_name(raw_label) ? '' : raw_label;
   // the batch action users need to confirm: 'redo-all', 'delete-failed' or 'delete-all'
   const [confirming, setConfirming] = useState(null);
   const [show_rename_dialog, setShowRenameDialog] = useState(false);
@@ -406,7 +328,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
 
   // with several references, the next one is shown
   const removeSelection = () => references?.length > 1
-    ? updateSelected(remove_reference({ ...selected, references }, selected.ref_index))
+    ? removeReference({ ...selected, references }, selected.ref_index, side?.label)
     : updateSelected({ [commit_attr]: '' })
 
   const selectBranch = async branch => {
@@ -482,8 +404,8 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
         <Button icon="arrow-right" aria-label="Show this commit in the project" onClick={() => selectCommit(commit?.id)}></Button>
       </ControlGroup>
       <MenuDivider title="Quick actions"/>
-      <MenuItem text="Swap the bars" icon="swap-vertical" label="top and bottom" onClick={switchSelection} />
-      <MenuItem text={`Also show in the ${type === 'ref' ? 'top' : 'bottom'} bar`} label="replaces what it shows" icon={type === 'ref' ? "chevron-up" : "chevron-down"} onClick={copyToOtherType} />
+      <MenuItem text="Swap new and the reference" icon="swap-vertical" onClick={switchSelection} />
+      <MenuItem text={type === 'ref' ? 'Show it as the new results too' : 'Compare with these results'} label={type === 'ref' ? 'replaces new' : 'replaces the reference'} icon={type === 'ref' ? "chevron-up" : "chevron-down"} onClick={copyToOtherType} />
       {type === 'ref' && <MenuItem text="Stack another reference…" icon="layers" label="compare with several" onClick={openAddReference} />}
       <MenuItem text="Remove from comparison" icon="cross" onClick={removeSelection} />
       <MenuItem text={reference_branch} label="reference branch" icon="git-branch" onClick={() => selectBranch(reference_branch)} />
@@ -546,7 +468,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
   </div>
   return <>
     <span className="qa-row-slot">{slot}</span>
-    <span className="qa-row-label">
+    <span className="qa-row-label" {...handle}>
       <SideLabel
         className="commit-header-side"
         color={side?.color.css}
@@ -559,7 +481,9 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
         </span>}
       />
     </span>
+    <CommitId id={commit?.id}/>
     <span className="qa-row-context">
+      {!!selected[project_attr] && project !== selected[project_attr] && <Tag minimal icon="git-repo" title="Its results are from another project" style={{ marginRight: 6, flex: 'none' }}>{selected[project_attr]}</Tag>}
       {context ?? <>
         {(!error_text || !!commit?.committer_name) && <CommitAvatar size='18px' commit={commit} project={project_shown} style={{ marginRight: '6px', flex: 'none' }} />}
         <CommitMessage commit={commit} error={error_text} style={{ minWidth: 0, flex: '0 1 auto' }} />
@@ -600,6 +524,10 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
         type="text"
         leftIcon="filter"
         rightElement={<>
+          {!!filter_text && !!batch?.filtered && <span
+            className={`qa-filter-count ${batch.filtered.outputs?.length ? '' : 'is-none'}`}
+            title={`${batch.filtered.outputs?.length ?? 0} of the ${nb_runs(batch)} runs match the filter`}
+          >{batch.filtered.outputs?.length ?? 0} of {nb_runs(batch)}</span>}
           {!!filter_text && <Button size="small" variant="minimal" icon="cross" aria-label="Clear the filter" onClick={() => onFilterChange('')}/>}
           <Tooltip content={filter_help}>
             <Button size="small" variant="minimal" icon="help" className={`${Classes.TEXT_MUTED} qa-row-hover`} aria-label="How to filter runs"/>
@@ -629,7 +557,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
         </Tooltip>
       </PopoverNext>
       {!!commit && <>
-        {!!link && <CopyLinkButton {...link}/>}
+        {link ? <CopyLinkButton size="small" {...link}/> : <span className="qa-action-slot"/>}
         <Tooltip content="Reload this commit's results">
           <Button
             size="small"
@@ -876,4 +804,4 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
 }
 
 
-export { CommitNavbar, BatchTags };
+export { CommitNavbar };

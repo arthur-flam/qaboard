@@ -8,7 +8,10 @@ import { Button, Classes, InputGroup, MenuDivider, MenuItem } from "@blueprintjs
 import { reference_branch_of } from '../defaults';
 import { MilestonesPanel } from "../milestones/MilestonesPanel";
 import { commitQuery, nb_outputs } from "../api/queries";
-import { useComparison, useSiteConfig } from "../hooks";
+import { useComparison, useSiteConfig, updateSelected } from "../hooks";
+import { remove_reference } from "../selection";
+import { history } from "../router";
+import { toaster } from "../toaster";
 
 
 // The "+" menu is open: other menus open it too ("Stack another reference…")
@@ -42,6 +45,19 @@ export function usePrefetchNeighbors(references, ref_index, ready) {
   }, [queryClient, ready, key]);
 }
 
+// Removes a reference, and says so with a way to undo it (the browser's back button does it too)
+export const removeReference = (selected, index, name) => {
+  const changes = remove_reference(selected, index);
+  if (Object.keys(changes).length === 0) return;
+  const before = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  updateSelected(changes);
+  toaster.show({
+    message: `Removed ${name ?? 'the reference'} from the comparison`,
+    icon: 'cross',
+    action: { text: 'Undo', icon: 'undo', onClick: () => history.push(before) },
+  }, 'remove-reference');
+};
+
 // Commit ids are hexadecimal, the rest are branches (or tags)
 const is_commit_id = text => /^[0-9a-f]{6,40}$/i.test(text);
 
@@ -65,7 +81,7 @@ export const AddReferencePanel = ({ actions, can_duplicate }) => {
     selected={{ project: shown.project, commit: shown.commit_id, batch: shown.batch, filter: shown.filter }}
     onSelect={actions.addMilestone}
     before={<>
-      <MenuDivider title="Stack a reference"/>
+      <MenuDivider title="Compare with another reference too"/>
       <li className={Classes.TEXT_MUTED} style={{ fontSize: 12, padding: '0 7px 6px', lineHeight: 1.4 }}>
         Compare with several references: the image viewer shows them together. The metrics and the other viewers compare with the one you select: its radio button, or <kbd className={Classes.KEY}>r</kbd>.
       </li>
@@ -81,7 +97,7 @@ export const AddReferencePanel = ({ actions, can_duplicate }) => {
         />
       </li>
       <MenuItem text={reference_branch} label="reference branch" icon="git-branch" onClick={() => actions.addBranch(reference_branch)}/>
-      {can_duplicate && <MenuItem text="This reference again" label="to change its batch or filter" icon="duplicate" onClick={() => actions.duplicate(selected.ref_index)}/>}
+      {can_duplicate && <MenuItem text={`A copy of ${shown.display_label}`} label="with another batch or filter" icon="duplicate" onClick={() => actions.duplicate(selected.ref_index)}/>}
     </>}
   />;
 };

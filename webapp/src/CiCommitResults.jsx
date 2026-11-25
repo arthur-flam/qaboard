@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "@blueprintjs/core";
 
-import { Container, Section, commit_header_height, shows_reference_bar } from "./components/layout";
+import { Container, Section, commit_header_height, shows_reference_bar, useLedgerStore } from "./components/layout";
 import { SectionErrorBoundary } from "./components/ErrorFallback";
 import { MetricsSummary, MetricSelect } from "./components/metrics";
 import { CommitWarningMessages, BatchStatusMessages } from "./components/messages";
@@ -387,7 +387,8 @@ const CiCommitResults = () => {
   // the cards can be compact, like the logs
   const cards_actions = <><OutputCardDensityControl/>{runs_actions}</>;
   // the commits' fixed headers
-  const header_height = commit_header_height({ selected_views, references: comparison.references });
+  const expanded_references = useLedgerStore(state => state.expanded);
+  const header_height = commit_header_height({ selected_views, references: comparison.references, expanded: expanded_references });
   const table_props = { sorting: comparison.sorting, onSort: sort_runs, stickyTop: header_height };
 
   return (

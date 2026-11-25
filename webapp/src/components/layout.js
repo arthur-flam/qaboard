@@ -1,3 +1,4 @@
+import { create } from "zustand";
 import styled from "styled-components";
 
 
@@ -38,27 +39,25 @@ export { Container, Section, Layout };
 
 
 // The commit page's fixed header (components/ComparisonHeader.jsx): a row for the new commit, one for each reference
-// (except in views about the new commit only). Past `max_rows` references, the others are listed in a last row.
-export const commit_bar_height = 75;
-export const reference_tabs_height = 34;
+// (except in views about the new commit only). Past `max_rows` references, they scroll: 3 rows and a half show (the
+// cut row says there's more), with a footer that says how many are out of sight, and can show them all.
+
 export const ledger_row_height = 36;
-export const ledger_more_height = 30;
+export const ledger_footer_height = 26;
 export const ledger_padding = 4;
-const max_rows = 3;
+export const max_rows = 4;
+export const scrolled_rows = 3.5;
+export const expanded_rows = 12;
 export const shows_reference_bar = selected_views => !['logs', 'tuning', 'groups'].some(view => selected_views.includes(view));
-// The references with a row ({shown}: their indexes, in order), and the others ({hidden}). The one compared always has one.
-export const visible_references = (references, ref_index) => {
-  const all = references.map((_, index) => index);
-  if (all.length <= max_rows) return { shown: all, hidden: [] };
-  const shown = all.slice(0, max_rows);
-  if (!shown.includes(ref_index)) shown[max_rows - 1] = ref_index;
-  shown.sort((a, b) => a - b);
-  return { shown, hidden: all.filter(index => !shown.includes(index)) };
-};
-export const commit_header_height = ({ selected_views, references }) => {
+// whether users show all the references, past max_rows
+export const useLedgerStore = create(set => ({ expanded: false, setExpanded: expanded => set({ expanded }) }));
+export const scrolls = references => references.length > max_rows;
+// the height of the references' rows
+export const references_height = (references, expanded) => !scrolls(references)
+  ? references.length * ledger_row_height
+  : (expanded ? Math.min(references.length, expanded_rows) : scrolled_rows) * ledger_row_height + ledger_footer_height;
+export const commit_header_height = ({ selected_views, references, expanded = false }) => {
   const padding = 2 * ledger_padding;
   if (!shows_reference_bar(selected_views)) return padding + ledger_row_height;
-  const ref_index = Math.max(0, references.findIndex(reference => reference.is_shown));
-  const { shown, hidden } = visible_references(references, ref_index);
-  return padding + (1 + shown.length) * ledger_row_height + (hidden.length ? ledger_more_height : 0);
+  return padding + ledger_row_height + references_height(references, expanded);
 };
