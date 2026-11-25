@@ -1,5 +1,5 @@
 // Several references are shown together: the image viewer shows the new image and every reference stacked, each in
-// its tile in the order of the tabs, compared with the reference selected (the anchor). Against a mocked API and IIIF image server.
+// its tile in the order of the header's rows, compared with the reference selected (the anchor). Against a mocked API and IIIF image server.
 import { test, expect } from '@playwright/test';
 
 import { info, tile } from './fixtures/iiif';
@@ -91,17 +91,22 @@ const names = viewer => viewer.locator('.qiv-stage > .qiv-pane .qiv-label, .qiv-
   }))
   .sort((a, b) => a.top - b.top || a.left - b.left).map(label => label.text));
 
+// The commit page's header: a row per reference, which say how they're called
+const header = page => page.getByRole('region', { name: 'What we compare' });
+const comparing = (page, name) => expect(header(page).getByRole('radio', { name: `Comparing with ${name}` })).toBeVisible();
+const row = (page, name) => header(page).locator('.qa-row').filter({ has: page.getByRole('button', { name: `${name}: rename`, exact: true }) });
+
 test('shows the references stacked together in the image viewer, compared with the anchor', async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 1000 });
   await page.goto(`/${project}/commit/new?reference=ref&compare=old&compare=alt&selected_views=output-list`);
   const viewer = page.locator('.qiv').first();
   const anchor = locator => locator.locator('.qiv-stage > .qiv-pane .qiv-label');
-  await expect(page.getByRole('tab')).toHaveCount(3);
-  // Together by default: new, then the references in the order of their tabs. Tiles are there before their runs.
+  await expect(header(page).getByRole('radio')).toHaveCount(3);
+  // Together by default: new, then the references in the order of their rows. Tiles are there before their runs.
   await expect(viewer.locator('.qiv-tile')).toHaveCount(3);
   await expect(viewer.getByText(/^Loading/)).toHaveCount(0);
-  // new is the anchor, like with one reference. ref 3 is the same file as ref.
-  await expect.poll(() => names(viewer)).toEqual(['new', 'ref', 'ref 2', 'ref 3 = ref']);
+  // new is the anchor, like with one reference. The references are called by their commit, "alt" is the same file as "ref".
+  await expect.poll(() => names(viewer)).toEqual(['new', 'ref', 'old', 'alt = ref']);
   await expect(anchor(viewer)).toHaveText(/^new/);
   // how far each image is from the anchor: the square, the brightness
   await expect(viewer.locator('.qiv-tile-note')).toHaveText([/^0\.\d from new$/, /^\d\d\.\d from new$/, /^0\.\d from new$/]);
@@ -120,75 +125,79 @@ test('shows the references stacked together in the image viewer, compared with t
   await expect(viewer.getByRole('radio', { name: /^2 ref/ })).toBeChecked();
   await expect(page.locator('.qiv').nth(1).getByRole('radio', { name: /^2 ref/ })).toBeChecked();
   await page.keyboard.press('Shift+Digit3');
-  await expect(viewer.getByRole('radio', { name: /^3 ref 2/ })).toBeChecked();
+  await expect(viewer.getByRole('radio', { name: /^3 old/ })).toBeChecked();
   await page.keyboard.press('1');
 
   // Clicking a reference's name on an image selects it and makes it the anchor, in every run. Nothing moves.
-  await viewer.getByRole('button', { name: /^ref 2/ }).click();
-  await expect(page.getByRole('tab', { name: /^Reference 2:/ })).toHaveAttribute('aria-selected', 'true');
+  await viewer.getByRole('button', { name: /^old/ }).click();
+  await comparing(page, 'old');
   await expect(page).toHaveURL(/reference=old/);
   await expect(page).toHaveURL(/anchor=reference/);
-  await expect(anchor(viewer)).toHaveText(/^ref 2/);
-  await expect(anchor(page.locator('.qiv').nth(1))).toHaveText(/^ref 2/);
-  await expect.poll(() => names(viewer)).toEqual(['new', 'ref', 'ref 2', 'ref 3 = ref']);
-  await expect(viewer.locator('.qiv-tile-note').first()).toHaveText(/^\d\d\.\d from ref 2$/);
+  await expect(anchor(viewer)).toHaveText(/^old/);
+  await expect(anchor(page.locator('.qiv').nth(1))).toHaveText(/^old/);
+  await expect.poll(() => names(viewer)).toEqual(['new', 'ref', 'old', 'alt = ref']);
+  await expect(viewer.locator('.qiv-tile-note').first()).toHaveText(/^\d\d\.\d from old$/);
   expect(await viewer.locator('.qiv-stage').boundingBox()).toEqual(stage);
-  // r shows the next reference: the anchor follows the reference selected
+  // r compares with the next reference: the anchor follows the reference selected
   await page.keyboard.press('r');
-  await expect(page.getByRole('tab', { name: /^Reference 3:/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(anchor(viewer)).toHaveText(/^ref 3/);
+  await comparing(page, 'alt');
+  await expect(anchor(viewer)).toHaveText(/^alt/);
 
   // Clicking new's name makes it the anchor again: the reference selected stays
   await viewer.getByRole('button', { name: /^new/ }).click();
   await expect(anchor(viewer)).toHaveText(/^new/);
   await expect(page).not.toHaveURL(/anchor=/);
-  await expect(page.getByRole('tab', { name: /^Reference 3:/ })).toHaveAttribute('aria-selected', 'true');
+  await comparing(page, 'alt');
   // ...and r then only changes the reference selected
   await page.keyboard.press('r');
-  await expect(page.getByRole('tab', { name: /^Reference 1:/ })).toHaveAttribute('aria-selected', 'true');
+  await comparing(page, 'ref');
   await expect(anchor(viewer)).toHaveText(/^new/);
-  await expect.poll(() => names(viewer)).toEqual(['new', 'ref', 'ref 2', 'ref 3 = ref']);
-  // A tab makes its reference the anchor, the new results' tab makes new the anchor again
-  await page.getByRole('tab', { name: /^Reference 2:/ }).click();
-  await expect(anchor(viewer)).toHaveText(/^ref 2/);
-  await page.getByRole('button', { name: /^Top: new/ }).click();
+  await expect.poll(() => names(viewer)).toEqual(['new', 'ref', 'old', 'alt = ref']);
+  // A reference's radio button makes it the anchor
+  await header(page).getByRole('radio', { name: 'Compare with old' }).click();
+  await expect(anchor(viewer)).toHaveText(/^old/);
+  await viewer.getByRole('button', { name: /^new/ }).click();
   await expect(anchor(viewer)).toHaveText(/^new/);
-  await expect(page.getByRole('tab', { name: /^Reference 2:/ })).toHaveAttribute('aria-selected', 'true');
+  await comparing(page, 'old');
 
   // A pair alone: the viewer for two images, then all of them again
   await viewer.getByTitle(/^new and ref[.:]/).first().click();
   await expect(viewer.locator('.qiv-tile')).toHaveCount(0);
   await expect(viewer.getByRole('button', { name: 'Blind test' })).toBeVisible();
 
-  // Dragging a tab reorders the images, the pair shown alone stays the same two, the anchor stays the anchor
-  await page.getByRole('tab', { name: /^Reference 3:/ }).dragTo(page.getByRole('tab', { name: /^Reference 1:/ }), { targetPosition: { x: 5, y: 10 } });
-  await expect(page.getByRole('tab', { name: /^Reference 1: ref 3/ })).toBeVisible();
-  await expect.poll(() => names(viewer)).toEqual(['new', 'ref = ref 3']);
+  // Dragging a row by its name, before the first: it reorders the images, the pair shown alone stays the same two,
+  // the anchor stays the anchor
+  await row(page, 'alt').locator('.qa-row-label').dragTo(row(page, 'ref'), { targetPosition: { x: 100, y: 4 } });
+  await expect.poll(() => header(page).locator('.qa-row .qa-side-text').allTextContents()).toEqual(['new', 'alt', 'ref', 'old']);
+  await expect.poll(() => names(viewer)).toEqual(['new', 'ref = alt']);
   await viewer.getByRole('button', { name: 'All 4 images' }).click();
   await expect(viewer.locator('.qiv-tile')).toHaveCount(3);
-  await expect.poll(() => names(viewer)).toEqual(['new', 'ref 3', 'ref = ref 3', 'ref 2']);
+  await expect.poll(() => names(viewer)).toEqual(['new', 'alt', 'ref = alt', 'old']);
   await expect(anchor(viewer)).toHaveText(/^new/);
   await expect(page.locator('.qiv').nth(1).locator('.qiv-tile')).toHaveCount(3);
-  // ...also when a reference is the anchor
-  await viewer.getByRole('button', { name: /^ref 2/ }).click();
-  await expect(anchor(viewer)).toHaveText(/^ref 2/);
-  await page.getByRole('tab', { name: /^Reference 3:/ }).dragTo(page.getByRole('tab', { name: /^Reference 1:/ }), { targetPosition: { x: 5, y: 10 } });
-  await expect.poll(() => names(viewer)).toEqual(['new', 'ref 2', 'ref 3', 'ref = ref 3']);
-  await expect(anchor(viewer)).toHaveText(/^ref 2/);
-  await expect(anchor(page.locator('.qiv').nth(1))).toHaveText(/^ref 2/);
+  // ...also when a reference is the anchor, and also after: below the last half of a row
+  await viewer.getByRole('button', { name: /^old/ }).click();
+  await expect(anchor(viewer)).toHaveText(/^old/);
+  await row(page, 'alt').locator('.qa-row-label').dragTo(row(page, 'old'), { targetPosition: { x: 100, y: 30 } });
+  await expect.poll(() => header(page).locator('.qa-row .qa-side-text').allTextContents()).toEqual(['new', 'ref', 'old', 'alt']);
+  await expect.poll(() => names(viewer)).toEqual(['new', 'ref', 'old', 'alt = ref']);
+  await expect(anchor(viewer)).toHaveText(/^old/);
+  await expect(anchor(page.locator('.qiv').nth(1))).toHaveText(/^old/);
   await page.screenshot({ path: test.info().outputPath('together.png') });
 
   // Leaving a reference out, then one at a time: the reference alone, like before
-  await page.getByRole('checkbox', { name: /^Show ref 3 / }).click();
+  await header(page).getByRole('button', { name: 'Hide alt from the image viewers' }).click();
   await expect(viewer.locator('.qiv-tile')).toHaveCount(2);
-  await page.getByRole('radio', { name: 'One at a time' }).click();
+  await header(page).getByRole('button', { name: 'Actions on ref' }).click();
+  await page.getByRole('menuitem', { name: /Show one reference at a time/ }).click();
   await expect(viewer.locator('.qiv-tile')).toHaveCount(0);
   await expect(page).toHaveURL(/together=0/);
   // remembered for other pages
   await page.goto(`/${project}/commit/new?reference=ref&compare=old&selected_views=output-list`);
   await expect(viewer.locator('.qiv-pane')).toHaveCount(2);
   await expect(viewer.locator('.qiv-tile')).toHaveCount(0);
-  await page.getByRole('radio', { name: 'Together' }).click();
+  await header(page).getByRole('button', { name: 'Actions on old' }).click();
+  await page.getByRole('menuitem', { name: /Show the references together/ }).click();
   await expect(viewer.locator('.qiv-tile')).toHaveCount(2);
   await page.waitForLoadState('networkidle');
 });
@@ -198,9 +207,9 @@ test('keeps the tiles in place while a reference loads', async ({ page }) => {
   await page.goto(`/${project}/commit/new?reference=ref&compare=old&selected_views=output-list`);
   const viewer = page.locator('.qiv').first();
   await expect(viewer.locator('.qiv-tile')).toHaveCount(2);
-  await expect(viewer.getByText('Loading ref 2…')).toBeVisible();
+  await expect(viewer.getByText('Loading old…')).toBeVisible();
   const stage = await viewer.locator('.qiv-stage').boundingBox();
-  await expect(viewer.getByText('Loading ref 2…')).toHaveCount(0);
+  await expect(viewer.getByText('Loading old…')).toHaveCount(0);
   expect(await viewer.locator('.qiv-stage').boundingBox()).toEqual(stage);
   await page.waitForLoadState('networkidle');
 });

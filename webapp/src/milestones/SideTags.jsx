@@ -1,5 +1,5 @@
 // Where milestones are on the commit page, in the milestones menus and the Manage dialog: "new", "ref", "ref 2"...
-// with a dot of their side's color, like the reference tabs. See comparison_sides in ./api.js
+// with a dot of their side's color, like the comparison header. See comparison_sides in ./api.js
 import { Intent, Tag } from "@blueprintjs/core";
 
 
@@ -17,7 +17,7 @@ export const side_tag_style = `
   }
 `;
 
-// Where a milestone is on the commit page: "new", "ref 2"..., with their colors, like the reference tabs
+// Where a milestone is on the commit page: "new", "compared", "reference", with their colors, like the comparison header
 export const SideTags = ({ sides }) => sides.map(side => <Tag
   key={side.role}
   minimal

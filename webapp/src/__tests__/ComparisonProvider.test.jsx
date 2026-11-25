@@ -79,8 +79,8 @@ describe('references shown together with the one compared', () => {
   test('by default they all are: they come with their runs, and find the run that matches a new run', async () => {
     open('compare[0]=ccc111&compare[1][commit]=ddd222&compare[1][together]=0');
     expect(comparison.together_mode).toBe('all');
-    // there at once, before their runs
-    expect(comparison.together).toMatchObject([{ id: 'group/repo/ccc111/default/', key: 'reference-2', index: 1, number: 2, label: 'ref 2', project: 'group/repo', loading: true }]);
+    // there at once, before their runs, called by their commit (not "ref 2")
+    expect(comparison.together).toMatchObject([{ id: 'group/repo/ccc111/default/', key: 'reference-2', index: 1, number: 2, label: 'ccc111', project: 'group/repo', loading: true }]);
     expect(comparison.together[0].match(comparison.new_batch.outputs[1])).toBeUndefined();
     await waitFor(() => expect(comparison.together[0].loading).toBe(false));
     await waitFor(() => expect(comparison.new_batch.outputs[1]?.reference_id).toBe(5));

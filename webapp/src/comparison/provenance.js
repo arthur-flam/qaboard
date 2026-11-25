@@ -24,7 +24,8 @@ export const short_sha = id => (id ?? '').slice(0, 7);
 export const provenance = (side, { commit, new_commit, new_project, new_batch, new_filter, reference_branch, head, head_pending }) => {
   if (side.milestone) return { kind: 'milestone' };
   if (side.error) return { kind: 'error', name: short_sha(side.commit_id ?? commit?.id) || undefined };
-  if (!commit?.id) return { kind: 'loading' };
+  // its commit, until we know better (e.g. "develop"): not "ref 2"
+  if (!commit?.id) return { kind: 'loading', name: short_sha(side.commit_id) || undefined };
   const batch = side.batch || 'default';
   // projects of the same repository share their commits
   const same_project = !new_project || !side.project || side.project === new_project;
@@ -37,7 +38,7 @@ export const provenance = (side, { commit, new_commit, new_project, new_batch, n
     if (head?.id && head.id === commit.id) return { kind: 'latest', name: reference_branch, branch: reference_branch };
     if (head?.id) return { kind: 'behind', name: short_sha(commit.id), branch: reference_branch };
     // the name would change once we know
-    if (head_pending) return { kind: 'loading' };
+    if (head_pending) return { kind: 'loading', name: short_sha(commit.id) };
     return { kind: 'on-branch', name: short_sha(commit.id), branch: reference_branch };
   }
   if (new_commit?.branch && commit.branch === new_commit.branch) {

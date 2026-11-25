@@ -60,7 +60,7 @@ since it would change nothing on the server (copy them with `dict(run.metrics)`)
 plain data. You can also name the runs instead of giving a URL:
 `qb.runs(project="kitefin/detector", commit="main", batch="ci", filter="night")`. `commit` can be a branch or a tag;
 without it, you get the latest commit with results (`branch=` picks the branch). Keyword arguments override what a URL
-says, and `side="reference"` gives the runs of the reference bar (`?reference=`) instead of the compared ones
+says, and `side="reference"` gives the runs of the reference compared (`?reference=`) instead of the compared ones
 (`side="new"`, the default). Runs whose files were deleted, and
 the iterations of [automated tunings](/docs/auto-optimization), are left out unless you ask
 (`include_deleted`, `include_hidden`).
@@ -78,7 +78,7 @@ address, ready to copy, and the shell version. The filter is applied like in the
 at. Add `status:success` to the filter to skip failed and unfinished runs, which may have no files or metrics.
 
 From the shell, `qa runs <url>` prints the runs' folders, one per line, and `--json` everything above
-(`--side reference` for the reference bar's). It works
+(`--side reference` for the reference's). It works
 outside a project, without a *qaboard.yaml*:
 
 ```bash

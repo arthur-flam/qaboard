@@ -308,22 +308,22 @@ runs of the page. A run without the file compares with its reference, with a war
 To see new next to the last release and the latest `main` at once, stack those references (see
 [See several references together](/docs/user-guide/comparing-results#show-references-together)): the image viewer
 shows the new image and every reference, each in its own tile, all zoomed and panned together, named in its
-reference's color. The tiles follow the order of the reference tabs, new first.
+reference's color. The tiles follow the order of the references' rows in the page's header, new first.
 
-The other images are compared with the **anchor**, marked with an anchor icon on its tab and its image. It's new at
-first: every reference is compared with new, as with one reference. Click a reference's name, on its image or its tab,
-to select it and make it the anchor: the other images, new included, are then compared with it. Click new's name to
+The other images are compared with the **anchor**, marked with an anchor icon on its image. It's new at
+first: every reference is compared with new, as with one reference. Click a reference's name on its image, or its
+radio button in the header, to select it and make it the anchor: the other images, new included, are then compared with it. Click new's name to
 make new the anchor again: the selected reference stays. <kbd>r</kbd> and <kbd>Shift</kbd> <kbd>r</kbd> change only the
 selected reference, which the rest of the page compares new with. The page's link keeps the anchor.
 
-The tiles stay in the tabs' order, whatever the anchor. The four modes, keys <kbd>1</kbd> to <kbd>4</kbd>, become:
+The tiles stay in the rows' order, whatever the anchor. The four modes, keys <kbd>1</kbd> to <kbd>4</kbd>, become:
 
 | Mode | Key | What you see |
 |---|---|---|
 | **Grid** | <kbd>1</kbd> | Each image in its tile, with how far it is from the anchor, e.g. *5.1 from master*. |
-| **Wipe** | <kbd>2</kbd> | Each image against the anchor, the earlier one in the tabs' order on the left. The dividers move together. |
+| **Wipe** | <kbd>2</kbd> | Each image against the anchor, the earlier one in the rows' order on the left. The dividers move together. |
 | **Single** | <kbd>3</kbd> | One image at a time, in place: <kbd>t</kbd> or a click shows the next, <kbd>Shift</kbd> <kbd>t</kbd> the previous, <kbd>Shift</kbd> <kbd>1</kbd>…<kbd>9</kbd> that image. Every run's viewer flips together. |
-| **Difference** | <kbd>4</kbd> | Each image's difference with the anchor: the earlier one in the tabs' order minus the later one, e.g. new − reference, as with two images. The anchor's tile shows the anchor. |
+| **Difference** | <kbd>4</kbd> | Each image's difference with the anchor: the earlier one in the rows' order minus the later one, e.g. new − reference, as with two images. The anchor's tile shows the anchor. |
 
 Switching modes or references moves no tile, and neither do references that are still loading (*Loading v1.2…*) or
 a missing run or file: the tile says why. A file picked in the **vs** menu
@@ -352,8 +352,8 @@ its name, e.g. *rc1 = master*. The list button in the toolbar, **Values under th
   not a bit-accuracy check. See [bit accuracy](/docs/bit-accuracy) for that.
 - Images with another aspect ratio than the anchor's are compared at the same width.
 - Only the image viewer shows several references: the other viewers compare with the selected reference. Each
-  reference shown loads all its runs: a handful at most. Untick the others in their tabs, or pick **One at a time**
-  after the tabs.
+  reference shown loads all its runs: a handful at most. Hide the others with the eye of their row, or pick **Show one
+  reference at a time** in a row's **⋯**.
 
 </details>
 

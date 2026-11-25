@@ -351,7 +351,7 @@ const CommitNavbar = ({ update, loading, commit, batch, filter, project, project
     // with several references: one of them is shown, not added twice
     updateSelected(milestone_selection_changes(milestone, type, { ...selected, references }))
   };
-  // ...or added to them: the reference bar's menu stacks milestones too
+  // ...or added to them: the reference row's menu stacks milestones too
   const stackMilestone = milestone => {
     if (!milestone.commit && milestone.branch)
       return selectBranch(milestone.branch)

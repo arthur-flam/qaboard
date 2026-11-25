@@ -16,7 +16,7 @@ kd-1.3. You'll do three things with milestones:
 
 ## Save a milestone {#saving-a-milestone}
 1. Open the results to keep: the commit, its batch, and a filter if only some runs matter.
-2. Click the **star** next to the commit's hash, in the **new** or the **ref** bar. A dialog shows what you are about
+2. Click the **star** of the **new** results' row, or of a reference's, in the page's header. A dialog shows what you are about
    to save: the commit, its batch, the filter, how many runs match, and the datasets they used.
 3. Type a **Name** that says why it matters. One is suggested: type over it.
 4. Optionally, add a **Group**, like `releases` or `tuning/denoiser` (`/` makes subgroups), and **Notes**: what
@@ -42,11 +42,11 @@ your account, as milestones listed only for you.
 ## Compare with a milestone {#finding-milestones}
 Milestones are listed in two menus:
 
-- The **Change** menu of the commit bars: pick a milestone in the **ref** bar's menu to compare with it, in the
-  **new** bar's to look at it. Its batch and filter are selected too. With
-  [several references](/docs/user-guide/comparing-results#several-references), it replaces the one shown, or shows it
-  if it is one of them already. To compare with it too, hover it and click its **Stack as a
-  reference**.
+- The **Change** menu (**✎**) of the page's rows: pick a milestone in a reference's menu to compare with it, in the
+  **new** results' to look at it. Its batch and filter are selected too. With
+  [several references](/docs/user-guide/comparing-results#several-references), it replaces the one compared, or compares
+  with it if it is one of them already. To compare with it too, hover it and click its **Stack as a
+  reference**, or add it with the header's **+**.
 - The sidebar's **Milestones** menu: pick one to open its results, compared with the project's default reference.
 
 <Shot
@@ -56,8 +56,8 @@ Milestones are listed in two menus:
 
 Both menus list, in this order:
 
-1. On a commit page, the milestones **On this page**: the new results and the references, tagged **new**, **ref 1**,
-   **ref 2**... in the colors of their tabs. The same tags show wherever these milestones are listed, and in
+1. On a commit page, the milestones **On this page**: the new results and the references, tagged **new**,
+   **compared** (the reference compared with) and **reference**, in the colors of their rows. The same tags show wherever these milestones are listed, and in
    **Manage milestones…**.
 2. Your **Favorites**: click the heart of a milestone to keep it first, and one click away in the sidebar, under
    **Milestones**. The heart of a group keeps all its milestones first, even those saved later.
@@ -110,7 +110,7 @@ When the results you look at are a milestone, click its star, or its name next t
 its group, its notes or who sees it, copy its link, add it to your favorites, or delete it.
 
 - Only its owner can edit a milestone. Others can **Save my own** copy, listed only for them.
-- The page calls the milestone's results by its name, in the bars, the viewers and the metrics tables: rename the
+- The page calls the milestone's results by its name, in the header's rows, the viewers and the metrics tables, with its notes in its row: rename the
   milestone to change it.
 - Deleting a milestone keeps its results, but the cleanup of old results can then delete them, and its links stop
   working. A shared milestone disappears for everyone on the project.

@@ -85,8 +85,8 @@ test('milestones, and commits from the same branch', async () => {
   show(`/p/commit/${d}?reference=${c}&compare=${a}`);
   await waitFor(() => expect(screen.getByTestId('names')).toHaveTextContent('release 1.0, aaaaaaa'));
   // a milestone says its notes, else its commit's message
-  expect(header().getByText('Commit ccc')).toBeInTheDocument();
-  expect(header().getByText('Earlier on this branch')).toBeInTheDocument();
+  expect(await header().findByText('Commit ccc')).toBeInTheDocument();
+  expect(await header().findByText('Earlier on this branch')).toBeInTheDocument();
   // every row has its commit's short id
   expect(header().getByRole('button', { name: 'Copy the commit id aaaaaaa' })).toBeInTheDocument();
 });

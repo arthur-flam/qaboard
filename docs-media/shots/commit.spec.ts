@@ -507,12 +507,13 @@ shot('commit/video-properties', {
 });
 
 
-// The commit bars, fixed at the top of the page: the new commit's, then the reference's. On the right of each, the
-// filter box with the counters under it, then the batch selector.
+// The comparison header, fixed at the top of the page (webapp/src/components/ComparisonHeader.jsx): a row for the new
+// results, then one per reference. Each has its batch selector, then its filter box, which counts the runs that match.
 const filterBox = (page: Page, type: 'new' | 'ref') =>
-  page.locator('.bp6-form-group', { has: page.locator(`input#filter-${type}-input`) });
+  page.locator('.qa-row-filter', { has: page.locator(`input#filter-${type}-input`) });
 const barRight = (page: Page, type: 'new' | 'ref') =>
-  page.locator('.bp6-navbar-group', { has: page.locator(`input#filter-${type}-input`) });
+  page.locator('.qa-row', { has: page.locator(`input#filter-${type}-input`) });
+const comparisonHeader = (page: Page) => page.getByRole('region', { name: 'What we compare' });
 // The View options' Files to show: one entry per option, here the ISP stage
 const dynamicOptions = (page: Page) => controlsPanel(page).locator('section', { has: page.getByRole('button', { name: 'Files to show', exact: true }) });
 
@@ -535,9 +536,9 @@ shot('commit/batch-picker', {
 shot('commit/output-filter', {
   project: IQ,
   url: d => d.commitUrl(IQ, 'merge-bilateral', { reference: 'isp-4-1', view: 'table-kpi' }),
-  alt: 'The new commit\'s filter box with "low-light -gradient", 8 outputs under it, and the Metrics Table below listing '
-    + 'only the low-light runs, the sky gradient left out.',
-  caption: 'Words narrow down the runs, a minus sign leaves some out; the counters under the box count what\'s left.',
+  alt: 'The new commit\'s filter box with "low-light -gradient", saying how many runs match, and the Metrics Table below '
+    + 'listing only the low-light runs, the sky gradient left out.',
+  caption: 'Words narrow down the runs, a minus sign leaves some out; the box counts the runs that match.',
   actions: async ui => {
     await ui.type(ui.page.locator('input#filter-new-input'), 'low-light -gradient');
     await ui.settle();
@@ -566,38 +567,25 @@ shot('commit/export', {
   padding: 8,
 });
 
-// Several references (webapp/src/components/ReferenceTabs.jsx): tabs below the commit bars, one compared at a time.
-// The URL stacks them (webapp/src/selection.js): `reference` is the one shown, `compare` the others
-const referenceTabs = (page: Page) => page.getByRole('tablist', { name: 'References' });
-const tabTooltip = (page: Page) => page.locator('.bp6-tooltip', { hasText: 'reference 2' });
-
-shot('commit/reference-tabs', {
+// Several references (webapp/src/components/ComparisonHeader.jsx): a row per reference in the header, which says why it's
+// there, one compared at a time. The URL stacks them (webapp/src/selection.js): `reference` is the one compared, `compare`
+// the others
+shot('commit/reference-rows', {
   project: IQ,
   // the merge against the release before it, and against the head of main at T0 (story.yaml: chroma-low-light)
   url: d => d.commitUrl(IQ, 'merge-bilateral', {
     reference: 'isp-4-1', view: 'table-kpi', query: { compare: d.sha(IQ, 'chroma-low-light') },
   }),
-  alt: 'The bilateral denoiser\'s merge with two references stacked: under the bars, the tabs show the top results, '
-    + 'then, after vs, the isp-4.1 milestone, shown, and ref 2, hovered: its tooltip gives its commit on main, its '
-    + 'author, message and batch, still running.',
-  caption: 'Stack several references: their tabs hang below the bars, click one, or press r, to compare with it.',
+  alt: 'The bilateral denoiser\'s merge with two references: the header has a row for the new results, then the isp-4.1 '
+    + 'milestone, compared with (its radio button checked), with its notes, and the latest commit of main, with its '
+    + 'message, author and runs.',
+  caption: 'Each reference has its row, which says why it\'s there. Click its radio button, or press r, to compare with it.',
   actions: async ui => {
-    await referenceTabs(ui.page).waitFor();
-    // what a tab is, on hover
-    await ui.hover(referenceTabs(ui.page).getByRole('tab', { name: /^Reference 2:/ }));
-    await tabTooltip(ui.page).waitFor();
+    await comparisonHeader(ui.page).getByRole('radio').first().waitFor();
+    await mouseOff(ui);
     await ui.settle();
   },
-  // a box: the bars and the tabs are fixed at the top, from the sidebar's edge (the top results' tab, before "vs" and
-  // the references, starts 14 px after it), down to the tooltip under the tabs
-  target: async page => {
-    const top = await stableBox(page.locator('.qa-tabs-top'));
-    const strip = await stableBox(referenceTabs(page).locator('xpath=..'));
-    const tooltip = await stableBox(tabTooltip(page));
-    const x = Math.max(0, Math.floor(top.x - 14));
-    const bottom = Math.max(strip.y + strip.height, tooltip.y + tooltip.height) + 8;
-    return { x, y: 0, width: strip.x + strip.width - x, height: bottom };
-  },
+  target: page => [comparisonHeader(page)],
 });
 
 // Dynamic outputs: `stages/:stage.jpg` in qaboard.yaml gives a slider over the ISP's stages, synced across runs
@@ -718,7 +706,7 @@ async function blur(ui: Ui) {
   await ui.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await ui.settle();
 }
-// The mouse on an empty part of the sidebar: over the commit bars, it would show the reference's Stack a reference tab
+// The mouse on an empty part of the sidebar: over the header's rows, it would show their buttons
 async function mouseOff(ui: Ui) {
   await ui.cursor.moveTo({ x: 100, y: 790 });
   await ui.hold(300);
@@ -1262,24 +1250,22 @@ shot('commit/milestone', {
 shot('commit/change-menu', {
   project: DE,
   url: d => d.commitUrl(DE, 'kd-1-3', { reference: 'kd-1-2', view: 'table-kpi' }),
-  alt: 'The reference commit\'s Change menu: a project box, Swap the bars, Also show in the top bar, Stack another '
-    + 'reference, Remove from comparison, the reference branch main, then the milestones kd-1.3 and kd-1.2 with their '
-    + 'batch, branch and commit.',
+  alt: 'The reference\'s Change menu: a project box, Swap new and the reference, Show it as the new results too, Stack '
+    + 'another reference, Remove from comparison, the reference branch main, then the milestones kd-1.3 and kd-1.2 with '
+    + 'their batch, branch and commit.',
   caption: 'Change the reference from its commit bar: swap new and reference, or pick the reference branch or a milestone.',
   actions: async ui => {
     await milestonesAsSaved(ui);
     await ui.click(ui.page.getByRole('button', { name: 'Change the reference commit' }));
-    const menu = ui.page.locator('.bp6-popover .bp6-menu', { hasText: 'Swap the bars' });
+    const menu = ui.page.locator('.bp6-popover .bp6-menu', { hasText: 'Swap new and the reference' });
     await menu.waitFor();
-    // off the reference's bar: hovering it shows "Stack a reference" under it
     await ui.hover(menu.getByText('Quick actions', { exact: true }));
     await ui.settle();
   },
-  // the reference's hash and Change, and the menu under them
+  // the reference's row, and the menu under its Change button
   target: page => [
-    page.getByRole('textbox', { name: 'The reference commit' }),
-    page.getByRole('button', { name: 'Change the reference commit' }),
-    page.locator('.bp6-popover .bp6-menu', { hasText: 'Swap the bars' }),
+    barRight(page, 'ref'),
+    page.locator('.bp6-popover .bp6-menu', { hasText: 'Swap new and the reference' }),
   ],
   padding: 8,
 });
@@ -1846,49 +1832,41 @@ shot('commit/config-tag-diff', {
 shot('commit/stack-reference', {
   project: IQ,
   url: d => d.commitUrl(IQ, 'merge-bilateral', { reference: 'isp-4-1', view: 'table-kpi' }),
-  alt: 'Under the reference bar, Stack a reference opened: a box for a commit or a branch, the reference branch main, '
-    + '"This reference again" to change its batch or filter, Manage milestones, then the milestones isp-4.2 and isp-4.1, '
-    + 'which is selected.',
-  caption: 'Hover the reference\'s bar, then Stack a reference to compare with another commit, branch or milestone: '
-    + 'the reference you look at stays in the list.',
+  alt: 'The header\'s + opened, at the end of the reference\'s row: a box for a commit or a branch, the reference branch '
+    + 'main, a copy of the reference to change its batch or filter, Manage milestones, then the milestones isp-4.2 and '
+    + 'isp-4.1, which is selected.',
+  caption: 'Click + to compare with another commit, branch or milestone too: the reference you look at stays in the list.',
   actions: async ui => {
     const { page } = ui;
     await milestonesAsSaved(ui);
-    await ui.hover(page.getByRole('textbox', { name: 'The reference commit' }));
-    await ui.click(page.getByRole('button', { name: 'Stack a reference' }));
+    await ui.click(comparisonHeader(page).getByRole('button', { name: 'Compare with another reference' }));
     await page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }).waitFor();
     await ui.cursor.moveTo({ x: 1430, y: 890 });
     await ui.settle();
   },
-  // a box: the reference's bar, fixed at the top, from its start to its author, the handle under it, and the panel
-  target: async page => {
-    const refBar = page.locator('.bp6-navbar', { has: page.locator('input#filter-ref-input') }).first();
-    const bar = await stableBox(refBar);
-    // the bars start under the sidebar
-    const sidebar = await stableBox(page.getByRole('navigation', { name: 'Navigation' }));
-    const left = sidebar.x + sidebar.width;
-    const author = await stableBox(refBar.getByText('by Ines Marchetti').first());
-    const panel = await stableBox(page.locator('.bp6-popover', { has: page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }) }));
-    const right = Math.max(panel.x + panel.width, author.x + author.width) + 12;
-    return { x: left, y: bar.y, width: right - left, height: panel.y + panel.height + 12 - bar.y };
-  },
+  // the header, and the panel under it
+  target: page => [
+    comparisonHeader(page),
+    page.locator('.bp6-popover', { has: page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }) }),
+  ],
+  padding: 8,
 });
 
 // Names (webapp/src/selection.js: label, label_ref): the merge, named "bilateral", against the release before it,
-// a milestone: named after it. The page uses the names, in the sides' colors: the bars, the images' labels
+// a milestone: named after it. The page uses the names, in the sides' colors: the header's rows, the images' labels
 shot('commit/named-comparison', {
   project: IQ,
   url: d => d.commitUrl(IQ, 'merge-bilateral', {
     reference: 'isp-4-1', view: 'output-list', filter: 'photos/facade base linux', query: { label: 'bilateral' },
   }),
-  alt: 'The new results named "bilateral", in blue, against the isp-4.1 milestone, in purple: the names in the two bars, '
+  alt: 'The new results named "bilateral", in blue, against the isp-4.1 milestone, in purple: the names in the header\'s rows, '
     + 'then in the facade\'s run card, the viewer\'s "vs isp-4.1" and the labels "bilateral" and "isp-4.1" on the two '
     + 'images.',
   caption: 'Click new or ref to name them: the bars, the images, the plots and the tables use the names, each in its '
     + 'color. Milestones are called by their name.',
   actions: async ui => {
     await preset(ui, viewer(ui.page), 'Window frame (halos)');
-    // not over the reference's bar: hovering it shows "Stack a reference" under it
+    // not over the header's rows: hovering them shows their buttons
     await ui.cursor.moveTo({ x: 1430, y: 890 });
     await ui.hold(500);
     await ui.settle();

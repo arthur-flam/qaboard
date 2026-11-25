@@ -2,7 +2,7 @@
 id: commit-page
 title: The commit page
 sidebar_label: The commit page
-description: Find your way around a commit's results, the new and reference bars, the view options, and which view answers which question.
+description: Find your way around a commit's results, the rows of what you compare, the view options, and which view answers which question.
 ---
 A commit page shows the results of one commit, the **new** one, next to a **reference**: by default, the latest results
 of your project's reference branch. It's where you answer "what did this commit change?". This page shows you around.
@@ -26,32 +26,36 @@ To review a commit, go from the big picture down to the pixels:
 
 For a guided tour on the demo data, follow [Your first review](/docs/user-guide/first-review).
 
-## The two bars {#the-top-bars}
-The **new** bar, on top, holds the commit you look at; the **ref** bar, below, what you compare it with. They work the
+## What you compare {#the-top-bars}
+The header of the page has a row for the **new** results you look at, then a row for the **reference** you compare them
+with (and one for each [other reference](/docs/user-guide/comparing-results#several-references)). The rows work the
 same way. Each shows:
 
-- its name, **new** or **ref**: click it to rename what you compare, e.g. `ISP v2` and `ISP v1`. See
-  [Name what you compare](/docs/user-guide/comparing-results#naming-what-you-compare);
-- the commit message, author and date;
-- the **commit hash**: type another one to switch commits, or click **Change** to pick a branch, a milestone, or to
-  swap the bars. See [choose another reference](/docs/user-guide/comparing-results#picking-a-reference);
-- the **branch**: click it to select its latest commit;
+- its name: click it to rename what you compare, e.g. `ISP v2` and `ISP v1`. See
+  [Name what you compare](/docs/user-guide/comparing-results#naming-what-you-compare). References are called by why
+  they're there, like **main** for the latest commit of the reference branch;
+- the short **commit hash**: click it to copy the full hash;
+- for a reference, why it's there (**Latest on main**, a milestone and its notes...), then the commit message, author
+  and date;
+- the **batch selector**, with how its runs did: the CI batch, your local runs, tuning experiments... See
+  [Batches](/docs/user-guide/finding-results#batches);
+- a **filter** box, to keep only some runs: it says how many match. See the
+  [filter syntax](/docs/user-guide/finding-results#filter-syntax);
 - a **star**, to save the results you see (this batch, with its filter) as a
   [milestone](/docs/user-guide/milestones#saving-a-milestone);
-- a **filter** box, to keep only some runs, and the counters of runs, running, pending and failed below it. See the
-  [filter syntax](/docs/user-guide/finding-results#filter-syntax);
-- the **batch selector**: the CI batch, your local runs, tuning experiments... See
-  [Batches](/docs/user-guide/finding-results#batches);
-- a **link** button on the new bar, to copy a link to the page that pastes as its name in chats, see
-  [Sharing](/docs/user-guide/sharing#links-are-shareable); a refresh button, and a menu (☰) with the commit's and the
-  batch's folders and actions.
+- **ⓘ**, with the full commit hash (type another one to switch commits) and the branch (click it to select its latest
+  commit); **✎** (Change), to pick a branch, a milestone or another project. See
+  [choose another reference](/docs/user-guide/comparing-results#picking-a-reference);
+- a **link** button on the new results' row, to copy a link to the page that pastes as its name in chats, see
+  [Sharing](/docs/user-guide/sharing#links-are-shareable); a refresh button, and a menu (**⋯**) with the commit's and
+  the batch's folders and actions.
 
-To compare with several references, like a release and the latest `main`, hover the **ref** bar and click **Stack a
-reference**: tabs then show below the bars, one per reference, and <kbd>r</kbd> switches between them. See
+**⇅**, at the start of the new results' row, swaps new and the reference. **+**, at the end of the last row, adds a
+reference: with several, their radio buttons, or <kbd>r</kbd>, pick the one compared. See
 [Compare with several references](/docs/user-guide/comparing-results#several-references).
 
-The **Logs**, **Available Tests** and **Run Tests / Tuning** views only concern the new commit: they hide the
-reference bar. While runs are pending, the page refreshes by itself every 15 seconds.
+The **Logs**, **Available Tests** and **Run Tests / Tuning** views only concern the new commit: they show only its
+row. While runs are pending, the page refreshes by itself every 15 seconds.
 
 <details>
 <summary>Every item of the ☰ menu</summary>

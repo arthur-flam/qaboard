@@ -8,36 +8,53 @@ QA-Board shows your results next to a **reference**: the results you compare the
 that reference, and read what each run is compared with.
 
 A number alone says little: is a PSNR of 29.6 dB good? Next to the reference's, it says what your change did: +5%.
-The **new** bar at the top of a commit page says which results you look at, the **ref** bar below it what they're
-compared with: a commit, one of its batches, maybe with a filter. Each run is shown against the reference's run of the
-same input.
+The header of a commit page says what you compare: a row for the **new** results you look at, then a row for each
+**reference** they're compared with: a commit, one of its batches, maybe with a filter. Each run is shown against the
+reference's run of the same input.
 
 <Shot
   id="commit/named-comparison"
-  caption="The camera ISP's bilateral denoiser, in the top bar and in blue, against the release before it, isp-4.1, below and in purple: each image says which one it is. Here the new results were named “bilateral” (see Name what you compare)."
+  caption="The camera ISP's bilateral denoiser, in the first row and in blue, against the release before it, isp-4.1, in purple: each image says which one it is. Here the new results were named “bilateral” (see Name what you compare)."
 />
+
+Each row has the same columns: the name, the short commit id (click it to copy the full id), what the results are,
+the batch with how its runs did, the filter, and actions. For a reference, the row first says why it's there:
+
+| The row says | The reference is |
+|---|---|
+| **Latest on main** | The latest commit of the project's reference branch: the [default reference](#the-default-reference). |
+| **Older on main** | An older commit of the reference branch. |
+| **Earlier on this branch** / **Later on this branch** | Another commit of the new commit's branch, before or after it. |
+| ★ and its notes | A [milestone](#milestones): its notes (else its commit's message), and what tells it apart from the other milestones you compare: its group, who saved it and when. |
+| **Same commit as new** | The same commit, with another batch or filter. |
+
+Then comes the commit's message, who made it and when. ⓘ gives the rest: the full commit id (type another one there),
+the branch, the date.
 
 ## The default reference {#the-default-reference}
 When you open a commit, the reference is the **latest commit with results on the project's reference branch**, often
-`main` (the project sets it in *qaboard.yaml*): what your change does to the code everyone uses. The page's link saves
-that commit, so a link you share today compares with the same commit next week.
+`main` (the project sets it in *qaboard.yaml*): what your change does to the code everyone uses. Its row says
+**Latest on main** and it's called **main**. The page's link saves that commit, so a link you share today compares
+with the same commit next week: once `main` moves on, the row says **Older on main**.
 
 ## Choose another reference {#picking-a-reference}
-To compare with a release, another branch or a colleague's commit, change the **ref** bar. The **new** bar works the
+To compare with a release, another branch or a colleague's commit, change the reference's row. The **new** row works the
 same way.
 
-- **Type a commit hash** in the commit field. Short hashes work.
-- **Click the branch name** next to it to select that branch's latest commit.
-- Click **Change** next to the commit field: swap the bars, pick the reference branch's latest commit, or a
-  [milestone](#milestones).
+- Click **⇅**, at the start of the new results' row, to swap new and the reference.
+- Click the **✎** (Change) of a row: pick the reference branch's latest commit, a [milestone](#milestones), or
+  another project.
+- Click **ⓘ** to type a commit hash (short hashes work), or click the branch name to select that branch's latest
+  commit.
 
 <Shot
   id="commit/change-menu"
-  caption="The reference's Change menu: swap the bars, pick the reference branch (main), or a milestone, like the detector's releases."
+  caption="The reference's Change menu: swap new and the reference, pick the reference branch (main), or a milestone, like the detector's releases."
 />
 
-Each bar also has its own batch selector and filter box: you can compare any
-[batch](/docs/user-guide/finding-results#batches) of any commit with any other, or only some of their runs.
+Each row also has its own batch selector and filter box: you can compare any
+[batch](/docs/user-guide/finding-results#batches) of any commit with any other, or only some of their runs. With a
+filter, the box says how many runs match, like **8 of 18**.
 
 <details>
 <summary>Every item of the Change menu</summary>
@@ -45,10 +62,10 @@ Each bar also has its own batch selector and filter box: you can compare any
 | Menu item | What it does |
 |---|---|
 | **Change project** | Pick results from another project, e.g. another sub-project of a monorepo, or a fork. |
-| **Swap the bars** | Swaps the top and bottom bars' results, with their batches, filters and names. |
-| **Also show in the bottom bar** / **top bar** | Copies this commit, batch and filter to the other bar, instead of what it shows. |
-| **Stack another reference…** | In the **ref** bar: compare with [several references](#several-references), one at a time or [together](#show-references-together). |
-| **Remove from comparison** | Clears the commit. With several references, removes the one shown. |
+| **Swap new and the reference** | Swaps the two rows' results, with their batches, filters and names. Same as **⇅**. |
+| **Compare with these results** / **Show it as the new results too** | Copies this commit, batch and filter to the other row, instead of what it shows. |
+| **Stack another reference…** | In the reference's row: compare with [several references](#several-references), one at a time or [together](#show-references-together). |
+| **Remove from comparison** | Clears the commit. With several references, removes the one compared, with an **Undo**. |
 | The reference branch | Selects its latest commit. |
 | Milestones | Your favorites, your milestones, the project's, and those from *qaboard.yaml*. Their batch and filter are selected too. See [Milestones](/docs/user-guide/milestones#finding-milestones). |
 
@@ -58,9 +75,10 @@ Each bar also has its own batch selector and filter box: you can compare any
 A tuning experiment runs on the same commit as CI. To see what it changed, compare its batch with the commit's **CI**
 batch:
 
-1. In the **new** bar's batch selector, pick the experiment, e.g. `tune-denoise`.
-2. Click **Change**, then **Also show in the bottom bar**. The **ref** bar now shows the same commit and batch.
-3. In the **ref** bar's batch selector, pick **CI**.
+1. In the **new** row's batch selector, pick the experiment, e.g. `tune-denoise`.
+2. Click its **✎** (Change), then **Compare with these results**. The reference's row now shows the same commit and
+   batch.
+3. In the reference's batch selector, pick **CI**. Its row says **Same commit as new**, and it's called by its batch.
 
 Each run of the experiment is now shown against the CI run of the same input.
 
@@ -69,108 +87,105 @@ Each run of the experiment is now shown against the CI run of the same input.
 <Anchor id="finding-milestones" />
 <Anchor id="managing-milestones" />
 <Anchor id="links-to-milestones" />
-A milestone keeps results worth comparing with, like a release or your best tuning so far. Save one with the star next
-to a commit's hash, then pick it in the **ref** bar's **Change** menu. See [Milestones](/docs/user-guide/milestones).
+A milestone keeps results worth comparing with, like a release or your best tuning so far. Save one with the star of
+a row, then pick it in the reference's **Change** menu, or add it with **+**. Its row is named after it and shows its
+notes: write in them what makes it worth comparing with. See [Milestones](/docs/user-guide/milestones).
 
 ## Name what you compare {#naming-what-you-compare}
-Click **new** or **ref** at the start of a bar to rename it, for example `ISP v2` and `ISP v1`. The whole page then
-uses these names: the labels of images and videos, the legends of plots, the headers of text diffs and HTML outputs,
-the flame graphs' choices, the **Summary**, and the columns of the **Metrics Table** and **Metrics Diff**
+Click a row's name to rename it, for example `ISP v2` and `ISP v1` (or press <kbd>F2</kbd> on the row). The whole
+page then uses these names: the labels of images and videos, the legends of plots, the headers of text diffs and HTML
+outputs, the flame graphs' choices, the **Summary**, and the columns of the **Metrics Table** and **Metrics Diff**
 (`ISP v2 − ISP v1`). The names are saved in the link, so people you share it with see them too. Erase a name to go
-back to "new" or "ref".
+back to the one QA-Board gives.
 
-Results that are a milestone are named after it, like **isp-4.1** in the picture at the top of this page. You can
-still rename them on the page: the milestone's name then shows next to its star. Erase the name to go back to the
-milestone's.
+References you don't name are called by why they're there: **main** for the latest commit of the reference branch,
+their milestone's name, their batch for the same commit as new (**nightly**), else their short commit id
+(**a3f9c21**). Two references with the same name are told apart by their batch or filter. You can still rename a
+milestone on the page: the milestone's name then shows next to its star.
 
 <Anchor id="metric-diffs-and-colors" />
-Each side also has its color, in its bar, in the viewers' labels and in plots: **new** is blue, and each reference has
-its own color. Results keep their color wherever they go: when you swap the bars, the colors swap too. Green and red never stand for a side: they say what got better or worse (see
-[what the colors mean](/docs/user-guide/metrics#colors)).
+Each side also has its color, in its row, in the viewers' labels and in plots: **new** is blue, and each reference has
+its own color (purple, magenta, teal, violet, then gray). Results keep their color wherever they go: when you swap
+new and the reference, the colors swap too. Green and red never stand for a side: they say what got better or worse
+(see [what the colors mean](/docs/user-guide/metrics#colors)).
 
 ## Compare with several references {#several-references}
-To compare with the last release, a tuning experiment and the latest `main` on one page, stack them. The new results
+To compare with the last release, a tuning experiment and the latest `main` on one page, add them. The new results
 are compared with one reference at a time, and you switch between them. The image viewer
 [shows them all together](#show-references-together).
 
-1. Hover the **ref** bar and click **Stack a reference**, below it.
-2. Add a commit, a branch (its latest commit), a milestone, or the same reference again to change its batch or
-   filter. It shows right away, and the reference you were looking at stays in the list.
+1. Click **+**, at the end of the last reference's row.
+2. Add a commit, a branch (its latest commit), a milestone, or a copy of the reference to change its batch or
+   filter. It's compared with right away, and the reference you were looking at keeps its row.
 
 <Shot
   id="commit/stack-reference"
-  caption="Stack a reference, under the reference's bar: type a commit or a branch, pick the reference branch, the same reference again, or a milestone."
+  caption="Click + to compare with another commit, branch or milestone too: the reference you look at stays in the list."
 />
 
-3. Switch references with their tabs, below the bars, or press <kbd>r</kbd> (next) and <kbd>Shift</kbd> <kbd>r</kbd>
-   (previous). Each keeps its batch, filter and name.
+3. Switch references with the radio buttons at the start of their rows, or press <kbd>r</kbd> (next) and
+   <kbd>Shift</kbd> <kbd>r</kbd> (previous). Each keeps its row, batch, filter and name: nothing moves.
 
 <Shot
-  id="commit/reference-tabs"
-  caption="Two references stacked: the isp-4.1 milestone, shown in the bottom bar, and ref 2, the latest commit of main, hovered."
+  id="commit/reference-rows"
+  caption="Each reference has its row, which says why it's there. Click its radio button, or press r, to compare with it."
 />
 
-The tabs show everything you compare: first the top bar's results, then, after "vs", the references, each with its
-name, in its color (purple, magenta, teal, violet, then gray), with a star for milestones. The two tabs in the bars are
-lit. The first reference is **ref**, the ones you add **ref 2**, **ref 3**...: the tab, the **ref** bar and the viewers
-all use that name, and you can rename it in any of them. Next to the name, a tab says only what tells it apart from the
-others: its batch or filter, its commit when others are on the same branch, its branch, its project. Hover a tab for
-what its bar would show: the commit and its message, who made it and when, the batch, the filter, and how many runs it
-has and how many failed.
+The row of the reference compared is highlighted. The other rows show their batch with how its runs did, and their
+filter: to change them, compare with that reference first. Past four references, the rows scroll: three and a half
+show, the footer says how many are out of sight, and **Show all** lists up to twelve. While you scroll, the reference
+compared stays at the top or bottom of the list.
 
 The references are saved in the page's link: share it, and others can switch between the same references.
 
 <details>
 <summary>Reorder, rename and remove references</summary>
 
-- Drag tabs to reorder them, or press <kbd>Alt</kbd> <kbd>←</kbd> <kbd>→</kbd>. While you drag, a bar shows where the
-  tab would go, and the right of the tabs says it in words: "Move ref 3 between ref and ref 2".
-- Double-click a tab to rename it, press <kbd>Delete</kbd> to remove it.
-- Right-click a tab, or click its **⋯**, to compare with it, rename it, **Duplicate** it (to change its batch or
-  filter), move or remove it.
-- **Swap the bars**, in the menus of the two lit tabs, or drag the first tab on a reference (or a reference on the
-  first tab): the top results go in the bottom bar. It's the same comparison, reversed, and nothing is replaced. To
-  stop comparing with what was on top, swap, then remove it.
+- Drag a row by its name to reorder it: a line shows where it goes, before or after the row under the mouse. Or
+  press <kbd>Alt</kbd> <kbd>↑</kbd> <kbd>↓</kbd> on the row.
+- Click a row's name, or press <kbd>F2</kbd> on the row, to rename it. Press <kbd>Delete</kbd> to remove it: a
+  message offers to **Undo** it, and the browser's Back button works too.
+- A row's **⋯** compares with it, swaps it with new, makes a copy (to change its batch or filter), renames, moves or
+  removes it.
+- Drag the new results' row on a reference's (or a reference on new) to swap them. It's the same comparison,
+  reversed, and nothing is replaced. To stop comparing with what was new, swap, then remove it.
 - A reference keeps its name and its color when you reorder or remove the others. The color of a reference you
   remove goes to the next one you add (or to the first gray one). A copy of a reference you named "night" is
   "night copy", in the next free color.
-- When you swap the bars, the colors follow their results: the top bar takes the reference's color. Picking
-  another commit in a bar keeps its color.
-- When you swap the bars, the names you gave follow their results, while "new", "ref" and "ref 2" stay in their
-  bars.
-- When there isn't room, the tabs' details give way first, then the tabs scroll sideways (with the mouse wheel too).
-- Only the reference shown, and those [the image viewer shows](#show-references-together), are loaded with all their
-  runs. Once the page is idle, the next and previous ones load in the background (unless they have thousands of
-  runs), and hovering a tab loads it too.
+- When you swap new and a reference, the colors and the names you gave follow their results.
+- When there isn't room, the rows' details give way first: the branch, then who and when, and the commit ids.
+- Only the reference compared, and those [the image viewer shows](#show-references-together), are loaded with all
+  their runs. Once the page is idle, the next and previous ones load in the background (unless they have thousands of
+  runs).
 
 </details>
 
 ### See several references together {#show-references-together}
-The metrics, the plots and most viewers compare with one reference: the one whose tab is selected. The image viewer
-shows more: as soon as you stack two references or more, it shows the new image and all of them, each in its tile,
-zoomed together. Each is compared with new, the anchor, or with the reference you click to make it the anchor. See
+The metrics, the plots and most viewers compare with one reference: the one whose radio button is checked. The image
+viewer shows more: as soon as you compare with two references or more, it shows the new image and all of them, each
+in its tile, zoomed together. Each is compared with new, the anchor, or with the reference you make the anchor. See
 [Several references at once](/docs/user-guide/image-viewer#several-references-at-once).
 
-- **Leave a reference out**: untick its tab's checkbox. Each tab has one, ticked at first.
-- **One at a time**: after the tabs, **One at a time | Together** goes back to one reference at a time in the image
-  viewer, and back. Your browser remembers it.
-- **Compare with a reference**: click its tab to select it and make it the anchor, marked with an anchor icon: the
-  other images, new included, are then compared with it. Click new's tab to make new the anchor again.
-  <kbd>r</kbd> and <kbd>Shift</kbd> <kbd>r</kbd> change only the selected reference, the one the rest of the page
-  compares new with.
-- **Reorder the images**: the tiles follow the tabs' order, new first. Drag the tabs to reorder them. Selecting
+- **Leave a reference out**: click the eye of its row. Each is shown at first.
+- **One at a time**: in a row's **⋯**, **Show one reference at a time** goes back to one reference at a time in the
+  image viewer, and **Show the references together** back. Your browser remembers it.
+- **Compare with a reference**: click its radio button to compare with it and make it the anchor, or click its name
+  on an image: the other images, new included, are then compared with it. Click new's name on an image to make new
+  the anchor again. <kbd>r</kbd> and <kbd>Shift</kbd> <kbd>r</kbd> change only the reference compared: when a
+  reference is the anchor, the anchor follows it.
+- **Reorder the images**: the tiles follow the rows' order, new first. Drag the rows to reorder them. Selecting
   another reference or anchor moves nothing.
 
-Selecting another tab keeps as many references shown: it takes the place of the one it replaces. The choice, the anchor and the
-ticks are saved in the page's link.
+Comparing with another reference keeps as many references shown: it takes the place of the one it replaces. The
+choice, the anchor and the hidden references are saved in the page's link.
 
 <details>
 <summary>Limits</summary>
 
 - Only the image viewer shows several references together: the metrics and every other viewer compare with the
-  selected reference.
+  reference whose radio button is checked.
 - Each reference shown loads all its runs, which is slow for commits with thousands of runs, and adds images to each
-  run's card: a handful of references is the practical maximum. Untick the others, or pick **One at a time**.
+  run's card: a handful of references is the practical maximum. Hide the others with their eye, or show one at a time.
 
 </details>
 

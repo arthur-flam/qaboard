@@ -19,7 +19,7 @@ describe('provenance', () => {
     expect(provenance({}, context({ id: 'abcdef1234', branch: 'develop' }))).toMatchObject({ kind: 'behind', name: 'abcdef1' });
   });
   it('waits for the latest commit of the reference branch to tell if it is it', () => {
-    expect(provenance({}, context({ id: 'abcdef1234', branch: 'develop' }, { head: undefined, head_pending: true })).kind).toBe('loading');
+    expect(provenance({}, context({ id: 'abcdef1234', branch: 'develop' }, { head: undefined, head_pending: true }))).toEqual({ kind: 'loading', name: 'abcdef1' });
     expect(provenance({}, context({ id: 'abcdef1234', branch: 'develop' }, { head: undefined })).kind).toBe('on-branch');
   });
   it('knows commits of the same branch as the new one, before or after it', () => {

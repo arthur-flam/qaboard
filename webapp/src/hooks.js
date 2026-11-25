@@ -354,7 +354,8 @@ function useReferences(selected, ref_commit, milestones, enabled, together_mode,
       const error = index === ref_index ? ref_commit?.error : cached_others[index < ref_index ? index : index - 1]?.error;
       return provenance({ ...side, milestone, error }, { ...naming, commit: commit_of(index)?.id ? commit_of(index) : undefined });
     });
-    const given = distinct_names(origins.map(origin => origin.name), references, [naming?.new_label]);
+    // those users named aren't called by it: they don't need telling apart from the others
+    const given = distinct_names(origins.map((origin, index) => is_default_name(references[index].label ?? '') ? origin.name : undefined), references, [naming?.new_label]);
     // what a reference is called if users clear its name
     const default_name = index => reference_names(references.map((r, i) => i === index ? { ...r, label: '' } : r))[index];
     const colors = side_colors(color_new, references).slice(1);
@@ -382,7 +383,7 @@ function useReferences(selected, ref_commit, milestones, enabled, together_mode,
         loading: shown_together && !!other?.loading,
         error: other?.error,
         milestone,
-        // what the tabs, the reference's bar and the viewers call it: its milestone's name, else what users called it,
+        // what the header's rows and the viewers call it: its milestone's name, else what users called it,
         // else "ref", "ref 2"... (see reference_names). Numbers, not letters: blind tests call images A and B.
         display_label: side_label(milestone, names[index], undefined, given[index]),
         default_label: milestone ? milestone_name(milestone) : given[index] || default_name(index),
@@ -394,7 +395,7 @@ function useReferences(selected, ref_commit, milestones, enabled, together_mode,
 }
 
 
-// The references shown together with the one compared (the primary), in the tabs' order, without it: the image
+// The references shown together with the one compared (the primary), in the order of their rows, without it: the image
 // viewer shows them next to it, the other viewers compare with the primary only.
 // [{ id, key, index, number, label, color, project, commit, loading, error, batch, match }]: `batch` is their selected
 // batch, with their filter, `match(output_new)` their run a new run is compared with (see reference_matcher).

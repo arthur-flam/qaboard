@@ -628,7 +628,7 @@ export const updateSelected = (selected = {}, { replace = false, defaults } = {}
   (replace ? history.replace : history.push)(url);
 };
 
-// Usage analytics: users chose another reference commit (the reference tabs, milestones, the history's chart,
+// Usage analytics: users chose another reference commit (the comparison header, milestones, the history's chart,
 // switching new and reference). Not the default references, nor the full ids the page writes back (replace).
 const recordComparison = (selected, replace) => {
   const chosen = selected.ref_commit_id;

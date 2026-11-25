@@ -86,7 +86,7 @@ For the detector, `tune-int8` searched the calibration percentile, the layers to
 />
 
 ## Look at the results {#tuning-analysis}
-1. In the **new** bar's batch selector, pick the new batch, `int8-nms`. Its runs show up as they start, and the page refreshes by itself while some are pending.
+1. In the **new** row's batch selector, pick the new batch, `int8-nms`. Its runs show up as they start, and the page refreshes by itself while some are pending.
 2. A blue message above the results says the batch tried 4 parameter sets: click **See which is best**. Or select **Tuning Analysis** in the sidebar, under **Tuning**: it's highlighted when the batch has parameters to compare.
 
 <Clip
@@ -149,8 +149,8 @@ On a batch whose runs all use the same parameters, the view says how to start in
 </details>
 
 ### Compare with the CI batch {#compare-with-the-ci-batch}
-To see what the experiment changed against the commit's CI runs, show `int8-nms` in the new bar and the same commit's
-**CI** batch in the reference bar: see
+To see what the experiment changed against the commit's CI runs, show `int8-nms` in the new row and the same commit's
+**CI** batch in the reference's row: see
 [compare two batches of the same commit](/docs/user-guide/comparing-results#compare-two-batches-of-the-same-commit).
 To look at one combination, filter the new bar's runs, e.g. `nms_iou:0.7 score_threshold:0.3`: the Summary otherwise
 aggregates all of them.
@@ -165,7 +165,7 @@ aggregates all of them.
 | Redo **all** runs of a batch | Commit bar menu → **Redo all runs…** |
 | **Stop** pending runs | The **Stop runs** button above the views, shown while runs are pending |
 | Unblock a run stuck as pending | On its card, ☰ menu → **Mark as failed**, then **Redo** it |
-| Delete runs, or only their files | Card ☰ menu (**Delete…**, **Delete output files…**), or the commit bar menu: failed runs, the whole batch, several batches |
+| Delete runs, or only their files | Card ☰ menu (**Delete…**, **Delete output files…**), or the **⋯** menu of the new results' row: failed runs, the whole batch, several batches |
 
 <Shot
   id="commit/run-menu"
@@ -181,10 +181,10 @@ Deleting runs can't be undone: their output files and metrics are gone. QA-Board
 <details>
 <summary>Filters, stuck runs and other details</summary>
 
-- When you filter the batch's runs, the commit bar menu only redoes the runs that match: **Redo the N runs that match the filter…**, **Redo filtered failed runs**, **Redo filtered deleted runs**. Moving runs follows the filter too: **Move the filtered runs to another batch**. Deleting doesn't: it applies to the whole batch, and the confirmation says so.
+- When you filter the batch's runs, the row's **⋯** menu only redoes the runs that match: **Redo the N runs that match the filter…**, **Redo filtered failed runs**, **Redo filtered deleted runs**. Moving runs follows the filter too: **Move the filtered runs to another batch**. Deleting doesn't: it applies to the whole batch, and the confirmation says so.
 - **Redo all runs…** asks you to confirm: the runs' current results are replaced when they start.
 - **Mark as failed** is for runs stuck as pending or running whose job is gone, e.g. killed by the cluster: they would never report.
-- **Delete files, keep metadata**, in the commit bar menu, makes its delete actions free storage only: the runs and their metrics stay. A box then limits it to files matching patterns like `*.png`.
+- **Delete files, keep metadata**, in the row's **⋯** menu, makes its delete actions free storage only: the runs and their metrics stay. A box then limits it to files matching patterns like `*.png`.
 - A batch with pending runs can't be renamed.
 
 </details>

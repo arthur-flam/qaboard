@@ -8,7 +8,7 @@ import { useMilestones } from "./hooks";
 import { openMilestoneDialog } from "./MilestoneDialog";
 
 
-// new_side: in the reference bar, what the new bar shows ({project, commit, batch, filter}), to link to the comparison
+// new_side: in a reference's row, what the new results' row shows ({project, commit, batch, filter}), to link to the comparison
 // name_shown: what the bar calls the results
 export const CommitMilestoneButton = ({ project, project_shown, commit, batch, filter, runs, new_side, name_shown }) => {
   const index = useMilestones(project);

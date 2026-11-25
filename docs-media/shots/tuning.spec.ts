@@ -253,7 +253,7 @@ clip('tuning/launch-to-analysis', {
     // the page reloads the commit 1 s later
     await ui.hold(1500);
     await ui.caption('Pick its batch');
-    const picker = page.locator('.bp6-navbar-group', { has: page.locator('input#filter-new-input') })
+    const picker = page.locator('.qa-row', { has: page.locator('input#filter-new-input') })
       .getByRole('button', { name: /^Batch:/ });
     await ui.click(picker);
     await ui.click(page.locator('.bp6-popover .bp6-menu-item', { hasText: EXPERIMENT }).first());

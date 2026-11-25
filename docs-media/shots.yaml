@@ -54,6 +54,7 @@ features:
   raw-analysis: A raw image's own values per channel of its color filter array, with the pattern found
   image-fullscreen: The image viewer in full screen, with its tools and the analysis panel
   reference-tabs: Several references stacked as tabs, compared one at a time
+  reference-rows: Several references, a row each in the commit page's header, saying why each is there
   config-diff: Configurations shown as how they differ from the reference run's, the changes all runs share summed up once
   side-names: New and reference named by users (milestones by their name), each in its color, everywhere on the page
   command-palette: Ctrl+K search from any page, for projects, branches, commits, your batches, pages and actions
@@ -282,7 +283,7 @@ shots:
   - id: commit/change-menu
     kind: still
     project: detection-eval
-    shows: 'The reference bar''s Change menu: Change project, Quick actions (Swap the bars, Also show in the top bar, Stack another reference…, Remove from comparison, the reference branch main), Manage milestones…, then My milestones kd-1.3 and kd-1.2 (selected), each with when it was last updated (as the seed saved it), and Learn about milestones.'
+    shows: 'The reference row''s Change menu: Change project, Quick actions (Swap new and the reference, Show it as the new results too, Stack another reference…, Remove from comparison, the reference branch main), Manage milestones…, then My milestones kd-1.3 and kd-1.2 (selected), each with when it was last updated (as the seed saved it), and Learn about milestones.'
     pages: [references-and-milestones, user-guide/comparing-results, user-guide/milestones]
     features: [milestones]
     phase: 2
@@ -302,11 +303,20 @@ shots:
     features: [reference-tabs]
     needs: merge-bilateral vs isp-4-1 and chroma-low-light
     phase: 3
-    status: captured
+    status: retired
+  - id: commit/reference-rows
+    kind: still
+    project: image-quality
+    shows: 'The commit page''s header for merge-bilateral with two references (from the URL: reference and compare): a row for the new results, then the isp-4.1 milestone, compared with (radio button checked), with its star and notes, then main''s head at T0 (chroma-low-light), "Latest on main" with its message, author and runs; each row with its short commit id, batch and filter.'
+    pages: [user-guide/comparing-results]
+    features: [reference-rows]
+    needs: merge-bilateral vs isp-4-1 and chroma-low-light
+    phase: 3
+    status: planned
   - id: commit/stack-reference
     kind: still
     project: image-quality
-    shows: 'merge-bilateral against the isp-4.1 milestone, one reference: the reference bar (isp-4.1, its crown, hash, Change, main, author), the "Stack a reference" handle that hovering it shows, and its panel open: the explanation (switch with tabs or r), the "Commit or branch" box, main (reference branch), This reference again, Manage milestones…, My milestones isp-4.2 and isp-4.1 (selected) with when they were saved.'
+    shows: 'merge-bilateral against the isp-4.1 milestone, one reference: the header''s rows, and the panel of the + at the end of the reference''s row: the explanation (compare with the one selected: its radio button, or r), the "Commit or branch" box, main (reference branch), A copy of isp-4.1, Manage milestones…, My milestones isp-4.2 and isp-4.1 (selected) with when they were saved.'
     pages: [user-guide/comparing-results]
     features: [reference-tabs]
     needs: merge-bilateral vs isp-4-1

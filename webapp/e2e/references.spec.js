@@ -1,4 +1,4 @@
-// Several references: the new commit is compared with one at a time, users switch between them
+// Several references: the new commit is compared with one at a time, users switch between them in the header's rows
 import { test, expect } from '@playwright/test';
 
 const project = 'group/repo';
@@ -49,30 +49,38 @@ test.afterEach(async ({}, testInfo) => {
   expect(testInfo.errors_seen, 'errors in the browser console').toEqual([]);
 });
 
+// The commit page's header: a row for the new results, one per reference
+const header = page => page.getByRole('region', { name: 'What we compare' });
+const comparing = (page, name) => expect(header(page).getByRole('radio', { name: `Comparing with ${name}` })).toBeVisible();
+const row = (page, name) => header(page).locator('.qa-row').filter({ has: page.getByRole('button', { name: `${name}: rename`, exact: true }) });
+// the names of the rows, in order
+const row_names = page => header(page).locator('.qa-row .qa-side-text').allTextContents();
+
 test('switch between references', async ({ page }) => {
   await page.goto(`/${project}/commit/${a}?reference=${b}&compare=${c}&compare=${d}`);
-  await expect(page.getByText('Release 1.0').first()).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(3);
+  // a milestone is called by its name, the others by their commit
+  await expect.poll(() => row_names(page)).toEqual(['new', 'release 1.0', 'ccccccc', 'ddddddd']);
+  await expect(header(page).getByRole('radio')).toHaveCount(3);
+  await comparing(page, 'release 1.0');
 
-  await page.getByRole('tab', { name: /^Reference 2:/ }).click();
-  await expect(page.getByText('Tuning the sharpening').first()).toBeVisible();
+  await header(page).getByRole('radio', { name: 'Compare with ccccccc' }).click();
+  await comparing(page, 'ccccccc');
   await expect(page).toHaveURL(new RegExp(`reference=${c}`));
+  // it stays in its row
+  await expect.poll(() => row_names(page)).toEqual(['new', 'release 1.0', 'ccccccc', 'ddddddd']);
   await page.keyboard.press('r');
-  await expect(page.getByText('Latest on master').first()).toBeVisible();
-  await expect(page.getByRole('tab', { name: /^Reference 3:/ })).toHaveAttribute('aria-selected', 'true');
+  await comparing(page, 'ddddddd');
   await page.waitForLoadState('networkidle');
 });
 
-test('stack a reference, rename what we compare', async ({ page }) => {
+test('add a reference, rename what we compare', async ({ page }) => {
   await page.goto(`/${project}/commit/${a}?reference=${b}`);
   await expect(page.getByText('Release 1.0').first()).toBeVisible();
-  // the handle shows when hovering the reference's bar
-  await page.locator('.qa-ref-bar').hover();
-  await page.getByRole('button', { name: 'Stack a reference' }).click();
+  await header(page).getByRole('button', { name: 'Compare with another reference' }).click();
   await page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }).fill(c);
   await page.keyboard.press('Enter');
-  await expect(page.getByText('Tuning the sharpening').first()).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(2);
+  await expect(header(page).getByText('Tuning the sharpening').first()).toBeVisible();
+  await expect(header(page).getByRole('radio')).toHaveCount(2);
 
   await page.getByRole('button', { name: 'new: rename' }).click();
   await page.getByRole('textbox', { name: 'Name instead of “new”' }).fill('ISP v2');
@@ -82,169 +90,127 @@ test('stack a reference, rename what we compare', async ({ page }) => {
   await page.waitForLoadState('networkidle');
 });
 
-// What users do with their references: stack, duplicate, rename, reorder. Each one keeps one name everywhere.
-test('a reference has one name, in its tab, the reference bar and the viewers', async ({ page }) => {
+// What users do with their references: add, duplicate, rename, reorder, remove. Each one keeps one name everywhere.
+test('a reference has one name, in its row and the viewers', async ({ page }) => {
   await page.goto(`/${project}/commit/${a}?reference=${c}`);
   await expect(page.getByText('Tuning the sharpening').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'ref: rename' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'ccccccc: rename' })).toBeVisible();
 
-  await page.locator('.qa-ref-bar').hover();
-  await page.getByRole('button', { name: 'Stack a reference' }).click();
+  await header(page).getByRole('button', { name: 'Compare with another reference' }).click();
   await page.getByRole('textbox', { name: 'Add a commit or a branch as reference' }).fill(d);
   await page.keyboard.press('Enter');
-  // the first stays "ref", the one added is "ref 2", shown in the reference bar
-  await expect(page.getByRole('tab', { name: /^Reference 1: ref, tuning\/sharpen/ })).toBeVisible();
-  await expect(page.getByRole('tab', { name: /^Reference 2: ref 2, master/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('button', { name: 'ref 2: rename' })).toBeVisible();
+  // the one added is compared with
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'ddddddd']);
+  await comparing(page, 'ddddddd');
 
   // the "⋯" menu: duplicate the first one
-  await page.getByRole('tab', { name: /^Reference 1:/ }).hover();
-  await page.getByRole('button', { name: 'Reference 1: more' }).click();
-  await page.getByRole('menuitem', { name: /Duplicate/ }).click();
-  await expect(page.getByRole('tab', { name: /^Reference 2: ref 3, tuning\/sharpen/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('button', { name: 'ref 3: rename' })).toBeVisible();
+  await header(page).getByRole('button', { name: 'Actions on ccccccc' }).click();
+  await page.getByRole('menuitem', { name: /Compare with a copy/ }).click();
+  // the copy is next to it, compared with
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'ccccccc copy', 'ddddddd']);
+  await comparing(page, 'ccccccc copy');
 
-  // renaming in the reference bar renames its tab
-  await page.getByRole('button', { name: 'ref 3: rename' }).click();
-  await page.getByRole('textbox', { name: 'Name instead of “ref 3”' }).fill('sharper');
+  // renamed, it keeps its name
+  await page.getByRole('button', { name: 'ccccccc copy: rename' }).click();
+  await page.getByRole('textbox', { name: /^Name instead of/ }).fill('sharper');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('tab', { name: /^Reference 2: sharper/ })).toBeVisible();
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'sharper', 'ddddddd']);
 
-  // dragging it to the end: it keeps its name, and stays shown
-  await page.getByRole('tab', { name: /^Reference 2:/ }).dragTo(page.getByRole('tab', { name: /^Reference 3:/ }), { targetPosition: { x: 80, y: 10 } });
-  await expect(page.getByRole('tab', { name: /^Reference 3: sharper/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('tab', { name: /^Reference 2: ref 2/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'sharper: rename' })).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(3);
-  await page.locator('.qa-tabs').screenshot({ path: test.info().outputPath('tabs.png') });
+  // dragged by its name before the first: it keeps its name
+  await row(page, 'sharper').locator('.qa-row-label').dragTo(row(page, 'ccccccc'), { targetPosition: { x: 100, y: 4 } });
+  await expect.poll(() => row_names(page)).toEqual(['new', 'sharper', 'ccccccc', 'ddddddd']);
+  // one place down: after the half of the next row
+  await row(page, 'sharper').locator('.qa-row-label').dragTo(row(page, 'ccccccc'), { targetPosition: { x: 100, y: 30 } });
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'sharper', 'ddddddd']);
+  // Alt+↓ on a row
+  await row(page, 'sharper').locator('.qa-row-label [role="button"]').focus();
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'ddddddd', 'sharper']);
 
-  // hovering a tab tells what it is
-  await page.getByRole('tab', { name: /^Reference 1:/ }).hover();
-  const card = page.locator('.bp6-tooltip').filter({ hasText: 'Click to compare everything with it' });
-  await expect(card).toContainText('Tuning the sharpening');
-  await expect(card).toContainText('Alice');
-  await expect(card).toContainText('Batch CI');
-  await expect(card).toContainText('12 runs · 2 failed');
-  await page.screenshot({ path: test.info().outputPath('hover.png'), clip: { x: 0, y: 0, width: 900, height: 420 } });
+  // Delete removes it, with an undo
+  await row(page, 'sharper').locator('.qa-row-label [role="button"]').focus();
+  await page.keyboard.press('Delete');
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'ddddddd']);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'ddddddd', 'sharper']);
   await page.waitForLoadState('networkidle');
 });
 
-test("a tab's menu doesn't take the focus back from what its item opened", async ({ page }) => {
+test('the "Rename" menu item renames the row', async ({ page }) => {
   await page.goto(`/${project}/commit/${a}?reference=${c}&compare=${d}`);
-  await expect(page.getByRole('tab')).toHaveCount(2);
-  // Rename: the tab's field keeps the focus once the menu has closed
-  await page.getByRole('tab', { name: /^Reference 2:/ }).hover();
-  await page.getByRole('button', { name: 'Reference 2: more' }).click();
-  await page.getByRole('menuitem', { name: 'Rename' }).click();
-  const field = page.getByRole('textbox', { name: 'Rename reference 2' });
+  await header(page).getByRole('button', { name: 'Actions on ddddddd' }).click();
+  await page.getByRole('menuitem', { name: /Rename/ }).click();
+  const field = page.getByRole('textbox', { name: 'Name instead of “ddddddd”' });
   await expect(field).toBeFocused();
-  await expect(page.getByRole('menu')).toHaveCount(0);
   await page.waitForTimeout(500);
   await expect(field).toBeFocused();
   await field.fill('night');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('tab', { name: /^Reference 2: night/ })).toBeVisible();
-  // Duplicate: the focus doesn't go back to the menu's button, e.g. while users rename the copy
-  await page.getByRole('tab', { name: /^Reference 1:/ }).hover();
-  await page.getByRole('button', { name: 'Reference 1: more' }).click();
-  await page.getByRole('menuitem', { name: /Duplicate/ }).click();
-  await expect(page.getByRole('tab')).toHaveCount(3);
-  await page.waitForTimeout(500);
-  await expect(page.getByRole('button', { name: 'Reference 1: more' })).not.toBeFocused();
-  // dismissed without picking anything: the focus goes back to the button, for keyboard users
-  await page.getByRole('tab', { name: /^Reference 1:/ }).hover();
-  await page.getByRole('button', { name: 'Reference 1: more' }).click();
-  await expect(page.getByRole('menu')).toBeVisible();
-  // once the menu has the focus: Esc closes it from there
-  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('.bp6-overlay'))).toBe(true);
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('menu')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Reference 1: more' })).toBeFocused();
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'night']);
   await page.waitForLoadState('networkidle');
 });
 
-test('tabs say what tells references apart, and scroll when there are many', async ({ page }) => {
+test('rows say why references are there, and scroll when there are many', async ({ page }) => {
   // a milestone, two commits of master, a branch, copies with another batch and a filter
   const refs = [[d], [e], [f], [f, 'night'], [f, '', 'indoor'], [c]];
   const compare = refs.map(([id, batch, filter], i) => `compare[${i}][commit]=${id}${batch ? `&compare[${i}][batch]=${batch}` : ''}${filter ? `&compare[${i}][filter]=${filter}` : ''}`).join('&');
-  await page.setViewportSize({ width: 1600, height: 600 });
+  await page.setViewportSize({ width: 1600, height: 700 });
   await page.goto(`/${project}/commit/${a}?reference=${b}&${compare}`);
-  await expect(page.getByRole('tab')).toHaveCount(7);
-  // the milestone, by its name only
-  await expect(page.getByRole('tab', { name: /^Reference 1: release 1.0$/ })).toBeVisible();
-  // master's commits: their branch and commit
-  await expect(page.getByRole('tab', { name: /^Reference 2: ref 2, dddddddd, master$/ })).toBeVisible();
-  await expect(page.getByRole('tab', { name: /^Reference 5: ref 5, night, feature\/night$/ })).toBeVisible();
-  await expect(page.getByRole('tab', { name: /^Reference 6: ref 6, indoor, feature\/night$/ })).toBeVisible();
-  await page.locator('.qa-tabs').screenshot({ path: test.info().outputPath('wide.png') });
+  // copies are told apart by their batch, else their filter
+  await expect.poll(() => row_names(page)).toEqual(['new', 'release 1.0', 'ddddddd', 'eeeeeee', 'fffffff', 'fffffff · night', 'fffffff · indoor', 'ccccccc']);
+  await expect(header(page).getByText('7 references')).toBeVisible();
+  await expect(header(page).getByText(/more below/)).toBeVisible();
+  await page.locator('.qa-comparison-header').screenshot({ path: test.info().outputPath('wide.png') });
+  // r reaches those out of sight
+  for (const name of ['ddddddd', 'eeeeeee', 'fffffff', 'fffffff · night', 'fffffff · indoor', 'ccccccc']) {
+    await page.keyboard.press('r');
+    await comparing(page, name);
+  }
+  await expect(row(page, 'ccccccc')).toBeInViewport();
+  await header(page).getByRole('button', { name: 'Show all' }).click();
+  await expect(header(page).getByText(/more below/)).toHaveCount(0);
 
+  // narrow: nothing overflows the window
   await page.setViewportSize({ width: 900, height: 600 });
-  const tabs = page.locator('.qa-tabs');
-  await expect.poll(() => tabs.evaluate(t => t.scrollWidth > t.clientWidth)).toBe(true);
-  await expect(tabs).toHaveAttribute('data-overflow', 'end');
-  await page.locator('.qa-tabs').screenshot({ path: test.info().outputPath('narrow.png') });
-  await tabs.hover();
-  await page.mouse.wheel(0, 400);
-  await expect.poll(() => tabs.evaluate(t => t.scrollLeft)).toBeGreaterThan(0);
-  await page.locator('.qa-tabs').screenshot({ path: test.info().outputPath('narrow-scrolled.png') });
-
-  await page.setViewportSize({ width: 600, height: 600 });
-  await expect(page.locator('.qa-tab-details').first()).toBeHidden();
-  await page.screenshot({ path: test.info().outputPath('phone.png'), clip: { x: 0, y: 0, width: 600, height: 200 } });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.locator('.qa-comparison-header').screenshot({ path: test.info().outputPath('narrow.png') });
   await page.waitForLoadState('networkidle');
 });
 
-test('the top results are the first tab: drag it on a reference to swap the bars', async ({ page }) => {
+test('drag the new results on a reference to swap them', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 600 });
   await page.goto(`/${project}/commit/${a}?label=ISP%20v2&reference=${c}&compare=${d}&compare=${e}`);
-  await expect(page.getByRole('tab')).toHaveCount(3);
-  const top = page.getByLabel(/^Top: ISP v2/);
-  await expect(top).toBeVisible();
-  await page.locator('.qa-tabs').screenshot({ path: test.info().outputPath('before.png') });
-  await page.screenshot({ path: test.info().outputPath('page-before.png'), clip: { x: 0, y: 0, width: 1400, height: 200 } });
-
-  // the shown reference's menu: swap the bars
-  await page.getByRole('tab', { name: /^Reference 1:/ }).hover();
-  await page.getByRole('button', { name: 'Reference 1: more' }).click();
-  await page.screenshot({ path: test.info().outputPath('menu.png'), clip: { x: 0, y: 0, width: 900, height: 460 } });
-  await page.keyboard.press('Escape');
-
-  // drag the top tab on reference 3: it goes in the bottom bar, reference 3 on top
-  await top.dragTo(page.getByRole('tab', { name: /^Reference 3:/ }));
-  // our names stay in their bars, users' follow their results
-  await expect(page.getByLabel(/^Top: new/)).toBeVisible();
-  await expect(page.getByRole('tab', { name: /^Reference 3: ISP v2/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByText('Faster tone mapping').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'ISP v2: rename' })).toBeVisible();
-  await page.screenshot({ path: test.info().outputPath('page-after.png'), clip: { x: 0, y: 0, width: 1400, height: 200 } });
+  await expect.poll(() => row_names(page)).toEqual(['ISP v2', 'ccccccc', 'ddddddd', 'eeeeeee']);
+  await row(page, 'ISP v2').locator('.qa-row-label').dragTo(row(page, 'eeeeeee'));
+  // names users gave follow their results
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'ddddddd', 'ISP v2']);
+  await comparing(page, 'ISP v2');
+  await expect(header(page).getByText('Faster tone mapping').first()).toBeVisible();
   await page.waitForLoadState('networkidle');
 });
 
-// The reference bar's Change menu changes the reference the bar shows, whichever it is in the list, and calls it by
+// The reference's Change menu changes the reference compared, whichever it is in the list, and calls it by
 // the milestone's name. A milestone that is a reference already is shown, not added twice.
-test('a milestone picked in the reference bar replaces the reference shown, not another', async ({ page }) => {
+test('a milestone picked in the Change menu replaces the reference compared, not another', async ({ page }) => {
   const pick = async name => {
     await page.getByRole('button', { name: 'Change the reference commit' }).click();
     // once on the page, it's listed first, "On this page", and again in its section
     await page.getByRole('menu', { name: 'Milestones' }).getByText(name, { exact: true }).first().click();
   };
-  // c, then d shown second, named by users
+  // c, then d compared, named by users
   await page.goto(`/${project}/commit/${a}?reference=${d}&label_ref=night&compare=${c}&ref_index=1`);
-  await expect(page.getByRole('tab', { name: /^Reference 2: night/ })).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'night']);
+  await comparing(page, 'night');
   await pick('release 1.0');
-  await expect(page.getByRole('tab', { name: /^Reference 2: release 1\.0/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('tab', { name: /^Reference 1: ref\b/ })).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(2);
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'release 1.0']);
+  await comparing(page, 'release 1.0');
   await expect(page).toHaveURL(new RegExp(`reference=${b}`));
   await expect(page).toHaveURL(new RegExp(`compare=${c}`));
 
-  // ...the first one shown: picking the milestone, a reference already, shows it. The menu says where it is.
-  await page.getByRole('tab', { name: /^Reference 1:/ }).click();
-  await expect(page.getByRole('tab', { name: /^Reference 1:/ })).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('button', { name: 'Change the reference commit' }).click();
-  await expect(page.getByRole('menu', { name: 'Milestones' }).getByRole('menuitem', { name: /^release 1\.0 ref 2/ }).first()).toBeVisible();
-  await page.keyboard.press('Escape');
+  // ...the first one compared: picking the milestone, a reference already, compares with it
+  await header(page).getByRole('radio', { name: 'Compare with ccccccc' }).click();
+  await comparing(page, 'ccccccc');
   await pick('release 1.0');
-  await expect(page.getByRole('tab', { name: /^Reference 2: release 1\.0/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('tab')).toHaveCount(2);
+  await comparing(page, 'release 1.0');
+  await expect.poll(() => row_names(page)).toEqual(['new', 'ccccccc', 'release 1.0']);
 });

@@ -396,7 +396,12 @@ const OtherReference = ({ reference, new_label, fields, actions, together_mode, 
   const batch = reference.commit?.batches?.[batch_label];
   // users named it; else what we call it
   const label = reference.label && !is_default_name(reference.label) && !reference.milestone ? reference.label : '';
+  // "Rename": its name field opens once the menu has closed, the menu doesn't take the focus back
+  const [rename_after_close, setRenameAfterClose] = useState(false);
+  const [menu_open, setMenuOpen] = useState(false);
+  const element = useRef(null);
   return <div
+    ref={element}
     className={`qa-row is-other ${row.className}`}
     style={{ '--side-color': reference.color.css }}
     data-index={reference.index}
@@ -425,11 +430,21 @@ const OtherReference = ({ reference, new_label, fields, actions, together_mode, 
       {together_mode === 'all' ? <Tooltip content={reference.ticked ? "Shown in the image viewers with the reference selected: click to hide it" : "Hidden from the image viewers: click to show it"} hoverOpenDelay={300}>
         <Button size="small" variant="minimal" icon={reference.ticked ? 'eye-open' : 'eye-off'} className={Classes.TEXT_MUTED} aria-label={reference.ticked ? `Hide ${reference.display_label} from the image viewers` : `Show ${reference.display_label} in the image viewers`} onClick={actions.toggle}/>
       </Tooltip> : <span className="qa-action-slot"/>}
-      <PopoverNext placement="bottom-end" content={<Menu>
+      <PopoverNext placement="bottom-end" isOpen={menu_open} onInteraction={open => {
+        if (open) setRenameAfterClose(false);
+        setMenuOpen(open);
+      }} shouldReturnFocusOnClose={!rename_after_close} onClosed={() => {
+        if (!rename_after_close) return;
+        setRenameAfterClose(false);
+        element.current?.querySelector('.qa-row-label [role="button"]')?.click();
+      }} content={<Menu>
         <MenuItem icon="selection" text="Compare with this one" onClick={actions.select}/>
         <MenuItem icon="swap-vertical" text={`Swap with ${new_label}`} disabled={!actions.swap} onClick={actions.swap}/>
         <MenuItem icon="duplicate" text="Compare with a copy" label="to change its batch or filter" onClick={actions.duplicate}/>
-        <MenuItem icon="edit" text="Rename" label="F2" onClick={actions.startRename}/>
+        <MenuItem icon="edit" text="Rename" label="F2" onClick={() => {
+          setRenameAfterClose(true);
+          setMenuOpen(false);
+        }}/>
         <MenuItem icon="arrow-up" text="Move up" label="Alt ↑" disabled={!actions.canMove(-1)} onClick={() => actions.move(-1)} shouldDismissPopover={false}/>
         <MenuItem icon="arrow-down" text="Move down" label="Alt ↓" disabled={!actions.canMove(1)} onClick={() => actions.move(1)} shouldDismissPopover={false}/>
         <MenuDivider/>
@@ -652,7 +667,6 @@ export const ComparisonHeader = () => {
         select: () => select(index),
         canMove: by => can_move(index, by),
         rename: label => updateSelected(rename_reference(resolved, index, label)),
-        startRename: () => setTimeout(() => document.querySelector(`.qa-row[data-index="${index}"] .qa-row-label [role="button"]`)?.click()),
         toggle: () => updateSelected(toggle_together(resolved, index)),
         toggleMode: () => setTogetherMode(together_mode === 'all' ? 'one' : 'all'),
         duplicate: () => updateSelected(duplicate_reference(resolved, index, reference.display_label)),

@@ -46,11 +46,11 @@ with, tagged **ref**. By default, the reference is the latest commit with result
 `main`. For a commit in the past, that's a later one. To judge the denoiser, compare it with the release before it,
 which the team saved as a milestone:
 
-1. In the reference bar, click **Change**.
+1. In the reference's row, the second of the page's header, click **✎** (Change).
 2. Under **Shared with the project**, click **isp-4.1**.
 
-The reference bar now shows the release, *isp: release 4.1, gaussian denoise and detail boost 1.2*, with a crown:
-it's a milestone shared with the project. Tables and viewers now call it **isp-4.1**.
+The reference's row is now called **isp-4.1**, with a star and the milestone's notes: it's the release, *isp: release
+4.1, gaussian denoise and detail boost 1.2*, a milestone shared with the project. Tables and viewers now call it **isp-4.1**.
 
 More in [Picking a reference](/docs/user-guide/comparing-results#picking-a-reference).
 
@@ -166,7 +166,7 @@ pixels. Compare it with your milestone:
 
 1. Click the project's name, **camera-isp**, in the sidebar: its commits show again. Search for `halo-clamp`, and
    open the runs of **Merge branch 'isp/halo-clamp'**.
-2. In the reference bar, click **Change**, then your milestone under **My milestones**.
+2. In the reference's row, click **✎** (Change), then your milestone under **My milestones**.
 
 The edge overshoot is back to about 5%, and on the facade, the dark rims around the leaves fade.
 
@@ -197,8 +197,8 @@ Each demo project has a story of its own. Its use case page says what to look fo
 </Cards>
 
 ## What else you can do {#what-else}
-- **Compare with several references at once**, like isp-4.1 and the latest `main`: hover the reference bar, then
-  **Stack a reference**. See [Several references](/docs/user-guide/comparing-results#several-references).
+- **Compare with several references at once**, like isp-4.1 and the latest `main`: click **+** at the end of the
+  reference's row. See [Several references](/docs/user-guide/comparing-results#several-references).
 - **Run more tests, or tune parameters**, from the web app, on any commit: see
   [Running from the web app](/docs/user-guide/running-from-the-webapp#running-tests-and-tuning).
 - **Find why a run failed**: on the camera project, search `one tile`, open *isp: process frames in one tile*, then
