@@ -32,7 +32,7 @@ const Layout = styled.div`
   .qa-batches-pane + .qa-batches-pane { border-left: 1px solid var(--qa-border); }
   @media (max-width: 900px) { .qa-batches-pane + .qa-batches-pane { border-left: none; border-top: 1px solid var(--qa-border); } }
   .qa-batches-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--qa-border); min-height: 47px; }
-  .qa-batches-list { height: 264px; overflow-y: auto; padding: 4px 0; }
+  .qa-batches-list { flex: 1; min-height: 120px; max-height: 300px; overflow-y: auto; padding: 4px 0; }
   .qa-batches-group { padding: 8px 12px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
   .qa-batches-row { display: flex; align-items: center; gap: 8px; padding: 3px 12px; min-height: 28px; }
   .qa-batches-row:hover { background: var(--qa-hover); }
@@ -244,7 +244,7 @@ export const BatchPicker = ({ project, commit, value, onChange, tests, available
           </div>}
         </div>
         <div className="qa-batches-head" style={{ borderBottom: 'none', borderTop: '1px solid var(--qa-border)', minHeight: 0, flexWrap: 'wrap', gap: '2px 4px' }}>
-          <Button variant="minimal" size="small" icon="edit" text="Edit batches" disabled={!is_logged} onClick={() => edit()} data-testid="batch-edit" style={{ whiteSpace: "nowrap" }}/>
+          <Button variant="minimal" size="small" icon="edit" text="Edit batch files" disabled={!is_logged} onClick={() => edit()} data-testid="batch-edit" style={{ whiteSpace: "nowrap" }}/>
           {onChangeForThisRun && selected.length > 0 && <Tooltip content="Change the inputs or configurations of the chosen batches for this run only: the batch files stay as they are" hoverOpenDelay={300}>
             <Button variant="minimal" size="small" icon="annotation" text="Change for this run" disabled={!is_logged} onClick={onChangeForThisRun} data-testid="batch-change-for-this-run" style={{ whiteSpace: "nowrap" }}/>
           </Tooltip>}
@@ -267,13 +267,17 @@ export const BatchPicker = ({ project, commit, value, onChange, tests, available
             <InputGroup small fill leftIcon="filter" aria-label="Filter the tests" placeholder="Filter" value={tests_filter} onChange={e => setTestsFilter(e.target.value)}/>
           </div>}
         </div>
-        <div className="qa-batches-list" style={{ height: 302 }}>
+        <div className="qa-batches-list" style={{ maxHeight: 346 }}>
           {selected.length === 0
             ? <NonIdealState icon="list-detail-view" title={missing ? 'Choose a batch' : 'Choose what to run'} description="Tick batches on the left: their tests show here before you start." layout="vertical" iconSize={32}/>
             : error ? <div className="qa-batches-empty"><Tag icon="warning-sign" intent={Intent.DANGER} multiline>{error}</Tag></div>
-            : listed.length === 0 && !loading ? <div className={`qa-batches-empty ${Classes.TEXT_MUTED}`}>{group_info.unlisted
-              ? "QA-Board can't list these tests here: they are found by the project's code when the batch runs. See below."
-              : 'No tests: see why below.'}</div>
+            : listed.length === 0 && !loading ? <div className="qa-batches-empty">
+              {group_info.unlisted
+                ? <p className={Classes.TEXT_MUTED} style={{ marginTop: 0 }}>QA-Board can't list these tests here: they are found by the project's code when the batch runs.</p>
+                : !group_info.warnings?.length && <p className={Classes.TEXT_MUTED} style={{ marginTop: 0 }}>No tests.</p>}
+              {/* why, where people look for the tests */}
+              <BatchWarnings warnings={group_info.warnings} title={group_info.unlisted ? 'Check the batch files' : 'Why the batch has no tests'}/>
+            </div>
             : <>
               {filtered.slice(0, MAX_TESTS_SHOWN).map((test, index) => <div className="qa-batches-test" key={index}>
                 <span className="qa-batches-input">{test.input_path}</span>
@@ -290,7 +294,7 @@ export const BatchPicker = ({ project, commit, value, onChange, tests, available
 
     {selected.length > 0 && !loading && <>
       <BatchDefinitions definitions={group_info.definitions} context={files_context} style={{ margin: '0 0 10px' }}/>
-      <BatchWarnings warnings={group_info.warnings} title={listed.length === 0 && !group_info.unlisted ? 'Why the batch has no tests' : 'Check the batch files'} style={{ marginBottom: 10 }}/>
+      {listed.length > 0 && <BatchWarnings warnings={group_info.warnings} title="Check the batch files" style={{ marginBottom: 10 }}/>}
     </>}
     {(data?.warnings?.length > 0 && selected.length === 0) && <BatchWarnings warnings={data.warnings} title="Check the batch files" style={{ marginBottom: 10 }}/>}
 

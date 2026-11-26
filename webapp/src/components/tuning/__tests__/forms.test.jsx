@@ -48,13 +48,13 @@ describe('TuningForm', () => {
       { user: { is_logged: true, user_name: 'alice' }, siteConfig: {} },
     );
     expect(screen.getByDisplayValue('exp')).toBeInTheDocument();
-    expect(await screen.findByText(/4 total runs/)).toBeInTheDocument();
+    expect(await screen.findByText(/^4 runs$/)).toBeInTheDocument();
     expect(fetch.mock.calls.map(([url]) => url)).toContain('/api/v1/tests/group?project=proj&name=nightly&commit=abcdef12');
 
     fireEvent.change(screen.getByPlaceholderText('my-tuning-experiment'), { target: { value: 'my exp' } });
     expect(usePrefsStore.getState().tuning.proj.experiment_name).toBe('my-exp');
     fireEvent.change(screen.getByTestId('editor-tuning-set'), { target: { value: '{"a": [1, 2, 3]}' } });
-    expect(await screen.findByText(/6 total runs/)).toBeInTheDocument();
+    expect(await screen.findByText(/^6 runs$/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Start 6 runs'));
     await waitFor(() => expect(fetch.mock.calls.some(([url]) => url === '/api/v1/commit/abcdef12/batch?project=proj')).toBe(true));
@@ -123,9 +123,9 @@ describe('TuningForm', () => {
       <TuningForm project="proj" config={local_config} metrics={metrics} commit={commit} available_tests_files={{}}/>,
       { user: { is_logged: false, user_name: null }, siteConfig: {} },
     );
-    expect(screen.getByText('Please provide a user in the input below')).toBeInTheDocument();
+    expect(screen.getByText('Sign in first')).toBeInTheDocument();
     act(() => queryClient.setQueryData(userQuery.queryKey, { is_logged: true, user_name: 'arjun' }));
-    await waitFor(() => expect(screen.queryByText('Please provide a user in the input below')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Sign in first')).not.toBeInTheDocument());
     expect(screen.getByText(/Choose the tests to run/)).toBeInTheDocument();
   });
 
@@ -232,7 +232,7 @@ describe('TuningForm', () => {
       <TuningForm project="proj" config={config} metrics={metrics} commit={known} available_tests_files={{}}/>,
       { user: { is_logged: true, user_name: 'alice' }, siteConfig: {} },
     );
-    expect(await screen.findByText('2 total runs')).toBeInTheDocument();
+    expect(await screen.findByText('2 runs')).toBeInTheDocument();
     expect(screen.getByTestId('parameters-summary')).toHaveTextContent('No tuning');
 
     fireEvent.click(screen.getByTestId('parameters-add-0'));
@@ -248,7 +248,7 @@ describe('TuningForm', () => {
     fireEvent.keyDown(values, { key: 'Enter' });
     expect(usePrefsStore.getState().tuning.proj.parameter_search).toBe('{\n  "threshold": [0.1, 0.2, [1, 2], "on"]\n}');
     expect(row).toHaveTextContent('4 values');
-    expect(await screen.findByText('8 total runs')).toBeInTheDocument();
+    expect(await screen.findByText('8 runs')).toBeInTheDocument();
     expect(screen.getByText('= 2 tests × 4 combinations')).toBeInTheDocument();
     expect(screen.getByText('Start 8 runs')).toBeInTheDocument();
 
@@ -274,7 +274,7 @@ describe('TuningForm', () => {
     act(() => usePrefsStore.getState().updateTuning('proj', { parameter_search: 'return {a: [1, 2]}' }));
     expect(screen.getByTestId('tuning-text-only')).toHaveTextContent('This is a function');
     expect(screen.queryByTestId('parameters-table')).not.toBeInTheDocument();
-    expect(await screen.findByText('4 total runs')).toBeInTheDocument();
+    expect(await screen.findByText('4 runs')).toBeInTheDocument();
     fireEvent.click(screen.getByText('start over with the table'));
     expect(screen.getByTestId('parameters-table')).toBeInTheDocument();
   });

@@ -27,7 +27,7 @@ const Layout = styled.div`
   .qa-setup-step > p.qa-setup-how { margin: 0 0 10px 34px; font-size: 13px; }
   .qa-setup-step > .qa-setup-body { margin-left: 34px; }
   .qa-setup-number { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%;
-    font-size: 12px; font-weight: 600; background: var(--qa-intent-primary); color: #fff; flex: none; }
+    font-size: 12px; font-weight: 600; background: none; color: var(--qa-intent-primary); box-shadow: inset 0 0 0 1.5px var(--qa-intent-primary); flex: none; }
   .qa-setup-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--qa-border); }
   .qa-setup-row:last-of-type { border-bottom: none; }
   .qa-setup-row-error { flex-basis: 100%; font-size: 12px; color: #cd4246; }
@@ -228,7 +228,7 @@ export const OptimizeSetup = ({ value, onChange, metrics, tests = 0, commit, exp
             : <>It runs {plural(Math.max(0, (evaluations ?? 0) - continuing.done), 'more evaluation')}. To start over instead, use another label.</>}
         </Callout>}
 
-        <Step number={1} title="Parameters to tune" how={<>The tuning parameters your code reads, and the values to try. Your code gets them like the values you list under Choose the values.</>}>
+        <Step number="a" title="Parameters to tune" how={<>The tuning parameters your code reads, and the values to try. Your code gets them like the values you list under Choose the values.</>}>
           {params.length === 0 && <p className={Classes.TEXT_MUTED}>No parameter yet.</p>}
           {params.map((p, index) => {
             const row_errors = errors_at(errors, ['search_space', index]);
@@ -279,7 +279,7 @@ export const OptimizeSetup = ({ value, onChange, metrics, tests = 0, commit, exp
           <Button icon="add" text="Add a parameter" onClick={() => onChange(addParameter(value, { kind: 'Real', name: '', low: 0, high: 1 }))} style={{ marginTop: 8 }} data-testid="add-parameter"/>
         </Step>
 
-        <Step number={2} title="What “better” means" how={<>The metrics to improve, any your runs return, averaged over the batch's runs. Say which way is better for each: the search looks for the parameters with the best ones.</>}>
+        <Step number="b" title="What “better” means" how={<>The metrics to improve, any your runs return, averaged over the batch's runs. Say which way is better for each: the search looks for the parameters with the best ones.</>}>
           {available.length === 0 && <Callout icon="timeline-line-chart" intent={Intent.WARNING} style={{ marginBottom: 10 }} data-testid="optimize-no-metrics">
             <strong>This commit's runs return no metrics yet.</strong> The search needs one, computed by each run: have your code's <Code>run()</Code> or{' '}
             <Code>postprocess()</Code> return it, like <Code>{'{"sharpness": 0.4}'}</Code>.{' '}
@@ -348,7 +348,7 @@ export const OptimizeSetup = ({ value, onChange, metrics, tests = 0, commit, exp
           <RowErrors messages={errors_at(errors, ['pareto'])}/>
         </Step>
 
-        <Step number={3} title="Budget" how={<>Each evaluation runs the batch with new parameters. More evaluations find better parameters, and take longer.</>}>
+        <Step number="c" title="Budget" how={<>Each evaluation runs the batch with new parameters. More evaluations find better parameters, and take longer.</>}>
           <FormGroup inline label="Evaluations" labelFor={`${id}-evaluations`} style={{ marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <NumberField id={`${id}-evaluations`} value={evaluations ?? undefined} integer onChange={n => update(['evaluations'], n)} width={80}/>
