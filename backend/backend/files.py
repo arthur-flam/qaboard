@@ -15,6 +15,7 @@ from urllib.parse import unquote, urlsplit
 from . import accounts
 from .config import storage_roots
 from .storage import private_dirs
+from . import locations, data_folders
 
 
 # Above this, we show the first entries and say the listing is truncated
@@ -36,12 +37,45 @@ def path_from_url(url: str) -> Optional[str]:
   return normalize(url_path[2:])
 
 
-def is_listable(path: str) -> bool:
-  """We list the folders in the storage ($QABOARD_STORAGE_ROOTS), but not the server's own folders."""
+def is_image_server_url(url: str) -> bool:
+  """URLs of the image server (Cantaloupe, IIIF), which nginx proxies under /iiif/<version or server>/"""
+  return urlsplit(url).path.startswith('/iiif/')
+
+
+def image_server_path(url: str) -> Optional[str]:
+  """
+  The file an image server's URL reads: '/iiif/2/algo%2Fx.png/full/max/0/default.jpg' => '/algo/x.png'. Its identifier
+  is the file's path with its slashes encoded, decoded once, like Cantaloupe does (FilesystemSource, path_prefix /).
+  '' for its URLs without an image (e.g. /iiif/2/), None for identifiers we refuse ("..": the image server and we could
+  read them differently).
+  """
+  parts = urlsplit(url).path.split('/')
+  if len(parts) < 4 or not parts[3]:
+    return ''
+  path = unquote(parts[3])
+  if '\0' in path or '\\' in path or '..' in path.split('/'):
+    return None
+  return normalize(path)
+
+
+def is_readable(path: str) -> bool:
+  """
+  Whether the server may read (list, send, make thumbnails of) `path`, symlinks resolved: in the storage it manages
+  ($QABOARD_STORAGE_ROOTS, the storage locations) or in the data folders admins added (backend/data_folders.py),
+  never in the server's own folders.
+  Only for reading: before writing, deleting, cleaning or running code, the check is storage.check_storage_path,
+  which never includes the data folders.
+  """
   real = Path(os.path.realpath(path))
-  if not any(real.is_relative_to(os.path.realpath(root)) for root in storage_roots):
+  if any(real.is_relative_to(private_dir) for private_dir in private_dirs()):
     return False
-  return not any(real.is_relative_to(private_dir) for private_dir in private_dirs())
+  if any(real.is_relative_to(os.path.realpath(root)) for root in [*storage_roots, *locations.paths()]):
+    return True
+  return data_folders.contains(real)
+
+
+# The previous name: reading only, like is_readable
+is_listable = is_readable
 
 
 # In folders from the storage settings, e.g. /algo/outputs/{user}/project

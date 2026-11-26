@@ -48,10 +48,16 @@ tags:
       `qa optimize`) from the commit's artifacts, with the project's runner. From the shell, `qa batch --commit` calls them.
   - name: Milestones
     description: Saved references.
+  - name: Inputs
+    description: The inputs runs used, their thumbnails and files.
+  - name: Collections
+    description: Named, versioned lists of inputs, for batches (`collections:` in batch files).
   - name: Account
     description: Who you are, and which token you use.
   - name: Server
     description: The server's health.
+  - name: Administration
+    description: What admins change in the web app's admin pages. Admins only (a session, or a token with the `admin` scope).
 
 paths:
   /projects:
@@ -395,6 +401,10 @@ paths:
         they end. Each request replaces what the run said before. When the run ends, `POST /output/` says its final
         metrics.
 
+        Without `metrics`, the run's metrics don't change: `{}` is a heartbeat. Runs created with `"heartbeat": true`
+        are marked failed when they stay silent ($QABOARD_SILENT_RUN_TIMEOUT_MINUTES); one marked failed that way
+        runs again when it reports.
+
         Same access as the results `qa` sends.
       security:
         - bearerAuth: []
@@ -433,6 +443,187 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409":
           description: "The run isn't running (`reason: not_running`)."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /output/{output_id}/files/{path}:
+    put:
+      tags: [Runs]
+      operationId: uploadRunFile
+      summary: Send a file of a running run
+      description: |
+        Saves a file of a run that doesn't share a storage with the server: `qa` and `qaboard.start_run()` send
+        their runs' files like this with `storage: upload` in *qaboard.yaml*. The run was created with
+        `POST /output/` and `"storage": "upload"`: the server chose its folder. The request's body is the file.
+        Sending a file again replaces it. Only while the run is pending or running, and only on servers that accept
+        files (`uploads.enabled` in `GET /config`).
+
+        Always needs a token that can send results to the project, whatever the server's `ingest.auth` setting.
+        The patches of the run's local changes (`.qaboard/*.patch`) are refused (403, `reason:
+        local_changes_not_allowed`) when the server's `runs.local_changes` setting isn't `patch` (`local_changes`
+        in `GET /config`, `local_changes_level` in the answer to `POST /output/`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/outputId"
+        - name: path
+          in: path
+          required: true
+          description: The file's path in the run's folder, like `plots/loss.png`.
+          schema: {type: string}
+        - name: offset
+          in: query
+          description: |
+            Add the body at the end of the file instead of replacing it, for files that grow, like *log.txt*. It is
+            the size the file must have, `0` for a new file.
+          schema: {type: integer, minimum: 0}
+        - name: X-Content-SHA256
+          in: header
+          description: The body's SHA-256, in hexadecimal. When sent, the server checks what it received.
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "200":
+          description: The file was saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: {type: string}
+                  size: {type: integer, description: "The file's size, in bytes."}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: |
+            The run has ended (`reason: not_running`), saves its files in a shared storage (`not_uploaded`), the file
+            doesn't have the size `offset` says (`offset_mismatch`, with its `size`), or the path is a folder of the
+            run (`path_conflict`).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "413":
+          description: "The file is larger than the server accepts (`max_file_size`, in bytes)."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "422":
+          description: "What the server received doesn't have the SHA-256 sent (`reason: digest_mismatch`)."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "507":
+          description: "The server's storage for uploaded files is full."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /commit/{commit}/artifacts:
+    get:
+      tags: [Commits]
+      operationId: getCommitArtifacts
+      summary: List the artifacts sent for a commit
+      description: |
+        The artifacts `qa save-artifacts` sent for a commit of a project without a storage shared with the server.
+        Download each file from `<server><url>/<path>`. `hash` changes when any file does: `qa fetch-artifacts`
+        caches them by it.
+      parameters:
+        - name: commit
+          in: path
+          required: true
+          description: The commit's full sha.
+          schema: {type: string, pattern: "^[0-9a-f]{40}$"}
+        - $ref: "#/components/parameters/project"
+      responses:
+        "200":
+          description: The files, by their path in the repository.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        sha256: {type: string}
+                        size: {type: integer}
+                        executable: {type: boolean}
+                  hash: {type: string, description: "The SHA-256 of the files' paths, SHA-256 and modes."}
+                  url: {type: string, description: "Where the files are served, like /s/..."}
+                  subproject: {type: string, description: "The project's folder in the repository, \"\" at its root."}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404":
+          description: "The server doesn't know the commit, or has no artifacts for it (`not_uploaded`, `deleted`)."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /commit/{commit}/artifacts/files/{path}:
+    put:
+      tags: [Commits]
+      operationId: uploadCommitArtifact
+      summary: Send one of a commit's artifacts
+      description: |
+        Saves a file of a commit's artifacts, for projects without a storage shared with the server: `qa
+        save-artifacts` sends them like this, each file then the manifests that list them
+        (`<subproject>/manifests/<group>.json`). The commit must exist (`POST /commit/`). Sending a file again
+        replaces it. Always needs a token that can send results to the project.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: commit
+          in: path
+          required: true
+          description: The commit's full sha.
+          schema: {type: string, pattern: "^[0-9a-f]{40}$"}
+        - name: path
+          in: path
+          required: true
+          description: The file's path in the repository, like `build/my-tool`.
+          schema: {type: string}
+        - $ref: "#/components/parameters/project"
+        - name: X-Content-SHA256
+          in: header
+          required: true
+          description: The body's SHA-256, in hexadecimal.
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "200":
+          description: The file was saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: {type: string}
+                  size: {type: integer}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404":
+          description: "The server doesn't know the commit (`unknown_commit`): send it first."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "413":
+          description: "The file is larger than the server accepts."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "422":
+          description: "What the server received doesn't have the SHA-256 sent (`reason: digest_mismatch`)."
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
@@ -596,7 +787,8 @@ paths:
       description: |
         Runs `qa batch` (or `qa optimize` for an automated tuning) from the commit's artifacts, as the signed-in user,
         with the runner the server's admins chose: the same as **Start** in the web app's **Run Tests / Tuning**. Answers
-        once the batch started; its runs show on the commit's page, under `batch_label`.
+        once the batch started; its runs show on the commit's page, under `batch_label`. Servers whose admins chose no
+        runner (`QABOARD_TUNING_RUNNER`) start none: `400`, with `reason: no_server_runner`.
 
         When the commit's artifacts are missing, QA-Board restores what's in the source code, or asks the project's CI
         to recreate them (`recreate_artifacts` in *qaboard.yaml*): then it answers `409`, try again once the CI is done.
@@ -625,6 +817,17 @@ paths:
                       command: {type: string}
                       runner: {type: string}
                       batch: {type: string, description: The batches it runs, separated by spaces.}
+                      batches_snapshot:
+                        type: object
+                        description: >-
+                          What `qa batch` reads: the batches that run, as they were defined when it started, with only
+                          them and the aliases that reach them (`batches.yaml` in the submission's logs folder).
+                        properties:
+                          path: {type: string, description: Relative to the submission's logs folder.}
+                          batches: {type: array, items: {type: string}}
+                          aliases: {type: array, items: {type: string}}
+                          files: {type: array, items: {type: string}, description: The files they come from.}
+                          inputs: {type: array, items: {type: string}, description: Names that are not batches, read as input paths.}
                   warning: {type: [string, "null"], description: "E.g. only the source code of the artifacts could be restored."}
         "400": {$ref: "#/components/responses/BatchRefused"}
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -678,6 +881,573 @@ paths:
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
+
+  /inputs:
+    get:
+      tags: [Inputs]
+      operationId: listInputs
+      summary: List a project's inputs
+      description: >-
+        The inputs the runs of the project and of its subprojects (those you can read) used, and those added before any
+        run (`POST /inputs`), a page at a time, with the
+        counts the Inputs tab filters by. Folders are of the inputs' full paths (`full_path`: the database and the path
+        joined): `root` is the deepest folder of every match (whatever `folder`), `location` the deepest folder of those
+        in `folder` (chains of single folders skipped), `folders` the next level under it and `here` the inputs right in
+        it. `databases` are counted in the folder, whatever the database filter, `metadata` are the keys and the most
+        common values of the inputs' `data.metadata`. Counting them reads every input that matches: they are
+        counted for the first page only (`offset=0`) and are `null` on the next ones, unless `facets=1`.
+        With `fields=id`, answers instead the ids of every input that matches, in the list's order (`limit`, `offset`
+        and `facets` are ignored): up to 50,000, the most a collection's version holds. When more match, `too_many`
+        is true and `ids` is empty: narrow the filters.
+      parameters:
+        - $ref: "#/components/parameters/project"
+        - {name: q, in: query, description: "Words the input's full path contains, all of them, case-insensitively.", schema: {type: string, maxLength: 500}}
+        - {name: folder, in: query, description: "Only the inputs under this folder of their full path, e.g. `/data/night/street`. Relative (`night/street`): of their path in their database.", schema: {type: string}}
+        - {name: meta, in: query, description: "Metadata filters, JSON, for every key either `[values]`: inputs whose `data.metadata[key]` is one of the values (compared as text: `3`, `true`, `rain`), or `{min, max}`: inputs whose `data.metadata[key]` is a JSON number in the range (inclusive; a bound left out or null is none; other values never match). E.g. `{\"weather\": [\"rain\", \"snow\"], \"iso\": {\"min\": 200, \"max\": 800}}`. At most 10 keys.", schema: {type: string}}
+        - {name: database, in: query, description: Only the inputs of this database., schema: {type: string}}
+        - {name: live, in: query, description: "`1` (default): hides the inputs whose runs were all deleted (inputs added without runs stay). `0`: all.", schema: {type: string, enum: ["0", "1"], default: "1"}}
+        - {name: sort, in: query, description: "`last_run`: the latest used first (default). `path`.", schema: {type: string, enum: [last_run, path], default: last_run}}
+        - {name: facets, in: query, description: "`1`: count `total`, `databases` and `folders`. Default: on the first page only.", schema: {type: string, enum: ["0", "1"]}}
+        - {name: fields, in: query, description: "`id`: only the ids of every input that matches, not a page (see above).", schema: {type: string, enum: [id]}}
+        - $ref: "#/components/parameters/pageLimit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: A page of inputs, or with `fields=id` the ids of every input that matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ids: {type: array, items: {type: integer}, description: "With `fields=id`: every match's id, in order (empty when `too_many`)."}
+                  too_many: {type: boolean, description: "With `fields=id`: more than `max` inputs match."}
+                  max: {type: integer, description: "With `fields=id`: the most ids answered, 50,000."}
+                  inputs: {type: array, items: {$ref: "#/components/schemas/Input"}}
+                  total: {type: [integer, "null"], description: "How many inputs match the filters (null without facets, or with `fields=id` when `too_many`)."}
+                  databases:
+                    type: [array, "null"]
+                    items: {type: object, properties: {database: {type: string}, count: {type: integer}}}
+                  root: {type: [string, "null"], description: "The deepest folder of every match, whatever `folder`, e.g. `/data/projectX` (`\"\"`: `/`)."}
+                  location: {type: [string, "null"], description: "The deepest folder of the matches in `folder`: `folders` are under it."}
+                  here: {type: [integer, "null"], description: "How many matches are right in `location`, not in a subfolder."}
+                  metadata:
+                    type: [array, "null"]
+                    description: "The 50 most common keys. A key with a filter is counted without it (on the inputs the other filters keep), so users can add values or move its range."
+                    items: {$ref: "#/components/schemas/MetadataFacet"}
+                  folders:
+                    type: [array, "null"]
+                    items:
+                      type: object
+                      properties:
+                        folder: {type: string, description: "The folder's full path, e.g. `/data/night/street`: send it as `folder`."}
+                        name: {type: string, description: "Its last part, e.g. `street`."}
+                        count: {type: integer}
+                  limit: {type: integer}
+                  offset: {type: integer}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+    post:
+      tags: [Inputs]
+      operationId: addInputs
+      summary: Add inputs to a project, before any run
+      description: >-
+        The project then lists them on its Inputs page, and they can be saved in its collections, before any run used
+        them. `path` is relative to `database`, like runs send them (`qa inputs add` sends what `qa batch` would run on).
+        Inputs the project already has are left as they are; `metadata` is merged into theirs (where runs write the
+        metadata of their input). At most 10,000 inputs per request. Needs the developer role (`collections.write`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, inputs]
+              properties:
+                project: {type: string, example: group/repo}
+                inputs:
+                  type: array
+                  maxItems: 10000
+                  items:
+                    type: object
+                    required: [database, path]
+                    properties:
+                      database: {type: string, example: /mnt/data}
+                      path: {type: string, example: night/street/0001.raw}
+                      metadata: {type: object, additionalProperties: true}
+      responses:
+        "200":
+          description: The inputs, in their order, with their ids.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  inputs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: integer}
+                        database: {type: string}
+                        path: {type: string}
+                        new: {type: boolean, description: The project didn't have it.}
+                  added: {type: integer}
+                  known: {type: integer, description: How many the project already had.}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "413": {description: "More than 10,000 inputs, or metadata that is too big."}
+
+  /inputs/metadata-values:
+    get:
+      tags: [Inputs]
+      operationId: listMetadataValues
+      summary: Search the values of a metadata key
+      description: >-
+        The values of the metadata key `key` that contain `search` (case-insensitively), the 20 most common, counted on
+        the inputs that `GET /inputs`'s filters keep but the key's own: for a facet with more values than it lists.
+        `distinct` is how many values match.
+      parameters:
+        - $ref: "#/components/parameters/project"
+        - {name: key, in: query, required: true, description: The metadata key., schema: {type: string, maxLength: 200}}
+        - {name: search, in: query, description: "Text the values contain. Empty: the most common values.", schema: {type: string, maxLength: 200}}
+        - {name: q, in: query, description: "As in `GET /inputs`.", schema: {type: string, maxLength: 500}}
+        - {name: folder, in: query, description: "As in `GET /inputs`.", schema: {type: string}}
+        - {name: meta, in: query, description: "As in `GET /inputs` (the filter on `key` is ignored).", schema: {type: string}}
+        - {name: database, in: query, description: "As in `GET /inputs`.", schema: {type: string}}
+        - {name: live, in: query, description: "As in `GET /inputs`.", schema: {type: string, enum: ["0", "1"], default: "1"}}
+      responses:
+        "200":
+          description: The key's values that match.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MetadataFacet"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /inputs/{input_id}:
+    get:
+      tags: [Inputs]
+      operationId: getInput
+      summary: Get an input and its latest runs
+      description: >-
+        The input, with the 50 latest runs on it of the project and of its subprojects, deleted or not. Inputs of
+        collections the project sees are found even if its runs never used them.
+      parameters:
+        - $ref: "#/components/parameters/inputId"
+        - $ref: "#/components/parameters/project"
+      responses:
+        "200":
+          description: The input.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Input"
+                  - type: object
+                    properties:
+                      runs: {type: array, items: {$ref: "#/components/schemas/InputRun"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /inputs/{input_id}/thumbnail:
+    get:
+      tags: [Inputs]
+      operationId: getInputThumbnail
+      summary: Get an input's thumbnail
+      description: >-
+        A JPEG at most `size` pixels wide and high, cached. Images Pillow opens, the first frame of videos, and the
+        formats the server's site decoders read. `404` (`no_thumbnail`) when none reads it, `missing_file` when the
+        file is gone. The input must be one the project sees (like `GET /inputs/{input_id}`: its runs, or those of
+        its subprojects you can read, used it, or a collection it sees has it), else `404` (`input_not_found`), and
+        you need to be able to read the file, like in the file browser. Without `project`, `400`.
+      parameters:
+        - $ref: "#/components/parameters/inputId"
+        - {name: size, in: query, description: "Rounded up to 64, 128, 256, 512 or 1024.", schema: {type: integer, default: 256}}
+        - $ref: "#/components/parameters/project"
+      responses:
+        "200":
+          description: The thumbnail.
+          content:
+            image/jpeg:
+              schema: {type: string, format: binary}
+        "304": {description: Not modified (`If-None-Match`).}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /inputs/{input_id}/file:
+    get:
+      tags: [Inputs]
+      operationId: getInputFile
+      summary: Get an input's file
+      description: >-
+        The file, when browsers show its format (JPEG, PNG, GIF, WebP, BMP, AVIF), for the image viewer. Else `415`
+        (`unsupported_format`), with the `thumbnail_url` to show instead. Like the thumbnail: the input must be one
+        the project sees (else `404`, `input_not_found`), and you need to be able to read the file.
+      parameters:
+        - $ref: "#/components/parameters/inputId"
+        - $ref: "#/components/parameters/project"
+      responses:
+        "200":
+          description: The file.
+          content:
+            image/*:
+              schema: {type: string, format: binary}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "415":
+          description: Browsers can't show this format.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Error"
+                  - type: object
+                    properties:
+                      thumbnail_url: {type: string}
+
+  /collections:
+    get:
+      tags: [Collections]
+      operationId: listCollections
+      summary: List the collections a project sees
+      description: The collections of the project and of its ancestors, by name. Archived ones only with `archived=1`.
+      parameters:
+        - $ref: "#/components/parameters/project"
+        - {name: archived, in: query, description: "`1`: also the archived collections.", schema: {type: string, enum: ["0", "1"], default: "0"}}
+      responses:
+        "200":
+          description: The collections.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collections: {type: array, items: {$ref: "#/components/schemas/Collection"}}
+                  my_groups:
+                    type: array
+                    description: "Your groups: developers pin collections for them."
+                    items: {type: object, properties: {id: {type: integer}, name: {type: string}}}
+                  can_pin_everyone: {type: boolean, description: "You own the project: you can pin its collections for everyone."}
+                  archived_count: {type: integer, description: "How many archived collections you see there (listed with `archived=1`)."}
+                  can_create: {type: boolean, description: You can create collections in the project (personal ones, if not `can_share`).}
+                  can_share: {type: boolean, description: You can create collections shared with the project.}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+    post:
+      tags: [Collections]
+      operationId: createCollection
+      summary: Create a collection
+      description: >-
+        Creates the collection with its version 1. Needs the developer role. The inputs must be inputs of the runs of
+        the project or of its subprojects (`unknown_inputs`). `409` (`name_taken`, with the existing collection's `id`)
+        if the project has a collection with this name, archived or not.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, name, inputs]
+              properties:
+                project: {type: string}
+                name: {type: string, maxLength: 200, description: "Letters, digits, spaces, `.`, `-`, `_`, with `/` for groups, e.g. `night/hard-cases`."}
+                description: {type: string, maxLength: 20000}
+                inputs: {type: array, maxItems: 50000, items: {type: integer}, description: Input ids, in order. Duplicates are dropped.}
+                notes: {type: string, maxLength: 20000, description: About version 1.}
+                shared: {type: boolean, default: true, description: "With the project: needs the developer role. `false`: personal, only you see it, anyone who reads the project makes them."}
+      responses:
+        "201":
+          description: The collection.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Collection"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/NameTaken"}
+        "413": {$ref: "#/components/responses/TooLarge"}
+
+  /collections/resolve:
+    get:
+      tags: [Collections]
+      operationId: resolveCollection
+      summary: Resolve a collection reference to its inputs
+      description: >-
+        What `collections:` in batch files and `qaboard.collections.get()` run on. `ref` is `name`, `name@3`,
+        `name@latest` or `project:name@3`. Without a project in it, it looks in `project`, then in its ancestors
+        (`a/b/c`, `a/b`, `a`). Archived collections resolve.
+      parameters:
+        - {name: project, in: query, required: false, description: The project to look from. Optional when `ref` names one., schema: {type: string}}
+        - {name: ref, in: query, required: true, schema: {type: string}, example: "night/hard-cases@2"}
+      responses:
+        "200":
+          description: The version's inputs, in order.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collection: {$ref: "#/components/schemas/Collection"}
+                  name: {type: string}
+                  ref: {type: string, description: "The reference with its version, as seen from `project`, e.g. `night/hard-cases@2` or `a:night/hard-cases@2`."}
+                  version: {type: integer}
+                  project: {type: string, description: The collection's project.}
+                  inputs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: integer}
+                        database: {type: string}
+                        path: {type: string}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /collections/{collection_id}:
+    get:
+      tags: [Collections]
+      operationId: getCollection
+      summary: Get a collection and its versions
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+        - $ref: "#/components/parameters/collectionVersion"
+        - $ref: "#/components/parameters/collectionProject"
+      responses:
+        "200":
+          description: The collection, the version asked (by default the latest), and all versions, the latest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Collection"
+                  - type: object
+                    properties:
+                      version: {$ref: "#/components/schemas/CollectionVersion"}
+                      versions: {type: array, items: {$ref: "#/components/schemas/CollectionVersion"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    patch:
+      tags: [Collections]
+      operationId: editCollection
+      summary: Rename, describe, archive a collection
+      description: Needs the developer role on the collection's project. `POST` does the same, for proxies that drop the body of `PATCH`.
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 20000}
+                archived: {type: boolean}
+                shared: {type: boolean, description: "Its creator only: share it with the project (developer role), or make it personal again."}
+      responses:
+        "200":
+          description: The collection.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Collection"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/NameTaken"}
+
+  /collections/{collection_id}/inputs:
+    get:
+      tags: [Collections]
+      operationId: listCollectionInputs
+      summary: List a collection's inputs
+      description: A version's inputs, in their order, with their runs in the project (`?project=`, by default the collection's) and its subprojects.
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+        - $ref: "#/components/parameters/collectionVersion"
+        - $ref: "#/components/parameters/collectionProject"
+        - {name: q, in: query, description: "Words the input's path contains.", schema: {type: string}}
+        - $ref: "#/components/parameters/pageLimit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: A page of inputs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  inputs:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/Input"
+                        - type: object
+                          properties:
+                            position: {type: integer, description: "From 0, in the version's order."}
+                  total: {type: integer}
+                  version: {type: integer}
+                  limit: {type: integer}
+                  offset: {type: integer}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /collections/{collection_id}/versions:
+    post:
+      tags: [Collections]
+      operationId: saveCollectionVersion
+      summary: Save a new version of a collection
+      description: >-
+        Saves version N+1 with all its inputs. `409` (`stale_version`, with `latest_version`) when `base_version`
+        isn't the latest: someone saved meanwhile. Send the latest as `base_version` to save anyway.
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inputs, base_version]
+              properties:
+                inputs: {type: array, maxItems: 50000, items: {type: integer}}
+                base_version: {type: integer, description: The version the changes start from.}
+                notes: {type: string, maxLength: 20000}
+      responses:
+        "201":
+          description: The collection, with the new `version`.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Collection"
+                  - type: object
+                    properties:
+                      version: {$ref: "#/components/schemas/CollectionVersion"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: "`base_version` isn't the latest."
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Error"
+                  - type: object
+                    properties:
+                      base_version: {type: integer}
+                      latest_version: {type: integer}
+        "413": {$ref: "#/components/responses/TooLarge"}
+
+  /collections/{collection_id}/favorite:
+    put:
+      tags: [Collections]
+      operationId: favoriteCollection
+      summary: Add a collection to your favorites
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+        - $ref: "#/components/parameters/collectionProject"
+      responses:
+        "200": {$ref: "#/components/responses/Favorite"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [Collections]
+      operationId: unfavoriteCollection
+      summary: Remove a collection from your favorites
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+        - $ref: "#/components/parameters/collectionProject"
+      responses:
+        "200": {$ref: "#/components/responses/Favorite"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /collections/{collection_id}/pins:
+    put:
+      tags: [Collections]
+      operationId: pinCollection
+      summary: Pin a collection for a group, or for everyone
+      description: >-
+        For a group (`{"group": 12}`): developers of the project who are in the group. For everyone on the project
+        (`{"group": null}`): its owners. The group can be sent as `?group=` instead (empty for everyone).
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+        - $ref: "#/components/parameters/pinGroup"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Pin"}
+      responses:
+        "200":
+          description: The collection.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Collection"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [Collections]
+      operationId: unpinCollection
+      summary: Unpin a collection for a group, or for everyone
+      description: Who can pin can unpin. Prefer `?group=` to a body, which some proxies drop on `DELETE`.
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+        - $ref: "#/components/parameters/pinGroup"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Pin"}
+      responses:
+        "200":
+          description: The collection.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Collection"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /collections/{collection_id}/export.yaml:
+    get:
+      tags: [Collections]
+      operationId: exportCollection
+      summary: Get the qaboard.yaml of a batch on a collection
+      description: With `version`, the batch runs on that version, else on the latest when it starts.
+      parameters:
+        - $ref: "#/components/parameters/collectionId"
+        - $ref: "#/components/parameters/collectionVersion"
+        - $ref: "#/components/parameters/collectionProject"
+      responses:
+        "200":
+          description: YAML to paste in qaboard.yaml.
+          content:
+            text/yaml:
+              schema: {type: string}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
 
   /user/me/:
     get:
@@ -761,6 +1531,75 @@ paths:
         "503":
           description: The database can't be reached.
 
+  /admin/data-folders:
+    get:
+      tags: [Administration]
+      operationId: listDataFolders
+      summary: List the data folders
+      description: >-
+        Folders QA-Board reads but never changes, like datasets: thumbnails, the input file viewer and the file browser
+        show their files, but runs are never saved there and no delete, cleanup or storage usage looks at them
+        ([data folders](/docs/backend-admin/storage#data-folders)).
+      responses:
+        "200":
+          description: The data folders, and the storage roots (read too, set in the server's environment).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data_folders: {type: array, items: {$ref: "#/components/schemas/DataFolder"}}
+                  storage_roots: {type: array, items: {type: string}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+    post:
+      tags: [Administration]
+      operationId: addDataFolder
+      summary: Add a data folder
+      description: >-
+        Absolute paths, normalized. Refused: `/`, the system's folders and folders around them, the server's own
+        folders and what's in them. Recorded in the audit log (`data_folder.add`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: {type: string, example: /mnt/nas/datasets}
+                check: {type: boolean, default: true, description: Refuse a folder the server doesn't see.}
+      responses:
+        "201":
+          description: The folder, added.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DataFolder"}
+        "400": {description: "A folder QA-Board can't read (`reason`: `invalid`, `forbidden`, `not_a_folder`)."}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {description: "Already a data folder (`reason: exists`)."}
+    delete:
+      tags: [Administration]
+      operationId: removeDataFolder
+      summary: Remove a data folder
+      description: Its files stay where they are. Recorded in the audit log (`data_folder.remove`).
+      parameters:
+        - {name: path, in: query, required: true, schema: {type: string}, example: /mnt/nas/datasets}
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, const: OK}
+                  path: {type: string}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {description: "Not a data folder (`reason: not_found`)."}
+
 components:
   securitySchemes:
     bearerAuth:
@@ -778,6 +1617,42 @@ components:
       schema: {type: string, enum: ["true", "false"]}
 
   parameters:
+    inputId:
+      name: input_id
+      in: path
+      required: true
+      description: The input's id (`id` of an `Input`).
+      schema: {type: integer}
+    collectionId:
+      name: collection_id
+      in: path
+      required: true
+      schema: {type: integer}
+    collectionVersion:
+      name: version
+      in: query
+      description: A version number, or `latest` (default).
+      schema: {type: string}
+      example: "2"
+    collectionProject:
+      name: project
+      in: query
+      required: false
+      description: >-
+        The project you look from: the collection's or one of its subprojects (they see their ancestors' collections).
+        By default, the collection's.
+      schema: {type: string}
+    pinGroup:
+      name: group
+      in: query
+      required: false
+      description: The group's id, empty for everyone. Instead of the body's `group`.
+      schema: {type: string}
+    pageLimit:
+      name: limit
+      in: query
+      description: Page size.
+      schema: {type: integer, minimum: 1, maximum: 5000, default: 100}
     project:
       name: project
       in: query
@@ -920,10 +1795,35 @@ components:
             notify: false
 
   responses:
+    NameTaken:
+      description: "The project has a collection with this name (`name_taken`): `id` is its id."
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Error"
+              - type: object
+                properties:
+                  id: {type: integer}
+    TooLarge:
+      description: "Too many inputs (`too_many_inputs`: at most 50,000), or a text too long (`too_long`)."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Favorite:
+      description: Whether it's in your favorites now.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              id: {type: integer}
+              favorite: {type: boolean}
     BatchRefused:
       description: >-
-        The request can't start: `errors` says why, e.g. an unknown batch, an invalid tuning, a commit QA-Board doesn't
-        know (`404`, it may not be pushed, or its CI didn't run `qa` yet) or an id several commits start with.
+        The request can't start: `errors` says why, e.g. an unknown batch, an invalid tuning, a server that starts no
+        batches, a commit QA-Board doesn't know (`404`, it may not be pushed, or its CI didn't run `qa` yet) or an id
+        several commits start with.
       content:
         application/json:
           schema: {$ref: "#/components/schemas/BatchCheck"}
@@ -952,7 +1852,8 @@ components:
     Forbidden:
       description: >-
         You can't read this project (`missing_role`, `forbidden_project`), your token lacks a scope
-        (`missing_scope`, with the scope in `required`), or it is restricted to other projects (`token_project`).
+        (`missing_scope`, with the scope in `required`), or it is restricted to other projects (`token_project`), or
+        it is the token of a batch QA-Board started, which only sends that batch's results (`batch_token_limited`).
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Error"}
@@ -964,6 +1865,12 @@ components:
           schema: {$ref: "#/components/schemas/Error"}
 
   schemas:
+    DataFolder:
+      type: object
+      properties:
+        path: {type: string, example: /mnt/nas/datasets}
+        reachable: {type: boolean, description: The server sees the folder.}
+        in_storage: {type: boolean, description: "It's already in the storage QA-Board manages ($QABOARD_STORAGE_ROOTS, the storage locations)."}
     BatchCheck:
       type: object
       properties:
@@ -1010,6 +1917,10 @@ components:
         target: {type: [number, "null"]}
         suffix: {type: string, description: "A unit, e.g. ` ms`."}
         scale: {type: number, description: Values are multiplied by it before they're shown.}
+        group: {type: string, description: "Metrics shown together, levels separated by `/`, e.g. `Tests` or `Benchmarks/codec`."}
+        aggregation: {type: string, enum: [sum, average, median], description: "How a commit's value comes from its runs'. Default: median."}
+        part_of: {type: string, description: "The key of the metric this one is a part of, e.g. `passed` of `tests`."}
+        intent: {type: string, enum: [success, warning, danger, none], description: The color of a part in stacked charts.}
       additionalProperties: true
 
     ProjectSummary:
@@ -1068,7 +1979,8 @@ components:
         authored_datetime: {type: string, format: date-time}
         authored_date: {type: string, format: date}
         latest_output_datetime: {type: [string, "null"], format: date-time}
-        deleted: {type: [boolean, "null"], description: Whether the commit's artifacts were deleted.}
+        artifacts_deleted: {type: [boolean, "null"], description: "Whether the commit's artifacts were deleted. Its runs have their own `deleted`."}
+        deleted: {type: [boolean, "null"], deprecated: true, description: The former name of `artifacts_deleted`.}
         data:
           type: object
           description: >-
@@ -1104,6 +2016,7 @@ components:
             authored_datetime: "2026-11-05T13:58:40+00:00"
             authored_date: "2026-11-05"
             latest_output_datetime: "2026-11-05T14:02:11.391000"
+            artifacts_deleted: false
             deleted: false
             data: {qatools_config: {project: {reference_branch: main}}}
             outputs_url: /s/mnt/qaboard/kitefin/detector/outputs/7622c337
@@ -1420,6 +2333,118 @@ components:
         slug: {type: string}
         created_at: {type: [string, "null"], format: date-time}
         updated_at: {type: [string, "null"], format: date-time}
+
+    MetadataFacet:
+      type: object
+      description: A key of the inputs' `data.metadata`, and its values.
+      properties:
+        key: {type: string}
+        count: {type: integer, description: "How many inputs have it."}
+        distinct: {type: integer, description: "How many values it has (values over 200 characters aren't counted)."}
+        type: {type: string, enum: [number, string, boolean, mixed], description: "The JSON type of all its values, `mixed` when they have several."}
+        values: {type: array, description: "The 20 most common, as text.", items: {type: object, properties: {value: {type: string}, count: {type: integer}}}}
+        min: {type: number, description: "Numbers only: the smallest."}
+        max: {type: number, description: "Numbers only: the largest."}
+        integers: {type: boolean, description: "Numbers only: all are integers."}
+        histogram:
+          type: array
+          description: >-
+            Numbers only: how many inputs have a value in each bin, from `min` to `max`. 20 bins, `[start, end)` (the last
+            one includes `max`); integers that span fewer than 20 have one bin per integer, `[n, n + 1)`.
+          items: {type: object, properties: {start: {type: number}, end: {type: number}, count: {type: integer}}}
+
+    Input:
+      type: object
+      description: An input runs used. Inputs are global, a database and a path in it.
+      properties:
+        id: {type: integer}
+        database: {type: string}
+        path: {type: string, description: Relative to the database.}
+        name: {type: string, description: "The path's last part, e.g. `street.raw`."}
+        folder: {type: string, description: "The path's folder, e.g. `night` (`\"\"` at the database's root)."}
+        full_path: {type: string, description: "The database and the path joined, e.g. `/data/night/street.raw`: what the web app shows and copies."}
+        data: {type: object, additionalProperties: true, description: "What runs said about it, e.g. `metadata`."}
+        runs: {type: integer, description: "How many runs of the project (and its subprojects) used it, deleted ones included."}
+        first_run_at: {type: [string, "null"], format: date-time}
+        last_run_at: {type: [string, "null"], format: date-time}
+        thumbnail_url: {type: string, description: "`/api/v1/inputs/<id>/thumbnail?project=<the project asked about>`: add `&size=`."}
+        url: {type: [string, "null"], description: "The file under `/s/`, like runs' `output_dir_url`. `null` when the database isn't an absolute path."}
+
+    InputRun:
+      type: object
+      properties:
+        id: {type: integer}
+        project: {type: string, description: The run's project, the project asked or a subproject.}
+        batch: {type: string}
+        commit: {type: string}
+        branch: {type: [string, "null"]}
+        user: {type: [string, "null"]}
+        origin: {type: [string, "null"], description: "`ci`, `local`, `webapp`..."}
+        platform: {type: [string, "null"]}
+        configurations: {type: array, items: {}}
+        created_date: {type: [string, "null"], format: date-time}
+        deleted: {type: boolean}
+        is_failed: {type: boolean}
+        is_pending: {type: boolean}
+        is_running: {type: boolean}
+        output_dir_url: {type: [string, "null"]}
+
+    UserRef:
+      type: [object, "null"]
+      properties:
+        id: {type: integer}
+        user_name: {type: [string, "null"]}
+        full_name: {type: [string, "null"]}
+
+    Collection:
+      type: object
+      description: A named, versioned list of inputs of a project. Its subprojects see it too.
+      properties:
+        id: {type: integer}
+        project: {type: string}
+        name: {type: string, description: "`/` nests groups, e.g. `night/hard-cases`."}
+        description: {type: string}
+        created_by: {$ref: "#/components/schemas/UserRef"}
+        updated_by: {$ref: "#/components/schemas/UserRef", description: Who saved the latest version.}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        archived: {type: boolean}
+        archived_at: {type: [string, "null"], format: date-time}
+        latest_version: {type: integer}
+        size: {type: integer, description: How many inputs the latest version has.}
+        favorite: {type: boolean, description: In your favorites.}
+        pinned_for:
+          type: array
+          description: The groups it's pinned for. `id` null is everyone on the project.
+          items: {$ref: "#/components/schemas/PinnedFor"}
+        pinned: {type: boolean, description: Pinned for everyone or for one of your groups.}
+        can_edit: {type: boolean, description: You can save versions, rename and archive it.}
+        shared: {type: boolean, description: "Seen by everyone on the project. `false`: personal, only its creator sees it."}
+        mine: {type: boolean, description: You created it.}
+        can_pin_everyone: {type: boolean, description: "You own its project: you can pin it for everyone. With `can_edit`, you can pin it for your groups."}
+        ref: {type: string, description: "How the project asked about names it: `name`, or `project:name` when it's an ancestor's."}
+        inherited: {type: boolean, description: "It's an ancestor's collection."}
+
+    PinnedFor:
+      type: object
+      properties:
+        id: {type: [integer, "null"]}
+        name: {type: [string, "null"]}
+
+    CollectionVersion:
+      type: object
+      description: Versions never change once saved.
+      properties:
+        version: {type: integer}
+        created_by: {$ref: "#/components/schemas/UserRef"}
+        created_at: {type: string, format: date-time}
+        notes: {type: string}
+        size: {type: integer}
+
+    Pin:
+      type: object
+      properties:
+        group: {type: [integer, "null"], description: "A group's id, `null` for everyone."}
 
     Me:
       type: object

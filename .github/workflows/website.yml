@@ -25,9 +25,14 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false  # no step pushes
+          # The whole history: each page's "Last updated" date and the sitemap's <lastmod> come from its last commit
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: yarn
@@ -39,6 +44,11 @@ jobs:
           ~/.cache/qaboard-docs-media/bin/actionlint website/snippets/ci/github-actions*.yml
       - name: Build website
         working-directory: website
+        env:
+          # Search Console and Bing Webmaster Tools tokens (repository variables, not secrets: the tags are public).
+          # See website/README.md, "Search engines and AI assistants"
+          QABOARD_GOOGLE_SITE_VERIFICATION: ${{ vars.QABOARD_GOOGLE_SITE_VERIFICATION }}
+          QABOARD_BING_SITE_VERIFICATION: ${{ vars.QABOARD_BING_SITE_VERIFICATION }}
         run: |
           yarn install --frozen-lockfile
           yarn build
@@ -53,6 +63,7 @@ jobs:
     needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
@@ -68,6 +79,7 @@ jobs:
     # After the deploy: the crawler reads the live site
     needs: deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       ALGOLIA_CRAWLER_ID: ${{ secrets.ALGOLIA_CRAWLER_ID }}
       ALGOLIA_CRAWLER_USER_ID: ${{ secrets.ALGOLIA_CRAWLER_USER_ID }}

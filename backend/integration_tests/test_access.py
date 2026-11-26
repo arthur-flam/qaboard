@@ -4,6 +4,7 @@ project endpoint as an outsider, a viewer and a developer of a private project.
 """
 import os
 import datetime
+from backend import clock
 from pathlib import Path
 
 import pytest
@@ -234,7 +235,7 @@ def test_imported_milestones_need_access_to_their_results(team, client):
 def test_expired_grants_are_ignored(team):
   from backend.database import db_session
   from backend.models import RoleGrant
-  RoleGrant.query.filter(RoleGrant.subject_id == team['ids']['carol']).update({"expires_at": datetime.datetime.utcnow() - datetime.timedelta(minutes=1)})
+  RoleGrant.query.filter(RoleGrant.subject_id == team['ids']['carol']).update({"expires_at": clock.utcnow() - datetime.timedelta(minutes=1)})
   db_session.commit()
   assert team['carol'].get(f'/api/v1/commits?project={PROJECT}').status_code == 403
   response = team['alice'].post('/api/v1/project/access/grants', json={"project": PROJECT, "subject": {"type": "user", "id": team['ids']['carol']}, "role": "viewer", "expires_at": "2020-01-01"})
@@ -279,6 +280,19 @@ def test_access_requests(team):
   request_id = alice.get(f'/api/v1/project/access?project={PROJECT}').get_json()["requests"][0]["id"]
   assert alice.post(f'/api/v1/project/access/requests/{request_id}', json={"decision": "deny"}).get_json()["status"] == "denied"
   assert team['carol'].get(f'/api/v1/project/access?project={PROJECT}').get_json()["my_role"] == "viewer"
+
+
+def test_admins_decide_project_requests(team):
+  """Admin → Access requests lists project requests too: admins decide them with the project's endpoint, and they leave the list"""
+  dave, root = team['dave'], team['root']
+  dave.post('/api/v1/project/access/requests', json={"project": PROJECT, "role": "viewer"})
+  pending = root.get('/api/v1/admin/access-requests').get_json()["requests"]
+  assert [(r["kind"], r["project"], r["role"], r["user"]["user_name"]) for r in pending] == [("project", PROJECT, "viewer", "dave")]
+  # changing dave's account status, already active, doesn't decide it
+  assert root.post(f'/api/v1/admin/users/{team["ids"]["dave"]}', json={"status": "active"}).status_code == 200
+  assert len(root.get('/api/v1/admin/access-requests').get_json()["requests"]) == 1
+  assert root.post(f'/api/v1/project/access/requests/{pending[0]["id"]}', json={"decision": "approve"}).get_json()["status"] == "approved"
+  assert root.get('/api/v1/admin/access-requests').get_json()["requests"] == []
 
 
 def test_ingest_follows_roles(team, monkeypatch, make_client):

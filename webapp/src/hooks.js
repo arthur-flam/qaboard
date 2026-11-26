@@ -14,10 +14,12 @@ import { usePrefsStore } from "./stores/prefs";
 import { useSelected, updateSelected, reference_names, side_colors, is_default_name } from "./selection";
 import { available_batch, compute_batches, compute_config, reference_matcher } from "./selectors/batches";
 import { shared_rules } from "./matching/rules";
-import { default_project } from "./defaults";
+import { default_project, reference_branch_of } from "./defaults";
 import { milestonesQuery, milestones_of, milestone_name, no_milestones } from "./milestones/api";
 import { side_color } from "./sideColors";
 import { with_undeclared_metrics } from "./utils";
+import { listMetricKeys } from "./metricGroups";
+import { automatic_default_view, batch_facts, default_views_of } from "./defaultViews";
 
 // The keys of a Set of metrics, as a string that only changes when they do
 export const used_metrics_signature = used_metrics => [...(used_metrics ?? [])].sort().join('\n');
@@ -125,14 +127,16 @@ export function useRefreshCommit() {
 
 
 // The metrics the commits endpoint aggregates per batch (median, average), with their targets:
-// History's (dashboard_metrics), else the default and main metrics, which the commit list and the branch's chart show.
+// The Trends page's (dashboard_metrics), else the default and main metrics, which the commit list and the branch's chart show.
 // Metrics without a target need one: JSON leaves out undefined values, and the server would not aggregate them.
 // They don't need to be declared.
 export const aggregation_metrics = (qatools_metrics, { dashboard = false } = {}) => {
   const { available_metrics = {}, default_metric, main_metrics = [], dashboard_metrics } = qatools_metrics ?? {};
   // lists, see normalize_metrics: but the cache may have metrics files from before it
   const main = Array.isArray(main_metrics) ? main_metrics : [];
-  const keys = dashboard ? (Array.isArray(dashboard_metrics) ? dashboard_metrics : main) : [default_metric, ...main];
+  // lists also get totals and their parts (the tests of `qa upload`), for the numbers above a branch's commits.
+  // After the project's own: the server aggregates a limited number of metrics (max_aggregated_metrics).
+  const keys = dashboard ? (Array.isArray(dashboard_metrics) ? dashboard_metrics : main) : [default_metric, ...main, ...listMetricKeys(available_metrics)];
   return Object.fromEntries(keys
     .filter(m => !!m)
     .map(m => [m, available_metrics[m]?.target ?? 0]));
@@ -147,10 +151,10 @@ const unique_commits = commits => {
 };
 
 // The commits shown on the current page: the project's latest, a branch's or a committer's,
-// in the date range from the URL. On the History page they come with all their outputs.
+// in the date range from the URL. On the Trends page they come with all their outputs.
 // On lists of commits they come in pages (fetchNextPage, hasNextPage...), and the `search` from the URL
 // Whose commits the project's pages list: the URL says, else what users last picked in this project, else theirs
-// ("mine") if they're signed in. Branch and committer pages, and History, are about everyone's.
+// ("mine") if they're signed in. Branch and committer pages, and Trends, are about everyone's.
 // {scope, is_default}: the default falls back to everyone's when users have nothing in the project.
 // `ready`: we know who the user is, lists wait for it rather than show everyone's, then theirs.
 export function useListScope(selected) {
@@ -186,7 +190,7 @@ function useCommitsListState(selected, project_data, { enabled, refetchInterval,
   const list_key = `${project}|${branch}`;
   const known_branch_metrics = branch && branch_metrics.key === list_key ? branch_metrics.qatools_metrics : undefined;
   const project_metrics = project_data.data?.qatools_metrics;
-  // History picks its metrics and loads every run: asking again with the latest commit's would load them twice
+  // Trends picks its metrics and loads every run: asking again with the latest commit's would load them twice
   const requested_metrics = (!dashboard && known_branch_metrics) || project_metrics;
   const metrics = useMemo(
     () => aggregation_metrics(requested_metrics, { dashboard }),
@@ -222,7 +226,7 @@ function useCommitsListState(selected, project_data, { enabled, refetchInterval,
   const pages_query = useInfiniteQuery({ ...commitsPagesQuery({ ...params, q: search || undefined, page_size }), enabled: can_fetch && paginated, refetchInterval: pages_refetch_interval });
   const query = paginated ? pages_query : all_query;
 
-  const default_branch = project_data.data?.git?.default_branch ?? project_data.data?.qatools_config?.project?.reference_branch;
+  const default_branch = reference_branch_of(project_data, null) ?? undefined;
   const { data: query_data, isPlaceholderData } = query;
   const data = useMemo(() => paginated ? unique_commits(commits_of(query_data)) : query_data, [paginated, query_data]);
   const latest_metrics = branch && !search && !isPlaceholderData ? data?.[0]?.data?.qatools_metrics : undefined;
@@ -479,8 +483,19 @@ function useComparisonState() {
     metrics: { default_metric },
   }), [new_commit, ref_commit, selected_batch_new, selected_batch_ref, filter_batch_new, filter_batch_ref, sort_by, sort_order, default_metric, reference_rules]);
 
-  const default_tab = config.config.outputs?.default_tab_details ?? project_data.data?.qatools_config?.outputs?.default_tab_details ?? 'summary';
-  const default_views = useMemo(() => [].concat(default_tab).map(v => v.replace('_', '-')), [default_tab]);
+  // The view the page opens on: qaboard.yaml's choice, else the most useful with what the project set up (defaultViews.js).
+  // Once the batch's runs say enough, it stays the same for the batch: runs finishing don't change the page under users.
+  const configured_tab = config.config.outputs?.default_tab_details ?? project_data.data?.qatools_config?.outputs?.default_tab_details;
+  const facts = useMemo(
+    () => batch_facts({ config_outputs: config.config.outputs, outputs: batches.new_batch.outputs }),
+    [config.config.outputs, batches.new_batch.outputs],
+  );
+  const facts_key = `${new_project}|${new_commit?.id}|${raw_new_batch?.id ?? selected_batch_new}`;
+  const [settled_facts, setSettledFacts] = useState(null);
+  if (facts.ready && settled_facts?.key !== facts_key) setSettledFacts({ key: facts_key, facts });
+  const shown_facts = settled_facts?.key === facts_key ? settled_facts.facts : facts;
+  const automatic_view = automatic_default_view(shown_facts);
+  const default_views = useMemo(() => default_views_of(configured_tab, automatic_view), [configured_tab, automatic_view]);
   const selected_views = useMemo(
     () => selected.selected_views ?? default_views,
     [selected.selected_views, default_views],
@@ -537,7 +552,7 @@ export const ComparisonProvider = ({ children }) => {
     createElement(TogetherContext.Provider, { value: comparison.together }, children));
 };
 
-// useComparison().together, or none without a comparison (e.g. History's previews)
+// useComparison().together, or none without a comparison (e.g. the Trends page's previews)
 export const useReferencesTogether = () => useContext(TogetherContext);
 
 // Everything about the comparison of the new and reference commits: commits, batches, configuration and metrics

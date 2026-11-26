@@ -17,6 +17,8 @@
   --qa-intent-primary: #2d72d2;
   /* errors in text, e.g. a setting's invalid value */
   --qa-text-danger: #ac2f33;
+  /* better results in text, e.g. how many runs improved (components/metricsTable/) */
+  --qa-text-success: #1c6e42;
   /* a row just linked to, e.g. /admin/settings?setting=key */
   --qa-highlight: rgba(251, 179, 96, 0.22);
   /* What we compare (src/sideColors.js): the new results, then each reference. No red, green or orange: they say
@@ -31,6 +33,14 @@
   --qa-export-settings: #8a5d00;
   --qa-export-file: #00756a;
   --qa-export-region: #a3365f;
+  /* syntax highlighting of code snippets (components/CodeBlock.jsx) */
+  --qa-code-keyword: #8250df;
+  --qa-code-string: #0a7d3c;
+  --qa-code-comment: #6e7781;
+  --qa-code-number: #a04b00;
+  --qa-code-function: #0550ae;
+  --qa-code-key: #0550ae;
+  --qa-code-variable: #953800;
 }
 .bp6-dark {
   --qa-background: #1c2127;
@@ -45,6 +55,7 @@
   --qa-sider-background: #111418;
   --qa-intent-primary: #4c90f0;
   --qa-text-danger: #fa999c;
+  --qa-text-success: #72ca9b;
   --qa-highlight: rgba(251, 179, 96, 0.16);
   --qa-side-0: #4c90f0;
   --qa-side-1: #9c4bf5;
@@ -55,6 +66,13 @@
   --qa-export-settings: #f0b726;
   --qa-export-file: #3fd2c0;
   --qa-export-region: #ff7eb0;
+  --qa-code-keyword: #d2a8ff;
+  --qa-code-string: #7ee787;
+  --qa-code-comment: #8b949e;
+  --qa-code-number: #ffa657;
+  --qa-code-function: #79c0ff;
+  --qa-code-key: #79c0ff;
+  --qa-code-variable: #ffa657;
 }
 
 /* The content area (the window minus the sidebar) makes room for a panel docked on its right, e.g. the commit
@@ -96,11 +114,6 @@ span.bp6-popover-target {
   vertical-align: baseline !important;
 }
 
-.limit-overflow .bp6-popover-transition-container {
-  max-height: 500px;
-  overflow-y: scroll;
-}
-
 .bp6-card.output-card {
   padding: 5px;
   margin-bottom: 15px;
@@ -109,13 +122,16 @@ span.bp6-popover-target {
 .bp6-card.output-card.compact {
   margin-bottom: 8px;
 }
+/* A card's visualizations (OutputCard.jsx), one under the other: room between a test report, a benchmark, a plot... */
+.output-card-views > * + * {
+  margin-top: 16px;
+}
+.output-card.compact .output-card-views > * + * {
+  margin-top: 8px;
+}
 .output-card.compact .path-header {
   margin-bottom: 4px;
   padding: 2px 6px;
-}
-
-.viewer-cross {
-  mix-blend-mode: exclusion;
 }
 
 /* Heatmaps of the metrics tables (components/tables.jsx): --heat is the cell's color */
@@ -148,3 +164,44 @@ span.bp6-popover-target {
   display: none;
 }
 
+
+/* Text for screen readers only, e.g. the name of a table column that has no visible header */
+.qa-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Links in a sentence are underlined: their color alone doesn't tell them from the text around (WCAG 1.4.1).
+   Not buttons, menu items, tags...: Blueprint gives those a class */
+p a:not([class]) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Contrast (WCAG 1.4.3, 4.5:1) where Blueprint's colors fall just short:
+   muted text on a striped table's grey rows (4.27:1 on the page's background, e.g. Admin → Storage locations), */
+html:not(.bp6-dark) table.bp6-html-table-striped tbody tr:nth-child(odd) .bp6-text-muted {
+  color: #55606f;
+}
+/* and the left part of danger compound tags (MetricTag in components/metrics.jsx): 4.46:1 on the page's
+   background, 4.34:1 in the dark theme */
+html:not(.bp6-dark) .bp6-compound-tag.bp6-minimal.bp6-intent-danger .bp6-compound-tag-left {
+  color: var(--bp-palette-red-1);
+}
+.bp6-dark .bp6-compound-tag.bp6-minimal.bp6-intent-danger .bp6-compound-tag-left {
+  color: var(--bp-palette-red-5);
+}
+
+/* Highlighted code (components/CodeBlock.jsx) */
+.qa-code-keyword { color: var(--qa-code-keyword); }
+.qa-code-string { color: var(--qa-code-string); }
+.qa-code-comment { color: var(--qa-code-comment); font-style: italic; }
+.qa-code-number, .qa-code-constant { color: var(--qa-code-number); }
+.qa-code-function, .qa-code-decorator { color: var(--qa-code-function); }
+.qa-code-key { color: var(--qa-code-key); }
+.qa-code-variable, .qa-code-flag { color: var(--qa-code-variable); }
+.qa-code-punctuation { color: var(--qa-code-comment); }

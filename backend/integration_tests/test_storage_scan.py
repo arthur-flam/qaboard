@@ -108,6 +108,12 @@ def test_cron_in_words():
   assert describe('*/10 2 * * *') == 'on the schedule "*/10 2 * * *" (UTC)'
 
 
+def test_scan_finds_commits_folders_like_uploads_makes_them():
+  # one pattern for both layouts, tested in tests/test_uploads.py
+  from backend import uploads
+  from backend.jobs.scan import commit_dirs_re
+  assert commit_dirs_re is uploads.COMMIT_FOLDERS_IN_PATH
+
 # ---------------------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------------------
@@ -185,7 +191,7 @@ def tree(world, storage):
   world.db.add(Export(path=str(tracked_export), owner='root', bytes=100))
   commit = CiCommit('de' + 'f' * 38, project=world.project('proj'), branch='feature')
   commit.commit_dir_override = str(storage / 'artifacts' / 'de' / 'ffffffffffffff')
-  commit.deleted = True
+  commit.artifacts_deleted = True
   world.db.add(commit)
   write(Path(commit.commit_dir_override) / 'manifests', size=5, name='build.json')
   write(Path(commit.commit_dir_override) / 'build', size=6000, name='app')

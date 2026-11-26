@@ -22,7 +22,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
-from .results import parse_url, Run, ResultsError, HIDDEN_RUN_TYPES, _request, _token_for, REQUEST_TIMEOUT
+from .results import parse_url, Run, ResultsError, HIDDEN_RUN_TYPES, _request, _token_for
+from .http_client import REQUEST_TIMEOUT
 from .credentials import default_server, same_server, read_hosts, find_login
 from .site_config import site_config, as_requests_verify
 

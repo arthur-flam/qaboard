@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import List
 
 from ..database import db_session
+from sqlalchemy import or_
+
 from ..models import Project, CiCommit
+from ..reference_branch import reference_branch_of
 from . import params as p
 
 
@@ -44,8 +47,8 @@ class StorageUnavailable(Exception):
 
 
 def storage_root(path: Path):
-  from ..config import storage_roots
-  matches = [root for root in storage_roots if path == root or path.is_relative_to(root)]
+  from ..storage import all_storage_roots
+  matches = [root for root in all_storage_roots() if path == root or path.is_relative_to(root)]
   return max(matches, key=lambda root: len(root.parts)) if matches else None
 
 
@@ -113,13 +116,9 @@ class Protection:
     self.project_id = project.id
     self.milestone_batches = project.milestone_batches
     self.commits = set()
-    config = (project.data or {}).get('qatools_config') or {}
-    project_config = (config.get('project') or {}) if isinstance(config, dict) else {}
-    if not isinstance(project_config, dict):
-      project_config = {}
-    milestones = project_config.get('milestones') or []
-    self.reference = project_config.get('reference_branch') or 'master'
-    self.protected_refs = [self.reference, *([milestones] if isinstance(milestones, str) else milestones)]
+    milestones = project.config_milestones
+    self.reference = reference_branch_of(project.data)
+    self.protected_refs = project.protected_refs
     repo = project.repo if milestones else None
     if milestones and not repo:
       raise SkipProject("could not read its git repository, to know the commits that qaboard.yaml's project.milestones protect")
@@ -132,6 +131,14 @@ class Protection:
                 .order_by(CiCommit.authored_datetime.desc().nullslast()).first())
       if latest:
         self.commits.add(latest[0])
+
+  def outside_protected_branches(self):
+    """
+    A filter of CiCommit: the commits that aren't on the reference branch or a branch qaboard.yaml protects.
+    Commits whose branch we don't know are not on them (`branch NOT IN (...)` alone would leave them out).
+    """
+    refs = self.protected_refs
+    return or_(CiCommit.branch.is_(None), CiCommit.branch.notin_([*refs, *[f'origin/{r}' for r in refs]]))
 
   def protects(self, hexsha: str, label: str) -> bool:
     """Whether a batch is protected"""

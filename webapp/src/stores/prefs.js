@@ -18,14 +18,20 @@ export const usePrefsStore = create()(persist(
     // "group/repo" => true (expanded) or false (collapsed): the groups users opened or closed in Explore.
     // Others have their default (src/explore/ExplorePage.jsx)
     exploreGroups: {},
-    // project => what's in the tuning form
+    // project => what's in the form of Run Tests / Tuning, until it is started: {experiment_name, selected_group (the
+    // batches, "ci, night-*"), parameter_search (the values to try, as text), values_mode ("table" or "text")...}.
+    // What was started is remembered by the server with each batch: "Start from a previous batch" (tuning/history.js)
     tuning: {},
+    // which Run Tests / Tuning form people use: 'new' (the default) or 'previous', kept for a while (tuning/FormVersion.jsx)
+    tuningForm: 'new',
     // "system" (follows the OS), "light" or "dark", see src/theme.js
     theme: 'system',
     // how lists of commits look: "comfortable" (a few lines per commit) or "compact" (one line per commit)
     commitListDensity: 'comfortable',
     // how run cards look: "comfortable" (their tags on their own lines) or "compact" (one line of header, less space)
     outputCardDensity: 'comfortable',
+    // a branch's commit list shows its Trends (numbers and chart above the commits): closed until users open it
+    branchTrendsOpen: false,
     // what runs' names start with: their batch and database. "auto" when the runs shown come from several, "always" or "never"
     runNameOrigin: 'auto',
     // the app's sidebar shows only icons
@@ -60,10 +66,18 @@ export const usePrefsStore = create()(persist(
     // batch id => {failed, at}: the batches users dismissed from the home page's "Needs attention", with how many
     // runs had failed. They come back if more fail.
     homeDismissed: {},
+    // the metrics view the sidebar's "Metrics" opens: 'summary', 'table-kpi' (each run's values) or 'table-compare' (their changes)
+    metricsView: 'summary',
+    // project => true: users hid the guide of the projects whose runs have neither visualizations nor metrics
+    setupGuideDismissed: {},
     // project => the settings of the last export: how files are named, the files, links or copies... (src/export/plan.js)
     exportLast: {},
     // export settings users saved: [{id, name, project (null: all projects), settings}]
     exportPresets: [],
+    // project => { [key]: true }: the logged media keys users pinned on top of run cards (viewers/media/)
+    mediaPins: {},
+    // project => { [group]: true }: the groups of logged media keys users collapsed
+    mediaGroupsCollapsed: {},
 
     toggleFavorite: project => set(state => ({
       favorites: { ...state.favorites, [project]: !state.favorites[project] },
@@ -94,6 +108,7 @@ export const usePrefsStore = create()(persist(
     setImageDiffSize: (project, size) => set(state => ({ imageDiffSize: { ...state.imageDiffSize, [project]: size } })),
     setCommitListDensity: density => set({ commitListDensity: density === 'compact' ? 'compact' : 'comfortable' }),
     setOutputCardDensity: density => set({ outputCardDensity: density === 'compact' ? 'compact' : 'comfortable' }),
+    setBranchTrendsOpen: open => set({ branchTrendsOpen: !!open }),
     setRunNameOrigin: origin => set({ runNameOrigin: run_name_origins.includes(origin) ? origin : 'auto' }),
     setGitEmails: emails => set({ git_emails: [...new Set(emails.map(e => e.trim().toLowerCase()).filter(e => e.includes('@')))] }),
     // `latest`: when the batch last got a run: it comes back if it runs again
@@ -104,6 +119,8 @@ export const usePrefsStore = create()(persist(
         [id]: { failed, latest, at: new Date(now).toISOString() },
       },
     })),
+    setMetricsView: view => set({ metricsView: ['summary', 'table-kpi', 'table-compare'].includes(view) ? view : 'summary' }),
+    dismissSetupGuide: project => set(state => ({ setupGuideDismissed: { ...state.setupGuideDismissed, [project]: true } })),
     setListScope: (project, scope) => set(state => ({ listScope: { ...state.listScope, [project]: scope } })),
     setExportLast: (project, settings) => set(state => ({ exportLast: { ...state.exportLast, [project]: settings } })),
     // a preset with the same name, for the same projects, is replaced
@@ -113,8 +130,17 @@ export const usePrefsStore = create()(persist(
       return { exportPresets: [...others, { id, name, project, settings }] };
     }),
     deleteExportPreset: id => set(state => ({ exportPresets: (state.exportPresets ?? []).filter(p => p.id !== id) })),
+    toggleMediaPin: (project, key) => set(state => {
+      const { [key]: pinned, ...others } = state.mediaPins?.[project ?? ''] ?? {};
+      return { mediaPins: { ...state.mediaPins, [project ?? '']: pinned ? others : { ...others, [key]: true } } };
+    }),
+    toggleMediaGroup: (project, group) => set(state => {
+      const { [group]: collapsed, ...others } = state.mediaGroupsCollapsed?.[project ?? ''] ?? {};
+      return { mediaGroupsCollapsed: { ...state.mediaGroupsCollapsed, [project ?? '']: collapsed ? others : { ...others, [group]: true } } };
+    }),
     toggleHideSharedSettings: () => set(state => ({ hide_shared_settings: !state.hide_shared_settings })),
     toggleShortenLongSettings: () => set(state => ({ shorten_long_settings: !state.shorten_long_settings })),
+    setTuningForm: version => set({ tuningForm: version === 'previous' ? 'previous' : 'new' }),
     updateTuning: (project, form) => set(state => ({
       tuning: { ...state.tuning, [project]: { ...state.tuning[project], ...form } },
     })),
@@ -144,8 +170,10 @@ export async function migrateFromReduxPersist() {
       localStorage.setItem(flag, '1');
       return;
     }
-    const { default: localforage } = await import("localforage");
-    const raw = await localforage.getItem('persist:root');
+    // localForage's IndexedDB database and store: its values are what it was given, here strings
+    const { createStore, get, del } = await import("idb-keyval");
+    const store = createStore('localforage', 'keyvaluepairs');
+    const raw = await get('persist:root', store);
     if (raw) {
       const root = typeof raw === 'string' ? JSON.parse(raw) : raw;
       const parse = slice => typeof slice === 'string' ? JSON.parse(slice) : slice;
@@ -164,7 +192,7 @@ export async function migrateFromReduxPersist() {
       }));
     }
     localStorage.setItem(flag, '1');
-    if (raw) await localforage.removeItem('persist:root');
+    if (raw) await del('persist:root', store);
   } catch (error) {
     console.warn('Could not migrate preferences from the previous version', error);
   }

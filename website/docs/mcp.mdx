@@ -8,7 +8,7 @@ import StatusBadge from '@site/src/components/StatusBadge';
 
 <StatusBadge status="experimental" />
 
-:::caution Experimental
+:::caution[Experimental]
 `qa mcp`, its tools and their answers may change without notice. Tell us what your agent got wrong in
 [GitHub issues](https://github.com/Samsung/qaboard/issues). `qa mcp` isn't in the latest release on PyPI yet: see
 [Installation](/docs/installation#install).
@@ -22,7 +22,7 @@ with the links to the pages that show it, so you can check.
 It answers questions, it doesn't mirror the HTTP API: scripts keep using [`qaboard.runs(url)`](/docs/apis#runs-in-scripts)
 and the [HTTP API](/docs/http-api).
 
-## Connect your agent {#connect}
+## Connect your agent {/* #connect */}
 Install `qa` with the MCP extra (Python 3.10 or newer), sign in once, then add the server to your client:
 
 ```bash
@@ -79,7 +79,7 @@ on other hosts get no token.
 Without a commit, the tools use the commit checked out where `qa mcp` runs if it has results, else the project's
 latest commit with results, and say which.
 
-## What to ask {#what-to-ask}
+## What to ask {/* #what-to-ask */}
 - *"Did my change improve the detector? Check with QA-Board before saying so."*
 - *"Review https://qaboard.example.com/group/repo/commit/abc123?batch=ci for me."* Paste any commit page: the agent
   reads the project, commit, label and reference from the URL.
@@ -90,7 +90,7 @@ latest commit with results, and say which.
 Clients that show MCP prompts offer three procedures as commands: **did_my_change_help**, **review_results** and
 **nightly_report** (in Claude Code: `/mcp__qaboard__did_my_change_help`).
 
-## What the agent sees {#tools}
+## What the agent sees {/* #tools */}
 | Tool | Answers |
 |---|---|
 | `compare` | Is this commit better than its reference? Per metric: the medians of the **Summary** and their change, the median change per test, how many tests got better and worse and whether consistently, the tests that moved most, failed runs (new or not), and the link to the **Metrics Diff**. |
@@ -109,12 +109,12 @@ consistently (a sign test, which needs at least 6 tests). QA-Board doesn't know 
 identical runs, so an agent shouldn't call a small change of a noisy metric, such as a latency, an improvement
 without repeated runs.
 
-### An agent's own experiments {#experiments}
+### An agent's own experiments {/* #experiments */}
 Have the agent label its runs, `qa --label agent/denoise batch --commit <sha> ci`. `compare` compares them with the
 reference's CI runs when the reference has none with that label, and says so; to compare two experiments, give the
 other one as `reference` (its commit) and `reference_label`. `metric_history` with `label` follows them over commits.
 
-## Charts and images in the conversation {#apps}
+## Charts and images in the conversation {/* #apps */}
 Clients that render MCP Apps (Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose...) show
 the answers of `compare`, `metric_history` and `look_at_output` in an interactive view: the metrics table with the
 tests that moved most, charts of metrics over commits, images side by side. Click a test to see its images, a point
@@ -124,7 +124,7 @@ terminal, get the same answer as text, and the agent sees the images.
 The view loads nothing from the internet. Images are converted to 8-bit PNG by your server's image server: small
 differences of high bit-depth outputs may not show, check them in the [image viewer](/docs/user-guide/image-viewer).
 
-## What agents can't do with it {#limits}
+## What agents can't do with it {/* #limits */}
 - **Change anything.** Every tool only reads. To test a change, an agent pushes it and runs
   `qa --label <name> batch --commit <sha> <batch>` ([start batches from a terminal](/docs/tuning-from-the-webapp#from-the-command-line)).
 - **Follow instructions written in your results.** Logs, commit messages and inputs' names are shown to the model as

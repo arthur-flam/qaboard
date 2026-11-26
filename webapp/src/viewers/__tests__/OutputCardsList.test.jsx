@@ -79,6 +79,15 @@ describe('OutputCardsList', () => {
     expect(screen.queryByText(/show all/)).toBeNull();
   }, 30_000);
 
+  it('gives cards the whole row by default, at most the width qaboard.yaml sets', () => {
+    const { container, unmount } = render_list({ ...props, ...batches(2) });
+    cards(container).forEach(card => expect(card.style.width).toBe('100%'));
+    unmount();
+    const narrow = render_list({ ...props, ...batches(2), config: { outputs: { visualizations: [], style: { width: '840px' } } } });
+    // min(840px, 100%): jsdom doesn't parse min(), we only check it isn't the whole row
+    cards(narrow.container).forEach(card => expect(card.style.width).not.toBe('100%'));
+  });
+
   it('keeps cards light until they come into view', () => {
     const { container } = render_list({ ...props, ...batches(2) });
     expect(screen.getByText('input_1')).toBeInTheDocument();
@@ -111,7 +120,7 @@ describe('OutputCardsList', () => {
     expect(screen.getByText('input_0').closest('.bp6-heading')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Run actions'));
     expect(await screen.findByText('Input path')).toBeInTheDocument();
-    expect(screen.getByText('History')).toBeInTheDocument();
+    expect(screen.getByText('Trends')).toBeInTheDocument();
   });
 
   it('renders the cards of big batches incrementally, as users scroll', async () => {
@@ -220,18 +229,18 @@ describe('OutputCardsList', () => {
     expect(image_viewer_props.others).toBe(none);
   });
 
-  it("links to the input's History from the run's menu, from 3 days before the commit", async () => {
+  it("links to the input's Trends from the run's menu, from 3 days before the commit", async () => {
     const history_link = async () => {
       fireEvent.click(screen.getAllByLabelText('Run actions')[0]);
       return new URL((await screen.findByTitle("See this input's results over time")).closest('a').href, 'http://localhost');
     };
-    // History shows the last 3 days by default: an older commit wouldn't be in it
+    // Trends shows the last 3 days by default: an older commit wouldn't be in it
     const { unmount } = render_list({ ...props, ...batches(1), new_commit: { id: 'abc', branch: 'main', authored_datetime: '2020-01-10T10:00:00Z' } });
     act(() => mockAllIsIntersecting(true));
     // the input's path is not a link anymore
     expect(screen.getByText('input_0').closest('a')).toBeNull();
     const link = await history_link();
-    expect(link.pathname).toBe('/proj/history/main');
+    expect(link.pathname).toBe('/proj/trends/main');
     expect(link.searchParams.get('from')).toBe('2020-01-07');
     expect(link.searchParams.get('filter')).toBe('input_0');
     unmount();
@@ -271,5 +280,17 @@ describe('OutputCardsList', () => {
     expect(select).toHaveValue('a');
     fireEvent.click(screen.getByText('Same for all runs'));
     expect(onToggleDynamicOptionSync).toHaveBeenCalledWith('scene');
+  });
+
+  it('titles what it shows by itself for runs created from code: "Logged media"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => String(url?.url ?? url).includes('media.jsonl')
+      ? new Response('')
+      : new Response(JSON.stringify({ 'media.jsonl': { st_size: 0, md5: 'x' } }), { status: 200 })));
+    const outputs = { 1: make_output(1, { data: { sdk: { script: 'train.py' } } }) };
+    render_list({ ...props, new_batch: { outputs, filtered: { outputs: [1] } }, ref_batch: { outputs: {} } });
+    act(() => mockAllIsIntersecting(true));
+    expect(await screen.findByRole('heading', { name: 'Logged media' })).toBeInTheDocument();
+    // under it, what the run logged, muted
+    expect(await screen.findByText("The run logged no media")).toBeInTheDocument();
   });
 });

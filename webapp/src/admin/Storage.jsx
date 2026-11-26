@@ -14,6 +14,8 @@ import { jobsQuery, schedulesQuery, saveSchedule, deleteSchedule, runSchedule, s
 import { JobStatus, kind_labels, progressSummary, nbErrors, number, formatDuration, jobDuration, isStale, formatBytes } from "./jobs";
 import { KindsBar } from "./ScanExplorer";
 import { JobDialog, ScheduleDialog, kind_icons } from "./JobForm";
+import { StorageLocations } from "./StorageLocations";
+import { DataFolders } from "./DataFolders";
 
 
 // Jobs only run if a worker does: admins must know when none does
@@ -325,6 +327,8 @@ export const Storage = () => {
       </Card>)}
     </section>
     {starting && <JobDialog kind={starting.kind} initial={starting.initial} title={starting.title} isOpen onClose={() => setStarting(null)}/>}
+    <StorageLocations/>
+    <DataFolders/>
     <Scans/>
     <Schedules/>
     <Jobs/>

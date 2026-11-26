@@ -3,6 +3,7 @@ Who gets an account (`auth.access_policy`), and the requests of users waiting fo
 Admins hear about new requests by email (when QA-Board can send emails) and through `auth.access_request_webhook`.
 Requesters get an email when an admin decides.
 """
+import logging
 import threading
 from html import escape
 from typing import Optional
@@ -10,6 +11,8 @@ from typing import Optional
 from ..settings import setting
 from ..tokens import utcnow, iso
 from .profiles import avatar_url
+
+logger = logging.getLogger(__name__)
 
 
 def initial_status(email: Optional[str]) -> str:
@@ -49,13 +52,21 @@ def request_access(user, message: str = '', notify_admins: bool = True):
 
 
 def decide(user, status: str, by=None):
-  """When an admin changes a pending user's status: their request is approved or denied, and they're told"""
-  request_row = pending_request(user)
-  if request_row is None:
+  """
+  When an admin sets a user's status to active or disabled: their pending requests to use QA-Board are approved or
+  denied, and they're told. Also those left pending while the account was already active, so none stays listed.
+  """
+  from ..models import AccessRequest
+  rows = (AccessRequest.query
+          .filter(AccessRequest.user_id == user.id, AccessRequest.kind == 'instance', AccessRequest.status == 'pending')
+          .order_by(AccessRequest.id.desc()).all())
+  if not rows:
     return None
-  request_row.status = 'approved' if status == 'active' else 'denied'
-  request_row.decided_at = utcnow()
-  request_row.decided_by_id = by.id if by is not None else None
+  for row in rows:
+    row.status = 'approved' if status == 'active' else 'denied'
+    row.decided_at = utcnow()
+    row.decided_by_id = by.id if by is not None else None
+  request_row = rows[0]
   if request_row.status == 'approved':
     text = f"Your access to QA-Board was approved. Sign in at {public_url()}."
   else:
@@ -106,13 +117,13 @@ def _send(text, subject, recipients, webhook):
       html = '<p>' + escape(text).replace('\n', '<br>') + '</p>'
       send_email(to, subject, html, text, headers={'X-QABoard-Notification': 'access-request'})
     except Exception as e:
-      print(f"[access] WARNING: could not email {to}: {type(e).__name__}: {e}")
+      logger.warning("Could not email %s about an access request: %s: %s", to, type(e).__name__, e)
   if webhook:
     import requests
     try:
       requests.post(webhook, json={"text": text}, timeout=10).raise_for_status()
     except Exception as e:
-      print(f"[access] WARNING: the access request webhook failed: {type(e).__name__}")
+      logger.warning("The access request webhook failed: %s", type(e).__name__)
 
 
 def serialize(request_row) -> dict:

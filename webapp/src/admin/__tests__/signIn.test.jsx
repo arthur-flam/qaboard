@@ -87,8 +87,8 @@ describe('Sign-in', () => {
     const results = within(await sso.findByRole('region', { name: 'Test results' }));
     expect(results.getByText('1 of 2 checks failed')).toBeInTheDocument();
     const checks = results.getAllByTestId('check');
-    expect(within(checks[0]).getByLabelText('Passed')).toBeInTheDocument();
-    expect(within(checks[1]).getByLabelText('Failed')).toBeInTheDocument();
+    expect(within(checks[0]).getByRole('img', { name: 'Passed' })).toBeInTheDocument();
+    expect(within(checks[1]).getByRole('img', { name: 'Failed' })).toBeInTheDocument();
     expect(checks[1]).toHaveTextContent('register it');
 
     const directory = within(screen.getByTestId('provider-ldap'));
@@ -281,6 +281,24 @@ describe('Access requests', () => {
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Deny' }));
     await waitFor(() => expect(calls(fetch, 'POST', '/api/v1/admin/users/7')).toHaveLength(1));
     expect(JSON.parse(calls(fetch, 'POST', '/api/v1/admin/users/7')[0][1].body)).toEqual({ status: 'disabled' });
+  });
+
+  it("decides requests for a role on a project with the project's endpoint", async () => {
+    const fetch = mockApi({
+      'GET /api/v1/admin/access-requests': { requests: [request({ kind: 'project', project: 'kitefin/camera-isp', role: 'developer' })] },
+      'POST /api/v1/project/access/requests/5': { id: 5, status: 'approved' },
+    });
+    renderAt('/admin/requests', <AccessRequests/>);
+    const card = within(await screen.findByTestId('request-5'));
+    expect(card.getByText('developer')).toBeInTheDocument();
+    expect(card.getByRole('link', { name: 'kitefin/camera-isp' })).toHaveAttribute('href', '/kitefin/camera-isp/access');
+    fireEvent.click(card.getByRole('button', { name: 'Approve carol' }));
+    await waitFor(() => expect(calls(fetch, 'POST', '/api/v1/project/access/requests/5')).toHaveLength(1));
+    expect(JSON.parse(calls(fetch, 'POST', '/api/v1/project/access/requests/5')[0][1].body)).toEqual({ decision: 'approve' });
+    expect(calls(fetch, 'POST', '/api/v1/admin/users/7')).toHaveLength(0);
+    await waitFor(() => expect(toaster.show).toHaveBeenCalledWith(expect.objectContaining({ message: 'carol is now a developer of kitefin/camera-isp' })));
+    // the list asks again: the request isn't pending anymore
+    await waitFor(() => expect(calls(fetch, 'GET', '/api/v1/admin/access-requests').length).toBeGreaterThan(1));
   });
 
   it('says when no one is waiting', async () => {
