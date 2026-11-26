@@ -49,7 +49,7 @@ are theirs), `local_changes.py`, `system_metrics.py` (+ `.series`). The web app 
 - Design and decisions: `docs/design/ingest-upload-sdk.md` (what's left: §3); limits: `docs/warts.md`.
 
 ## MCP server
-`qa mcp` (`mcp_server.py`, the `mcp` extra, Python 3.10+) serves read-only MCP tools shaped for tasks, not one per
+`qa mcp` (`mcp_server.py`, the `mcp` extra) serves read-only MCP tools shaped for tasks, not one per
 endpoint: compare with the reference, failures grouped by error, outputs next to the reference's, metrics over
 commits. Their answers are built in `evidence.py` (no MCP dependency, reusable by a remote server); `mcp_app.html` is
 the MCP App hosts render (escape everything from results). The token only goes to the server's origin. Tests:

@@ -10,7 +10,7 @@ failures, look at outputs next to the reference's, follow metrics over commits. 
 `compare`, `metric_history` and `look_at_output` in an interactive view (qaboard/mcp_app.html); the others get the
 same answer as text, with links to the web app.
 
-Needs the `mcp` extra: pip install "qaboard[mcp]" (Python 3.10+).
+Needs the `mcp` extra: pip install "qaboard[mcp]".
 """
 import sys
 import base64
@@ -257,8 +257,6 @@ def mcp_command(server):
   Uses your credentials (`qa auth login`, or QABOARD_TOKEN: a "read" token is enough).
   See https://samsung.github.io/qaboard/docs/mcp
   """
-  if sys.version_info < (3, 10):
-    raise click.ClickException("qa mcp needs Python 3.10 or newer.")
   try:
     import mcp  # noqa: F401
   except ImportError:

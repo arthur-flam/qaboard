@@ -89,7 +89,7 @@ variables when given.
 ## Deployment
 1. **Local, over stdio: `qa mcp`** (this RFC). The client starts it; it reaches whatever server `qa` reaches,
    including servers inside a company network, with the person's login. Works with Claude Code, Claude Desktop, VS
-   Code, Cursor, Codex. Optional dependency: `pip install "qaboard[mcp]"` (Python 3.10+).
+   Code, Cursor, Codex. Optional dependency: `pip install "qaboard[mcp]"`.
 2. **Remote, Streamable HTTP at `<server>/mcp`** (later). Needed for clients that only take remote servers
    (claude.ai, M365 Copilot) and for zero-install. It needs OAuth (Client ID Metadata Documents; the server already
    has a device flow and tokens), and the server must be reachable from the client vendor's cloud, which on-premise

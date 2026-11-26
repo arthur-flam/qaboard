@@ -1,6 +1,6 @@
 """
 Tests of `qa mcp` (qaboard/mcp_server.py) and of the answers it serves (qaboard/evidence.py), against a fake server
-(tests/fake_qaboard.py). The tests of the MCP layer need the `mcp` extra (Python 3.10+): skipped without it.
+(tests/fake_qaboard.py). The tests of the MCP layer need the `mcp` extra: skipped without it.
 """
 import os
 import sys
@@ -308,7 +308,7 @@ class TestToken(FakeServer):
     self.assertEqual({r[3] for r in fake.Handler.requests_seen if r[1].startswith('/api/')}, {'Bearer secret'})
 
 
-@unittest.skipUnless(has_mcp, "needs the mcp extra (python 3.10+)")
+@unittest.skipUnless(has_mcp, "needs the mcp extra")
 class TestMcp(FakeServer):
   def run_client(self, use):
     from mcp import Client

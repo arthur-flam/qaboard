@@ -74,9 +74,9 @@ dask-kubernetes = [
 mlflow = [
     "mlflow-skinny>=2.10",
 ]
-# `qa mcp`: an MCP server for coding agents and chat clients (qaboard/mcp_server.py). The SDK needs python 3.10
+# `qa mcp`: an MCP server for coding agents and chat clients (qaboard/mcp_server.py)
 mcp = [
-    "mcp>=2.3; python_version >= '3.10'",
+    "mcp>=2.3",
 ]
 # Unfortunately pip does not understand tool.uv.sources
 # and uv does not understand syntax with "qaboard-site-sirc @ file:deployements/sirc/cli"
