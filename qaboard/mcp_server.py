@@ -215,7 +215,7 @@ def build_server(apis: Callable[[], 'Api'], *, gate: bool, **options: Any):
       url: Url = None, project: Project = None,
       commit: Annotated[Optional[str], Field(description="The commit to run, a sha or a branch (its latest commit with results). Default: the URL's.")] = None,
       parameters: Annotated[Optional[Any], Field(description="The values to try: {\"name\": [values]} (every combination), or a list of those (one after the other). Default: no tuning, the batches as they are.")] = None,
-      label: Annotated[Optional[str], Field(description="The batch's label, e.g. tuning/denoise-threshold. Default: the form's.")] = None,
+      label: Annotated[Optional[str], Field(description="The batch's label, e.g. tuning-threshold (letters, digits and _.@:=, the rest becomes -). Default: the form's.")] = None,
       search_type: Annotated[Literal['grid', 'sampler'], Field(description="grid: every combination; sampler: `n_iter` random ones.")] = 'grid',
       n_iter: Annotated[Optional[int], Field(description="With sampler: how many combinations.", ge=1, le=100000)] = None):
     from . import evidence_work

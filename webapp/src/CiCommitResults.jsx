@@ -30,6 +30,7 @@ import { TuningForm } from "./components/tuning/forms";
 import { BatchesEditor } from "./components/tuning/BatchesEditor";
 import TuningAnalysis from "./components/tuning/TuningAnalysis";
 import TuningBanner from "./components/tuning/TuningBanner";
+import { usePrefillLink } from "./components/tuning/LinkPrefill";
 import { useViewerControls, controls_changes, controls_defaults, config_visualizations } from "./viewers/controls";
 import { started_from_code } from "./viewers/runView";
 import { ExportPlugin } from "./plugins/ExportPlugin";
@@ -142,6 +143,8 @@ const CiCommitResults = () => {
 
   // the tab's title and icon: what the page shows, and the status of its runs
   useCommitTab();
+  // ?prefill=: a link that fills Run Tests / Tuning (components/tuning/prefill_link.js)
+  usePrefillLink(project);
 
   const [controls, setControls] = useViewerControls(config);
   // Registrations are reset when the commit or batch changes, or when the visualizations change.

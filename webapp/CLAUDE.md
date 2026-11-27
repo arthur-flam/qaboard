@@ -66,8 +66,9 @@ lazily, and their CSS doesn't leak. Don't import the app from them.
   `{key, mode, values}`, to and from the text and the server's `tuning_search`, run counts); `values.js` reads what
   people type (an unused `description` argument, for parameters projects will describe); `registers.js` is one site's
   register paste, kept apart; `prefill.js` is the one way to fill the form (previous batch, Run again, Tuning
-  Analysis, a run's parameters). `BatchPicker.jsx` lists the batches, `BatchesForThisRun.jsx` sends changed definitions
-  for one run (`batches_files`). The previous form is `LegacyTuningForm.jsx`, chosen in `FormVersion.jsx` (usage
+  Analysis, a run's parameters, links with `?prefill=`: `prefill_link.js` checks them, `LinkPrefill.jsx` applies
+  them). `BatchPicker.jsx` lists the batches, `BatchesForThisRun.jsx` sends changed definitions for one run
+  (`batches_files`). The previous form is `LegacyTuningForm.jsx`, chosen in `FormVersion.jsx` (usage
   events `tuning_form_feedback`): don't add features to it, remove it once nobody chooses it.
 - **Logged media**: reads the index `qaboard/media.py` writes (*media.jsonl*, *media/*). Design: `docs/design/logged-media.md`.
 - **Metrics Table / Diff**: `components/tables.jsx`, `components/metricsTable/`.

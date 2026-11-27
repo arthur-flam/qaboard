@@ -538,15 +538,16 @@ class TestPrepareTuning(FakeServer):
     link = answer.data['url']
     self.assertTrue(link.startswith(f"{self.url}/{fake.PROJECT}/commit/{fake.NEW}?"))
     self.assertEqual(self.prefill_of(link), {'batches': ['night'], 'parameter_search': {'threshold': [0.1, 0.2], 'kernel': [3, 5, 7]},
-                                             'label': 'tuning/t', 'search_type': 'grid'})
+                                             'label': 'tuning-t', 'search_type': 'grid'})
     self.assertIn('6 combination(s) × 2 test(s) = about 12 runs', answer.text)
     self.assertIn('Nothing runs until', answer.text)
     listed = next(b for method, path, b, _ in fake.Handler.requests_seen if path == '/api/v1/tests/batches')
     self.assertEqual(listed, {'groups': ['extra-batches', 'alice']})
 
   def test_batches_as_they_are(self):
-    answer = evidence_work.prepare_tuning(self.api, ['night', 'd*', 'all'], url=f"{self.url}/{fake.PROJECT}/commit/{fake.NEW}")
-    self.assertEqual(self.prefill_of(answer.data['url']), {'batches': ['night', 'd*', 'all']})
+    answer = evidence_work.prepare_tuning(self.api, ['night, d*', 'all'], url=f"{self.url}/{fake.PROJECT}/commit/{fake.NEW}", label='my tuning/1')
+    # no values to try: none, not those the form had
+    self.assertEqual(self.prefill_of(answer.data['url']), {'batches': ['night', 'd*', 'all'], 'parameter_search': {}, 'label': 'my-tuning-1'})
 
   def test_unknown_batches_list_the_others(self):
     with self.assertRaisesRegex(evidence.EvidenceError, r"No batch `nite`.*Available: `night`, `day`, `all`"):

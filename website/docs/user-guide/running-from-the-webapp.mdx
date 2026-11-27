@@ -40,6 +40,25 @@ QA-Board checks the form as you fill it: under step 3, **Fix this to start** lis
 ### Start from a previous batch {/* #start-from-a-previous-batch */}
 You rarely start from nothing: you run last week's sweep on a new commit, or a colleague's with one more value. Click **Start from a previous batch**, at the top of the form. It lists what was started from QA-Board in the project, on any commit, the most recent first: yours, or **Everyone's**. Each line says which tests it ran and which parameters it tried. Pick one: the form fills with its tests, parameters and label. Nothing starts until you click **Start**, and **Undo** in the message brings back what you had.
 
+### Open a link that fills the form {/* #prefilled-links */}
+An assistant connected with [`qa mcp`](/docs/mcp) can prepare an experiment for you: it answers with a link to the commit's **Run Tests / Tuning**, filled with a batch label, the batches and the values to try. A box at the top of the form, **Filled in from a link**, lists what the link filled, and what it left out because it couldn't read it. A link fills only fields you could type in yourself: it doesn't start anything, and it can't choose the platform, runs that already exist, or an automated tuning. Check the form, change what you want, then click **Start**: that's the approval. **Undo** brings back what you had.
+
+<details>
+<summary>Make such a link</summary>
+
+Add `selected_views=tuning&prefill=` to the commit's URL, followed by a URL-encoded JSON object. Its keys are all optional, and others are ignored:
+
+| Key | Fills |
+|---|---|
+| `label` | **Batch label**, cleaned like what you type |
+| `batches` | **Choose the tests**: a list of batch names or patterns, like `["ci", "night-*"]` |
+| `parameter_search` | **Choose the values**: `{"score_threshold": [0.2, 0.3]}`, or a list of those for values that go together |
+| `search_type` | `"grid"`: run every combination, or `"sampler"`: a random sample |
+| `n_iter` | How many combinations a random sample runs |
+
+For example, `/my/project/commit/1a2b3c4d?selected_views=tuning&prefill=%7B%22label%22%3A%22nms-sweep%22%2C%22batches%22%3A%5B%22ci%22%5D%7D` fills the label and the tests. The page reads it once, then takes it out of the address: reloading doesn't fill the form again.
+</details>
+
 When the label is already a batch of the commit, the form says so, with how many runs it has and what happens to them: they run again and replace their results, or, with **Keep its runs, only start what's missing**, only the missing runs start. One click takes a new name instead, like `int8-nms-2`.
 
 ### Change the tests before you run {/* #edit-the-tests */}

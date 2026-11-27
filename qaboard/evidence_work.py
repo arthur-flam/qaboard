@@ -13,6 +13,7 @@ import datetime
 import fnmatch
 import json
 import math
+import re
 from typing import Any, Dict, List, Optional, Sequence, Union
 from urllib.parse import urlencode
 
@@ -182,7 +183,8 @@ def prepare_tuning(api: Api, batches: Sequence[str], url: Optional[str] = None, 
                    parameters: Any = None, label: Optional[str] = None, search_type: str = 'grid', n_iter: Optional[int] = None) -> Answer:
   me = whoami(api)
   selection = select(api, url, project, commit)
-  names = [str(b).strip() for b in batches if str(b).strip()]
+  # the form reads "night, day" as two batches
+  names = [n.strip() for b in batches for n in str(b).split(',') if n.strip()]
   if not names:
     raise EvidenceError("Which batches to run? Give `batches`: `prepare_tuning` lists those available when one is unknown.")
   if search_type not in ('grid', 'sampler'):
@@ -204,13 +206,15 @@ def prepare_tuning(api: Api, batches: Sequence[str], url: Optional[str] = None, 
       raise EvidenceError(f"No batch {', '.join(code(n) for n in unknown)} on this commit. Available: "
                           f"{', '.join(code(k) for k in known[:40]) or 'none'}" + (f" and {len(known) - 40} more" if len(known) > 40 else '') + '.'
                           + ''.join(f"\n- {one_line(w, 200)}" for w in (listed.get('warnings') or [])[:3]))
+    notes += [one_line(w, 200) for w in (listed.get('warnings') or [])[:3]]
     sizes = {b['name']: b for b in listed.get('batches') or [] if isinstance(b, dict) and b.get('name') in names}
     inputs = [sizes.get(n, {}).get('inputs') for n in names]  # patterns and aliases: unknown
     counted = [i for i in inputs if isinstance(i, int)]
     if len(counted) == len(names):
       tests = sum(counted)
 
-  prefill: Dict[str, Any] = {'batches': names}
+  # without values to try, none: else the form would keep those it had, maybe last week's
+  prefill: Dict[str, Any] = {'batches': names, 'parameter_search': {}}
   tried = None
   if parameters is not None:
     prefill['parameter_search'] = checked_parameters(parameters)
@@ -220,7 +224,9 @@ def prepare_tuning(api: Api, batches: Sequence[str], url: Optional[str] = None, 
     if tried > MANY_COMBINATIONS:
       notes.append(f"That's {tried} combinations: ask the person if they meant that many, or use `search_type='sampler'`.")
   if label:
-    prefill['label'] = str(label)
+    # like the form cleans what people type (webapp/src/components/tuning/prefill.js clean_label)
+    label = re.sub(r'[^\w.@:=]', '-', str(label).strip(), flags=re.ASCII)
+    prefill['label'] = label
     existing = (api.get(f"commit/{selection.commit}", {'project': selection.project, 'with_outputs': 'false', 'metrics': '{}'}) or {}).get('batches') or {}
     if label in existing:
       notes.append(f"The commit already has a batch {code(label)}: starting adds runs to it. Another label keeps them apart.")
