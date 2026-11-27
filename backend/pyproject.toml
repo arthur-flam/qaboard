@@ -35,7 +35,8 @@ dependencies = [
     "simplejson",
     "redis",
     # kubernetes: to start and stop runs on Kubernetes (QABOARD_TUNING_RUNNER=kubernetes, backend/runner_jobs.py)
-    "qaboard[kubernetes]",
+    # mcp: the MCP server for remote clients, `qa mcp --http`, an optional service run from this image (qaboard/mcp_http.py)
+    "qaboard[kubernetes,mcp]",
     # see https://github.com/xmlsec/python-xmlsec/issues/320
     "lxml",
     "xmlsec",

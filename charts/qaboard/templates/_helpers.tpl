@@ -194,3 +194,12 @@ app.kubernetes.io/component: {{ index . 1 }}
 {{- define "qaboard.kubernetesServerUrl" -}}
 {{- .Values.runners.kubernetes.serverUrl | default (printf "http://%s-proxy.%s.svc" (include "qaboard.fullname" .) .Release.Namespace) -}}
 {{- end -}}
+
+{{/* QA-Board's URL as people and clients see it: mcp.publicUrl, else config.QABOARD_URL, else the ingress's host */}}
+{{- define "qaboard.publicUrl" -}}
+{{- $url := .Values.mcp.publicUrl | default .Values.config.QABOARD_URL -}}
+{{- if and (not $url) .Values.ingress.enabled -}}
+{{- $url = printf "http%s://%s" (ternary "s" "" (not (empty .Values.ingress.tls))) .Values.ingress.host -}}
+{{- end -}}
+{{- required "Set mcp.publicUrl (or config.QABOARD_URL): the URL clients reach QA-Board at" $url | trimSuffix "/" -}}
+{{- end -}}

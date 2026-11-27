@@ -139,6 +139,12 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   batch_log.py, the Kubernetes runner's pod script), the output of `bkill`/`scancel`... that the LSF and dask runners'
   `stop_jobs` print on stdout (the server calls them in-process), the integrations' own prefixes (`wandb: WARNING`),
   site_config.py's warnings about secrets files (read when qaboard is imported) and sentry_utils.py's. [S, no change]
+- `qa mcp --http` (qaboard/mcp_http.py): without `commit`, `evidence.select` still tries the commit checked out where
+  the server runs (`checkout_head`): meaningless remotely, harmless in the image (no git checkout there); the tools'
+  descriptions still say so. When QA-Board can't be reached to check a token, the client gets a 500 and the log a
+  traceback (Starlette's authentication middleware), not a 503. The MCP SDK's `MCPServer` configures logging handlers
+  itself, against qaboard/CLAUDE.md's rule. A public URL with a path (`https://host/qaboard`) isn't supported: the
+  app serves `/mcp`, not `<path>/mcp`. [S]
 
 ## Runs created from code (`qaboard.start_run()`, November 2026)
 

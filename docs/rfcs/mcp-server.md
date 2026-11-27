@@ -90,11 +90,31 @@ variables when given.
 1. **Local, over stdio: `qa mcp`** (this RFC). The client starts it; it reaches whatever server `qa` reaches,
    including servers inside a company network, with the person's login. Works with Claude Code, Claude Desktop, VS
    Code, Cursor, Codex. Optional dependency: `pip install "qaboard[mcp]"`.
-2. **Remote, Streamable HTTP at `<server>/mcp`** (later). Needed for clients that only take remote servers
-   (claude.ai, M365 Copilot) and for zero-install. It needs OAuth (Client ID Metadata Documents; the server already
-   has a device flow and tokens), and the server must be reachable from the client vendor's cloud, which on-premise
-   deployments usually aren't. The 2026-07-28 spec is stateless, which fits the backend's workers behind a load
-   balancer. The tools would be the same code, in the backend's process.
+2. **Remote, Streamable HTTP: `qa mcp --http`**, served at `<QA-Board's URL>/mcp` (`qaboard/mcp_http.py`). For
+   clients that only take remote servers (Open WebUI, claude.ai, M365 Copilot) and for zero-install. The same tools
+   and prompts (`build_server` in `mcp_server.py`), but `check_gate`, which runs `qa gate` in a checkout.
+   - **Where it runs**: its own process, from the backend's image (the backend depends on `qaboard[mcp]`), next to
+     the backend: a profile of docker-compose.yml (`COMPOSE_PROFILES=mcp`, service `mcp`) and `mcp.enabled` in the
+     Helm chart. Not in the backend's uWSGI workers: the SDK is ASGI (Starlette, uvicorn), and tool calls wait on the
+     API for seconds. It calls QA-Board through the proxy (`--server http://proxy`), which serves the API and the
+     runs' files and images; `--public-url` is what users and clients see, for links and the OAuth metadata.
+   - **Stateless** (`stateless_http`, the 2026-07-28 spec): no sessions, any replica answers any request.
+   - **OAuth protected resource** (RFC 9728), QA-Board being the authorization server: `/.well-known/oauth-protected-
+     resource/mcp` (and without `/mcp`, which some clients try) says resource `<public URL>/mcp`, authorization server
+     `<public URL>`, scope `read`; a request without a good token gets a 401 whose `WWW-Authenticate` points there.
+     Clients then read QA-Board's RFC 8414 metadata (`/.well-known/oauth-authorization-server`, the backend) and get a
+     token for each person. Tokens are ordinary API tokens (kind `oauth`, scope `read`), not bound to an audience.
+   - **Tokens**: the server checks one with `GET /api/v1/user/me/` (it must be authenticated and have `read`) and
+     remembers the answer for a minute, by the token's hash. Each tool call builds its `evidence.Api` with the
+     caller's token, so QA-Board checks every request it makes, and the answer is what that person may read;
+     revoking a token takes effect at once. Never the machine's credentials (`qa auth login`, QABOARD_TOKEN): a call
+     without a token is an error, and URLs of other servers are refused instead of using saved logins.
+   - **Behind the proxy**: nginx routes `/mcp` and `/.well-known/oauth-protected-resource[/mcp]` to it, without
+     buffering (answers stream as Server-Sent Events, with keep-alive pings). In compose, nginx looks the `mcp`
+     service up when requests come (Docker's DNS), so the proxy starts without it. The SDK's DNS rebinding checks are
+     off: every request needs a token, and the Host is the public one.
+   - Still needed for clients in a vendor's cloud (claude.ai, M365 Copilot): the server must be reachable from there,
+     which on-premise deployments usually aren't; and Client ID Metadata Documents on the authorization server.
 
 ## Gaps found on the way, and what this PR does about them
 | Gap | Done here? |
@@ -107,7 +127,7 @@ variables when given.
 | No record of which runs an agent started, and why. | No: roadmap ("Runs labeled by agents"). Docs suggest `qa --label agent/<topic>`. |
 | JSON from every `qa` command. | No: roadmap. `qa runs --json`, `qa gate --json` exist. |
 | Starting batches, waiting for them (MCP Tasks extension). | No: later, with a confirmation. |
-| A remote endpoint with OAuth. | No: later. |
+| A remote endpoint with OAuth. | Later, in its own change: `qa mcp --http` (see "Deployment"). |
 
 ## Open questions
 - Should `compare` also run the project's gate rules (owners' rules from the web app) without a checkout? The compare

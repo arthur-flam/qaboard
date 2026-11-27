@@ -240,6 +240,22 @@ cantaloupe:
   extraVolumes: []
   extraVolumeMounts: []
 
+# The MCP server for remote clients (e.g. Open WebUI): `qa mcp --http`, from the backend's image, at <publicUrl>/mcp
+# through the proxy. Clients get a token for each person from QA-Board with OAuth, and its answers are what that token
+# can read. Stateless: add replicas as needed. See website/docs/mcp.mdx
+mcp:
+  enabled: false
+  replicas: 1
+  port: 8000
+  # QA-Board's URL as clients see it: the OAuth metadata and the links in answers name it.
+  # Default: config.QABOARD_URL, else the ingress's host
+  publicUrl: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Start the batches users ask for in the web app on Kubernetes, and stop Kubernetes batches (the kubernetes runner).
 # `qa batch` runs in a pod (a Job) as the signed-in user's UID/GID (from the backend's accounts: /etc/passwd or
 # QABOARD_ACCOUNTS_COMMAND; only for users who sign in with the directory: LDAP, SAML, OIDC), with the commit's
