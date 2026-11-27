@@ -307,9 +307,10 @@ until then, agents use [`qa batch --commit`](/docs/tuning-from-the-webapp#from-t
 [MCP server](/docs/mcp).
 </RoadmapItem>
 
-<RoadmapItem status="exploring" title="A remote MCP server">
-The same tools served by QA-Board's server at `/mcp`, with sign-in, for clients that only connect to remote servers
-(claude.ai, Microsoft 365 Copilot), when your server is reachable from them.
+<RoadmapItem status="experimental" title="A remote MCP server">
+The same tools served by your QA-Board server at `/mcp`, for chat clients that only connect to remote servers, such as
+a self-hosted Open WebUI: users allow the client once, with OAuth, and it reads QA-Board as them, read-only. See
+[Connect MCP clients](/docs/backend-admin/mcp-clients). Next: dynamic client registration, for clients that need it.
 </RoadmapItem>
 
 <RoadmapItem status="experimental" title="Skills for coding agents">

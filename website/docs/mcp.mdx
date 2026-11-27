@@ -15,7 +15,7 @@ import StatusBadge from '@site/src/components/StatusBadge';
 :::
 
 `qa mcp` serves QA-Board's results to coding agents (Claude Code, Codex, Cursor...) and chat clients (Claude Desktop,
-VS Code's chat...) over the Model Context Protocol. Ask *"Is my commit better than main?"* or *"How did the nightly
+VS Code's chat, Open WebUI...) over the Model Context Protocol. Ask *"Is my commit better than main?"* or *"How did the nightly
 do this week?"*: the agent compares the runs with the reference's, looks at the outputs that changed most, and answers
 with the links to the pages that show it, so you can check.
 
@@ -29,6 +29,16 @@ Install `qa` with the MCP extra, sign in once, then add the server to your clien
 pip install "qaboard[mcp]"
 qa auth login https://qaboard.example.com
 ```
+
+<details>
+<summary>Open WebUI, or another client of your QA-Board server</summary>
+
+Your QA-Board server can also serve MCP itself, at `https://<your-qaboard>/mcp`, for chat clients that only connect
+to remote servers, such as a self-hosted Open WebUI: nothing to install. An admin turns it on and registers the client
+([Connect MCP clients](/docs/backend-admin/mcp-clients)); then connect it from a chat's tools. QA-Board asks you once to
+allow the app, which then reads QA-Board as you, with read-only tokens. Its tools are the same, without `check_gate`.
+
+</details>
 
 <details>
 <summary>Claude Code</summary>
@@ -95,11 +105,11 @@ Clients that show MCP prompts offer three procedures as commands: **did_my_chang
 |---|---|
 | `compare` | Is this commit better than its reference? Per metric: the medians of the **Summary** and their change, the median change per test, how many tests got better and worse and whether consistently, the tests that moved most, failed runs (new or not), and the link to the **Metrics Diff**. |
 | `failures` | Why runs failed: the failed runs grouped by the error at the end of their logs, with an excerpt, and whether the same test failed in the reference. |
-| `look_at_output` | A run's files, the changed ones first; an image next to the reference's, whole and where they differ most, in any format the image viewer opens; a text file as a diff with the reference's; the end of the log. |
+| `look_at_output` | A run's files and their types, the changed ones first; any of them next to the reference's, by its type, like the web app's viewers: images (whole, and where they differ most, in any format the image viewer opens), benchmarks, flame graphs, series such as training curves, test reports (JUnit), Plotly figures, logged media; text files as a diff; the end of the log. |
 | `metric_history` | Medians per commit on a branch, like the **History** page, with the biggest steps and the commits that made them. |
 | `find_results` | Projects, their latest commits with results, labels, run counts and milestones. |
 | `runs_table` | One row per run (input, status, the parameters that differ, metrics) as CSV, for the agent's own analyses. |
-| `check_gate` | The [quality gate](/docs/quality-gate)'s verdict, rule by rule, when `qa mcp` runs in the project's checkout. It's the verdict CI trusts; `compare` is the evidence. |
+| `check_gate` | The [quality gate](/docs/quality-gate)'s verdict, rule by rule, when `qa mcp` runs on your computer in the project's checkout. It's the verdict CI trusts; `compare` is the evidence. |
 
 The numbers are the server's, the same as the web app's. With each answer, the agent gets the links to the web app
 pages that show it: give them to the people who review the change.
@@ -115,9 +125,10 @@ reference's CI runs when the reference has none with that label, and says so; to
 other one as `reference` (its commit) and `reference_label`. `metric_history` with `label` follows them over commits.
 
 ## Charts and images in the conversation {/* #apps */}
-Clients that render MCP Apps (Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose...) show
-the answers of `compare`, `metric_history` and `look_at_output` in an interactive view: the metrics table with the
-tests that moved most, charts of metrics over commits, images side by side. Click a test to see its images, a point
+Clients that render MCP Apps (Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Open WebUI,
+Goose...) show the answers of `compare`, `metric_history` and `look_at_output` in an interactive view: the metrics
+table with the tests that moved most, charts of metrics over commits, images side by side, tables and curves of the
+other outputs. Click a test to see its images, a point
 to open its commit, and **Ask about...** to send the question to the chat. Other clients, such as Claude Code in a
 terminal, get the same answer as text, and the agent sees the images.
 
@@ -129,8 +140,9 @@ differences of high bit-depth outputs may not show, check them in the [image vie
   `qa --label <name> batch --commit <sha> <batch>` ([start batches from a terminal](/docs/tuning-from-the-webapp#from-the-command-line)).
 - **Follow instructions written in your results.** Logs, commit messages and inputs' names are shown to the model as
   quoted data. Keep the agent's other permissions to what the task needs anyway: a log can say anything.
-- **Run in claude.ai or Microsoft 365 Copilot without a local `qa`.** They need a remote MCP server, reachable from
-  their cloud, which QA-Board doesn't serve yet (see the [roadmap](/docs/roadmap#agents)).
+- **Connect from claude.ai or Microsoft 365 Copilot.** They reach MCP servers from their own cloud, which can't reach
+  a QA-Board server inside your network, and they register their clients dynamically, which QA-Board doesn't support
+  yet. Clients you host, like Open WebUI, connect to [your server's MCP endpoint](/docs/backend-admin/mcp-clients).
 
 <Cards>
   <Card title="Coding agents" to="/docs/agents">Skills that teach agents to integrate a project and to read results.</Card>

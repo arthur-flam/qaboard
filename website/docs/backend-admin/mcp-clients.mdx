@@ -9,6 +9,17 @@ Chat clients like a self-hosted [Open WebUI](https://openwebui.com) can call QA-
 allow the app, and it gets tokens of theirs that can only read. QA-Board is the OAuth 2.1 authorization server: you
 register the app in QA-Board, then paste its client ID and secret in the app.
 
+## Turn on QA-Board's MCP server {/* #enable */}
+The MCP server for remote clients is an optional service, from the backend's image (`qa mcp --http`). Set
+`QABOARD_URL` to the URL users reach QA-Board at: it's the address the server and its OAuth metadata name.
+- **Docker Compose**: add `COMPOSE_PROFILES=mcp` to your env file (or run `docker compose --profile mcp up -d`). nginx
+  routes `/mcp` to it.
+- **Helm**: set `mcp.enabled: true`, and `mcp.publicUrl` when neither `config.QABOARD_URL` nor your ingress gives the
+  URL users reach QA-Board at.
+
+It keeps no state: add replicas as you need. It calls QA-Board with each user's own token, so users see exactly what
+they can see in the web app.
+
 ## Register the app in QA-Board {/* #register-the-app */}
 1. Choose the **connection ID** you'll give QA-Board's MCP server in Open WebUI, e.g. `qaboard`: Open WebUI sends
    users back to a URL with it.
