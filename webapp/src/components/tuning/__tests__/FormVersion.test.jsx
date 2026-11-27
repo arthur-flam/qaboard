@@ -10,7 +10,7 @@ import { renderWithProviders } from '../../../test-utils';
 import { usePrefsStore } from '../../../stores/prefs';
 import { toaster } from '../../../toaster';
 import * as analytics from '../../../analytics';
-import { changed_batches, batches_text_error, expand_selection, snapshot_for_this_run, FOR_THIS_RUN_FILE } from '../BatchesForThisRun';
+import { changed_batches, batches_text_error, expand_selection, reconcile_for_this_run, snapshot_for_this_run, FOR_THIS_RUN_FILE } from '../BatchesForThisRun';
 
 vi.mock('../../MonacoEditor', () => ({
   default: ({ value, onChange, name }) => <textarea data-testid={name} value={value} onChange={e => onChange(e.target.value)}/>,
@@ -116,6 +116,22 @@ describe('the batches changed for this run', () => {
       { name: 'all', kind: 'alias', batches: ['day', 'night-1'] },
     ];
     expect(expand_selection(['all', 'night-*', 'typed'], listed)).toEqual(['day', 'night-1', 'night-2', 'typed']);
+    // "Run again" of several batches: the alias comes with the sent files, and aliases can be nested
+    expect(expand_selection(['again-batches'], listed, [{ content: 'a: {}' }, { content: 'aliases: {again-batches: [a, all]}' }])).toEqual(['a', 'day', 'night-1']);
+  });
+
+  it('keeps only the chosen batches in the text edited earlier', () => {
+    const text = '# my comment\ndatabase: {linux: /x}\nday:\n  inputs: [a] # kept\nnight:\n  inputs: [b]\n';
+    expect(reconcile_for_this_run(text, ['day', 'hdr'])).toEqual({
+      text: '# my comment\ndatabase: { linux: /x }\nday:\n  inputs: [ a ] # kept\n',
+      removed: ['night'],
+      missing: ['hdr'],
+    });
+    // nothing to remove: the text stays as written
+    expect(reconcile_for_this_run(text, ['day', 'night'])).toEqual({ text, removed: [], missing: [] });
+    // invalid text stays as it is, people fix it first
+    expect(reconcile_for_this_run('day: [oops', ['night'])).toEqual({ text: 'day: [oops', removed: [], missing: [] });
+    expect(reconcile_for_this_run('day: {}', ['night'])).toEqual({ text: '', removed: ['day'], missing: ['night'] });
     expect(snapshot_for_this_run(null, 'x: {}', ['x'])).toEqual({ for_this_run: true, files: [{ path: FOR_THIS_RUN_FILE, content: 'x: {}' }], names: ['x'] });
     // "Run again" keeps where they come from, and its other files (the alias of several batches)
     const again = { from: 'night', files: [{ path: 'batches.night.yaml', content: 'a: {}' }, { path: 'run-again.yaml', content: 'aliases: {}' }], names: ['a'] };
@@ -126,7 +142,8 @@ describe('the batches changed for this run', () => {
     usePrefsStore.getState().updateTuning('proj', { experiment_name: 'sweep', selected_group: 'smoke' });
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(url => {
       if (url.startsWith('/api/v1/tests/batches?') && url.includes('definition=smoke')) return json({ definition: { inputs: ['a.jpg', 'b.jpg'], configs: ['base'] } });
-      if (url.startsWith('/api/v1/tests/batches?')) return json({ batches: [{ name: 'smoke', kind: 'batch', files: ['qa/batches.yaml'], sources: ['commit'], inputs: 2 }] });
+      if (url.startsWith('/api/v1/tests/batches?') && url.includes('definition=hdr')) return json({ definition: { inputs: ['c.jpg'] } });
+      if (url.startsWith('/api/v1/tests/batches?')) return json({ batches: [{ name: 'smoke', kind: 'batch', files: ['qa/batches.yaml'], sources: ['commit'], inputs: 2 }, { name: 'hdr', kind: 'batch', files: ['qa/batches.yaml'], sources: ['commit'], inputs: 1 }] });
       if (url.startsWith('/api/v1/tests/group?')) return json({ tests: [{ input_path: 'a.jpg', configurations: ['base'] }] });
       return json({});
     });
@@ -151,6 +168,15 @@ describe('the batches changed for this run', () => {
     await waitFor(() => expect(fetch.mock.calls.some(([url]) => url === '/api/v1/commit/abcdef12/batch?project=proj')).toBe(true));
     const [, init] = fetch.mock.calls.find(([url]) => url === '/api/v1/commit/abcdef12/batch?project=proj');
     expect(JSON.parse(init.body).batches_files).toEqual(files);
+    // another batch chosen instead: the editor shows only it, and says what changed
+    fireEvent.click(within(screen.getByTestId('batch-smoke')).getByRole('checkbox'));
+    fireEvent.click(within(screen.getByTestId('batch-hdr')).getByRole('checkbox'));
+    expect(await screen.findByTestId('batches-for-this-run-ignored')).toHaveTextContent('ignored: smoke');
+    expect(within(screen.getByTestId('batch-smoke')).queryByText('for this run')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit the changes' }));
+    await waitFor(() => expect(screen.getByTestId('editor-batches-for-this-run').value).toMatch(/^# Changed for this run only.*\nhdr:\n  inputs:\n    - c.jpg\n$/s));
+    expect(screen.getByTestId('batches-for-this-run-reconciled')).toHaveTextContent('removed smoke. added hdr');
+    fireEvent.click(screen.getByText('Cancel'));
     fireEvent.click(screen.getByText('Discard the changes'));
     expect(usePrefsStore.getState().tuning.proj.batches_snapshot).toBeNull();
     expect(screen.queryByTestId('batches-for-this-run')).not.toBeInTheDocument();

@@ -41,22 +41,56 @@ export const batches_text_error = text => {
   return null;
 };
 
-/** The batches the chosen names stand for, from the list of batches (BatchPicker's): aliases and patterns expanded */
-export const expand_selection = (selection, batches) => {
+/**
+ * The batches the chosen names stand for, from the list of batches (BatchPicker's): aliases (nested) and patterns
+ * expanded. `files`: the files sent with the request, whose aliases come first ("Run again" of several batches).
+ */
+export const expand_selection = (selection, batches, files = []) => {
+  const aliases = {};
+  for (const file of files ?? []) {
+    try {
+      const value = parseDocument(String(file.content ?? '')).toJS();
+      const defined = value?.aliases ?? value?.groups;
+      if (defined && typeof defined === 'object') Object.assign(aliases, defined);
+    } catch {
+      // the server says what's wrong with it
+    }
+  }
   const names = [];
   const add = name => { if (!names.includes(name)) names.push(name); };
-  for (const name of selection) {
+  const expand = (name, depth) => {
     const listed = batches.find(b => b.name === name);
-    if (listed?.kind === 'alias') (listed.batches ?? []).forEach(add);
+    const alias = aliases[name] ?? (listed?.kind === 'alias' ? listed.batches : undefined);
+    if (alias !== undefined && depth < 10) [alias].flat().forEach(n => expand(String(n), depth + 1));
     else if (listed) add(name);
     else if (/[*?[]/.test(name)) batches.filter(b => b.kind === 'batch' && fnmatchRegExp(name).test(b.name)).forEach(b => add(b.name));
     else add(name);
-  }
+  };
+  selection.forEach(name => expand(name, 0));
   return names;
 };
 
+const key_name = pair => String(pair.key?.value ?? pair.key);
+
+/**
+ * The text edited earlier, for the batches chosen now: keeps the definitions of those still chosen (and the file's
+ * settings, comments...), drops the others. Returns {text, removed, missing: the chosen batches it doesn't define}.
+ * Text that isn't a valid batch file stays as it is: people fix it first.
+ */
+export const reconcile_for_this_run = (text, names) => {
+  const doc = parseDocument(String(text ?? ''));
+  if (doc.errors.length || !isMap(doc.contents)) return { text, removed: [], missing: [] };
+  const removed = doc.contents.items.map(key_name).filter(key => !SETTINGS.has(key) && !key.startsWith('.') && !names.includes(key));
+  removed.forEach(key => doc.delete(key));
+  const present = new Set(doc.contents.items.map(key_name));
+  const missing = names.filter(name => !present.has(name));
+  // nothing left: an empty text, not "{}"
+  if (doc.contents.items.length === 0) return { text: '', removed, missing };
+  return { text: removed.length ? doc.toString() : String(text), removed, missing };
+};
+
 // The definitions as the batch files have them, with their file's defaults (the server's batch_definition)
-const definitions_text = async ({ project, commit_id, files, names }) => {
+const fetch_definitions = async ({ project, commit_id, files, names }) => {
   const definitions = {};
   const missing = [];
   await Promise.all(names.slice(0, 50).map(async name => {
@@ -65,12 +99,26 @@ const definitions_text = async ({ project, commit_id, files, names }) => {
     else missing.push(name);
   }));
   const ordered = Object.fromEntries(names.filter(name => definitions[name]).map(name => [name, definitions[name]]));
-  const header = [
-    '# Changed for this run only: these definitions replace the batches of the same name.',
-    '# The batch files stay as they are. Remove inputs, change configurations, add a batch...',
-    ...(missing.length ? [`# Not found in the batch files: ${missing.join(', ')}`] : []),
-  ].join('\n');
-  return `${header}\n${Object.keys(ordered).length ? stringify(ordered, { lineWidth: 0 }) : ''}`;
+  return { yaml: Object.keys(ordered).length ? stringify(ordered, { lineWidth: 0 }) : '', missing };
+};
+
+const HEADER = [
+  '# Changed for this run only: these definitions replace the batches of the same name.',
+  '# The batch files stay as they are. Remove inputs, change configurations, add a batch...',
+].join('\n');
+
+// What to edit: the text edited earlier, for the batches chosen now, or the batch files' definitions
+const text_for_this_run = async ({ project, commit_id, files, names, current }) => {
+  if (current) {
+    const { text, removed, missing } = reconcile_for_this_run(current, names);
+    if (!missing.length) return { text, removed, added: [] };
+    const { yaml, missing: not_found } = await fetch_definitions({ project, commit_id, files, names: missing });
+    const start = text.length === 0 ? `${HEADER}\n` : text.endsWith('\n') ? text : `${text}\n`;
+    return { text: `${start}${yaml}`, removed, added: missing.filter(name => !not_found.includes(name)), not_found };
+  }
+  const { yaml, missing } = await fetch_definitions({ project, commit_id, files, names });
+  const header = [HEADER, ...(missing.length ? [`# Not found in the batch files: ${missing.join(', ')}`] : [])].join('\n');
+  return { text: `${header}\n${yaml}`, removed: [], added: [] };
 };
 
 /**
@@ -81,19 +129,18 @@ export const BatchesForThisRunDialog = ({ isOpen, onClose, onApply, project, com
   const [text, setText] = useState(null);
   const [error, setError] = useState(null);
   const [load_error, setLoadError] = useState(null);
+  // what changed since the last edit: batches not chosen anymore, and those chosen since
+  const [changes, setChanges] = useState(null);
 
-  // read when it opens, not as the form changes
+  // read when it opens, not as the form changes: only the batches chosen now
   const load = () => {
     setText(null);
     setError(null);
     setLoadError(null);
-    const current = snapshot?.files?.[0]?.content;
-    if (current) {
-      setText(current);
-      return;
-    }
-    definitions_text({ project, commit_id, files, names: expand_selection(selection, batches) })
-      .then(setText)
+    setChanges(null);
+    const names = expand_selection(selection, batches, snapshot?.files);
+    text_for_this_run({ project, commit_id, files, names, current: snapshot?.files?.[0]?.content })
+      .then(({ text, ...changes }) => { setText(text); setChanges(changes); })
       .catch(e => setLoadError(errorMessage(e)));
   };
 
@@ -109,6 +156,13 @@ export const BatchesForThisRunDialog = ({ isOpen, onClose, onApply, project, com
         Edit the inputs and configurations of <strong>{selection.join(', ')}</strong> for this run only. The batch files,
         and what others run, stay as they are. The batch you start keeps these definitions: <strong>Run again</strong> from its logs uses them.
       </p>
+      {(changes?.removed?.length > 0 || changes?.added?.length > 0 || changes?.not_found?.length > 0) && <Callout intent={Intent.PRIMARY} icon="filter" style={{ marginBottom: 10 }} data-testid="batches-for-this-run-reconciled">
+        Only the batches you chose now:
+        {changes.removed.length > 0 && <> removed <strong>{changes.removed.join(', ')}</strong>.</>}
+        {changes.added.length > 0 && <> added <strong>{changes.added.join(', ')}</strong> as the batch files define {changes.added.length === 1 ? 'it' : 'them'}.</>}
+        {changes.not_found?.length > 0 && <> Not found in the batch files: {changes.not_found.join(', ')}.</>}
+        {' '}<span className={Classes.TEXT_MUTED}>Cancel to keep the previous changes.</span>
+      </Callout>}
       {load_error && <Callout intent={Intent.DANGER} icon="error" style={{ marginBottom: 10 }}>Could not read the batches: {load_error}</Callout>}
       {text === null && !load_error
         ? <div style={{ height: 360, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner size={20} aria-label="Reading the batches"/></div>
@@ -133,8 +187,15 @@ export const BatchesForThisRunDialog = ({ isOpen, onClose, onApply, project, com
  * Above the tests: says that the form sends other definitions than the batch files', and how to go back.
  * Two kinds: "Run again" from a batch's logs (`from`: the batch they ran in), and "Change for this run".
  */
-export const BatchesForThisRunCallout = ({ snapshot, onEdit, onDrop }) => {
-  const names = changed_batches(snapshot.files);
+// `chosen`: the batches chosen now (expanded): changes to others are ignored, and the callout says so.
+export const BatchesForThisRunCallout = ({ snapshot, onEdit, onDrop, chosen, selection = [] }) => {
+  const all = changed_batches(snapshot.files);
+  const relevant = name => !chosen || chosen.includes(name) || selection.includes(name);
+  const names = all.filter(relevant);
+  const ignored = all.filter(name => !relevant(name));
+  const ignored_note = ignored.length > 0 && <p className={Classes.TEXT_MUTED} style={{ margin: '0 0 6px 0' }} data-testid="batches-for-this-run-ignored">
+    Not chosen anymore, so ignored: {ignored.join(', ')}. <strong>Edit the changes</strong> to drop them.
+  </p>;
   if (snapshot.from) {
     const when = DateTime.fromISO(snapshot.created_at ?? '', { zone: 'utc' });
     return <Callout icon="history" intent={Intent.PRIMARY} style={{ marginBottom: 12 }} title={`The batches as they ran in ${snapshot.from}`} data-testid="batches-for-this-run">
@@ -142,6 +203,7 @@ export const BatchesForThisRunCallout = ({ snapshot, onEdit, onDrop }) => {
         QA-Board sends the definitions it saved when <strong>{snapshot.from}</strong> started{when.isValid ? ` (${when.toRelative()})` : ''}:
         they replace the current ones of {snapshot.names?.length ? snapshot.names.join(', ') : 'those batches'} and of the aliases that reach them.
       </p>
+      {ignored_note}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         <Button size="small" icon="annotation" onClick={onEdit}>Change for this run</Button>
         <Button size="small" icon="cross" onClick={onDrop}>Use the batches as defined now</Button>
@@ -153,6 +215,7 @@ export const BatchesForThisRunCallout = ({ snapshot, onEdit, onDrop }) => {
       {names.length ? <><strong>{names.join(', ')}</strong> run{names.length === 1 ? 's' : ''}</> : 'The batches run'} with the definitions you changed.
       The batch files stay as they are. <span className={Classes.TEXT_MUTED}>The changes stay in the form until you discard them.</span>
     </p>
+    {ignored_note}
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
       <Button size="small" icon="edit" onClick={onEdit}>Edit the changes</Button>
       <Button size="small" icon="cross" onClick={onDrop}>Discard the changes</Button>

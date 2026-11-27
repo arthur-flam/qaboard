@@ -19,10 +19,8 @@ import {
   Radio,
   RadioGroup,
   SegmentedControl,
-  Switch,
   Tag,
   Tooltip,
-  Card,
   Icon,
 } from "@blueprintjs/core";
 import styled from "styled-components";
@@ -40,43 +38,69 @@ import StartFrom from './StartFrom'
 import { model_from_text, model_to_parameters, count_combinations, count_runs } from './model'
 import { transformCDERegisters } from './registers'
 import { form_from_request } from './history'
-import { BatchesForThisRunDialog, BatchesForThisRunCallout, changed_batches, snapshot_for_this_run } from './BatchesForThisRun'
+import { BatchesForThisRunDialog, BatchesForThisRunCallout, changed_batches, expand_selection, snapshot_for_this_run } from './BatchesForThisRun'
 import { LegacyTuningForm } from './LegacyTuningForm'
 import { useTuningFormVersion, NewFormActions, PreviousFormBanner } from './FormVersion'
 
 
 const MAX_RUNS = 5000;
 
-// How to choose the parameters' values: two cards, so that people see there is a choice
+// How to choose the parameters' values: a two-way switch next to the step's title, and one line on the chosen one
 const Modes = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 10px;
-  margin: 4px 0 16px;
-  .qa-tuning-mode { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 8px; align-items: start; cursor: pointer; text-align: left; font: inherit; color: inherit; }
-  .qa-tuning-mode[aria-checked="true"] { box-shadow: 0 0 0 2px var(--qa-intent-primary); }
-  .qa-tuning-mode-title { font-weight: 600; font-size: 15px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .qa-tuning-mode-text { grid-column: 2; font-size: 13px; }
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--qa-surface-alt);
+  border: 1px solid var(--qa-border);
+  .qa-tuning-mode { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border: 0; border-radius: 6px; background: none; font: inherit; font-weight: 500; color: var(--qa-text-secondary); cursor: pointer; }
+  .qa-tuning-mode:hover { color: var(--qa-text); background: var(--qa-hover); }
+  .qa-tuning-mode[aria-checked="true"] { background: var(--qa-surface); color: var(--qa-text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--qa-border); }
+  .qa-tuning-mode[aria-checked="true"] .bp6-icon { color: var(--qa-intent-primary); }
+  .qa-tuning-mode:focus-visible { outline: 2px solid var(--qa-intent-primary); outline-offset: 1px; }
 `;
 const modes = [
   {
     id: 'manual', icon: 'grid-view', title: 'Choose the values',
-    text: 'Run the tests as they are, or with the values you list for each parameter: every combination, or a sample of them.',
+    text: 'Run the tests as they are, or with the values you list: every combination, or a sample.',
   },
   {
-    id: 'optimize', icon: 'predictive-analysis', title: 'Search automatically', tag: 'Automated tuning',
-    text: 'Say which parameters to tune and which metrics to improve. QA-Board tries values, learns from each result and homes in on the best: usually better parameters, with fewer runs.',
+    id: 'optimize', icon: 'predictive-analysis', title: 'Search automatically',
+    text: 'Automated tuning: QA-Board tries values, learns from each result and homes in on the best for the metrics you choose.',
   },
 ];
 
-// The form's parts: the tests, the parameters, then the name and Start
+// Three numbered steps, separated by a line instead of nested boxes, and a bar that keeps Start in view
 const Sections = styled.div`
-  section { margin-bottom: 26px; }
-  section:last-child { margin-bottom: 0; }
-  section > h3, section > div > h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 16px; }
-  section h3 > .bp6-text-muted { font-size: 13px; font-weight: 400; }
-  .qa-tuning-intro { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .qa-tuning-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .qa-tuning-top-text { color: var(--qa-text-secondary); }
+  .qa-step { padding: 20px 0 24px; border-top: 1px solid var(--qa-border); }
+  .qa-step:first-of-type { border-top: 0; padding-top: 4px; }
+  .qa-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
+  .qa-step-head h3 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 16px; font-weight: 600; }
+  .qa-step-number { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: 50%; font-size: 13px; font-weight: 600; color: #fff; background: var(--qa-intent-primary); }
+  .qa-step-number[data-done="true"] { background: var(--qa-text-success); }
+  .qa-step-side { margin-left: auto; }
+  .qa-step-lead { margin: -4px 0 14px; color: var(--qa-text-secondary); }
+  .qa-tuning-bar {
+    position: sticky; bottom: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+    margin: 0 -20px; padding: 12px 20px;
+    background: var(--qa-surface); border-top: 1px solid var(--qa-border);
+    box-shadow: 0 -6px 12px -8px rgba(0, 0, 0, 0.25);
+  }
+  .qa-tuning-total { font-size: 15px; }
+  .qa-tuning-bar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto; }
+  .qa-tuning-hint { flex-basis: 100%; font-size: 13px; }
+  .qa-tuning-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 12px; font-size: 12px; }
 `;
+
+// A step's title, with its number, or a tick once it has what it needs
+const StepTitle = ({ id, number, done, children }) => <h3 id={id}>
+  <span className="qa-step-number" data-done={done} aria-hidden="true">{done ? <Icon icon="tick" size={14}/> : number}</span>
+  {children}
+</h3>;
 
 // Text examples, for people who write the values as text
 const examples = [
@@ -263,7 +287,7 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
   const changed = useMemo(() => changed_batches(batches_files), [batches_files]);
   const batches_list_files = useMemo(() => Object.values(available_tests_files ?? {}).filter(Boolean), [available_tests_files]);
   const { data: batches_list } = useBatches({ project, commit_id: commit?.id, files: batches_list_files, enabled: is_logged });
-  const listed_batches = Array.isArray(batches_list?.batches) ? batches_list.batches : [];
+  const listed_batches = useMemo(() => Array.isArray(batches_list?.batches) ? batches_list.batches : [], [batches_list]);
   const [editing_batches, setEditingBatches] = useState(false);
 
   // The batch's settings, as sent to the server
@@ -313,7 +337,6 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
   const updateSelection = text => updateTuning(project, { selected_group: text });
   const clean_label = text => text.replace(/[^\w_.@:=]/g, "-");
   const updateExperimentName = e => updateTuning(project, { experiment_name: clean_label(e.target.value) });
-  const updateOverwrite = e => updateTuning(project, { overwrite: e.target.checked });
   const updateParameterSearch = new_parameter_search => updateTuning(project, { parameter_search: new_parameter_search });
   const updateParameterSearchAuto = new_parameter_search => updateTuning(project, { parameter_search_auto: new_parameter_search });
   const updateMode = mode => updateTuning(project, { search_type: mode === 'manual' ? 'grid' : 'optimize' });
@@ -405,14 +428,6 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
   const unlisted = !!selected_group_info.unlisted;
   const { combinations, runs: total_runs } = count_runs({ combinations: all_combinations, tests: tests.length, search_type, n_iter: search_options?.n_iter });
   const invalid = combinations === null;
-  // no runs yet (e.g. no batch chosen) is not an error
-  const time_intent =
-    (invalid || total_runs > MAX_RUNS)
-      ? Intent.DANGER
-      : total_runs === 0 ? Intent.NONE
-      : total_runs < 100
-        ? Intent.PRIMARY
-        : Intent.WARNING;
 
 
   // we should show different parameters for different runners: queues, user...
@@ -478,10 +493,8 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
         />
         <span className={Classes.TEXT_MUTED}>combinations</span>
       </>}
-      {!!parameter_search && !invalid && <span className={Classes.TEXT_MUTED} style={{ marginLeft: 'auto' }} data-testid="tuning-combinations">
-        {search_type === "grid"
-          ? `Explores ${combinations} combination${combinations > 1 ? "s" : ""}`
-          : `A random sample of ${combinations} combination${combinations === 1 ? '' : 's'}${combinations < all_combinations ? ` of ${all_combinations}` : ''}`}
+      {search_type === 'sampler' && !invalid && combinations < all_combinations && <span className={Classes.TEXT_MUTED} data-testid="tuning-combinations">
+        of {all_combinations}
       </span>}
     </div>
     {shows_table
@@ -506,20 +519,6 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
           {examples.map(([key, label]) => <Button key={key} size="small" variant="outlined" onClick={() => updateParameterSearch(templates[key])}>{label}</Button>)}
         </div>
       </>}
-    <Callout intent={time_intent} style={{ marginTop: 10 }} data-testid="tuning-total">
-      {invalid
-        ? <strong>The values to try are not valid JSON, or the function fails</strong>
-        : unlisted
-          ? <><strong>{combinations} combination{combinations === 1 ? '' : 's'}</strong> <span className={Classes.TEXT_MUTED}>on each test: QA-Board can't count the tests here</span></>
-          : <>
-            <strong>{total_runs} total runs</strong>{' '}{total_runs > MAX_RUNS && '(' + MAX_RUNS + ' max.) '}
-            <span className={Classes.TEXT_MUTED}>
-              {tests.length === 0
-                ? '— choose the tests to run'
-                : `= ${tests.length} test${tests.length === 1 ? '' : 's'} × ${combinations} combination${combinations === 1 ? '' : 's'}`}
-            </span>
-          </>}
-    </Callout>
     {grid_space && <Callout icon="predictive-analysis" style={{ marginTop: 10 }} data-testid="tuning-suggest-auto">
       <strong>{combinations} combinations{tests.length > 0 && <>, {total_runs} runs</>}.</strong> An automated tuning could search the same ranges with
       about {grid_space.evaluations} evaluations{tests.length > 0 && <> ({grid_space.evaluations * tests.length} runs)</>}, and try the values in between: it needs a metric to improve. <Learn topic="search"/>
@@ -548,14 +547,54 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
   const subproject = git?.path_with_namespace ? project.slice(git.path_with_namespace.length + 1) : ''
   const cannot_tune_on_branch = !!commit?.branch && Array.isArray(tuning_branches) && !branch_matches(commit.branch, tuning_branches, subproject)
 
+  // the one reason Start is disabled, said next to it
+  const blocker = !user ? "Sign in first"
+    : selection.length === 0 ? "Choose the tests to run, in step 1"
+    : (tests.length === 0 && !unlisted) ? "The batch has no tests: step 1 says why"
+    : search_type === "optimize" ? (optimize_errors.length > 0 ? "Fix the automated tuning's configuration first: step 2 says what's missing" : undefined)
+    : invalid ? "The values to try are not valid JSON, or the function fails: switch to Text to see why"
+    : total_runs > MAX_RUNS ? `Too many runs: ${total_runs} (at most ${MAX_RUNS}). Run a random sample, or fewer tests.`
+    : undefined;
+  const label_blocker = experiment_name.length === 0 ? 'Give the results a label, in step 3' : undefined;
+  const hint = blocker ?? label_blocker ?? (check_errors.length > 0 ? 'Fix what step 3 lists first' : undefined) ?? (search_type !== 'optimize' && total_runs >= 1000 ? "Over 1000 runs: check the cluster has room" : undefined);
+  const hint_intent = (invalid || total_runs > MAX_RUNS) && search_type !== "optimize" ? Intent.DANGER : undefined;
+  const disabled = submitted ||
+    !is_logged ||
+    check_errors.length > 0 ||
+    !user ||
+    experiment_name.length === 0 ||
+    (!total_runs && search_type !== "optimize" && !unlisted) ||
+    (invalid && search_type !== "optimize") ||
+    (search_type === "optimize" && optimize_errors.length > 0) ||
+    total_runs > MAX_RUNS;
+  // the steps' ticks
+  const tests_done = selection.length > 0 && (tests.length > 0 || unlisted);
+  const parameters_done = search_type === 'optimize' ? optimize_errors.length === 0 : !invalid;
+  const chosen = useMemo(() => expand_selection(selection, listed_batches, batches_files), [selection, listed_batches, batches_files]);
+  // what to know before starting: where runs execute, and what the server's check found
+  const before_start = [
+    ...(!any_runner_configured ? [<>Runs start on the QA-Board server: this project has no runner for a cluster or task queue, so runs share the server's CPUs and stop if it restarts. <a href={`${docs_root}docs/runners`}>Choose where runs execute</a>, and see <a href={`${docs_root}docs/backend-admin/runners`}>what the server needs</a>.</>] : []),
+    ...check_warnings,
+  ];
+  const selected_mode = modes.find(mode => (search_type === 'optimize') === (mode.id === 'optimize'));
+  const moveMode = e => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    e.preventDefault();
+    const next = selected_mode.id === 'optimize' ? 'manual' : 'optimize';
+    updateMode(next);
+    e.currentTarget.parentElement.querySelector(`[data-testid="tuning-mode-${next}"]`)?.focus();
+  };
+
   return <Sections>
-    {!any_runner_configured && <Callout intent={Intent.WARNING} title="Runs will start on the QA-Board server" icon="warning-sign" style={{marginBottom: '15px'}}>
-      <p>This project has no runner for a cluster or task queue: runs share the server's CPUs, and stop if it restarts. <a href={`${docs_root}docs/runners`}>Choose where runs execute</a>, and see <a href={`${docs_root}docs/backend-admin/runners`}>what the server needs</a>.</p>
+    <div className="qa-tuning-top">
+      <span className="qa-tuning-top-text">Run this commit's code on the tests you choose, as it is or with other parameters.</span>
+      <StartFrom project={project} commit_id={commit?.id} onPick={startFrom} disabled={!is_logged}/>
+    </div>
+    {!is_logged && <Callout intent={Intent.PRIMARY} icon="log-in" title="Sign in to start runs" style={{ marginBottom: 18 }} data-testid="tuning-login">
+      <p>Runs started from QA-Board run as you. Once you are signed in, QA-Board also lists the batches and their tests, and checks your settings.</p>
+      <Button icon="log-in" intent={Intent.PRIMARY} text="Sign in" onClick={requestLogin}/>
     </Callout>}
-    {check_warnings.length > 0 && <Callout intent={Intent.WARNING} title="Before you start" icon="warning-sign" style={{marginBottom: '15px'}} data-testid="tuning-check-warnings">
-      <ul className={Classes.LIST}>{check_warnings.map(w => <li key={w}>{w}</li>)}</ul>
-    </Callout>}
-    {cannot_tune_on_branch &&  <Callout intent={Intent.WARNING} title="Tuning may not work" icon="warning-sign" style={{marginBottom: '15px'}}>
+    {cannot_tune_on_branch && <Callout intent={Intent.WARNING} title="Tuning may not work" icon="warning-sign" style={{ marginBottom: 18 }}>
       <p>Tuning needs the commit's artifacts, and the CI only saves them on some branches: {tuning_branches.map((pattern, idx) => <span key={idx}>{idx > 0 && ', '}<code>{expand_subproject(pattern, subproject)}</code></span>)}. Your branch, <code>{commit.branch}</code>, doesn't match.</p>
       <p>A workaround is saving them yourself, from your clone of the repository:</p>
       <pre>
@@ -565,18 +604,14 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
       </pre>
     </Callout>}
 
-    <div className="qa-tuning-intro">
-      <span className={Classes.TEXT_MUTED}>Run this commit's code on the tests you choose, as it is or with other parameters.</span>
-      <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-        <NewFormActions project={project}/>
-        <StartFrom project={project} commit_id={commit?.id} onPick={startFrom} disabled={!is_logged}/>
-      </span>
-    </div>
-
-    <section aria-labelledby="tuning-section-tests">
-      <h3 id="tuning-section-tests"><Icon icon="list-detail-view"/> Tests <span className={Classes.TEXT_MUTED}>(the batches of inputs and configurations to run)</span></h3>
+    <section className="qa-step" aria-labelledby="tuning-section-tests">
+      <div className="qa-step-head">
+        <StepTitle id="tuning-section-tests" number={1} done={tests_done}>Choose the tests</StepTitle>
+      </div>
       {!!batches_snapshot && <BatchesForThisRunCallout
         snapshot={batches_snapshot}
+        chosen={chosen}
+        selection={selection}
         onEdit={() => setEditingBatches(true)}
         onDrop={() => updateTuning(project, { batches_snapshot: null })}
       />}
@@ -590,7 +625,7 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
         repo_file_url={repo_file_url}
         is_logged={is_logged}
         editor_props={{ git, web_url, config, docs_root }}
-        changed={changed}
+        changed={changed.filter(name => chosen.includes(name) || selection.includes(name))}
         onChangeForThisRun={() => setEditingBatches(true)}
       />
       <BatchesForThisRunDialog
@@ -617,42 +652,42 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
       </RadioGroup>}
     </section>
 
-    <section aria-labelledby="tuning-mode-label">
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h3 id="tuning-mode-label"><Icon icon="settings"/> Parameters <span className={Classes.TEXT_MUTED}>(how to choose their values)</span></h3>
-        <a href={`${docs_root}docs/${search_type !== "optimize" ? 'tuning-from-the-webapp' : 'user-guide/automated-tuning'}`} target="_blank" rel="noopener noreferrer">
-          {search_type !== "optimize" ? 'How to tune from QA-Board' : 'How automated tuning works'}
+    <section className="qa-step" aria-labelledby="tuning-mode-label">
+      <div className="qa-step-head">
+        <StepTitle id="tuning-mode-label" number={2} done={parameters_done && tests_done}>Set the parameters</StepTitle>
+        <Modes role="radiogroup" aria-labelledby="tuning-mode-label">
+          {modes.map(mode => {
+            const checked = mode === selected_mode;
+            return <button type="button" key={mode.id} className="qa-tuning-mode" role="radio" aria-checked={checked} tabIndex={checked ? 0 : -1} data-testid={`tuning-mode-${mode.id}`}
+              onClick={() => updateMode(mode.id)}
+              onKeyDown={moveMode}
+            >
+              <Icon icon={mode.icon} size={14}/>{mode.title}
+            </button>;
+          })}
+        </Modes>
+        <a className="qa-step-side" href={`${docs_root}docs/${search_type !== "optimize" ? 'tuning-from-the-webapp' : 'user-guide/automated-tuning'}`} target="_blank" rel="noopener noreferrer">
+          <Icon icon="help" size={12}/> {search_type !== "optimize" ? 'How to tune' : 'How automated tuning works'}
         </a>
       </div>
-      <Modes role="radiogroup" aria-labelledby="tuning-mode-label">
-        {modes.map(mode => {
-          const checked = (search_type === 'optimize') === (mode.id === 'optimize');
-          return <Card key={mode.id} compact interactive className="qa-tuning-mode" role="radio" aria-checked={checked} tabIndex={0} data-testid={`tuning-mode-${mode.id}`}
-            onClick={() => updateMode(mode.id)}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); updateMode(mode.id); } }}
-          >
-            <Icon icon={mode.icon} size={20} intent={checked ? Intent.PRIMARY : Intent.NONE} style={{ marginTop: 2 }}/>
-            <div className="qa-tuning-mode-title">{mode.title}{mode.tag && <Tag minimal round intent={Intent.PRIMARY}>{mode.tag}</Tag>}</div>
-            <div className={`qa-tuning-mode-text ${Classes.TEXT_MUTED}`}>{mode.text}</div>
-          </Card>;
-        })}
-      </Modes>
+      <p className="qa-step-lead">{selected_mode.text}</p>
       {search_type !== 'optimize' ? panel_manual : panel_auto}
     </section>
 
-    <section aria-labelledby="tuning-section-start">
-      <h3 id="tuning-section-start"><Icon icon="play"/> Name and start</h3>
+    <section className="qa-step" aria-labelledby="tuning-section-start">
+      <div className="qa-step-head">
+        <StepTitle id="tuning-section-start" number={3} done={!!experiment_name}>Name the results</StepTitle>
+      </div>
       <FormGroup
-        helperText={is_missing('experiment_name', experiment_name) ? "Give the batch a label" : "The name of the results. Tip: reuse the label of an existing batch to add runs to it"}
+        helperText={is_missing('experiment_name', experiment_name) ? "Give the batch a label" : "The batch's name on this commit, to find and compare its results."}
         label="Batch label"
-        labelInfo="(required)"
         labelFor="batch-label"
         intent={is_missing('experiment_name', experiment_name) ? Intent.DANGER : undefined}
       >
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           <InputGroup
             id="batch-label"
-            style={{ width: "300px" }}
+            style={{ width: "min(360px, 80vw)" }}
             placeholder="my-tuning-experiment"
             value={experiment_name}
             onChange={updateExperimentName}
@@ -673,72 +708,60 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
           : <>Runs it already has are kept: only the missing ones start.</>}
         <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           <Button size="small" text={<>Use <code>{unused_label(experiment_name, commit?.batches)}</code> instead</>} onClick={() => updateTuning(project, { experiment_name: unused_label(experiment_name, commit?.batches) })}/>
-          {overwrite && existing_runs > 0 && <Button size="small" variant="minimal" text="Keep its runs, only start what's missing" onClick={() => updateTuning(project, { overwrite: false })}/>}
+          {existing_runs > 0 && (overwrite
+            ? <Button size="small" variant="minimal" text="Keep its runs, only start what's missing" onClick={() => updateTuning(project, { overwrite: false })}/>
+            : <Button size="small" variant="minimal" text="Run them again too" onClick={() => updateTuning(project, { overwrite: true })} data-testid="tuning-overwrite"/>)}
         </div>
       </Callout>}
-
-      <FormGroup
-          label="Overwrite previous identical runs"
-          labelFor="overwrite-old-outputs"
-          helperText="On: runs that already exist in this batch run again. Off: they're kept, only missing runs start."
-          inline
-      >
-        <Switch
-          id="overwrite-old-outputs"
-          checked={overwrite}
-          onChange={updateOverwrite}
-        />
-      </FormGroup>
-
-      <FormGroup
-        helperText={!user ? "Please provide a user in the input below"
-                          : selection.length === 0 ? "Choose the tests to run, at the top"
-                          : experiment_name.length === 0 ? 'Please give the batch a label (the input is above)'
-                          : (tests.length === 0 && !unlisted) ? "The batch has no tests: see why under the list of tests"
-                          : search_type === "optimize" ? (optimize_errors.length > 0 ? "Fix the automated tuning's configuration first: it says what's missing above" : undefined)
-                          : invalid ? "The values to try are not valid JSON, or the function fails: switch to Text to see why"
-                          : total_runs > MAX_RUNS ? `Too many runs: ${total_runs} (at most ${MAX_RUNS}). Run a random sample, or fewer tests.`
-                          : total_runs >= 1000 ? "Over 1000 runs: check the cluster has room"
-                          : undefined}
-        intent={(invalid || total_runs > MAX_RUNS) && search_type !== "optimize" ? Intent.DANGER : undefined}
-      >
-      {!is_logged && <Callout intent={Intent.PRIMARY} icon="log-in" title="Sign in to start runs" style={{marginBottom: '10px'}} data-testid="tuning-login">
-        <p>Runs started from QA-Board run as you. Once you are signed in, QA-Board also lists the batches and their tests, and checks your settings.</p>
-        <Button icon="log-in" intent={Intent.PRIMARY} text="Sign in" onClick={requestLogin}/>
+      {check_errors.length > 0 && <Callout intent={Intent.DANGER} title="Fix this to start" icon="error" compact style={{ maxWidth: 900, marginBottom: 10 }} data-testid="tuning-check-errors">
+        <ul className={Classes.LIST} style={{ margin: 0 }}>{check_errors.map(e => <li key={e}>{e}</li>)}</ul>
       </Callout>}
-      {check_errors.length > 0 && <Callout intent={Intent.DANGER} title="Fix this to start" icon="error" style={{marginBottom: '10px'}} data-testid="tuning-check-errors">
-        <ul className={Classes.LIST}>{check_errors.map(e => <li key={e}>{e}</li>)}</ul>
+      {before_start.length > 0 && <Callout intent={Intent.WARNING} title="Before you start" icon="warning-sign" compact style={{ maxWidth: 900 }} data-testid="tuning-check-warnings">
+        <ul className={Classes.LIST} style={{ margin: 0 }}>{before_start.map((w, idx) => <li key={idx}>{w}</li>)}</ul>
       </Callout>}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+    </section>
+
+    <div className="qa-tuning-bar" data-testid="tuning-bar">
+      <div className="qa-tuning-total" data-testid="tuning-total" aria-live="polite">
+        {search_type === 'optimize'
+          ? <><strong>Automated tuning</strong>{tests.length > 0 && <span className={Classes.TEXT_MUTED}> on {tests.length} test{tests.length === 1 ? '' : 's'}</span>}</>
+          : invalid
+            ? <strong className="qa-text-danger">The values to try are not valid</strong>
+            : unlisted
+              ? <><strong>{combinations} combination{combinations === 1 ? '' : 's'}</strong> <span className={Classes.TEXT_MUTED}>on each test: QA-Board can't count the tests here</span></>
+              : <>
+                <strong>{total_runs} run{total_runs === 1 ? '' : 's'}</strong>{' '}{total_runs > MAX_RUNS && '(' + MAX_RUNS + ' max.) '}
+                <span className={Classes.TEXT_MUTED}>
+                  {tests.length === 0
+                    ? '— no tests chosen yet'
+                    : `= ${tests.length} test${tests.length === 1 ? '' : 's'} × ${combinations} combination${combinations === 1 ? '' : 's'}`}
+                </span>
+              </>}
+      </div>
+      <div className="qa-tuning-bar-actions">
+        {lsf_runner && is_logged && <Tooltip content="Runs start on the cluster as this user, with their shell environment">
+          <Tag icon="user" minimal>as <strong>{user}</strong></Tag>
+        </Tooltip>}
         <Button
           onClick={onSubmit}
           data-testid="tuning-start"
-          disabled={
-            submitted ||
-            !is_logged ||
-            check_errors.length > 0 ||
-            !user ||
-            experiment_name.length === 0 ||
-            (!total_runs && search_type !== "optimize" && !unlisted) ||
-            (invalid && search_type !== "optimize") ||
-            (search_type === "optimize" && optimize_errors.length > 0) ||
-            total_runs > MAX_RUNS
-          }
+          disabled={disabled}
           large
           icon="play"
           intent={search_type !== "optimize" ? (total_runs < 1000 ? Intent.PRIMARY : Intent.DANGER) : Intent.PRIMARY}
         >
           {search_type === "optimize" ? "Start automated tuning" : (!unlisted && Number.isFinite(total_runs) && total_runs > 0) ? `Start ${total_runs} run${total_runs === 1 ? '' : 's'}` : "Start runs"}
         </Button>
-        {lsf_runner && is_logged && <Tooltip content="Runs start on the cluster as this user, with their shell environment">
-          <Tag icon="user" large minimal>Will run as <strong>{user}</strong></Tag>
-        </Tooltip>}
       </div>
-      {email_notifications && search_type !== "optimize" && <p className={Classes.TEXT_MUTED} style={{marginTop: '8px'}} data-testid="tuning-email-note">
-        QA-Board will email you when the last run ends.
-      </p>}
-      </FormGroup>
-    </section>
+      {(hint || (email_notifications && search_type !== "optimize")) && <div className={`qa-tuning-hint ${Classes.TEXT_MUTED}`}>
+        {hint && <span style={hint_intent ? { color: 'var(--qa-text-danger)' } : undefined}>{hint}</span>}
+        {hint && email_notifications && search_type !== "optimize" && ' · '}
+        {email_notifications && search_type !== "optimize" && <span className={Classes.TEXT_MUTED} data-testid="tuning-email-note">QA-Board will email you when the last run ends.</span>}
+      </div>}
+    </div>
+    <div className={`qa-tuning-footer ${Classes.TEXT_MUTED}`}>
+      This form is new. <NewFormActions project={project}/>
+    </div>
   </Sections>;
 };
 

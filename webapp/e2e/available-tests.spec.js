@@ -220,7 +220,7 @@ test('the tuning form says where the batch is defined, and links to it', async (
   await row.getByLabel('Parameter name').fill('threshold');
   await row.getByLabel('Values to try for threshold').fill('1, 2, 3');
   await row.getByLabel('Values to try for threshold').press('Enter');
-  await expect(page.getByTestId('tuning-total')).toContainText('3 total runs = 1 test × 3 combinations');
+  await expect(page.getByTestId('tuning-total')).toContainText('3 runs = 1 test × 3 combinations');
   await page.getByText('Text', { exact: true }).click();
   await expect(page.locator('.monaco-editor').first().locator('.view-lines')).toContainText('"threshold": [1, 2, 3]');
   expect(errors, 'errors in the browser console').toEqual([]);

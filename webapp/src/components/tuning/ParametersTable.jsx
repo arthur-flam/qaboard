@@ -2,7 +2,7 @@
 // It is one view of the model of the parameters (model.js): it gets the text, edits the model, and writes the text.
 import { useId, useState } from "react";
 import styled from "styled-components";
-import { Button, Callout, Classes, Icon, InputGroup, Intent, PopoverNext, SegmentedControl, Switch, TagInput, Tooltip } from "@blueprintjs/core";
+import { Button, Classes, Icon, InputGroup, Intent, PopoverNext, SegmentedControl, Switch, TagInput, Tooltip } from "@blueprintjs/core";
 
 import { model_from_text, model_to_text, set_combinations, filled_rows, row as make_row } from "./model";
 import { parse_value, format_value, split_values, range_values, is_number_text } from "./values";
@@ -155,7 +155,7 @@ export const ParametersTable = ({ value, onChange, known = [] }) => {
             <Button variant="minimal" size="small" icon="trash" aria-label={`Remove set ${set_index + 1}`} style={{ marginLeft: 'auto' }} onClick={() => commit(sets.filter(other => other.id !== set.id))}/>
           </div>}
           {set.rows.length === 0 && <p className={Classes.TEXT_MUTED} style={{ margin: '8px 0' }}>
-            {several ? 'No parameter yet.' : 'No parameter: the tests run once, as they are. Add parameters to try other values.'}
+            {several ? 'No parameter yet.' : <>No parameter: the tests run once, as they are. Add one to try other values, or paste lines like <code>block.gain=4</code> (or JSON) in its name to add several.</>}
           </p>}
           {set.rows.map((r, row_index) => {
             const key = r.key.trim();
@@ -227,9 +227,6 @@ export const ParametersTable = ({ value, onChange, known = [] }) => {
           : <>{plural(n_parameters, 'parameter')}, <strong>{plural(total, 'combination')}</strong>{filled.filter(Boolean).length > 1 && ` in ${filled.filter(Boolean).length} sets`}</>}
       </span>
     </div>
-    {sets.every(set => set.rows.length === 0) && <Callout icon="lightbulb" style={{ marginTop: 10 }} compact>
-      Paste lines like <code>block.gain=4</code>, or JSON, in a name to add several parameters at once.
-    </Callout>}
   </Table>;
 };
 

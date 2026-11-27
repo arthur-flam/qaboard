@@ -154,8 +154,8 @@ Celery, or on the server. Until its runs show up, a message on every view of the
 - **The batch you started from QA-Board failed**: why, e.g. `qa batch` exited with an error, or the cluster killed it,
   with the last error of its log.
 - **qa batch didn't start any run**: maybe there were no inputs, or all the runs already existed. To run them again,
-  turn on **Overwrite previous identical runs** in the
-  [form](/docs/user-guide/running-from-the-webapp#running-tests-and-tuning).
+  reuse the batch's label in the [form](/docs/user-guide/running-from-the-webapp#running-tests-and-tuning) and keep
+  its runs running again (**Run them again too**).
 
 They are listed with the other [commands that started the batch](#batch-commands).
 

@@ -210,15 +210,15 @@ async function fillGrid(ui: Ui) {
   await ui.click(valuesMode(ui.page, 'Table'));
   await ui.page.getByTestId('parameters-table').waitFor();
   await ui.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await form(ui.page).getByText(/^8 total runs/).waitFor();
+  await ui.page.getByTestId('tuning-total').getByText(/^8 runs/).waitFor();
 }
 
 shot('tuning/manual-form', {
   project: DE,
   url: d => d.commitUrl(DE, 'int8-percentile', { view: 'summary' }),
   alt: 'The Run Tests / Tuning form: the quant-search batch ticked in the list of batches, with its 2 tests beside it, '
-    + 'Choose the values with a table of score_threshold 0.2 and 0.3 by nms_iou 0.5 and 0.7, "Explores 4 combinations", '
-    + '"8 total runs", the batch label int8-nms and the Start 8 runs button.',
+    + 'Choose the values with a table of score_threshold 0.2 and 0.3 by nms_iou 0.5 and 0.7, "4 combinations", '
+    + 'the batch label int8-nms, and "8 runs" with the Start 8 runs button in the bar at the bottom.',
   caption: 'Run a batch with other parameters: here every combination of 2 score thresholds and 2 NMS IoUs, 8 runs.',
   viewport: { width: 1440, height: 1500 },
   actions: async ui => {
