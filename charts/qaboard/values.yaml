@@ -248,7 +248,8 @@ mcp:
   replicas: 1
   port: 8000
   # QA-Board's URL as clients see it: the OAuth metadata and the links in answers name it.
-  # Default: config.QABOARD_URL, else the ingress's host
+  # Default: config.QABOARD_URL, else the ingress's host. Unless set, the backend's config.QABOARD_URL defaults to it:
+  # the backend's OAuth issuer must be this URL
   publicUrl: ""
   resources:
     requests: {cpu: 100m, memory: 256Mi}

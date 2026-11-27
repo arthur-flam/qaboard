@@ -47,7 +47,13 @@ def test_pkce():
 
 @pytest.mark.parametrize("uri, ok", [
   (REDIRECT_URI, True),
+  # http only to the user's own computer (OAuth 2.1 §2.3.1)
   ("http://localhost:8080/oauth/callback", True),
+  ("http://127.0.0.1:8080/oauth/callback", True),
+  ("http://[::1]:8080/oauth/callback", True),
+  ("http://openwebui.example.com/oauth/callback", False),
+  ("http://localhost.example.com/cb", False),
+  ("http://127.0.0.2/cb", False),
   ("javascript:alert(1)", False),
   ("https://a.example.com/cb#fragment", False),
   ("https://user:password@a.example.com/cb", False),
@@ -59,6 +65,8 @@ def test_redirect_uris(uri, ok):
 
 def test_clean_redirect_uris():
   assert oauth.clean_redirect_uris([f" {REDIRECT_URI} ", REDIRECT_URI, ""]) == [REDIRECT_URI]
+  with pytest.raises(ValueError, match="must use https"):
+    oauth.clean_redirect_uris(["http://openwebui.example.com/cb"])
   for wrong in (None, [], [""], [f"https://a.example.com/{i}" for i in range(11)]):
     with pytest.raises(ValueError):
       oauth.clean_redirect_uris(wrong)

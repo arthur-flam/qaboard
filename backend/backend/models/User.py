@@ -136,6 +136,9 @@ class Token(Base):
 
     # e.g. {"client": "qa CLI", "hostname": "host-12"}
     data = Column(JSONB(), nullable=False, default=dict, server_default='{}')
+    # kind oauth: what the user allowed the app (backend/oauth.py), deleted with it
+    oauth_grant_id = Column(Integer, ForeignKey('oauth_grants.id', ondelete='CASCADE'), nullable=True, index=True)
+    oauth_grant = relationship("OAuthGrant", back_populates="tokens")
 
     def __repr__(self):
       return f"<Token id={self.id} user_id={self.user_id} prefix='{self.prefix}' kind='{self.kind}'>"

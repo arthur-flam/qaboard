@@ -7,11 +7,14 @@ website/docs/backend-admin/mcp-clients.mdx.
   client registration (RFC 7591) would add clients without a creator, with the same columns.
 - The authorization code flow, with PKCE (S256, required) and the `resource` the app asks for (RFC 8707, recorded).
   Users allow the app on the web app's consent page (/oauth/consent), signed in.
-- Access tokens are ordinary API tokens (kind "oauth", the "read" scope, an hour): the whole API accepts them, and
-  their `data` says which app and grant they are for. One per grant: each refresh gives it a new secret (tokens.renew).
+- Access tokens are ordinary API tokens (kind "oauth", the "read" scope, an hour, Token.oauth_grant): the whole API
+  accepts them, and their `data` says which app and grant they are for. Each refresh mints a new one: the previous one
+  works until it expires, so that an app's call isn't cut when it refreshes for another. Expired ones are deleted at
+  the next refresh: a grant has one or two.
 - Refresh tokens rotate. One that comes twice was stolen, like a code that comes twice: the grant is revoked.
-- Revoking the grant (Settings → Connected apps), its token (Admin → Tokens) or the app's registration (Admin →
-  Connected apps) stops both its access token and its refresh tokens.
+- One grant per user and app: allowing the app again replaces the earlier grant (replace_earlier_grants).
+- Revoking the grant (Settings → Connected apps), one of its tokens (Admin → Tokens) or the app's registration (Admin →
+  Connected apps) stops all its access tokens and its refresh tokens.
 """
 import re
 import hmac
@@ -33,9 +36,13 @@ CLIENT_ID_LENGTH = 24
 # What apps can ask for, as the consent page says it. Only reading for now.
 SCOPES = {'read': "Read your projects and results"}
 CODE_LIFETIME = datetime.timedelta(minutes=2)
+# Used codes are kept that long after they expire: one that comes back still revokes what it gave (exchange_code)
+EXPIRED_CODES_KEPT = datetime.timedelta(days=1)
 ACCESS_TOKEN_LIFETIME = datetime.timedelta(hours=1)
 MAX_NAME_LENGTH = 100
 MAX_REDIRECT_URIS = 10
+# as urlsplit().hostname spells them
+LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 # RFC 7636 §4.1, and the base64url of a SHA-256 without padding (§4.2)
 CODE_VERIFIER_RE = re.compile(r'^[A-Za-z0-9._~-]{43,128}$')
 CODE_CHALLENGE_RE = re.compile(r'^[A-Za-z0-9_-]{43}$')
@@ -107,6 +114,9 @@ def redirect_uri_problem(uri: str) -> Optional[str]:
   parts = urlsplit(uri)
   if parts.scheme not in ('https', 'http') or not parts.hostname:
     return f"{uri} isn't an http(s) URL."
+  # OAuth 2.1 §2.3.1: the codes would travel in clear, except to an app on the user's own computer
+  if parts.scheme == 'http' and parts.hostname not in LOOPBACK_HOSTS:
+    return f"{uri} must use https: http:// is only for apps on the user's computer (localhost, 127.0.0.1, [::1])."
   if '#' in uri:
     return f"{uri} has a fragment (#...): redirect URIs can't."
   if parts.username or parts.password:
@@ -307,6 +317,8 @@ def answer(req: AuthorizationRequest, user, approve: bool, issuer: str) -> str:
     return redirect_url(req.redirect_uri, error='access_denied', error_description="The user didn't allow the app.", state=req.state, iss=issuer)
   code = secrets.token_urlsafe(32)
   now = utcnow()
+  # no job needed: each new code deletes the old ones, which can't give tokens anymore
+  OAuthAuthorizationCode.query.filter(OAuthAuthorizationCode.expires_at < now - EXPIRED_CODES_KEPT).delete(synchronize_session=False)
   db_session.add(OAuthAuthorizationCode(
     code_hash=tokens_lib.hash_token(code), oauth_client_id=req.client.id, user_id=user.id, redirect_uri=req.redirect_uri,
     code_challenge=req.code_challenge, scopes=req.scopes, resource=req.resource, created_at=now, expires_at=now + CODE_LIFETIME,
@@ -376,6 +388,7 @@ def exchange_code(client, form) -> dict:
   db_session.add(grant)
   db_session.flush()
   code.used_at, code.grant_id = now, grant.id
+  replace_earlier_grants(grant)
   response = issue_tokens(grant, 'authorization_code')
   db_session.commit()
   return response
@@ -415,27 +428,26 @@ def refresh(client, form) -> dict:
 
 def issue_tokens(grant, grant_type: str) -> dict:
   """
-  The grant's access token, with a new secret, and a new refresh token: the token answer (RFC 6749 §5.1).
-  Audited as the user's, who allowed the app. Added to the database session, the caller commits.
+  A new access token and a new refresh token for the grant: the token answer (RFC 6749 §5.1). The grant's earlier
+  access tokens work until they expire, then are deleted here. Added to the database session, the caller commits.
+  Audited as the user's, who allowed the app, for the grant's first tokens only: apps refresh every hour, routinely.
   """
   from backend import db_session
   from .models import OAuthRefreshToken
-  from .audit import audit
   from .actor import Actor
   client, user = grant.client, grant.user
   now = utcnow()
-  expires_at = now + ACCESS_TOKEN_LIFETIME
-  meta = {"client_id": client.client_id, "grant": grant.id, "grant_type": grant_type}
-  if grant.token is None:
-    # who uses it: an app, for the user (Admin → Tokens shows them)
-    data = {"client": client.name, "client_id": client.client_id, "grant": grant.id, "resource": grant.resource}
-    grant.token, access_token = tokens_lib.mint(
-      user, name=client.name, scopes=grant.scopes, kind='oauth', expires_at=expires_at, created_by=user, data=data,
-      actor=Actor(user), audit_action='oauth.token', audit_meta=meta,
-    )
-  else:
-    access_token = tokens_lib.renew(grant.token, expires_at)
-    audit('oauth.token', 'token', grant.token.id, grant.token.name, meta={"user": user.user_name, **meta}, actor=Actor(user))
+  for expired in [t for t in grant.tokens if tokens_lib.status(t, now) == 'expired']:
+    db_session.delete(expired)
+  # who uses it: an app, for the user (Admin → Tokens shows them)
+  data = {"client": client.name, "client_id": client.client_id, "grant": grant.id, "resource": grant.resource}
+  first = grant_type == 'authorization_code'
+  token, access_token = tokens_lib.mint(
+    user, name=client.name, scopes=grant.scopes, kind='oauth', expires_at=now + ACCESS_TOKEN_LIFETIME, created_by=user,
+    data=data, actor=Actor(user), audit_action='oauth.token' if first else None,
+    audit_meta={"client_id": client.client_id, "grant": grant.id},
+  )
+  token.oauth_grant = grant
   refresh_token = tokens_lib.generate(REFRESH_TOKEN_PREFIX)
   db_session.add(OAuthRefreshToken(token_hash=tokens_lib.hash_token(refresh_token), grant_id=grant.id, created_at=now))
   grant.refreshed_at = now
@@ -453,13 +465,14 @@ def revoke_token(client, secret: Optional[str]):
   The revocation endpoint (RFC 7009): the app's refresh token or access token revokes its grant. Tokens that aren't
   the app's are ignored, the app learns nothing about them. The caller commits.
   """
-  from .models import OAuthRefreshToken, OAuthGrant, Token
+  from .models import OAuthRefreshToken, Token
   from .actor import Actor
   if not secret:
     raise OAuthError('invalid_request', "Missing the token.")
   hashed = tokens_lib.hash_token(secret)
   row = OAuthRefreshToken.query.filter(OAuthRefreshToken.token_hash == hashed).one_or_none()
-  grant = row.grant if row is not None else OAuthGrant.query.join(Token, OAuthGrant.token_id == Token.id).filter(Token.token_hash == hashed).one_or_none()
+  access_token = Token.query.filter(Token.token_hash == hashed, Token.kind == 'oauth').one_or_none() if row is None else None
+  grant = row.grant if row is not None else access_token.oauth_grant if access_token is not None else None
   if grant is not None and grant.oauth_client_id == client.id:
     revoke_grant(grant, reason='app', actor=Actor(grant.user))
 
@@ -474,9 +487,9 @@ def idle_expiry() -> datetime.timedelta:
 
 
 def grant_status(grant, now: Optional[datetime.datetime] = None) -> str:
-  """active, revoked (also when its app's registration or its token is), or idle_expired (no token for too long)"""
+  """active, revoked (also when its app's registration is), or idle_expired (no token for too long)"""
   now = now or utcnow()
-  if grant.revoked_at or grant.client.revoked_at or (grant.token is not None and tokens_lib.status(grant.token) == 'revoked'):
+  if grant.revoked_at or grant.client.revoked_at:
     return 'revoked'
   if now >= grant.refreshed_at + idle_expiry():
     return 'idle_expired'
@@ -484,17 +497,45 @@ def grant_status(grant, now: Optional[datetime.datetime] = None) -> str:
 
 
 def revoke_grant(grant, reason: str, by=None, actor=None) -> bool:
-  """Revokes what the user allowed the app, and its access token. Audited, the caller commits"""
+  """Revokes what the user allowed the app: its access tokens, and deletes its refresh tokens. Audited, the caller commits"""
+  from .models import OAuthRefreshToken
   from .audit import audit
   if grant.revoked_at is not None:
     return False
+  # first: revoking its tokens revokes their grant (tokens.revoke), which is then done
   grant.revoked_at, grant.revoked_reason = utcnow(), reason
   audit('oauth_grant.revoke', 'oauth_grant', grant.id, grant.client.name, meta={
     "user": grant.user.user_name, "client_id": grant.client.client_id, "reason": reason,
   }, actor=actor)
-  if grant.token is not None:
-    tokens_lib.revoke(grant.token, by=by, reason=f"oauth: {reason}", actor=actor)
+  for token in grant.tokens:
+    if tokens_lib.status(token) == 'active':
+      tokens_lib.revoke(token, by=by, reason=f"oauth: {reason}", actor=actor)
+  # nothing to recognize anymore: one that comes again is unknown, refused all the same
+  OAuthRefreshToken.query.filter(OAuthRefreshToken.grant_id == grant.id).delete(synchronize_session=False)
   return True
+
+
+def revoke_grant_of(token, by=None, actor=None):
+  """Revoking an app's access token (e.g. in Admin → Tokens) revokes what the user allowed it (tokens.revoke)"""
+  if token.oauth_grant is not None:
+    revoke_grant(token.oauth_grant, reason='token_revoked', by=by, actor=actor)
+
+
+def replace_earlier_grants(grant):
+  """
+  Allowing an app again replaces what the user allowed it before (also when that expired): a leaked refresh token of
+  the earlier grant stops working, and Settings → Connected apps shows the app once. One grant per user and app fits
+  the apps admins register, apps on a server: Open WebUI keeps one token per user for each connection, and each
+  connection gets its own registration (its redirect URI). Audited, the caller commits.
+  """
+  from .models import OAuthGrant
+  from .actor import Actor
+  earlier = OAuthGrant.query.filter(
+    OAuthGrant.user_id == grant.user_id, OAuthGrant.oauth_client_id == grant.oauth_client_id,
+    OAuthGrant.revoked_at.is_(None), OAuthGrant.id != grant.id,
+  ).all()
+  for previous in earlier:
+    revoke_grant(previous, reason='replaced', actor=Actor(grant.user))
 
 
 def active_grants(**filters) -> list:
@@ -506,9 +547,8 @@ def active_grants(**filters) -> list:
 
 
 def serialize_grant(grant) -> dict:
-  token = grant.token
   # the app's last API call, or its last refresh: it refreshes when it needs to call
-  last_used = max(filter(None, [grant.refreshed_at, token.last_used_at if token is not None else None]))
+  last_used = max(filter(None, [grant.refreshed_at, *(token.last_used_at for token in grant.tokens)]))
   return {
     "id": grant.id,
     "client": {"id": grant.client.id, "name": grant.client.name, "client_id": grant.client.client_id},

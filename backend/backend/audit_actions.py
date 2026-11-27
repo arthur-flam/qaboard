@@ -70,6 +70,7 @@ ACTIONS = {
   'oauth_client.revoke': Action("Revoked an app's registration", 'tokens'),
   'oauth.approve': Action("Allowed an app", 'tokens'),
   'oauth.deny': Action("Denied an app", 'tokens'),
+  # the grant's first tokens only: the app's hourly refreshes are routine, like the runs' heartbeats (backend/oauth.py)
   'oauth.token': Action("Gave a token to an app", 'tokens'),
   'oauth_grant.revoke': Action("Revoked an app's access", 'tokens'),
   # Users and groups

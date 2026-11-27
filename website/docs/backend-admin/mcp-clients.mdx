@@ -11,11 +11,12 @@ register the app in QA-Board, then paste its client ID and secret in the app.
 
 ## Turn on QA-Board's MCP server {/* #enable */}
 The MCP server for remote clients is an optional service, from the backend's image (`qa mcp --http`). Set
-`QABOARD_URL` to the URL users reach QA-Board at: it's the address the server and its OAuth metadata name.
+`QABOARD_URL` to the URL users reach QA-Board at, the same for the backend and the MCP server: the MCP server sends
+clients to the backend's OAuth metadata, and clients refuse it unless its issuer is the URL the MCP server names.
 - **Docker Compose**: add `COMPOSE_PROFILES=mcp` to your env file (or run `docker compose --profile mcp up -d`). nginx
   routes `/mcp` to it.
-- **Helm**: set `mcp.enabled: true`, and `mcp.publicUrl` when neither `config.QABOARD_URL` nor your ingress gives the
-  URL users reach QA-Board at.
+- **Helm**: set `mcp.enabled: true`, and `config.QABOARD_URL` (or `mcp.publicUrl`) when your ingress doesn't give the
+  URL users reach QA-Board at. The chart gives the backend and the MCP server the same URL.
 
 It keeps no state: add replicas as you need. It calls QA-Board with each user's own token, so users see exactly what
 they can see in the web app.
@@ -31,8 +32,10 @@ they can see in the web app.
    reach it (its `WEBUI_URL` setting).
 5. **Register**, then copy the **Client ID** and the **Client secret**: the secret is only shown now.
 
-You can change the name and the redirect URIs later. If you lose the secret, register the app again and revoke the
-old one.
+Redirect URIs use `https://`, except for apps on the user's own computer: `http://localhost`, `http://127.0.0.1`
+and `http://[::1]`. You can change the name and the redirect URIs later. If you lose the secret, register the app
+again and revoke the old one. Register an app for each Open WebUI connection: users allow an app once, and allowing it
+again replaces what they allowed it before.
 
 ## Add QA-Board's MCP server in Open WebUI {/* #open-webui */}
 1. In Open WebUI, open **Admin Settings → Integrations**, and add a connection (**+**) to **External Tool Servers**.
@@ -57,22 +60,24 @@ QA-Board doesn't support dynamic client registration yet: clients that require i
 ## What the apps can do {/* #what-apps-can-do */}
 - **Read only**: their tokens have the `read` scope, and only see what the user can see. They can't change anything,
   create tokens or allow other apps.
-- **Short-lived tokens**: an access token lasts an hour, then the app refreshes it. Refresh tokens are used once:
-  one that comes back a second time, like a code used twice, revokes what the user allowed.
+- **Short-lived tokens**: an access token lasts an hour, then the app refreshes it. The previous access token works
+  until it expires, so that a long call isn't cut. Refresh tokens are used once: one that comes back a second time,
+  like a code used twice, revokes what the user allowed.
 - **Unused apps expire**: after `oauth.refresh_idle_expiry_days` (90 days by default, **Admin → Settings → API tokens
   and results**) without a refresh, users allow the app again.
-- **Users see and revoke them** in **Settings → Connected apps**. You see the apps' tokens in **Admin → Tokens**, as
-  "Connected app": revoking one revokes the app for that user.
+- **Users see and revoke them** in **Settings → Connected apps**, one row per app: allowing an app again replaces
+  what they allowed it before. You see the apps' tokens in **Admin → Tokens**, as "Connected app": revoking one
+  revokes the app for that user, with all its tokens.
 - **Revoke an app** in **Admin → Connected apps**: it can't get tokens anymore, and those it has stop working at once.
 
-Every registration, approval, denial, token and revocation is in the [audit log](/docs/backend-admin/audit-log),
-under *Tokens*.
+Every registration, approval, denial, first token and revocation is in the [audit log](/docs/backend-admin/audit-log),
+under *Tokens*. The hourly refreshes aren't.
 
 <details>
 <summary>The OAuth endpoints, for other clients</summary>
 
 QA-Board's metadata (RFC 8414) is at `https://<your-qaboard>/.well-known/oauth-authorization-server`. Its issuer is
-`QABOARD_URL`, so set it to the URL users reach QA-Board at. The flow is the authorization code flow with PKCE
+`QABOARD_URL` (else the host of the request), so set it to the URL users reach QA-Board at. The flow is the authorization code flow with PKCE
 (`S256`, required), and the `resource` parameter (RFC 8707). Apps authenticate to the token endpoint with HTTP Basic
 (`client_secret_basic`) or in the form (`client_secret_post`). The redirects back to the app carry `iss` (RFC 9207).
 The revocation endpoint (RFC 7009) revokes everything a refresh token or an access token came with. The endpoints

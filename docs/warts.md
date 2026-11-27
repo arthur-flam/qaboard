@@ -57,6 +57,11 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   token works on the whole API (with the `read` scope), not only on the MCP server. Two refreshes with the same
   refresh token at once (an app without a lock) revoke the grant: RFC 9700 asks for it, a short grace period would be
   kinder. No dynamic client registration (RFC 7591) yet: MCP clients that require it can't connect. [M, API]
+- **Connected apps' rows are only cleaned up as the flow goes**: new codes delete those expired over a day ago,
+  refreshes delete the grant's expired access tokens and old used refresh tokens, revoking a grant deletes its refresh
+  tokens. A grant that goes idle (`oauth.refresh_idle_expiry_days`) without being revoked or replaced keeps its
+  refresh tokens and its last, expired access token, and revoked grants stay, for Settings and the audit log. A daily
+  job in `backend/jobs/` could delete them, and grants revoked long ago. [S, storage]
 
 ## Backend
 

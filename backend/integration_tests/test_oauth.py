@@ -129,24 +129,25 @@ def test_the_whole_flow(app_client, logged_in, make_client):
   # it can't create tokens
   assert app.post('/api/v1/user/tokens', json={"name": "x", "scopes": ["read"]}, headers=bearer(tokens["access_token"])).status_code == 403
 
-  # Open WebUI refreshes with HTTP Basic: the access token gets a new secret, the old one stops working
+  # Open WebUI refreshes with HTTP Basic: a new access token. The previous one works until it expires: a long tool
+  # call that uses it isn't cut when the app refreshes for another chat
   response = refresh(app, app_client, tokens["refresh_token"])
   assert response.status_code == 200, response.get_json()
   refreshed = response.get_json()
   assert refreshed["refresh_token"] != tokens["refresh_token"] and refreshed["access_token"] != tokens["access_token"]
-  assert app.get('/api/v1/user/me/', headers=bearer(tokens["access_token"])).status_code == 401
+  assert app.get('/api/v1/user/me/', headers=bearer(tokens["access_token"])).status_code == 200
   me = app.get('/api/v1/user/me/', headers=bearer(refreshed["access_token"])).get_json()
-  # the same token: one per app, not one per hour
-  assert me["user_name"] == "alice" and me["token"]["id"] == token_id
+  assert me["user_name"] == "alice" and me["token"]["kind"] == "oauth" and me["token"]["id"] != token_id
 
   # the user sees the app, and when it was last used
   apps = browser.get('/api/v1/user/apps').get_json()["apps"]
   assert [(a["client"]["name"], a["status"], a["resource"]) for a in apps] == [("Open WebUI", "active", RESOURCE)]
   assert app_client["admin"].get('/api/v1/admin/oauth/clients').get_json()["clients"][0]["users"] == 1
 
-  # the user revokes it: its tokens stop working
+  # the user revokes it: all its tokens stop working
   assert browser.delete(f'/api/v1/user/apps/{apps[0]["id"]}').get_json()["status"] == "revoked"
-  assert app.get('/api/v1/user/me/', headers=bearer(refreshed["access_token"])).get_json()["reason"] == "token_revoked"
+  for access_token in (tokens["access_token"], refreshed["access_token"]):
+    assert app.get('/api/v1/user/me/', headers=bearer(access_token)).get_json()["reason"] == "token_revoked"
   response = refresh(app, app_client, refreshed["refresh_token"])
   assert response.status_code == 400 and response.get_json()["error"] == "invalid_grant"
   assert browser.get('/api/v1/user/apps').get_json()["apps"] == []
@@ -154,6 +155,50 @@ def test_the_whole_flow(app_client, logged_in, make_client):
   actions = [e["action"] for e in browser.get('/api/v1/user/audit').get_json()["events"]]
   for action in ("oauth.approve", "oauth.token", "oauth_grant.revoke", "token.revoke"):
     assert action in actions, action
+  # refreshes are routine: only the first tokens are audited
+  assert actions.count("oauth.token") == 1
+
+
+def grant_tokens():
+  """The access tokens of the grants, as (grant id, token status), by token id"""
+  from backend.database import db_session
+  from backend.models import Token
+  from backend.tokens import status
+  db_session.expire_all()
+  return [(t.oauth_grant_id, status(t)) for t in Token.query.filter(Token.kind == 'oauth').order_by(Token.id)]
+
+
+def test_expired_access_tokens_are_deleted_at_the_next_refresh(app_client, logged_in, make_client):
+  from backend.database import db_session
+  from backend.models import Token
+  app = make_client()
+  tokens = tokens_of(app, app_client, logged_in('alice'))
+  refreshed = refresh(app, app_client, tokens["refresh_token"]).get_json()
+  grant_id = grant_tokens()[0][0]
+  assert grant_id is not None and grant_tokens() == [(grant_id, "active"), (grant_id, "active")]
+  Token.query.filter(Token.kind == 'oauth').update({"expires_at": clock.utcnow() - datetime.timedelta(seconds=1)})
+  db_session.commit()
+  assert app.get('/api/v1/user/me/', headers=bearer(refreshed["access_token"])).status_code == 401
+  refreshed = refresh(app, app_client, refreshed["refresh_token"]).get_json()
+  # a grant keeps one or two
+  assert grant_tokens() == [(grant_id, "active")]
+  assert app.get('/api/v1/user/me/', headers=bearer(refreshed["access_token"])).status_code == 200
+
+
+def test_allowing_the_app_again_replaces_the_grant(app_client, logged_in, make_client):
+  from backend.models import OAuthGrant
+  app = make_client()
+  browser = logged_in('alice')
+  first = tokens_of(app, app_client, browser)
+  # another user's grant isn't replaced
+  bob = tokens_of(app, app_client, logged_in('bob'))
+  second = tokens_of(app, app_client, browser)
+  assert refresh(app, app_client, first["refresh_token"]).get_json()["error"] == "invalid_grant"
+  assert app.get('/api/v1/user/me/', headers=bearer(first["access_token"])).status_code == 401
+  assert app.get('/api/v1/user/me/', headers=bearer(second["access_token"])).status_code == 200
+  assert app.get('/api/v1/user/me/', headers=bearer(bob["access_token"])).status_code == 200
+  assert [a["client"]["name"] for a in browser.get('/api/v1/user/apps').get_json()["apps"]] == ["Open WebUI"]
+  assert sorted(g.revoked_reason or '' for g in OAuthGrant.query.all()) == ['', '', 'replaced']
 
 
 def test_denied(app_client, logged_in):
@@ -305,9 +350,35 @@ def test_revoking_the_token_in_admin_tokens_revokes_the_app(app_client, logged_i
   admin = app_client["admin"]
   listed = [t for t in admin.get('/api/v1/admin/tokens').get_json()["tokens"] if t["kind"] == "oauth"]
   assert [(t["name"], t["user"]["user_name"], t["scopes"], t["data"]["client"]) for t in listed] == [("Open WebUI", "alice", ["read"], "Open WebUI")]
+  refreshed = refresh(app, app_client, tokens["refresh_token"]).get_json()
+  # the earlier access token: the grant's other one stops too
   admin.delete(f'/api/v1/admin/tokens/{listed[0]["id"]}')
-  assert refresh(app, app_client, tokens["refresh_token"]).get_json()["error"] == "invalid_grant"
+  assert app.get('/api/v1/user/me/', headers=bearer(refreshed["access_token"])).status_code == 401
+  assert refresh(app, app_client, refreshed["refresh_token"]).get_json()["error"] == "invalid_grant"
   assert browser.get('/api/v1/user/apps').get_json()["apps"] == []
+  from backend.models import OAuthGrant
+  assert [g.revoked_reason for g in OAuthGrant.query.all()] == ["token_revoked"]
+  revoked = [e for e in admin.get('/api/v1/admin/audit').get_json()["events"] if e["action"] == "oauth_grant.revoke"]
+  assert [e["meta"]["reason"] for e in revoked] == ["token_revoked"]
+
+
+def test_used_codes_and_revoked_refresh_tokens_are_deleted(app_client, logged_in, make_client):
+  from backend.database import db_session
+  from backend.models import OAuthAuthorizationCode, OAuthRefreshToken
+  app = make_client()
+  browser = logged_in('alice')
+  tokens = tokens_of(app, app_client, browser)
+  refresh(app, app_client, tokens["refresh_token"])
+  assert OAuthRefreshToken.query.count() == 2
+  # kept a day after they expire, to recognize a code that comes again
+  OAuthAuthorizationCode.query.update({"expires_at": clock.utcnow() - datetime.timedelta(days=1, seconds=1)})
+  db_session.commit()
+  allow(browser, app_client)
+  db_session.expire_all()
+  assert OAuthAuthorizationCode.query.count() == 1
+  [grant] = browser.get('/api/v1/user/apps').get_json()["apps"]
+  browser.delete(f'/api/v1/user/apps/{grant["id"]}')
+  assert OAuthRefreshToken.query.count() == 0
 
 
 def test_disabled_users_apps_stop(app_client, logged_in, make_client):
@@ -345,13 +416,15 @@ def test_it_works_when_sign_in_is_required(app_client, logged_in, make_client, m
 def test_admins_register_apps(logged_in):
   admin = logged_in('admin', is_admin=True)
   for body in ({"name": "x"}, {"name": "", "redirect_uris": [REDIRECT_URI]}, {"name": "x", "redirect_uris": ["javascript:alert(1)"]},
-               {"name": "x", "redirect_uris": ["https://a.example.com/cb#frag"]}):
+               {"name": "x", "redirect_uris": ["https://a.example.com/cb#frag"]}, {"name": "x", "redirect_uris": ["http://a.example.com/cb"]}):
     assert admin.post('/api/v1/admin/oauth/clients', json=body).status_code == 400, body
   created = admin.post('/api/v1/admin/oauth/clients', json={"name": "Open WebUI", "redirect_uris": [REDIRECT_URI]}).get_json()
   # the secret is only shown once
   assert "client_secret" not in admin.get('/api/v1/admin/oauth/clients').get_json()["clients"][0]
   updated = admin.patch(f'/api/v1/admin/oauth/clients/{created["id"]}', json={"redirect_uris": [REDIRECT_URI, "http://localhost:8080/cb"]}).get_json()
   assert updated["redirect_uris"] == [REDIRECT_URI, "http://localhost:8080/cb"]
+  response = admin.patch(f'/api/v1/admin/oauth/clients/{created["id"]}', json={"redirect_uris": ["http://openwebui.example.com/cb"]})
+  assert response.status_code == 400 and "must use https" in response.get_json()["error"]
   assert logged_in('bob').get('/api/v1/admin/oauth/clients').status_code == 403
   actions = [e["action"] for e in admin.get('/api/v1/admin/audit').get_json()["events"]]
   assert "oauth_client.create" in actions and "oauth_client.update" in actions

@@ -32,8 +32,9 @@ class OAuthClient(Base):
 
 class OAuthGrant(Base):
   """
-  What a user allowed an app: its scopes, for a resource (RFC 8707, e.g. QA-Board's MCP server), with one access
-  token (a QA-Board API token of kind "oauth", whose secret changes at each refresh) and a chain of refresh tokens.
+  What a user allowed an app: its scopes, for a resource (RFC 8707, e.g. QA-Board's MCP server), with its access
+  tokens (QA-Board API tokens of kind "oauth", a new one at each refresh: Token.oauth_grant) and a chain of refresh
+  tokens. One per user and app that works: allowing the app again revokes the earlier one.
   """
   __tablename__ = 'oauth_grants'
 
@@ -44,13 +45,13 @@ class OAuthGrant(Base):
   user = relationship("User", foreign_keys=[user_id])
   scopes = Column(JSONB(), nullable=False, default=list, server_default='[]')
   resource = Column(Text(), nullable=True)
-  token_id = Column(Integer, ForeignKey('tokens.id', ondelete='SET NULL'), nullable=True)
-  token = relationship("Token")
+  # the database deletes them with the grant
+  tokens = relationship("Token", back_populates="oauth_grant", passive_deletes=True)
   created_at = Column(DateTime, nullable=False, default=clock.utcnow)
   # when the app last got a token: the refresh tokens expire after oauth.refresh_idle_expiry_days without it
   refreshed_at = Column(DateTime, nullable=False, default=clock.utcnow)
   revoked_at = Column(DateTime, nullable=True)
-  # e.g. user, admin, client_revoked, code_reused, refresh_token_reused
+  # e.g. user, app, client_revoked, token_revoked, replaced, code_reused, refresh_token_reused
   revoked_reason = Column(String(), nullable=True)
 
 
@@ -60,9 +61,9 @@ class OAuthAuthorizationCode(Base):
 
   id = Column(Integer, primary_key=True)
   code_hash = Column(String(64), nullable=False, unique=True)
-  oauth_client_id = Column(Integer, ForeignKey('oauth_clients.id', ondelete='CASCADE'), nullable=False)
+  oauth_client_id = Column(Integer, ForeignKey('oauth_clients.id', ondelete='CASCADE'), nullable=False, index=True)
   client = relationship("OAuthClient")
-  user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+  user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
   user = relationship("User", foreign_keys=[user_id])
   redirect_uri = Column(Text(), nullable=False)
   code_challenge = Column(String(), nullable=False)
@@ -72,7 +73,7 @@ class OAuthAuthorizationCode(Base):
   expires_at = Column(DateTime, nullable=False)
   used_at = Column(DateTime, nullable=True)
   # what it was exchanged for: revoked if the code comes again
-  grant_id = Column(Integer, ForeignKey('oauth_grants.id', ondelete='SET NULL'), nullable=True)
+  grant_id = Column(Integer, ForeignKey('oauth_grants.id', ondelete='SET NULL'), nullable=True, index=True)
   grant = relationship("OAuthGrant")
 
 
