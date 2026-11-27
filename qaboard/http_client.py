@@ -154,15 +154,25 @@ def _text(r) -> str:
 _sessions = threading.local()
 
 
-def _session():
-  """This thread's requests.Session: connections are reused (the uploader sends from several threads). Not across a fork"""
+def _session(keep_cookies: bool = True):
+  """
+  This thread's requests.Session: connections are reused (the uploader sends from several threads). Not across a fork.
+  Without `keep_cookies`, the thread's session that keeps no cookies: for requests made for different people whose
+  calls share threads (`qa mcp --http`), so that what the server sets for one isn't sent with another's requests.
+  """
+  import http.cookiejar
   import requests
-  session = getattr(_sessions, 'session', None)
-  if session is None or _sessions.pid != os.getpid():
+  if getattr(_sessions, 'pid', None) != os.getpid():
+    _sessions.by_cookies, _sessions.pid = {}, os.getpid()
+  session = _sessions.by_cookies.get(keep_cookies)
+  if session is None:
     from . import __version__
     session = requests.Session()
     session.headers['User-Agent'] = f"qaboard/{__version__}"
-    _sessions.session, _sessions.pid = session, os.getpid()
+    if not keep_cookies:
+      # cookies of no domain are allowed: none is kept, none is sent
+      session.cookies.set_policy(http.cookiejar.DefaultCookiePolicy(allowed_domains=()))
+    _sessions.by_cookies[keep_cookies] = session
   return session
 
 
@@ -180,7 +190,7 @@ LOG_HOOKS = {'response': log_response}
 
 
 def _once(server: str, path: str, *, method: str, params, json, data: Body, headers: dict[str, str] | None, token: str | None,
-          timeout: Timeout, stream: bool):
+          timeout: Timeout, stream: bool, keep_cookies: bool):
   import requests
   from .results import _token_for
   token = _token_for(server, token)
@@ -189,7 +199,7 @@ def _once(server: str, path: str, *, method: str, params, json, data: Body, head
   body = data() if callable(data) else data
   started = time.monotonic()
   try:
-    r = _session().request(method, url_for(server, path), params=params, json=json, data=body, headers=headers, verify=verify, timeout=timeout, stream=stream)
+    r = _session(keep_cookies).request(method, url_for(server, path), params=params, json=json, data=body, headers=headers, verify=verify, timeout=timeout, stream=stream)
   except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader) as e:
     _log_failure(method, server, path, started, e)
     # the same again won't work: QABOARD_URL, a header...
@@ -242,17 +252,18 @@ def retried(attempt: Callable[[], Any], retries: Sequence[float] = (), give_up: 
 def request(server: str, path: str, *, method: str = 'GET', params: dict[str, Any] | None = None, json: Any = None,
             data: Body = None, headers: dict[str, str] | None = None, token: str | None = None,
             timeout: Timeout | None = None, retries: Sequence[float] = (), give_up: Callable[[], bool] | None = None,
-            stream: bool = False):
+            stream: bool = False, keep_cookies: bool = True):
   """
   The server's answer (a `requests.Response`, status < 400), else raises ResultsError.
   `data`: a body that isn't JSON, e.g. a file's content. With `retries`, give a callable that gives it for each try.
   `give_up()`: checked before trying again, e.g. another thread learned the server refuses everything.
   `stream`: the caller reads the answer as it comes, and closes it.
+  `keep_cookies=False`: the cookies the server sets aren't sent with later requests (see _session).
   """
   if retries and data is not None and not callable(data) and not isinstance(data, (bytes, bytearray, str)):
     raise ValueError("A file sent with retries must be given as a callable that opens it: each try reads it again")
   return retried(lambda: _once(server, path, method=method, params=params, json=json, data=data, headers=headers, token=token,
-                               timeout=timeout or REQUEST_TIMEOUT, stream=stream), retries, give_up)
+                               timeout=timeout or REQUEST_TIMEOUT, stream=stream, keep_cookies=keep_cookies), retries, give_up)
 
 
 def request_json(server: str, path: str, **kwargs) -> dict[str, Any]:

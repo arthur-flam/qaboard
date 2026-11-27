@@ -37,6 +37,11 @@ const NEW = 'a1b2c3d4' + '0'.repeat(32);
   assert.ok(seen.some(e => e.type === 'message' && e.content[0].text.includes('night/02')));
   assert.deepStrictEqual(seen.filter(e => e.type === 'tools/call').map(e => e.arguments), [{ run_id: 2 }, { run_id: 2, path: 'output.png', reference_run_id: 12 }]);
   assert.deepStrictEqual(errors, []);
+  // the actions of what a drill-down added work: another output of the test
+  await frame.click('#drill button:has-text("junit.xml")');
+  await frame.waitForSelector('#image table', { timeout: 30000 });
+  assert.match(await frame.locator('#image table').innerText(), /broken/);
+  assert.deepStrictEqual(errors, []);
 
   // results are data: HTML in a project's metric units, test names or messages doesn't run
   await page.evaluate(() => window.bridge.sendToolResult({
@@ -54,6 +59,9 @@ const NEW = 'a1b2c3d4' + '0'.repeat(32);
   assert.strictEqual(await frame.locator('#injected').count(), 0, 'HTML from results is shown as text');
   assert.strictEqual(await page.evaluate(() => window.pwned), undefined, 'scripts from results never run');
   assert.ok((await frame.locator('table').first().innerText()).includes('<img src=x'), 'the text is still shown');
+  // a view that replaces the page drops the actions of what it replaced
+  const [registered, onPage] = await frame.evaluate(() => [Object.keys(actions).sort(), [...document.querySelectorAll('[data-action]')].map(e => e.dataset.action).sort()]);
+  assert.deepStrictEqual(registered, onPage);
 
   // metric_history, in the dark
   ({ page, frame, errors, events } = await open('metric_history', { project: 'group/repo', label: 'nightly' }, 'dark'));

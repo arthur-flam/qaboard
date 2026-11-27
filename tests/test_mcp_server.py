@@ -4,6 +4,7 @@ Tests of `qa mcp` (qaboard/mcp_server.py) and of the answers it serves (qaboard/
 """
 import os
 import sys
+import gzip
 import json
 import asyncio
 import unittest
@@ -132,7 +133,7 @@ class TestSelection(FakeServer):
     # credentials (e.g. a CI job's ID token) must not go to whatever server a URL names
     with self.assertRaisesRegex(evidence.EvidenceError, 'qa auth login https://elsewhere.example.com'):
       self.api.for_url(f"https://elsewhere.example.com/{fake.PROJECT}/commit/{fake.NEW}")
-    with mock.patch('qaboard.evidence.find_login', return_value=('https://elsewhere.example.com', {'token': 'x'})):
+    with mock.patch('qaboard.evidence_base.find_login', return_value=('https://elsewhere.example.com', {'token': 'x'})):
       self.assertEqual(self.api.for_url(f"https://elsewhere.example.com/{fake.PROJECT}/commit/{fake.NEW}").server, 'https://elsewhere.example.com')
 
   def test_a_project_is_needed(self):
@@ -338,6 +339,45 @@ class TestOutputs(FakeServer):
     self.assertIn("Can't read the reference's file (junit.xml is not a JUnit XML report", answer.text)
     self.assertIn('The tests that failed or were flaky', answer.text)
 
+  def test_content_of_another_shape_is_text_never_an_error(self):
+    # well-formed JSON, XML, protobuf..., but not what the format says: shown as text, or what it has of the format
+    garbage = {
+      'kitefin.benchmarks.json': [{'qaboard_benchmarks': 1, 'benchmarks': [{'name': 'a', 'value': 1, 'unit': 5}]}, {'machine_info': 5, 'benchmarks': [5]},
+                                  {'benchmarks': [1, {}], 'context': {}}, [{'primaryMetric': 5}], {'qaboard_benchmarks': 1, 'benchmarks': [{'name': 'a', 'value': 1, 'stats': [1]}]}],
+      'cpu.folded': ['a;b x\n;; 3\n', '\n\x0a\x05'],
+      # gzipped pprof: field 1 as a varint, a truncated varint, a string table only
+      'cpu.folded.gz': [gzip.compress(b'\x0a\x02\x08\x01' + pprof, mtime=0) for pprof in (b'\x08\x01', b'\x0a\x05\x08', b'\x32\x01x')] + [b'\x1f\x8bnot gzip'],
+      'series.json': [{'format': 'qaboard-series', 'series': {'a': {'step': ['x', {}], 'value': ['x', [1]], 'min': [{}, 'y'], 'max': [[], None], 'points': 'p'}}},
+                      {'format': 'qaboard-series', 'series': []}, '{"_step": "x", "a": 1}\n{"_step": 2, "a": [1]}\n'],
+      'junit.xml': ['<testsuite><testcase time="x"/><testsuite><testcase classname="c"><failure/></testcase></testsuite></testsuite>', '<testcase/>'],
+      'figure.plotly.json': [{'data': [5, {'name': {}, 'y': 'abc', 'x': {'dtype': 'f8', 'bdata': 5}}, {'y': [1, 'x', None], 'type': {}}], 'layout': 'x'},
+                             {'data': [{'y': [[1]], 'x': ['a']}], 'layout': {'title': 5}}],
+      'media.jsonl': ['{"kind": "image", "key": "a", "_step": 1, "path": 5}\n[]\n{"kind": "table", "key": 5, "_step": 1.5}\n'],
+    }
+    for name, contents in garbage.items():
+      for content in contents:
+        content = content if isinstance(content, (str, bytes)) else json.dumps(content)
+        # with the reference's file of another shape too, then with this run's in the format
+        for texts in ((content, content), *([(fake.TEXTS[name][0], content)] if name in fake.TEXTS else [])):
+          with self.subTest(name=name, texts=texts), mock.patch.dict(fake.FILES, {name: {'st_size': 100, 'md5': 'xyz'}}), mock.patch.dict(fake.TEXTS, {name: texts}):
+            answer = evidence.look_at_output(self.api, 2, name)
+            self.assertTrue(answer.text)
+            json.dumps(answer.data, allow_nan=False)
+
+  def test_gzipped_files_are_decompressed_up_to_a_limit(self):
+    # a few hundred kB that expand beyond the limit (gzip members, one after the other, make one file)
+    bomb = gzip.compress(b'main;work 1\n' * 100_000, mtime=0) * 100
+    self.assertLess(len(bomb), 300_000)
+    profile = gzip.compress(fake.profile_of_new().encode(), mtime=0)
+    with mock.patch.dict(fake.FILES, {'cpu.folded.gz': {'st_size': len(bomb), 'md5': 'xyz'}}):
+      with mock.patch.dict(fake.TEXTS, {'cpu.folded.gz': (bomb, profile)}):
+        with self.assertRaisesRegex(evidence.EvidenceError, r"`cpu.folded.gz` of run 2 is larger than 32.0 MB once decompressed: too large to compare here, open it from http.*/cpu.folded.gz$"):
+          evidence.look_at_output(self.api, 2, 'cpu.folded.gz')
+      with mock.patch.dict(fake.TEXTS, {'cpu.folded.gz': (profile, bomb)}):
+        answer = evidence.look_at_output(self.api, 2, 'cpu.folded.gz')
+    self.assertIn("Can't read the reference's file (`cpu.folded.gz` of run 12 is larger than 32.0 MB once decompressed", answer.text)
+    self.assertIn('parse (gateway.py)', [row['cells'][0] for row in answer.data['rows']])
+
   def test_top(self):
     answer = evidence.look_at_output(self.api, 2, 'junit.xml', top=2)
     self.assertIn('… and 5 more (`top` shows more).', answer.text)
@@ -391,6 +431,15 @@ class TestOutputTypes(unittest.TestCase):
     trace = {'x': typed('i', 'i4', [10, 20]), 'y': typed('d', 'f8', [1.5, float('nan')])}
     self.assertEqual(evidence_outputs.trace_points(trace), [[10, 1.5]])
     self.assertEqual(evidence_outputs.trace_points({'y': {'dtype': 'f8', 'bdata': 'AAA='}}), [])
+
+  def test_gzip_bombs_arent_decompressed_whole(self):
+    import tracemalloc
+    bomb = gzip.compress(bytes(10_000_000), mtime=0) * 20  # 200 MB
+    tracemalloc.start()
+    self.addCleanup(tracemalloc.stop)
+    with self.assertRaises(evidence_outputs.Expanded):
+      evidence_outputs.gunzipped(bomb)
+    self.assertLess(tracemalloc.get_traced_memory()[1], 2 * evidence_outputs.FORMAT_BYTES)
 
   def test_charts_are_small(self):
     points = [[i, i] for i in range(1000)]

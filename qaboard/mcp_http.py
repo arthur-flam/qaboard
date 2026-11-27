@@ -30,10 +30,8 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route
 
 from . import evidence
-from .credentials import same_server
 from .http_client import ResultsError, request_json
 from .mcp_server import build_server
-from .results import parse_url
 
 
 logger = logging.getLogger(__name__)
@@ -54,6 +52,8 @@ class MissingToken(Exception):
 
 class CallerApi(evidence.Api):
   """QA-Board's API with the token of who called the tool, for this call only"""
+  # the threads that answer tool calls answer every caller's: a cookie set for one must not go with another's requests
+  keep_cookies = False
 
   def __init__(self, server: str, token: str, public_url: str):
     if not token:
@@ -63,7 +63,7 @@ class CallerApi(evidence.Api):
 
   def for_url(self, url: Optional[str]) -> evidence.Api:
     """Only URLs of our QA-Board: evidence.Api would use this machine's logins (`qa auth login`) for others"""
-    if url and not any(same_server(parse_url(url).server, ours) or url.startswith(ours + '/') for ours in (self.server, self.public_url)):
+    if url and not self.is_our_page(url):
       raise evidence.EvidenceError(f"{url} is not on {self.public_url}: this MCP server only reads the QA-Board it belongs to.")
     return self
 
@@ -103,7 +103,7 @@ class QABoardTokens:
 
   def ask_qaboard(self, token: str) -> Optional[AccessToken]:
     try:
-      me = request_json(self.server, 'user/me/', token=token)
+      me = request_json(self.server, 'user/me/', token=token, keep_cookies=False)
     except ResultsError as e:
       if e.status in (401, 403):
         return None

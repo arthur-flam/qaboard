@@ -261,6 +261,11 @@ def _is_list(value: Any, length: int | None = None) -> bool:
   return isinstance(value, list) and (length is None or len(value) == length)
 
 
+def _numbers(values: list[Any]) -> list[Any]:
+  """Values of a series.json: finite numbers, else None (a gap), as series.json has them unless written by hand"""
+  return [value if _is_finite(value) else None for value in values]
+
+
 def _parse_summary(data: dict[str, Any]) -> dict[str, Any]:
   if data.get('format') != FORMAT:
     raise ValueError(f'not a {FORMAT} file')
@@ -275,8 +280,8 @@ def _parse_summary(data: dict[str, Any]) -> dict[str, Any]:
       'points': s['points'] if _is_finite(s.get('points')) else length,
       'step': s['step'],
       'time': s['time'] if _is_list(s.get('time'), length) else [0] * length,
-      'value': s['value'],
-      **({'min': s['min'], 'max': s['max']} if _is_list(s.get('min'), length) and _is_list(s.get('max'), length) else {}),
+      'value': _numbers(s['value']),
+      **({'min': _numbers(s['min']), 'max': _numbers(s['max'])} if _is_list(s.get('min'), length) and _is_list(s.get('max'), length) else {}),
     }
   return {'started_at': data['started_at'] if _is_finite(data.get('started_at')) else 0, 'series': series}
 

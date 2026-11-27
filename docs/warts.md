@@ -154,6 +154,10 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   traceback (Starlette's authentication middleware), not a 503. The MCP SDK's `MCPServer` configures logging handlers
   itself, against qaboard/CLAUDE.md's rule. A public URL with a path (`https://host/qaboard`) isn't supported: the
   app serves `/mcp`, not `<path>/mcp`. [S]
+- `look_at_output` (qaboard/evidence_outputs.py) reads files of a format whole up to 32 MB (decompressed too), but the
+  parsers have no limit of their own: a 32 MB folded profile of short unique stacks, or a series.jsonl of many keys,
+  still takes a few hundred MB while it's compared. series.py's `parse_series` keeps only numbers (or gaps) in a
+  series.json's values, min and max; the web app's (webapp/src/viewers/series/series.js) keeps what the file says. [S]
 
 ## Runs created from code (`qaboard.start_run()`, November 2026)
 

@@ -33,13 +33,22 @@ TOKENS = {'alice-token': ['read'], 'bob-token': ['read', 'act'], 'act-only': ['a
 class Handler(fake.Handler):
   """
   The fake QA-Board, which also says whose a token is (backend/backend/api/auth.py get_current_user), and lists a
-  project of the token's user only
+  project of the token's user only. It sets a cookie for the token's user, like a proxy's session cookie
   """
   checked: list = []
+  cookies: list = []
+
+  def token(self) -> str:
+    return (self.headers.get('Authorization') or '').removeprefix('Bearer ')
+
+  def end_headers(self):
+    self.send_header('Set-Cookie', f"session={user(self.token())}; Path=/")
+    super().end_headers()
 
   def do_GET(self):
     path = urlsplit(self.path).path
-    token = (self.headers.get('Authorization') or '').removeprefix('Bearer ')
+    token = self.token()
+    Handler.cookies.append(self.headers.get('Cookie'))
     if path == '/api/v1/projects' and token in TOKENS:
       fake.Handler.requests_seen.append(('GET', path, {}, self.headers.get('Authorization')))
       return self.answer(200, {f"{user(token)}/project": {'latest_output_datetime': '2026-11-12T10:00:00'}})
@@ -93,6 +102,7 @@ class TestHttpServer(unittest.TestCase):
   def setUp(self):
     fake.Handler.requests_seen.clear()
     Handler.checked.clear()
+    Handler.cookies.clear()
     # this machine's credentials must never be used: a token in the environment, and one `qa auth login` saved
     patcher = mock.patch.dict(os.environ, {'QABOARD_TOKEN': 'machine-token', 'QABOARD_URL': self.qaboard_url})
     patcher.start()
@@ -180,10 +190,19 @@ class TestHttpServer(unittest.TestCase):
     seen = {authorization for *_, authorization in fake.Handler.requests_seen}
     self.assertEqual(seen, {'Bearer alice-token', 'Bearer bob-token'})
 
+  def test_cookies_qaboard_sets_are_never_sent_back(self):
+    # the threads that answer tool calls answer every caller's: a cookie set for one would go with another's requests
+    async def work(client):
+      return await client.call_tool('find_results', {'project': fake.PROJECT})
+    for token in ('alice-token', 'bob-token'):
+      self.assertFalse(self.session(token, work).is_error)
+    self.assertGreater(len(Handler.cookies), 4)
+    self.assertEqual(set(Handler.cookies), {None})
+
   def test_urls_of_other_servers_are_refused(self):
     async def work(client):
       return await client.call_tool('compare', {'url': f"https://other.example.com/{fake.PROJECT}/commit/{fake.NEW}"})
-    with mock.patch('qaboard.evidence.find_login', return_value=(None, {'token': 'saved-login'})):
+    with mock.patch('qaboard.evidence_base.find_login', return_value=(None, {'token': 'saved-login'})):
       result = self.session('alice-token', work)
     self.assertTrue(result.is_error)
     self.assertIn('only reads the QA-Board it belongs to', result.content[0].text)

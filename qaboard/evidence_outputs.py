@@ -18,10 +18,13 @@ The answers' `data` is one view for all types, "table" (qaboard/mcp_app.html ren
 import array
 import base64
 import binascii
+import gzip
+import io
 import json
 import math
 import re
 import sys
+import zlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -30,12 +33,17 @@ from .flamegraphs import Profile, detect_format, is_flame_graph, read_profile
 from .junit import FAILING, is_junit, parse_junit
 from .media import INDEX as MEDIA_INDEX, parse_media_index
 from .series import is_series, parse_series
-from .evidence import (Answer, Api, EvidenceError, TooLarge, ResultsError, IMAGES, TEXTS, MAX_ITEMS, code, consistency, extension,
-                       format_change, format_number, one_line, verdict)
+from .evidence_base import (Answer, Api, EvidenceError, TooLarge, IMAGES, TEXTS, MAX_ITEMS, code, consistency, extension, format_bytes,
+                            format_change, format_number, one_line, verdict)
+from .http_client import ResultsError
 
 
-# Formats are read whole (a cut file doesn't parse), up to this size
+# Formats are read whole (a cut file doesn't parse), up to this size, compressed or not: one server answers everyone
+# with `qa mcp --http`, a file that expands to gigabytes must not take its memory
 FORMAT_BYTES = 32_000_000
+# What the parsers raise besides ValueError on content they don't expect: of the right syntax but not of the expected
+# shape (a number where a list should be...), corrupt (protobuf, gzip)
+MALFORMED = (TypeError, KeyError, AttributeError, IndexError, AssertionError, EOFError, OSError, zlib.error)
 # Curves in `data`, and their points: enough for a small chart
 MAX_CHARTS = 4
 CHART_POINTS = 60
@@ -192,13 +200,13 @@ def look_at(api: Api, kind: OutputType, run: Dict[str, Any], ref_run: Optional[D
   form = FORMATS[kind.kind]
   context = Context(path, kind.declared)
   try:
-    new = form.parse(read(api, run, path), context)
+    new = parsed(api, form, run, context)
   except ValueError as e:
     raise Unreadable(f"{code(path)} isn't a {form.label} file QA-Board reads ({one_line(str(e), 200)})") from e
   ref = None
   if ref_run:
     try:
-      ref = form.parse(read(api, ref_run, path), context)
+      ref = parsed(api, form, ref_run, context)
     except (EvidenceError, ValueError) as e:
       notes = [*notes, f"Can't read the reference's file ({one_line(str(e), 200)}): no comparison."]
   table = form.compare(new, ref, context)
@@ -219,13 +227,37 @@ def look_at(api: Api, kind: OutputType, run: Dict[str, Any], ref_run: Optional[D
   })
 
 
-def read(api: Api, run: Dict[str, Any], path: str) -> bytes:
+class Expanded(TooLarge):
+  """A gzipped file larger than FORMAT_BYTES once decompressed"""
+
+
+def parsed(api: Api, form: Format, run: Dict[str, Any], context: Context) -> Any:
+  """
+  A run's file in its format. Raises ValueError when it isn't in it (whatever the parser raised on content it didn't
+  expect: compare() gets only what parsers checked), EvidenceError when it can't be read.
+  """
+  path = context.path
   try:
-    return api.fetch(api.file_path(run['output_dir_url'], path), max_bytes=FORMAT_BYTES, truncate=False)
+    return form.parse(api.fetch(api.file_path(run['output_dir_url'], path), max_bytes=FORMAT_BYTES, truncate=False), context)
   except TooLarge as e:
-    raise EvidenceError(f"{e}: too large to compare here. Open it in the web app.") from e
+    size = f"larger than {format_bytes(FORMAT_BYTES)}" + (' once decompressed' if isinstance(e, Expanded) else '')
+    raise EvidenceError(f"{code(path)} of run {run.get('id')} is {size}: too large to compare here, open it from "
+                        f"{api.file_url(run['output_dir_url'], path)}") from e
   except ResultsError as e:
     raise EvidenceError(f"Can't read {path} of run {run.get('id')}: {e}") from e
+  except MALFORMED as e:
+    raise ValueError(f"{type(e).__name__}: {e}") from e
+
+
+def gunzipped(content: bytes) -> bytes:
+  """A file's content, decompressed if it's gzipped. Never more than FORMAT_BYTES: a few kB can expand to gigabytes"""
+  if content[:2] != b'\x1f\x8b':
+    return content
+  with gzip.GzipFile(fileobj=io.BytesIO(content)) as file:
+    data = file.read(FORMAT_BYTES + 1)
+  if len(data) > FORMAT_BYTES:
+    raise Expanded(f"larger than {format_bytes(FORMAT_BYTES)} once decompressed")
+  return data
 
 
 def markdown_table(columns: Sequence[str], rows: Sequence[Row]) -> List[str]:
@@ -252,6 +284,10 @@ def relative_change(new: Optional[float], ref: Optional[float]) -> Optional[floa
   return (new - ref) / abs(ref)
 
 
+def is_number(value: Any) -> bool:
+  return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 def by_change(change: Optional[float]) -> float:
   """Sort key: the biggest changes first, unknown ones last"""
   return -abs(change) if change is not None and math.isfinite(change) else math.inf
@@ -275,7 +311,12 @@ def together(better: int, worse: int, what: str) -> str:
 # ---------------------------------------------------------------------------- benchmarks
 
 def parse_benchmark_file(content: bytes, context: Context) -> Benchmarks:
-  return parse_benchmarks(content.decode('utf-8', errors='replace'), context.format)
+  benchmarks = parse_benchmarks(content.decode('utf-8', errors='replace'), context.format)
+  # the parsers take names and units as files give them
+  for b in benchmarks:
+    if not (isinstance(b.name, str) and isinstance(b.unit, str) and is_number(b.value)):
+      raise ValueError(f"a benchmark without a name, a unit or a value: {one_line(repr(b.name), 60)}")
+  return benchmarks
 
 
 def format_measure(value: float, unit: str) -> str:
@@ -349,11 +390,9 @@ SHARE_MOVED = 0.005
 
 def parse_profile(content: bytes, context: Context) -> Tuple[str, Optional[Profile]]:
   """The profile's format, and the profile if we read that format"""
-  try:
-    profile_format = detect_format(content, context.path)
-    return profile_format, read_profile(content, profile_format) if profile_format in READ_PROFILES else None
-  except (IndexError, EOFError, OSError) as e:  # truncated or corrupt protobuf or gzip
-    raise ValueError(str(e)) from e
+  # detect_format reads the first kB of gzipped files, read_profile all of them: we decompress, with a limit
+  profile_format = detect_format(content, context.path)
+  return profile_format, read_profile(gunzipped(content), profile_format) if profile_format in READ_PROFILES else None
 
 
 def function_shares(profile: Profile) -> Dict[str, Tuple[float, float]]:
@@ -413,7 +452,7 @@ def parse_series_file(content: bytes, context: Context) -> Dict[str, Any]:
 
 
 def curve(series: Dict[str, Any]) -> List[List[float]]:
-  return [[step, value] for step, value in zip(series['step'], series['value']) if value is not None]
+  return [[step, value] for step, value in zip(series['step'], series['value']) if value is not None and is_number(step)]
 
 
 def extremes(series: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]]:
@@ -516,10 +555,6 @@ def parse_figure(content: bytes, context: Context) -> Dict[str, Any]:
   return figure
 
 
-def is_number(value: Any) -> bool:
-  return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-
-
 # Plotly's typed arrays (`{"dtype": "f8", "bdata": <base64>}`, what plotly.py 6 writes for numpy arrays), as Python's
 TYPED_ARRAYS = {'f8': 'd', 'f4': 'f', 'i1': 'b', 'u1': 'B', 'u1c': 'B', 'i2': 'h', 'u2': 'H', 'i4': 'i', 'u4': 'I'}
 
@@ -560,7 +595,8 @@ def last_y(trace: Optional[Dict[str, Any]]) -> Optional[float]:
 
 
 def compare_figures(new: Dict[str, Any], ref: Optional[Dict[str, Any]], context: Context) -> Table:
-  layout_title = (new.get('layout') or {}).get('title')
+  layout = new.get('layout')
+  layout_title = layout.get('title') if isinstance(layout, dict) else None
   layout_title = layout_title.get('text') if isinstance(layout_title, dict) else layout_title
   new_traces, ref_traces = traces(new), traces(ref) if ref else {}
   summary = [(f"Title: {code(one_line(str(layout_title), 120))}. " if layout_title else '') + f"{len(new_traces)} traces"

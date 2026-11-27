@@ -155,7 +155,6 @@ async function callTool(name, args) {
 
 // ---------------------------------------------------------------- helpers
 const app = document.getElementById("app");
-function show(html) { app.innerHTML = html; }
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
@@ -201,6 +200,13 @@ app.addEventListener("click", event => {
   const target = event.target.closest("[data-action]");
   if (target && actions[target.dataset.action]) { event.preventDefault(); actions[target.dataset.action](target); }
 });
+// A view replaces the page: the actions of what it replaced go (views register theirs with on() as they build their
+// HTML, before show(); drill-downs add theirs to the page later, until the next view)
+function show(html) {
+  app.innerHTML = html;
+  const shown = new Set([...app.querySelectorAll("[data-action]")].map(element => element.dataset.action));
+  for (const key of Object.keys(actions)) if (!shown.has(key)) delete actions[key];
+}
 
 // ---------------------------------------------------------------- views
 function render(result) {

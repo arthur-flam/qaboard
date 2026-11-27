@@ -14,18 +14,18 @@ import csv
 import difflib
 import io
 import json
-import math
 import re
 import datetime
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
-from urllib.parse import quote, unquote, urlencode, urlsplit
+from urllib.parse import quote, unquote
 
-from .results import parse_url, Run, ResultsError, HIDDEN_RUN_TYPES, _request, _token_for
-from .http_client import REQUEST_TIMEOUT
-from .credentials import default_server, same_server, read_hosts, find_login
-from .site_config import site_config, as_requests_verify
+from . import evidence_outputs
+from .evidence_base import (Answer, Api, EvidenceError, TooLarge, DIRECT_IMAGES, EPSILON, MAX_ITEMS, MIN_SIGN_TEST, TEXTS,
+                            code, consistency, extension, format_bytes, format_change, format_number, one_line, verdict)
+from .evidence_base import sign_test  # noqa: F401 (imported from here)
+from .results import parse_url, Run, ResultsError, HIDDEN_RUN_TYPES
 
 
 # How much of a log we read to find why a run failed
@@ -36,148 +36,6 @@ TEXT_BYTES = 256_000
 DIRECT_IMAGE_BYTES = 4_000_000
 # In runs' folders, not in their manifest (outputs_manifest in qaboard/utils.py)
 NOT_IN_MANIFESTS = ('log.txt', 'latest_attempt.txt')
-# Outputs the model can read as they are, when the image servers can't convert them
-DIRECT_IMAGES = ('png', 'jpg', 'jpeg', 'webp', 'gif')
-IMAGES = (*DIRECT_IMAGES, 'bmp', 'tif', 'tiff', 'dng', 'raw', 'hex', 'exr', 'pgm', 'ppm', 'jp2')
-TEXTS = ('txt', 'log', 'json', 'jsonl', 'yaml', 'yml', 'csv', 'tsv', 'md', 'xml', 'ini', 'cfg', 'toml', 'py', 'sh', 'html', 'svg', 'out', 'err')
-# A relative change below this is no change: floating point noise
-EPSILON = 1e-9
-# Fewer tests than this, and a sign test can't reach p < 0.05: it says nothing
-MIN_SIGN_TEST = 6
-# The lists in `data` are cut like the text: some hosts give it to the model too
-MAX_ITEMS = 50
-
-
-class EvidenceError(Exception):
-  """A question we can't answer: what's missing, said for the person or agent who asked"""
-
-
-class TooLarge(ResultsError):
-  """A file larger than we read: truncating it would make a corrupt image"""
-
-
-@dataclass
-class Answer:
-  text: str
-  data: Dict[str, Any] = field(default_factory=dict)
-  # (caption, PNG/JPEG bytes, mime type)
-  images: List[Tuple[str, bytes, str]] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------- talking to the server
-
-class Api:
-  """
-  QA-Board's server, with the token qa uses for it (qa auth login, QABOARD_TOKEN), or the one given.
-  `public_url`: where people and clients reach it, for links, when `server` is an internal address (e.g. `qa mcp
-  --http` in a container next to the backend). By default, `server`.
-  """
-
-  def __init__(self, server: Optional[str] = None, token: Optional[str] = None, public_url: Optional[str] = None):
-    self.server = (server or default_server()[0]).rstrip('/')
-    self.public_url = (public_url or self.server).rstrip('/')
-    self._token = token
-    self._config: Optional[Dict[str, Any]] = None
-    self._projects: Dict[str, Dict[str, Any]] = {}
-
-  def for_url(self, url: Optional[str]) -> 'Api':
-    """
-    The API of the server a web app URL names: ours, or one the person signed in to with `qa auth login`. Never
-    another: credentials (e.g. a CI job's ID token, exchanged for a token) would go to whatever server a URL names.
-    """
-    if not url:
-      return self
-    server = parse_url(url).server.rstrip('/')
-    if any(same_server(server, ours) or url.startswith(ours + '/') for ours in (self.server, self.public_url)):
-      return self
-    if find_login(read_hosts(), server)[1]:
-      return Api(server)
-    raise EvidenceError(f"{url} is on {server}, not on {self.server}, the server `qa mcp` uses. Sign in to it with "
-                        f"`qa auth login {server}`, or start `qa mcp --server {server}`.")
-
-  def is_ours(self, url: str) -> bool:
-    """Whether a URL is on this server's origin: only those get the token (image servers can be on other hosts)"""
-    theirs = urlsplit(url)
-    return any((theirs.scheme, theirs.netloc) == (ours.scheme, ours.netloc) for ours in (urlsplit(self.server), urlsplit(self.public_url)))
-
-  def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-    return _request(self.server, path, params, self._token)
-
-  def post(self, path: str, body: Dict[str, Any]) -> Any:
-    # not a write: e.g. "where do these images differ" computes and caches (a "read" token is enough)
-    return _request(self.server, path, None, self._token, method='POST', json=body)
-
-  def _headers(self, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-    token = _token_for(self.server, self._token)
-    return {**({'Authorization': f"Bearer {token}"} if token else {}), **(extra or {})}
-
-  def fetch(self, url_path: str, tail: Optional[int] = None, max_bytes: Optional[int] = None, truncate: bool = True) -> bytes:
-    """
-    A file the server serves, e.g. /s/<run's folder>/log.txt or /iiif/2/…. `tail`: only the last bytes. `max_bytes`:
-    only the first bytes, or raise TooLarge if not `truncate` (a cut image is a corrupt one).
-    """
-    import requests
-    url = url_path if url_path.startswith('http') else f"{self.server}{url_path}"
-    extra = {'Range': f"bytes=-{tail}"} if tail else ({'Range': f"bytes=0-{max_bytes}"} if max_bytes else {})
-    headers = self._headers(extra) if self.is_ours(url) else extra
-    try:
-      r = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT, verify=as_requests_verify(site_config('QABOARD_API_VERIFY')))
-    except requests.RequestException as e:
-      raise ResultsError(f"Could not reach {url}: {e}") from e
-    if r.status_code == 416:  # an empty file
-      return b''
-    if r.status_code >= 400:
-      raise ResultsError(f"{url} answered {r.status_code}", status=r.status_code)
-    content = r.content
-    # servers that ignore Range send the whole file
-    if tail and r.status_code == 200:
-      content = content[-tail:]
-    if max_bytes and len(content) > max_bytes:
-      if not truncate:
-        raise TooLarge(f"{url} is larger than {format_bytes(max_bytes)}")
-      content = content[:max_bytes]
-    return content
-
-  def config(self) -> Dict[str, Any]:
-    """The server's settings for clients. Failures aren't remembered: the server may be restarting"""
-    if self._config is None:
-      try:
-        self._config = self.get('config') or {}
-      except ResultsError:
-        return {}
-    return self._config
-
-  def project(self, project: str) -> Dict[str, Any]:
-    """The project's data: its qaboard.yaml (qatools_config), metrics (qatools_metrics, metrics_definitions)"""
-    if project not in self._projects:
-      try:
-        self._projects[project] = self.get('project', {'project': project}) or {}
-      except ResultsError:
-        return {}
-    return self._projects[project]
-
-  # ---- the web app's pages, for people (webapp/src/selection.js, route_paths.js)
-  def page(self, project: str, kind: str, name: Optional[str] = None, **query: Any) -> str:
-    path = f"{self.public_url}/{quote(project, safe='/')}/{kind}"
-    if name:
-      path += f"/{quote(str(name), safe='/')}"
-    query = {k: v for k, v in query.items() if v not in (None, '')}
-    return f"{path}?{urlencode(query, doseq=True)}" if query else path
-
-  def metrics_diff_url(self, project: str, commit: str, label: str, reference: Optional[str], reference_label: Optional[str]) -> str:
-    return self.page(project, 'commit', commit, reference=reference, batch=label, batch_ref=reference_label or label, selected_views='table-compare')
-
-  def run_url(self, project: str, commit: str, label: str, run_id: Any, reference: Optional[str] = None, reference_label: Optional[str] = None) -> str:
-    # filters are regular expressions, the text searched ends with the run's id (like Run.url)
-    return self.page(project, 'commit', commit, batch=label, filter=f"id:{run_id}$", reference=reference, batch_ref=reference_label)
-
-  def file_path(self, output_dir_url: str, path: str) -> str:
-    """A run's file, as a path on the server, to fetch()"""
-    return f"{output_dir_url.rstrip('/')}/{quote(path)}"
-
-  def file_url(self, output_dir_url: str, path: str) -> str:
-    """A run's file, for people"""
-    return f"{self.public_url}{self.file_path(output_dir_url, path)}"
 
 
 # ---------------------------------------------------------------------------- what the question is about
@@ -310,77 +168,7 @@ def fenced(text: str, info: str = 'text') -> str:
   return f"{fence}{info}\n{text.rstrip()}\n{fence}"
 
 
-def code(text: Any) -> str:
-  """A name from runs (a test, a file) as inline code: it can't break out of it, nor span lines"""
-  return '`' + ' '.join(str(text).replace('`', "'").split()) + '`'
-
-
-def one_line(text: Optional[str], length: int = 90) -> str:
-  """The first line of a text (e.g. a commit message's title), cut"""
-  text = ' '.join(((text or '').strip().splitlines() or [''])[0].split())
-  return text if len(text) <= length else text[:length - 1] + '…'
-
-
-def format_number(value: Optional[float], suffix: str = '', scale: float = 1.0) -> str:
-  if value is None or not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
-    return '-'
-  value = value * (scale or 1.0)
-  magnitude = abs(value)
-  if magnitude == 0:
-    text = '0'
-  elif magnitude >= 1000 or magnitude < 0.001:
-    text = f"{value:.4g}"
-  else:
-    text = f"{value:.4g}" if magnitude < 1 else f"{value:.{max(0, 3 - int(math.log10(magnitude)))}f}"
-  return f"{text}{suffix}"
-
-
-def format_change(relative: Optional[float]) -> str:
-  if relative is None or not math.isfinite(relative):
-    return '-'
-  return f"{relative * 100:+.2f}%" if abs(relative) < 10 else f"{relative:+.1f}x"
-
-
 # ---------------------------------------------------------------------------- compare
-
-def sign_test(better: int, worse: int) -> Optional[float]:
-  """
-  Two-sided p-value that tests are as likely to get better as worse (ties left out). A small value says the change is
-  consistent across tests; it says nothing of its size, and repeated runs of a noisy metric aren't independent tests.
-  """
-  n = better + worse
-  if n == 0:
-    return None
-  k = min(better, worse)
-  if n > 400:
-    # normal approximation, with continuity correction: exact sums of big binomials take seconds
-    z = (n / 2 - (k + 0.5)) / math.sqrt(n / 4)
-    return min(1.0, math.erfc(z / math.sqrt(2)))
-  tail = sum(math.comb(n, i) for i in range(k + 1)) / 2 ** n
-  return min(1.0, 2 * tail)
-
-
-def consistency(better: int, worse: int, threshold: float = 0.05) -> Tuple[str, Optional[float]]:
-  """Whether tests moved consistently one way: consistently better/worse, mixed, or too few tests to say"""
-  if better + worse < MIN_SIGN_TEST:
-    return 'too few tests', None
-  p = sign_test(better, worse)
-  assert p is not None
-  if p >= threshold:
-    return 'mixed', p
-  return ('consistently better' if better > worse else 'consistently worse'), p
-
-
-def verdict(relative: Optional[float], smaller_is_better: Optional[bool]) -> str:
-  """better, worse, same, changed (QA-Board doesn't know which way is better) or unknown"""
-  if relative is None or not math.isfinite(relative):
-    return 'unknown'
-  if abs(relative) <= EPSILON:
-    return 'same'
-  if smaller_is_better is None:
-    return 'changed'
-  return 'better' if (relative < 0) == smaller_is_better else 'worse'
-
 
 def improvement(cell: Dict[str, Any], smaller_is_better: bool) -> Optional[float]:
   """How much a test got better (> 0) or worse (< 0), relatively"""
@@ -778,10 +566,6 @@ def failures(api: Api, selection: Selection, max_groups: int = 8, max_runs: int 
 
 # ---------------------------------------------------------------------------- outputs
 
-def extension(path: str) -> str:
-  return path.rsplit('.', 1)[-1].lower() if '.' in path.rsplit('/', 1)[-1] else ''
-
-
 def iiif_identifier(output_dir_url: str, path: str) -> str:
   """Like iiif_url in webapp/src/viewers/images/utils.js: output_dir_url is already quoted, IIIF wants slashes encoded"""
   identifier = re.sub(r'^/*s/', '', output_dir_url).rstrip('/')
@@ -867,8 +651,6 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
   they differ), benchmarks, flame graphs, series, test reports, Plotly figures and logged media compared
   (evidence_outputs.py: `top` rows), text as a diff, logs' end. Without `path`, the run's files and their types.
   """
-  # the answers by type build on this module's helpers
-  from . import evidence_outputs as outputs
   try:
     run = api.get(f"output/{run_id}")
   except ResultsError as e:
@@ -903,7 +685,7 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
         ref_run = None
   ref_manifest = (api.get(f"output/{reference_run_id}/manifest") or {}) if ref_run and ref_run.get('output_dir_url') else {}
   # the types projects give their files in qaboard.yaml
-  visualizations = outputs.visualizations_of(api.project(run['project'])) if run.get('project') else []
+  visualizations = evidence_outputs.visualizations_of(api.project(run['project'])) if run.get('project') else []
 
   if not path:
     files = sorted(manifest.items())
@@ -924,14 +706,14 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
       lines.append(f"{counts['changed']} changed, {counts['identical']} identical, {counts['only in this run']} only in this run, {len(gone)} only in the reference.")
     # changed files first: those are the ones to look at
     shown = sorted(files, key=lambda f: (changes[f[0]] != 'changed', f[0]))
-    types = {name: outputs.output_type(name, visualizations) for name, _ in files}
+    types = {name: evidence_outputs.output_type(name, visualizations) for name, _ in files}
     for name, meta in shown[:150]:
       details = ', '.join(d for d in (format_bytes(meta.get('st_size')), types[name].label, changes[name]) if d)
       lines.append(f"- {code(name)} ({details})")
     if len(files) > 150:
       lines.append(f"- … and {len(files) - 150} more")
     lines.append(f"Also {', '.join(NOT_IN_MANIFESTS[:1])}, the run's log. Call `look_at_output` again with `path`" + (f" and `reference_run_id={reference_run_id}`" if ref_run else '')
-                 + ": it compares images, text, " + ', '.join(form.label for form in outputs.FORMATS.values()) + " with the reference's. "
+                 + ": it compares images, text, " + ', '.join(form.label for form in evidence_outputs.FORMATS.values()) + " with the reference's. "
                  + (f"In the web app: {links['run']}" if links.get('run') else ''))
     return Answer('\n'.join(lines), {'view': 'files', 'version': 1, 'run_id': run_id, 'reference_run_id': reference_run_id if ref_run else None,
                                       'files': [{'path': p, 'size': m.get('st_size'), 'change': changes[p], 'type': types[p].kind} for p, m in shown[:MAX_ITEMS * 4]],
@@ -955,11 +737,11 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
 
   ext = extension(path)
   base = {'version': 1, 'run_id': run_id, 'reference_run_id': reference_run_id if ref_run else None, 'path': path, 'links': links}
-  kind = outputs.output_type(path, visualizations)
-  if kind.kind in outputs.FORMATS:
+  kind = evidence_outputs.output_type(path, visualizations)
+  if kind.kind in evidence_outputs.FORMATS:
     try:
-      return outputs.look_at(api, kind, run, ref_run, path, header, notes, base, top)
-    except outputs.Unreadable as e:
+      return evidence_outputs.look_at(api, kind, run, ref_run, path, header, notes, base, top)
+    except evidence_outputs.Unreadable as e:
       # like the web app's viewers of files named like their format
       notes.append(f"{e}: shown as text.")
   data: Dict[str, Any] = {**base, 'view': 'images', 'regions': []}
@@ -1042,16 +824,6 @@ def decode_text(content: bytes) -> Optional[str]:
   if b'\x00' in content[:8000]:
     return None
   return content.decode('utf-8', errors='replace')
-
-
-def format_bytes(size: Optional[int]) -> str:
-  if size is None:
-    return '?'
-  for unit in ('B', 'kB', 'MB', 'GB'):
-    if size < 1000 or unit == 'GB':
-      return f"{size:.0f} {unit}" if unit == 'B' else f"{size:.1f} {unit}"
-    size = size / 1000  # type: ignore[assignment]
-  return f"{size}"
 
 
 # ---------------------------------------------------------------------------- history

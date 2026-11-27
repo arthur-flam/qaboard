@@ -51,6 +51,12 @@ class TestFixtures(unittest.TestCase):
       with self.assertRaisesRegex(ValueError, error):
         parse_series(text)
 
+  def test_values_of_a_series_json_are_numbers_or_gaps(self):
+    # a file written by hand, or by another program: what isn't a finite number is a gap
+    text = json.dumps({'format': 'qaboard-series', 'series': {'a': {'step': [0, 1, 2, 3], 'value': [1, 'x', [2], True], 'min': [{}, 0.5, None, 1], 'max': [3, 'y', 2, 1e999]}}})
+    series = parse_series(text)['series']['a']
+    self.assertEqual((series['value'], series['min'], series['max']), ([1, None, None, None], [None, 0.5, None, 1], [3, None, 2, None]))
+
   def test_names_like_the_web_app(self):
     names = json.loads((FIXTURES.parent / 'file-types.json').read_text())['series']
     for name in names['yes']:

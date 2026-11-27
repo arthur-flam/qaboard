@@ -126,7 +126,7 @@ FILES = {
   'timings.txt': {'st_size': 700, 'md5': 'jjj'},
   # like real manifests (outputs_manifest in qaboard/utils.py), without log.txt
 }
-# (the new runs', the reference runs')
+# (the new runs', the reference runs'): text, or bytes
 TEXTS = {
   'detections.json': ('{"boxes": 3,\n "score": 0.9}\n', '{"boxes": 2,\n "score": 0.9}\n'),
   'same.txt': ('same\n', 'same\n'),
@@ -266,7 +266,8 @@ class Handler(BaseHTTPRequestHandler):
       if name == 'log.txt':
         return self.answer(200, LOGS.get(run['id'], 'ok\n').encode(), 'text/plain')
       if name in TEXTS:
-        return self.answer(200, TEXTS[name][0 if run['id'] < 10 else 1].encode(), 'text/plain')
+        content = TEXTS[name][0 if run['id'] < 10 else 1]
+        return self.answer(200, content if isinstance(content, bytes) else content.encode(), 'text/plain')
       return self.answer(404, b'', 'text/plain')
     if path.startswith('/iiif/2/'):
       if path.endswith('/info.json'):
