@@ -53,7 +53,10 @@ after being run again. Rules your project's owners set in the web app hold whate
 
 ## How it's set up {/* #the-configuration */}
 Each task is a YAML file, `tasks/<category>/<name>.yaml`: the request, the facts the agent can look up, the checks.
-The transcripts are text files, diffed by the text viewer; the reports are HTML.
+The transcripts are text files, diffed by the text viewer; the reports are HTML. Save the messages as
+*transcript.json* instead, or an [Inspect](https://inspect.aisi.org.uk/) log, and the
+[transcript viewer](/docs/user-guide/other-viewers#transcripts) aligns each conversation with the reference's, turn
+by turn, with the tool calls, the scores and the first difference.
 
 <RepoFile path="examples/agent-evals/qaboard.yaml" title="qaboard.yaml" section="inputs,outputs" />
 

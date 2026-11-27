@@ -22,6 +22,11 @@ The shot list is `docs-media/shots.yaml`, how to capture is `docs-media/README.m
   media workflow with `reseed` (seeding all five stories takes over an hour); its captures replace these when they
   differ beyond the dedupe tolerance. Do it once, after the story changes above.
 
+- **A shot of the transcript viewer** (`commit/transcript`), for `user-guide/other-viewers#transcripts`,
+  `docs/viewers#transcripts` and the agent use case: needs `examples/agent-evals` to write *transcript.json*
+  (`docs/evals-and-reviews-plan.md`, step 1) and the reseed above. Until then the playground shows it:
+  `/transcript-viewer.html`.
+
 ## Shots to improve
 - **Clips are 1x**: the CDP screencast of headless Chromium sends frames at CSS size (1440x900), not at the device
   scale (2x), so clips are softer than stills, most visibly the landing tiles (crops of 585-720 px). `meta.json`'s

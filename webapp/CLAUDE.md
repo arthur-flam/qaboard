@@ -29,8 +29,9 @@ These import only third-party packages and their own files; the app reaches them
 lazily, and their CSS doesn't leak. Don't import the app from them.
 - `src/image-viewer/` (OpenSeadragon; adapted in `src/viewers/images/`: runs, image servers, pixel values, regions of
   interest providers). Checked by `src/image-viewer/__tests__/core.test.js`: other apps install it.
-- `src/viewers/benchmarks/`, `flamegraph/`, `parallel/`, `audio/`: checked by `src/viewers/__tests__/isolation.test.js`.
-  Adapters: `viewers/benchmarks-viewer.jsx`, `flame-graph.jsx`, `audio-viewer.jsx`; `OutputViewer.jsx` loads them.
+- `src/viewers/benchmarks/`, `flamegraph/`, `parallel/`, `audio/`, `transcript/`: checked by
+  `src/viewers/__tests__/isolation.test.js`. Adapters: `viewers/benchmarks-viewer.jsx`, `flame-graph.jsx`,
+  `audio-viewer.jsx`, `transcript-viewer.jsx`; `OutputViewer.jsx` loads them.
 - Their Python counterparts are standalone too (`qaboard/CLAUDE.md`). Parsers shared with Python (benchmarks, series,
   media): root `CLAUDE.md`, "Change together".
 
@@ -46,6 +47,7 @@ lazily, and their CSS doesn't leak. Don't import the app from them.
 | `/parallel-coordinates.html?rows=2000&columns=30` | Tuning Analysis' parallel coordinates (`src/viewers/parallel/`) |
 | `/logged-media.html?steps=200&keys=12&shuffle=1` | The card's **Logged media** (`src/viewers/media/`) |
 | `/audio-viewer.html` | The audio viewer (`src/viewers/audio/`) |
+| `/transcript-viewer.html?turns=40&samples=20` | Conversations with LLMs against a reference (`src/viewers/transcript/`) |
 | `/metrics-table.html?runs=2000&metrics=30` | The commit page's Metrics Table and Metrics Diff |
 | `/trends.html?commits=100&tests=20000&benchmarks=600` | Trends: tests and benchmarks over a branch's commits (`src/trends/`) |
 
@@ -70,6 +72,9 @@ lazily, and their CSS doesn't leak. Don't import the app from them.
   them). `BatchPicker.jsx` lists the batches, `BatchesForThisRun.jsx` sends changed definitions for one run
   (`batches_files`). The previous form is `LegacyTuningForm.jsx`, chosen in `FormVersion.jsx` (usage
   events `tuning_form_feedback`): don't add features to it, remove it once nobody chooses it.
+- **Transcripts** (conversations with LLMs): `viewers/transcript/`: `parse.js` reads Inspect's JSON logs and chat
+  messages into one shape (Inspect's words: sample, epoch, scores), `diff.js` aligns two conversations. Tested on real
+  Inspect logs (`tests/fixtures/transcripts/`). Plan: `docs/evals-and-reviews-plan.md`.
 - **Logged media**: reads the index `qaboard/media.py` writes (*media.jsonl*, *media/*). Design: `docs/design/logged-media.md`.
 - **Metrics Table / Diff**: `components/tables.jsx`, `components/metricsTable/`.
 - **Local changes** of a run: `components/LocalChanges/`.

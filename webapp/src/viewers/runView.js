@@ -12,7 +12,7 @@
 // When several hints apply: the input's metadata first, then the configurations in order. The last wins, key by
 // key, and lists of regions add up. Docs: /docs/visualizations#per-test-views
 
-import { is_flame_graph, is_junit, is_benchmarks } from "./fileTypes";
+import { is_flame_graph, is_junit, is_benchmarks, is_transcript } from "./fileTypes";
 
 const is_object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -95,6 +95,7 @@ const RECOGNIZED_FILES = [
   { name: 'Tests', is: is_junit, types: ['junit'] },
   { name: 'Benchmarks', is: is_benchmarks, types: ['benchmarks'] },
   { name: 'Flame graph', is: is_flame_graph, types: ['flame'] },
+  { name: 'Transcript', is: is_transcript, types: ['transcript'] },
 ];
 // a run with a report per test class has hundreds: the rest is in the output files
 const MAX_RECOGNIZED_FILES = 4;

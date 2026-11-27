@@ -1,5 +1,5 @@
 /**
- * The benchmark, flame graph, parallel coordinates and audio viewers are standalone components, like the image viewer
+ * The benchmark, flame graph, parallel coordinates, audio and transcript viewers are standalone components, like the image viewer
  * (src/image-viewer/): they import only third-party packages and their own files, the app reaches them only through
  * their adapter, they are loaded lazily, and their styles don't leak to the rest of the page.
  * Run with: cd webapp && npm test -- isolation
@@ -56,6 +56,14 @@ const viewers = {
     shared: ['audio/hooks'],
     lazy: { file: '../OutputViewer.jsx', specifier: './audio-viewer' },
   },
+  transcript: {
+    sources: import.meta.glob(['../transcript/*.{js,jsx}', '!../transcript/playground.jsx'], { query: '?raw', import: 'default', eager: true }),
+    css: stylesheets('transcript'),
+    packages: ['react', '@blueprintjs/core'],
+    prefixes: ['qa-transcript'],
+    adapter: '../transcript-viewer.jsx',
+    lazy: { file: '../OutputViewer.jsx', specifier: './transcript-viewer' },
+  },
   parallel: {
     sources: import.meta.glob(['../parallel/*.{js,jsx}', '!../parallel/playground.jsx'], { query: '?raw', import: 'default', eager: true }),
     css: stylesheets('parallel'),
@@ -68,7 +76,7 @@ const viewers = {
 };
 
 // Everything else in the app, but the viewers' own folders and the tests
-const app = import.meta.glob(['../../**/*.{js,jsx}', '!../../**/__tests__/**', '!../../**/*.test.{js,jsx}', '!../benchmarks/**', '!../flamegraph/**', '!../parallel/**', '!../audio/**'], { query: '?raw', import: 'default', eager: true });
+const app = import.meta.glob(['../../**/*.{js,jsx}', '!../../**/__tests__/**', '!../../**/*.test.{js,jsx}', '!../benchmarks/**', '!../flamegraph/**', '!../parallel/**', '!../audio/**', '!../transcript/**'], { query: '?raw', import: 'default', eager: true });
 
 describe.each(Object.entries(viewers))('the %s viewer', (folder, { sources, css, packages, prefixes, adapter, lazy, shared = [] }) => {
   it("imports nothing from the app", () => {

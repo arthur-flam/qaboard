@@ -320,6 +320,39 @@ The viewer draws the sound's waveform or its spectrogram, above the reference ru
 either at the same position: switch between them while it plays to hear the difference. It shows each sound's
 duration, sample rate, channels and levels. Formats the browser can't decode play in the browser's own player.
 
+## Transcripts {/* #transcripts */}
+**Files:** *transcript.json*, *\*.transcript.json* (or *.jsonl*), or any file with `type: transcript`, like the
+logs of [Inspect](https://inspect.aisi.org.uk/).
+
+The viewer shows a conversation with an LLM next to the reference run's: messages, tool calls and their results,
+reasoning, scores. How people read it: [Conversations with LLMs](/docs/user-guide/other-viewers#transcripts).
+It reads:
+
+- **Inspect's logs as JSON**: the whole eval, with a menu to pick the sample and epoch, its scores with their
+  explanations, the tools the model was given, and the tokens and time of each model call. Write them with
+  `inspect eval --log-format json`, or convert with `inspect log convert --to json`. The default *.eval* files aren't
+  read yet.
+- **Chat messages**, as `{"messages": [...]}`, a list of messages, or one message per line, in the shapes of Inspect,
+  OpenAI (chat completions and responses) or Anthropic. Optional keys next to `messages`: `tools` (their definitions),
+  `scores` (`{"name": {"value": ..., "explanation": "..."}}`, with Inspect's values: `"C"` correct, `"I"` incorrect,
+  or numbers), `id`, `epoch`, `target`, `model_usage`, `total_time`. A list of such objects is several samples.
+
+```python title="qa/main.py"
+import json
+
+def run(context):
+    messages = [{"role": "system", "content": prompt}, {"role": "user", "content": request}]
+    ...  # your agent's loop adds the assistant's messages and the tools' results
+    (context.output_dir / "transcript.json").write_text(json.dumps({
+        "messages": messages,
+        "scores": {"asked_first": {"value": "C", "explanation": "Asked before the reboot."}},
+    }))
+```
+
+Samples are matched with the reference's by `id` and `epoch`. Message ids, token counts and times never count as
+differences, nor does the order of a tool call's arguments. A file picked by its name that isn't a conversation is
+shown as text.
+
 ## Text {/* #text */}
 **Files:** any file no other viewer opens, like *.txt*, *.json*, *.yaml* or *.log*, or `type: text/plain`.
 

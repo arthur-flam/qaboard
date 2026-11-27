@@ -2,9 +2,9 @@
 id: other-viewers
 title: Plots, flame graphs, 3D and more
 sidebar_label: Plots, 3D and more
-description: "Compare plots, training curves, flame graphs, test reports, benchmarks, text, HTML reports, point clouds and trajectories with the reference's in the web app."
+description: "Compare plots, training curves, flame graphs, test reports, benchmarks, LLM transcripts, text, HTML reports, point clouds and trajectories with the reference's in the web app."
 ---
-Runs show more than images and videos: plots, CPU profiles, transcripts, the reports your code writes, 3D maps and
+Runs show more than images and videos: plots, CPU profiles, conversations with LLMs, the reports your code writes, 3D maps and
 trajectories. Each viewer puts the reference's result next to the new one, or over it, so you see what the change did.
 
 | If your outputs are… | you'll see… |
@@ -15,7 +15,8 @@ trajectories. Each viewer puts the reference's result next to the new one, or ov
 | CPU profiles of a server or a pipeline | [Flame graphs](#flame-graphs), colored by what got slower or faster |
 | Unit and integration test reports (JUnit XML) | [Test reports](#test-reports): each test against the reference, with what started failing, what got fixed and what disappeared |
 | Benchmark results: pytest-benchmark, Google Benchmark, hyperfine, Criterion, JMH | [Benchmarks](#benchmarks): each one against the reference, what got slower or faster beyond noise |
-| Text: an LLM agent's transcripts, logs, tables | [Text diffs](#text), line by line |
+| Conversations with LLMs: an agent's messages and tool calls, an eval's samples | [Transcripts](#transcripts): the conversation aligned with the reference's, with the first difference and the scores |
+| Text: logs, tables, configuration files | [Text diffs](#text), line by line |
 | Sounds: a TTS model's samples, a denoiser's outputs | [Audio](#audio): the waveform or spectrogram above the reference's; switch between them while it plays |
 | Reports your code writes as web pages | [HTML reports](#html-reports), the new one above the reference's |
 | A robot's maps and 6DoF trajectories | [Point clouds and trajectories](#point-clouds-and-trajectories), in 3D, with the ground truth |
@@ -366,10 +367,51 @@ Google Benchmark's `--benchmark_repetitions`.
 
 </details>
 
+## Conversations with LLMs {/* #transcripts */}
+When a run saves a conversation with an LLM, its card shows it message by message, aligned with the reference
+run's: what the user asked, what the assistant answered, the tools it called and what they returned.
+Integrators: see [Transcripts](/docs/viewers#transcripts) for the files it reads, Inspect's logs among them.
+
+To review what a change did to a conversation:
+1. **Read the line at the top**: turns, tool calls, tool errors, tokens and time, each with the reference's value
+   when it differs, then how many messages changed or exist on one side only.
+2. **Read the scores** below it: each scorer's verdict next to the reference's, in bold when it flipped, with the
+   answer it scored and its explanation.
+3. **Click First difference.** Messages that are the same on both sides show once, across the card. A message
+   that changed shows twice, the new run's on the left and the reference's on the right, with the words that differ
+   highlighted: green for what the new run added, red for what only the reference has. The button then goes from one
+   difference to the next.
+4. **Check the prompt and the tools.** The system prompt and **Tools the model was given** start folded, and open by
+   themselves when they differ from the reference's: a behavior often changes because a tool's description did.
+
+- **Changes only** folds the runs of identical messages, and keeps the one before and after each difference.
+- **Compare**, or one side alone, with the buttons named after the new and reference results.
+- **Search** keeps the messages that have your text, in their content, reasoning, tool names or arguments.
+- **The outline** has one cell per message, colored by who speaks, underlined when it differs: click a cell to go
+  there. Click a role next to it to hide its messages, e.g. the tools' results.
+- **Reasoning**, system prompts and long messages are folded: click them, or **Open all**.
+- With several samples in the file, e.g. an eval's log, pick one in the menu at the top: each says whether it
+  passed, and whether that differs from the reference.
+
+<details>
+<summary>More about transcripts</summary>
+
+- Messages are aligned by their content: what's identical anchors the two conversations, and between those, messages
+  from the same role are paired as changed. When the new run takes another path, a pair can show two messages
+  that have little in common: read them as "at this point, the two runs did different things".
+- Token counts, times and message ids never make a difference; the order of a tool call's arguments doesn't either.
+- JSON in tool calls and results is laid out on several lines when it's long.
+- Images and other attachments in messages are named, not shown.
+- Keys, after a click in the viewer: <kbd>n</kbd> <kbd>p</kbd> next and previous difference, <kbd>c</kbd> changes
+  only, <kbd>e</kbd> open or fold everything, <kbd>/</kbd> search, <kbd>[</kbd> <kbd>]</kbd> previous and next sample.
+- Without a reference file, or when the reference doesn't have the sample, the conversation shows alone.
+
+</details>
+
 ## Text diffs {/* #text */}
 Text files are diffed with the reference's, line by line, in the code editor of VS Code: the reference on the left, the
 new run's on the right, what was removed in red and what was added in green. It works for any text: logs, tables,
-configuration files, an LLM agent's transcripts.
+configuration files. Conversations with LLMs saved as messages have [their own viewer](#transcripts).
 
 <Shot
   id="commit/transcript-diff"
