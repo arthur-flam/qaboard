@@ -25,7 +25,8 @@ uv run scripts/dev.py down    # stop everything when you're done; `reset` also d
 
 Options: `up --no-web` (API only), `--no-worker`, `--port 5161 --web-port 3010` when the ports are taken (e.g. by
 another checkout's server), `--postgres docker`, `--mcp` (also the remote MCP server, `qa mcp --http`, at
-http://localhost:3000/mcp: its OAuth issuer is the web app's URL; register a client in Admin → Connected apps).
+http://localhost:3000/mcp: its OAuth issuer is the web app's URL; `uv run scripts/dev_mcp_check.py` checks it end to
+end, like Open WebUI connects).
 Errors say what's missing and how to install it.
 
 ## The seeded data
