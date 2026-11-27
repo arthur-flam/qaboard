@@ -1,0 +1,71 @@
+---
+id: mcp-clients
+title: Connect Open WebUI and other MCP clients
+sidebar_label: MCP clients (Open WebUI)
+description: Register Open WebUI, or another MCP client, in QA-Board, so that each of your users connects it to QA-Board's MCP server with their own read-only tokens.
+---
+Chat clients like a self-hosted [Open WebUI](https://openwebui.com) can call QA-Board's
+[MCP server](/docs/mcp) at `https://<your-qaboard>/mcp`, as each of your users: users sign in to QA-Board once,
+allow the app, and it gets tokens of theirs that can only read. QA-Board is the OAuth 2.1 authorization server: you
+register the app in QA-Board, then paste its client ID and secret in the app.
+
+## Register the app in QA-Board {/* #register-the-app */}
+1. Choose the **connection ID** you'll give QA-Board's MCP server in Open WebUI, e.g. `qaboard`: Open WebUI sends
+   users back to a URL with it.
+2. In QA-Board, open **Admin → Connected apps**, then **Register an app**.
+3. **Name**: what users see when they allow it, e.g. `Open WebUI`.
+4. **Redirect URIs**: where the app receives users back, exactly. Open WebUI's is
+   `https://<open-webui>/oauth/clients/mcp:<connection-id>/callback`, e.g.
+   `https://openwebui.example.com/oauth/clients/mcp:qaboard/callback`. `<open-webui>` is Open WebUI's URL as its users
+   reach it (its `WEBUI_URL` setting).
+5. **Register**, then copy the **Client ID** and the **Client secret**: the secret is only shown now.
+
+You can change the name and the redirect URIs later. If you lose the secret, register the app again and revoke the
+old one.
+
+## Add QA-Board's MCP server in Open WebUI {/* #open-webui */}
+1. In Open WebUI, open **Admin Settings → Integrations**, and add a connection (**+**) to **External Tool Servers**.
+2. **Type**: MCP (Streamable HTTP). **URL**: `https://<your-qaboard>/mcp`.
+3. **Auth**: **OAuth 2.1 (Static)**. Paste the **Client ID** and the **Client secret**. Leave **OAuth Server URL**
+   empty: Open WebUI finds QA-Board from the MCP server.
+4. **ID**: the connection ID of the redirect URI you registered, e.g. `qaboard`. Then **Register** (it checks the
+   client) and **Save**.
+5. Users connect it from a chat's tools: Open WebUI sends them to QA-Board, which asks them to sign in, then to
+   allow the app (see [Allowing apps](/docs/user-guide/account#allowing-apps)). Open WebUI keeps a token per user and
+   refreshes it.
+
+:::note[If the connection fails]
+"invalid_client" means the client ID or secret is wrong, or the app's registration was revoked. "redirect_uri" means
+the connection ID or Open WebUI's URL don't match the redirect URI you registered: compare them in
+**Admin → Connected apps**, the match is exact.
+:::
+
+Other MCP clients that support OAuth with a client ID and secret work the same way: register their redirect URI.
+QA-Board doesn't support dynamic client registration yet: clients that require it can't connect.
+
+## What the apps can do {/* #what-apps-can-do */}
+- **Read only**: their tokens have the `read` scope, and only see what the user can see. They can't change anything,
+  create tokens or allow other apps.
+- **Short-lived tokens**: an access token lasts an hour, then the app refreshes it. Refresh tokens are used once:
+  one that comes back a second time, like a code used twice, revokes what the user allowed.
+- **Unused apps expire**: after `oauth.refresh_idle_expiry_days` (90 days by default, **Admin → Settings → API tokens
+  and results**) without a refresh, users allow the app again.
+- **Users see and revoke them** in **Settings → Connected apps**. You see the apps' tokens in **Admin → Tokens**, as
+  "Connected app": revoking one revokes the app for that user.
+- **Revoke an app** in **Admin → Connected apps**: it can't get tokens anymore, and those it has stop working at once.
+
+Every registration, approval, denial, token and revocation is in the [audit log](/docs/backend-admin/audit-log),
+under *Tokens*.
+
+<details>
+<summary>The OAuth endpoints, for other clients</summary>
+
+QA-Board's metadata (RFC 8414) is at `https://<your-qaboard>/.well-known/oauth-authorization-server`. Its issuer is
+`QABOARD_URL`, so set it to the URL users reach QA-Board at. The flow is the authorization code flow with PKCE
+(`S256`, required), and the `resource` parameter (RFC 8707). Apps authenticate to the token endpoint with HTTP Basic
+(`client_secret_basic`) or in the form (`client_secret_post`). The redirects back to the app carry `iss` (RFC 9207).
+The revocation endpoint (RFC 7009) revokes everything a refresh token or an access token came with. The endpoints
+are under `/api/v1/oauth/` and documented in the [HTTP API](/docs/http-api) reference.
+
+Behind your own proxy, route `/.well-known/oauth-authorization-server` to QA-Board, like `/api/`.
+</details>

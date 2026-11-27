@@ -463,6 +463,8 @@ UNAUTHENTICATED_ENDPOINTS = {
   ("tokens.py", "device_code"), ("tokens.py", "device_token"),
   # CI jobs exchange their OIDC ID token for a token: the ID token is the credential, checked by backend/ci_trust.py
   ("ci_trust.py", "token_exchange"),
+  # apps get or revoke tokens for the users who allowed them (backend/oauth.py): they authenticate with their secret
+  ("oauth.py", "oauth_token"), ("oauth.py", "oauth_revoke"),
   # users waiting for an admin say why they need access: it checks their pending session itself
   ("sign_in.py", "my_access_request"),
   # the CLI sends results, checked by ingest_access: anonymous unless ingest.auth is "token" (see "Known issues" in SECURITY.md)

@@ -105,6 +105,8 @@ export const TokensTable = ({ tokens, onRevoke, kind = 'personal', show_user = f
               <strong>{is_cli ? device_name(token) : token.name}</strong>
               <div className={Classes.TEXT_MUTED} style={{ fontSize: 12 }}>
                 {is_cli && client_name(token) ? <>{client_name(token)} · </> : null}
+                {/* an app the user allowed: revoking its token revokes the app (Settings → Connected apps) */}
+                {token.kind === 'oauth' && <>Connected app · </>}
                 {token.prefix && <code>{token.prefix}…</code>}
               </div>
             </td>

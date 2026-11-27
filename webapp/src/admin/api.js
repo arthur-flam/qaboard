@@ -94,6 +94,34 @@ export const adminRevokeToken = async (queryClient, id) => {
 };
 
 
+// The apps users can allow to get tokens for them (OAuth, e.g. MCP clients): [{id, client_id, name, redirect_uris, status, users}]
+export const oauthClientsQuery = queryOptions({
+  queryKey: ['admin', 'oauth-clients'],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/admin/oauth/clients', { signal })).data?.clients ?? [],
+  staleTime: 30 * 1000,
+});
+
+// {name, redirect_uris} => the app, with its `client_secret`: only returned now
+export const registerOAuthClient = async (queryClient, body) => {
+  const { data } = await http.post('/api/v1/admin/oauth/clients', body);
+  queryClient.invalidateQueries({ queryKey: ['admin', 'oauth-clients'] });
+  return data;
+};
+
+// {name?, redirect_uris?}
+export const updateOAuthClient = async (queryClient, id, changes) => {
+  const { data } = await http.patch(`/api/v1/admin/oauth/clients/${id}`, changes);
+  queryClient.invalidateQueries({ queryKey: ['admin', 'oauth-clients'] });
+  return data;
+};
+
+// the tokens it got stop working
+export const revokeOAuthClient = async (queryClient, id) => {
+  const { data } = await http.delete(`/api/v1/admin/oauth/clients/${id}`);
+  invalidateUsers(queryClient);
+  return data;
+};
+
 // Keyset pagination: each page gives the id to continue before
 export const audit_page_size = 100;
 // `params`: the filters, see audit/filters.js filterParams

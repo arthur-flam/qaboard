@@ -27,6 +27,21 @@ export const revokeToken = async (queryClient, id) => {
 };
 
 
+// The apps the user allowed to get tokens for them (OAuth, e.g. an MCP client): [{id, client: {name}, scopes, resource, created_at, last_used_at}]
+export const myAppsQuery = queryOptions({
+  queryKey: ['tokens', 'apps'],
+  queryFn: async ({ signal }) => (await http.get('/api/v1/user/apps', { signal })).data?.apps ?? [],
+  staleTime: 30 * 1000,
+});
+
+// its tokens stop working: also refreshes the tokens' lists
+export const revokeApp = async (queryClient, id) => {
+  const { data } = await http.delete(`/api/v1/user/apps/${id}`);
+  queryClient.invalidateQueries({ queryKey: ['tokens'] });
+  queryClient.invalidateQueries({ queryKey: ['audit'] });
+  return data;
+};
+
 // Pages of audit events, newest first. Pages are {events, next_before_id}.
 export const audit_page_size = 50;
 export const userAuditQuery = infiniteQueryOptions({

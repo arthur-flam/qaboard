@@ -19,6 +19,7 @@ const AdminPage = lazy(() => import("./admin/AdminPage"));
 const StoragePage = lazy(() => import("./storage/StoragePage"));
 const ActivityPage = lazy(() => import("./activity/ActivityPage"));
 const DevicePage = lazy(() => import("./device/DevicePage"));
+const ConsentPage = lazy(() => import("./oauth/ConsentPage"));
 const LoginPage = lazy(() => import("./login/LoginPage"));
 const SetupPage = lazy(() => import("./login/SetupPage"));
 
@@ -56,6 +57,7 @@ const app_pages = {
   storage: StoragePage,
   activity: ActivityPage,
   device: DevicePage,
+  oauth_consent: ConsentPage,
   login: LoginPage,
   setup: SetupPage,
   explore: ExplorePage,

@@ -36,7 +36,7 @@ export const project_routes = Object.entries(route_paths).map(([name, path]) => 
 // Pages of the app itself, matched before the projects' pages, exactly: they don't take over projects that would
 // have the same name, e.g. /admin/commits stays the commits of a project named "admin".
 export const app_paths = {
-  settings: "/settings/:tab(profile|preferences|sign-in|sessions|tokens|cli|activity)?",
+  settings: "/settings/:tab(profile|preferences|sign-in|sessions|tokens|cli|apps|activity)?",
   admin_user: "/admin/users/:user_id(\\d+)",
   // group ids: whatever the server uses
   admin_group: "/admin/groups/:group_id",
@@ -47,13 +47,15 @@ export const app_paths = {
   // what waits and runs now, and what ran recently
   activity: "/activity",
   // the tabs of admin/AdminPage.jsx, its tests check they all have their URL
-  admin: "/admin/:section(overview|usage|users|groups|requests|sign-in|tokens|service-accounts|storage|audit|settings)?",
+  admin: "/admin/:section(overview|usage|users|groups|requests|sign-in|tokens|service-accounts|apps|storage|audit|settings)?",
   // the ways to sign in, ?next=<page> to go back to it (see login/LoginPage.jsx)
   login: "/login",
   // a new server's first admin (see login/SetupPage.jsx)
   setup: "/setup",
   // where `qa auth login` sends users to approve the login
   device: "/device",
+  // where apps (MCP clients) send users to allow them to use QA-Board (QA-Board's OAuth authorization endpoint)
+  oauth_consent: "/oauth/consent",
   // every project, as a tree (also at / for signed-out visitors, signed-in users get their home page there)
   explore: "/projects",
 };

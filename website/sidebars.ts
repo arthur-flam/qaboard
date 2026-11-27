@@ -264,7 +264,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Users and access',
       collapsed: false,
-      items: ['backend-admin/user-management', 'backend-admin/sign-in', 'backend-admin/project-access', 'backend-admin/audit-log'],
+      items: ['backend-admin/user-management', 'backend-admin/sign-in', 'backend-admin/project-access', 'backend-admin/mcp-clients', 'backend-admin/audit-log'],
     },
     {
       type: 'category',

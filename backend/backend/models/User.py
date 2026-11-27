@@ -110,7 +110,8 @@ class Token(Base):
     token_hash = Column(String(64), unique=True, nullable=True, index=True)
     # shown to recognize the token, e.g. "qab_pat_Xk3f"
     prefix = Column(String(), nullable=False, default='', server_default='')
-    # personal, cli (created by `qa auth login`), service (a service account's), legacy (created before scopes)
+    # personal, cli (created by `qa auth login`), service (a service account's), legacy (created before scopes),
+    # oauth (the access token of an app the user allowed, backend/oauth.py)
     kind = Column(String(), nullable=False, default='personal', server_default='personal')
     name = Column(String(), nullable=False, default='', server_default='')
 

@@ -3,7 +3,7 @@ API tokens: their format, how we store and check them.
 
 Format: `qab_pat_` + 40 random base62 characters + a 6-character base62 checksum (crc32 of the random part).
 Service accounts' tokens start with `qab_svc_` (backend/service_accounts.py), and the short-lived tokens the server
-issues (CI jobs' token exchange, backend/ci_trust.py) with `qab_tmp_`.
+issues (CI jobs' token exchange, backend/ci_trust.py; the apps users allow, backend/oauth.py) with `qab_tmp_`.
 - The prefix tells what it is, so secret scanners (and people) recognize leaked QA-Board tokens.
 - The checksum rejects typos and random strings without a database lookup.
 We only store sha256(token): it has ~238 random bits, a salt or a slow hash wouldn't make it harder to guess.
@@ -29,7 +29,7 @@ TEMPORARY_PREFIX = 'qab_tmp_'
 # the token of a batch QA-Board starts (tokens.mint_for_batch): runners forward it to the runs' pods
 BATCH_PREFIX = BATCH_TOKEN_PREFIX
 # token kinds that the server issues for a short time
-TEMPORARY_KINDS = ('ci', 'batch')
+TEMPORARY_KINDS = ('ci', 'batch', 'oauth')
 BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 RANDOM_LENGTH = 40
 CHECKSUM_LENGTH = 6
@@ -213,6 +213,16 @@ def mint(user, name: str, scopes: List[str], kind: str = 'personal', projects: O
     "expires_at": iso(expires_at), "idle_expiry_days": idle_expiry_days, **(audit_meta or {}),
   }, actor=actor)
   return token, secret
+
+
+def renew(token, expires_at: datetime.datetime) -> str:
+  """
+  A new secret for a token, valid until `expires_at`: the old one stops working. The apps users allow get a new access
+  token every hour (backend/oauth.py): one row per app, not one per hour. Audited by the caller. Returns the secret.
+  """
+  secret = generate(TEMPORARY_PREFIX)
+  token.token_hash, token.prefix, token.expires_at = hash_token(secret), display_prefix(secret), expires_at
+  return secret
 
 
 

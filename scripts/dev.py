@@ -135,7 +135,7 @@ def proxy_route(method: str, path: str) -> str:
   if path.startswith('/s/') and method in ('GET', 'HEAD'):
     return 'files'
   # Vite proxies /iiif/ and /docs/ here: redirecting them to the web app would loop. No IIIF server, no docs: 404s
-  if path.startswith(('/api/', '/s/', '/webhook', '/iiif/', '/docs/')) or method not in ('GET', 'HEAD'):
+  if path.startswith(('/api/', '/s/', '/webhook', '/iiif/', '/docs/', '/.well-known/oauth-authorization-server')) or method not in ('GET', 'HEAD'):
     return 'backend'
   return 'webapp'
 

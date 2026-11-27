@@ -97,6 +97,7 @@ import backend.api.inputs
 import backend.api.collections
 import backend.api.auth
 import backend.api.tokens
+import backend.api.oauth
 import backend.api.service_accounts
 import backend.api.ci_trust
 import backend.api.users

@@ -12,6 +12,7 @@ import { UserDetail } from "./UserDetail";
 import { Groups, GroupDetail } from "./Groups";
 import { AdminTokens } from "./Tokens";
 import { ServiceAccounts } from "../access/ServiceAccounts";
+import { ConnectedApps } from "./ConnectedApps";
 import { Audit } from "./Audit";
 import { Settings } from "./Settings";
 import { SignIn } from "./SignIn";
@@ -34,6 +35,7 @@ export const sections = [
   { id: 'sign-in', title: 'Sign-in', icon: 'log-in', Panel: SignIn },
   { id: 'tokens', title: 'Tokens', icon: 'key', Panel: AdminTokens },
   { id: 'service-accounts', title: 'Service accounts', icon: 'build', Panel: InstanceServiceAccounts },
+  { id: 'apps', title: 'Connected apps', icon: 'applications', Panel: ConnectedApps },
   { id: 'storage', title: 'Storage', icon: 'database', Panel: Storage },
   { id: 'audit', title: 'Audit', icon: 'history', Panel: Audit },
   { id: 'settings', title: 'Settings', icon: 'cog', Panel: Settings },

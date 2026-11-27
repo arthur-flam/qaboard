@@ -314,6 +314,11 @@ DEFINITIONS = {
     "How long the tokens that CI jobs get without a stored secret (trusted CI jobs of service accounts) work.",
     360, int, minimum=5, maximum=1440, label="CI jobs' tokens last", group='tokens', unit='minutes',
   ),
+  'oauth.refresh_idle_expiry_days': Definition(
+    "The apps users allow (MCP clients like Open WebUI) must ask again after this many days without getting a token: users then allow them again.",
+    90, int, minimum=1, label="Unused connected apps expire after", group='tokens', unit='days',
+    docs="/docs/backend-admin/mcp-clients",
+  ),
 
   # ---- Git hosts
   'git.hosts': Definition(

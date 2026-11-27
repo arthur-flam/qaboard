@@ -15,8 +15,8 @@ export const TokensTab = ({ user }) => {
   const [creating, setCreating] = useState(false);
   const [show_inactive, setShowInactive] = useState(false);
 
-  // CLI sign-ins have their own tab
-  const tokens = (all_tokens ?? []).filter(token => token.kind !== 'cli');
+  // CLI sign-ins and the apps' tokens have their own tabs
+  const tokens = (all_tokens ?? []).filter(token => token.kind !== 'cli' && token.kind !== 'oauth');
   const active = tokens.filter(token => (token.status ?? 'active') === 'active');
   const shown = show_inactive ? tokens : active;
   const nb_inactive = tokens.length - active.length;

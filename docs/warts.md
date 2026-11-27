@@ -53,6 +53,10 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   rolling deploy or after a rollback. It doesn't shadow the built-in (other argument type), but on PostgreSQL < 15
   every role can create functions in `public`: databases shared with other roles (e.g. a BI tool's) should
   `REVOKE CREATE ON SCHEMA public FROM PUBLIC`. Drop the shim in a later migration once no older version runs. [S]
+- **Connected apps (OAuth, `backend/oauth.py`)**: the `resource` apps ask for is recorded, not enforced: an app's
+  token works on the whole API (with the `read` scope), not only on the MCP server. Two refreshes with the same
+  refresh token at once (an app without a lock) revoke the grant: RFC 9700 asks for it, a short grace period would be
+  kinder. No dynamic client registration (RFC 7591) yet: MCP clients that require it can't connect. [M, API]
 
 ## Backend
 
@@ -560,6 +564,9 @@ Pod Security, admission policies, Kueue/ResourceQuota) rather than re-implementi
 - **Cantaloupe**: drop `services/cantaloupe/logback.xml` with 5.0.9. 5.0.6 fixed TurboJpegProcessor's 415 on
   non-JPEG output: check whether `ManualSelectionStrategy` in `cantaloupe.properties` is still needed (keep Java2d
   for JPEG: the pixel tooltip and diffs need exact values). [S, no change]
+- **`/.well-known/oauth-authorization-server`** (the metadata of connected apps' OAuth server) is routed to the
+  backend by `services/nginx/conf.d/qaboard.conf` only: the Helm chart's `charts/qaboard/files/qaboard.conf` and the
+  sites' nginx overlays need the same location. [S, behaviour]
 - The `pgadmin` volume is mounted at `/root/.pgadmin`, but the image keeps its data in `/var/lib/pgadmin`: nothing
   persists (pgAdmin sets itself up again when its container is recreated). Mounting it at `/var/lib/pgadmin` keeps
   admins' pgAdmin settings, but the entrypoint only loads servers.json and the passfile when it creates its database:

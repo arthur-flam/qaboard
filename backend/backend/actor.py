@@ -39,6 +39,8 @@ PUBLIC_ENDPOINTS = {
   # signing in
   'get_current_user', 'auth_post', 'signup', 'logout', 'saml_auth', 'device_code', 'device_token', 'token_exchange',
   'sign_in_providers', 'oidc_start', 'oidc_callback', 'my_access_request',
+  # apps getting tokens for users (backend/oauth.py): the consent page needs a user, the apps authenticate themselves
+  'oauth_authorize', 'oauth_token', 'oauth_revoke',
   # a new server's first admin (backend/first_admin.py)
   'setup_status', 'setup_first_admin',
   # nginx asks it whether users may read files, it answers 401 itself
