@@ -69,6 +69,38 @@ const NEW = 'a1b2c3d4' + '0'.repeat(32);
   await page.screenshot({ path: 'screenshots/images.png', fullPage: true });
   assert.deepStrictEqual(errors, []);
 
+  // outputs compared by their format: a table, and the curves of new and reference
+  ({ page, frame, errors } = await open('look_at_output', { run_id: 2, path: 'series.json' }));
+  assert.match(await frame.locator('table').innerText(), /train\/loss/);
+  assert.strictEqual(await frame.locator('[data-chart] path').count(), 2 * 3, 'new and reference, for each series');
+  await page.screenshot({ path: 'screenshots/series.png', fullPage: true });
+  assert.deepStrictEqual(errors, []);
+
+  // the files say their type; one opens next to the reference's
+  ({ page, frame, errors, events } = await open('look_at_output', { run_id: 2 }));
+  assert.match(await frame.locator('button', { hasText: 'junit.xml' }).innerText(), /junit/);
+  await frame.click('button:has-text("junit.xml")');
+  await frame.waitForSelector('#image table', { timeout: 30000 });
+  assert.match(await frame.locator('#image table').innerText(), /broken/);
+  assert.deepStrictEqual((await events()).filter(e => e.type === 'tools/call').map(e => e.arguments), [{ run_id: 2, path: 'junit.xml', reference_run_id: 12 }]);
+  await page.screenshot({ path: 'screenshots/junit.png', fullPage: true });
+  assert.deepStrictEqual(errors, []);
+
+  // results are data in tables too
+  await page.evaluate(() => window.bridge.sendToolResult({
+    content: [{ type: 'text', text: 'x' }],
+    structuredContent: {
+      view: 'table', path: '<b id=injected>', run_id: '<b id=injected>', title: '`<img src=x id=injected onerror="window.parent.pwned=1">`',
+      summary: ['<b id=injected>', '`</code><b id=injected>`'], columns: ['<b id=injected>'], more: '<b id=injected>',
+      rows: [{ cells: ['<b id=injected>', '<img src=x id=injected onerror="window.parent.pwned=1">'], verdict: '"><b id=injected>' }],
+      charts: [{ name: '<b id=injected>', new: [[0, '<b>'], [1, 2], [2, 3]], reference: '<b id=injected>' }], links: {},
+    },
+  }));
+  await page.waitForTimeout(500);
+  assert.strictEqual(await frame.locator('#injected').count(), 0, 'HTML from results is shown as text');
+  assert.strictEqual(await page.evaluate(() => window.pwned), undefined, 'scripts from results never run');
+  assert.match(await frame.locator('table').innerText(), /<img src=x/);
+
   // errors are shown
   ({ frame } = await open('look_at_output', { run_id: 999 }));
   assert.match(await frame.locator('pre').innerText(), /No run 999/);

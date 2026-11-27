@@ -63,18 +63,23 @@ def _status(case: ET.Element) -> str:
 
 
 def read_junit(path: str | Path) -> list[dict[str, Any]]:
+  """The test cases of a JUnit XML report file, see parse_junit"""
+  return parse_junit(Path(path).read_bytes(), str(path))
+
+
+def parse_junit(content: bytes | str, name: str = 'the file') -> list[dict[str, Any]]:
   """
   The test cases of a JUnit XML report, in the file's order: {id, classname, name, status, time}.
   `id` is "classname::name", what tests are matched by from a commit to the next; `time` is in seconds. A test listed
   twice in the report gets a suffix, " #2", like the web app's parser.
-  Raises ValueError for files that aren't JUnit XML.
+  Raises ValueError for content that isn't JUnit XML; `name` says which file in the message.
   """
   try:
-    root = ET.parse(str(path)).getroot()
+    root = ET.fromstring(content)
   except ET.ParseError as e:
-    raise ValueError(f"{path} is not a JUnit XML report: {e}") from None
+    raise ValueError(f"{name} is not a JUnit XML report: {e}") from None
   if root.tag not in ('testsuites', 'testsuite', 'testcase'):
-    raise ValueError(f"{path} is not a JUnit XML report: its root is <{root.tag}>, not <testsuites> or <testsuite>")
+    raise ValueError(f"{name} is not a JUnit XML report: its root is <{root.tag}>, not <testsuites> or <testsuite>")
   cases = []
   seen: Counter = Counter()
   for case, suite in _cases(root, ''):

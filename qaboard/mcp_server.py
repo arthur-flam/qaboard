@@ -129,10 +129,13 @@ def build_server(apis: Callable[[], 'Api'], *, gate: bool, **options: Any):
     return answer_result(evidence.compare(a, selection, metrics, top))
 
   @apps.tool(resource_uri=APP_URI, name='look_at_output', title='Look at an output', annotations=read_only, description=(
-    "Shows a run's output next to the reference run's: images (any format the web app shows, e.g. 16-bit TIFF, RAW) as "
-    "PNG, with crops of where they differ most; text files (log.txt too) as a diff. Without `path`, lists the run's "
-    "files, the changed ones first. Run ids come from compare and failures: pass the `reference_run_id` they give, so "
-    "that the reference is the one compared."))
+    "Shows a run's output next to the reference run's, by its type, like the web app's viewers: images (any format the "
+    "web app shows, e.g. 16-bit TIFF, RAW) as PNG with crops of where they differ most; benchmarks (each benchmark's "
+    "change, with the harness's spread), flame graphs (functions whose share of time changed most), series such as "
+    "training curves (last/min/max), JUnit test reports (broken, fixed, still failing, new, removed), Plotly figures and "
+    "logged media; text files (log.txt too) as a diff. Without `path`, lists the run's files and their types, the "
+    "changed ones first. Run ids come from compare and failures: pass the `reference_run_id` they give, so that the "
+    "reference is the one compared."))
   @guarded
   def look_at_output(
       run_id: Annotated[int, Field(description="The run's id.")],
@@ -142,8 +145,9 @@ def build_server(apis: Callable[[], 'Api'], *, gate: bool, **options: Any):
       compare_with_reference: Annotated[bool, Field(description="Show the reference's output too.")] = True,
       where: Annotated[Literal['differences', 'whole'], Field(description="For images: `differences` (the whole image, then crops of where they differ most) or `whole`.")] = 'differences',
       region: Annotated[Optional[List[int]], Field(description="For images: only this region, [x, y, width, height] in pixels.", min_length=4, max_length=4)] = None,
-      max_size: Annotated[int, Field(description="Largest side of the images returned, in pixels.", ge=128, le=2048)] = 768):
-    return answer_result(evidence.look_at_output(apis(), run_id, path, reference_run_id, compare_with_reference, reference, where, region, max_size))
+      max_size: Annotated[int, Field(description="Largest side of the images returned, in pixels.", ge=128, le=2048)] = 768,
+      top: Annotated[int, Field(description="How many rows of a compared output to show (benchmarks, functions, tests...), the biggest changes first.", ge=1, le=50)] = 10):
+    return answer_result(evidence.look_at_output(apis(), run_id, path, reference_run_id, compare_with_reference, reference, where, region, max_size, top))
 
   @apps.tool(resource_uri=APP_URI, name='metric_history', title='Metrics over commits', annotations=read_only, description=(
     "How did metrics evolve over the commits of a branch (e.g. the nightly, or your own experiments with a label)? "

@@ -27,6 +27,10 @@ from pathlib import Path
 from typing import NamedTuple, Union
 from collections.abc import Iterable, Iterator
 
+# Like the web app (is_flame_graph in webapp/src/viewers/fileTypes.js, both tested on tests/fixtures/file-types.json):
+# QA-Board's *flame.json, folded stacks, speedscope, Chrome's .cpuprofile, gzipped or not. Other names need `type: flame`
+FILE_PATTERN = re.compile(r'(flame\.json|\.folded|\.collapsed|\.stacks\.txt|\.speedscope\.json|\.cpuprofile)(\.gz)?$', re.IGNORECASE)
+
 # What the viewer knows how to show, besides any other word ("allocations", "cycles"), shown as is.
 # Extra words after the unit describe it: "microseconds of CPU per 1,000 requests".
 UNITS = ('samples', 'nanoseconds', 'microseconds', 'milliseconds', 'seconds', 'bytes', 'count')
@@ -58,6 +62,11 @@ class Profile(NamedTuple):
     lines = [f'# unit: {self.unit}'] if self.unit else []
     lines += [f'{stack} {_number(v)}' for stack, v in sorted(self.stacks.items()) if v]
     return '\n'.join(lines) + '\n'
+
+
+def is_flame_graph(path: str | os.PathLike) -> bool:
+  """Whether a file is named like a profile, as the web app's flame graph viewer recognizes them"""
+  return bool(FILE_PATTERN.search(Path(path).as_posix()))
 
 
 def _number(value: float) -> str:
@@ -468,6 +477,6 @@ def save_flame_graph(path: str | os.PathLike, source: Source, format: str | None
   return profile
 
 
-__all__: list[str] = ['Profile', 'UNITS', 'collapse_perf_script', 'detect_format', 'read_folded', 'read_pprof',
+__all__: list[str] = ['Profile', 'UNITS', 'collapse_perf_script', 'detect_format', 'is_flame_graph', 'read_folded', 'read_pprof',
                       'read_profile', 'save_flame_graph']
 

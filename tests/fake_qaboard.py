@@ -10,6 +10,7 @@ import sys
 import threading
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 
 PROJECT = 'group/repo'
@@ -58,15 +59,92 @@ LOGS = {
   6: "loading model\nTraceback (most recent call last):\n  File \"/src/run.py\", line 12, in run\nValueError: bad shape (3, 720, 1280)\n",
   7: "\x1b[31mloading model\x1b[0m\nKilled: out of memory\n",
 }
+FIXTURES = Path(__file__).resolve().parent / 'fixtures'
+
+
+def fixture(path: str) -> str:
+  return (FIXTURES / path).read_text(encoding='utf-8')
+
+
+def benchmarks_of_new() -> str:
+  """The reference's benchmarks, one slower, one faster, one more"""
+  data = json.loads(fixture('benchmarks/kitefin.benchmarks.json'))
+  render, ingest, _ = data['benchmarks']
+  render.update(value=5.0, stats={**render['stats'], 'median': 5.0})
+  ingest.update(value=200000, stats={**ingest['stats'], 'mean': 200000})
+  data['benchmarks'].append({'name': 'export/png', 'value': 1.5, 'unit': 'ms'})
+  return json.dumps(data)
+
+
+def profile_of_new() -> str:
+  """The reference's profile, with parse() 3 times slower"""
+  lines = []
+  for line in fixture('flamegraphs/py-spy.folded').splitlines():
+    stack, _, count = line.rpartition(' ')
+    lines.append(f"{stack} {int(count) * 3}" if 'parse (gateway.py)' in stack else line)
+  return '\n'.join(lines) + '\n'
+
+
+def series_of_reference() -> str:
+  """The new run's series, with a higher loss"""
+  data = json.loads(fixture('series/training.expected.json'))
+  loss = data['series']['train/loss']
+  loss['value'] = [None if v is None else v * 1.5 for v in loss['value']]
+  return json.dumps(data)
+
+
+JUNIT_REFERENCE = """<?xml version="1.0" encoding="utf-8"?>
+<testsuite name="pytest">
+  <testcase classname="tests.codec.test_crc" name="test_known" time="0.010"><failure message="x">was broken</failure></testcase>
+  <testcase classname="tests.codec.test_crc" name="test_marked_flaky" time="0.200"/>
+  <testcase classname="tests.codec.test_varint" name="test_passes_alone" time="0.300"/>
+  <testcase classname="tests.codec.test_varint" name="test_still_fails" time="0.400"><failure message="assert 3 == 4">always</failure></testcase>
+  <testcase classname="tests.client.test_retry" name="test_error_then_fails" time="0.500"/>
+  <testcase classname="tests.client.test_retry" name="test_skipped" time="0"><skipped message="later"/></testcase>
+  <testcase classname="tests.old" name="test_gone" time="0.1"/>
+</testsuite>
+"""
+
+
+def figure(recall) -> str:
+  return json.dumps({'data': [{'name': 'recall', 'type': 'scatter', 'x': [0, 1, 2], 'y': recall}, {'type': 'bar', 'y': [3, 4]}],
+                     'layout': {'title': {'text': 'Recall per epoch'}}})
+
+
 FILES = {
   'output.png': {'st_size': 1000, 'md5': 'aaa'},
   'detections.json': {'st_size': 100, 'md5': 'bbb'},
   'same.txt': {'st_size': 10, 'md5': 'same'},
+  'kitefin.benchmarks.json': {'st_size': 900, 'md5': 'ccc'},
+  'cpu.folded': {'st_size': 1400, 'md5': 'ddd'},
+  'profile.speedscope.json': {'st_size': 7800, 'md5': 'eee'},
+  'series.json': {'st_size': 1200, 'md5': 'fff'},
+  'junit.xml': {'st_size': 1000, 'md5': 'ggg'},
+  'media.jsonl': {'st_size': 3000, 'md5': 'hhh'},
+  'figure.plotly.json': {'st_size': 200, 'md5': 'iii'},
+  # a type given in qaboard.yaml (PROJECT_DATA)
+  'timings.txt': {'st_size': 700, 'md5': 'jjj'},
   # like real manifests (outputs_manifest in qaboard/utils.py), without log.txt
 }
+# (the new runs', the reference runs')
 TEXTS = {
   'detections.json': ('{"boxes": 3,\n "score": 0.9}\n', '{"boxes": 2,\n "score": 0.9}\n'),
   'same.txt': ('same\n', 'same\n'),
+  'kitefin.benchmarks.json': (benchmarks_of_new(), fixture('benchmarks/kitefin.benchmarks.json')),
+  'cpu.folded': (profile_of_new(), fixture('flamegraphs/py-spy.folded')),
+  'profile.speedscope.json': (fixture('flamegraphs/py-spy.speedscope.json'),) * 2,
+  'series.json': (fixture('series/training.expected.json'), series_of_reference()),
+  'junit.xml': (fixture('junit/junit.xml'), JUNIT_REFERENCE),
+  # the reference logged fewer steps
+  'media.jsonl': (fixture('media/run/media.jsonl'), ''.join(line for line in fixture('media/run/media.jsonl').splitlines(True) if '"_step":20' not in line)),
+  'figure.plotly.json': (figure([0.5, 0.6, 0.7]), figure([0.5, 0.6, 0.65])),
+  'timings.txt': (fixture('benchmarks/go-bench.txt'),) * 2,
+}
+PROJECT_DATA = {
+  'qatools_metrics': {'main_metrics': ['psnr'], 'available_metrics': {'psnr': {'smaller_is_better': False, 'suffix': ' dB'}}},
+  'qatools_config': {'project': {'reference_branch': 'main'},
+                     'outputs': {'visualizations': [{'name': 'Timings', 'path': 'timings.txt', 'type': 'benchmarks/go'},
+                                                    {'name': 'Frames', 'path': 'frames/:frame/depth.bin', 'type': 'pointcloud/pcd'}]}},
 }
 
 
@@ -149,8 +227,7 @@ class Handler(BaseHTTPRequestHandler):
     if path == '/api/v1/config':
       return self.answer(200, {'image_servers': {'default': '/iiif/2/'}})
     if path == '/api/v1/project':
-      return self.answer(200, {'qatools_metrics': {'main_metrics': ['psnr'], 'available_metrics': {'psnr': {'smaller_is_better': False, 'suffix': ' dB'}}},
-                               'qatools_config': {'project': {'reference_branch': 'main'}}})
+      return self.answer(200, PROJECT_DATA)
     if path == '/api/v1/projects':
       return self.answer(200, {PROJECT: {'latest_output_datetime': '2026-11-12T10:00:00'}, 'other/old': {'latest_output_datetime': '2025-01-01T00:00:00'}})
     if path == '/api/v1/milestones':
@@ -182,10 +259,10 @@ class Handler(BaseHTTPRequestHandler):
       sha = NEW if int(run_id) in NEW_OUTPUTS else REF
       return self.answer(200, {**run, 'project': PROJECT, 'commit_id': sha, 'batch_label': 'default', 'batch_id': 1})
     if path.startswith('/s/'):
-      folder, _, name = path.rpartition('/')
-      run = next((o for o in [*NEW_OUTPUTS.values(), *REF_OUTPUTS.values()] if o['output_dir_url'] == folder), None)
+      run = next((o for o in [*NEW_OUTPUTS.values(), *REF_OUTPUTS.values()] if path.startswith(o['output_dir_url'] + '/')), None)
       if run is None:
         return self.answer(404, b'', 'text/plain')
+      name = path[len(run['output_dir_url']) + 1:]
       if name == 'log.txt':
         return self.answer(200, LOGS.get(run['id'], 'ok\n').encode(), 'text/plain')
       if name in TEXTS:

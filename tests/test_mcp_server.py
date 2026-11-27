@@ -13,7 +13,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fake_qaboard as fake  # noqa: E402
 
-from qaboard import evidence  # noqa: E402
+from qaboard import evidence, evidence_outputs  # noqa: E402
 
 try:
   import mcp  # noqa: F401
@@ -213,11 +213,19 @@ class TestFailures(FakeServer):
 class TestOutputs(FakeServer):
   def test_files(self):
     answer = evidence.look_at_output(self.api, 2)
-    self.assertIn('2 changed, 1 identical, 0 only in this run, 0 only in the reference.', answer.text)
-    # changed first
-    self.assertIn('- `detections.json` (100 B, text, changed)\n- `output.png` (1.0 kB, image, changed)\n- `same.txt` (10 B, text, identical)', answer.text)
+    self.assertIn('10 changed, 1 identical, 0 only in this run, 0 only in the reference.', answer.text)
+    # changed first, with their type: what look_at_output can compare
+    self.assertIn('- `detections.json` (100 B, text, changed)\n- `figure.plotly.json` (200 B, Plotly figure, changed)', answer.text)
+    self.assertIn('- `output.png` (1.0 kB, image, changed)', answer.text)
+    self.assertTrue(answer.text.split('\nAlso')[0].endswith('- `same.txt` (10 B, text, identical)'))
+    # the type qaboard.yaml gives it
+    self.assertIn('- `timings.txt` (700 B, benchmarks, changed)', answer.text)
     self.assertIn('`reference_run_id=12`', answer.text)
     self.assertEqual(answer.data['view'], 'files')
+    types = {f['path']: f['type'] for f in answer.data['files']}
+    self.assertEqual(types, {'cpu.folded': 'flame', 'detections.json': 'text', 'figure.plotly.json': 'plotly', 'junit.xml': 'junit',
+                             'kitefin.benchmarks.json': 'benchmarks', 'media.jsonl': 'media', 'output.png': 'image', 'profile.speedscope.json': 'flame',
+                             'same.txt': 'text', 'series.json': 'series', 'timings.txt': 'benchmarks'})
 
   def test_logs_arent_in_manifests(self):
     answer = evidence.look_at_output(self.api, 7, 'log.txt')
@@ -249,9 +257,149 @@ class TestOutputs(FakeServer):
     answer = evidence.look_at_output(self.api, 2, 'same.txt')
     self.assertIn("Identical to the reference's", answer.text)
 
+  def test_benchmarks(self):
+    answer = evidence.look_at_output(self.api, 2, 'kitefin.benchmarks.json')
+    self.assertIn('benchmarks (`kitefin-bench 2.3`)', answer.text)
+    self.assertIn('4 benchmarks, 3 also in the reference: 1 better, 1 worse, 1 same; too few benchmarks to tell', answer.text)
+    # sorted by change: the slower first, with the harness's spread to judge it by
+    self.assertIn('| `render/tile_256` | 4.210 ms | 5.000 ms | +18.76% worse | ±2.4% iqr |\n| `ingest/messages` |', answer.text)
+    self.assertIn('Only in this run: `export/png`.', answer.text)
+    self.assertIn('Geometric mean speedup: 0.974x', answer.text)
+    data = answer.data
+    self.assertEqual((data['view'], data['kind'], data['reference_run_id']), ('table', 'benchmarks', 12))
+    self.assertEqual(data['columns'], ['benchmark', 'reference', 'new', 'change', 'spread (new)'])
+    self.assertEqual(data['rows'][0], {'cells': ['render/tile_256', '4.210 ms', '5.000 ms', '+18.76% worse', '±2.4% iqr'], 'verdict': 'worse'})
+    self.assertTrue(data['links']['file'].endswith('/s/mnt/qaboard/a1b2c3d4/night_02/kitefin.benchmarks.json'))
+
+  def test_a_type_from_qaboard_yaml(self):
+    # timings.txt is named like nothing: qaboard.yaml says `type: benchmarks/go`
+    answer = evidence.look_at_output(self.api, 2, 'timings.txt')
+    self.assertIn('benchmarks (`go`)', answer.text)
+    self.assertIn('0 better, 0 worse, 3 same', answer.text)
+
+  def test_flame_graphs(self):
+    answer = evidence.look_at_output(self.api, 2, 'cpu.folded')
+    self.assertIn('Total: 196.0 → 430.0 `samples` (+119.39%); samples depend on how long the profiler ran: compare the shares.', answer.text)
+    # parse() takes 3 times longer: the most moved function
+    self.assertIn('| `parse (gateway.py)` | 24.5% | 33.5% | +9.0 pts | 59.7% | 81.6% |', answer.text.splitlines())
+    self.assertEqual(answer.data['rows'][0]['cells'][0], 'parse (gateway.py)')
+    # formats only the web app reads: a link
+    answer = evidence.look_at_output(self.api, 2, 'profile.speedscope.json')
+    self.assertIn("Only the web app's flame graph viewer reads speedscope profiles: open the file there.", answer.text)
+    self.assertEqual(answer.data['rows'], [])
+
+  def test_series(self):
+    answer = evidence.look_at_output(self.api, 2, 'series.json')
+    self.assertIn('| `train/loss` | 0.1875 | 0.125 | -33.33% | 0.1875 → 0.125 | 3.750 → 2.500 | 9 → 9 |', answer.text)
+    self.assertIn("doesn't know which way is better", answer.text)
+    charts = answer.data['charts']
+    self.assertEqual([c['name'] for c in charts], ['train/loss', 'lr', 'val/loss'])
+    # NaN and infinities are gaps
+    self.assertEqual(charts[0]['new'][:4], [[0, 2.5], [1, 1.75], [2, 1.25], [4, 0.75]])
+    self.assertEqual(charts[0]['reference'][0], [0, 3.75])
+
+  def test_test_reports(self):
+    answer = evidence.look_at_output(self.api, 2, 'junit.xml')
+    self.assertIn('7 tests: 3 failed, 1 passed, 1 flaky, 1 error, 1 skipped. In the reference, 7: 4 passed, 2 failed, 1 skipped.', answer.text)
+    self.assertIn('2 broken, 1 new and failing, 1 still failing, 1 fixed, 1 flaky, 1 removed.', answer.text)
+    changes = [(r['cells'][0], r['cells'][3]) for r in answer.data['rows']]
+    self.assertEqual(changes, [
+      ('tests.codec.test_varint::test_passes_alone', 'broken'), ('tests.client.test_retry::test_error_then_fails', 'broken'),
+      ('tests.client.test_retry::test_not_run_again', 'new and failing'), ('tests.codec.test_varint::test_still_fails', 'still failing'),
+      ('tests.codec.test_crc::test_known', 'fixed'), ('tests.codec.test_crc::test_marked_flaky', 'flaky'), ('tests.old::test_gone', 'removed')])
+    # without the reference: what failed
+    answer = evidence.look_at_output(self.api, 2, 'junit.xml', compare_with_reference=False)
+    self.assertEqual([r['cells'][1] for r in answer.data['rows']], ['flaky', 'failed', 'failed', 'error', 'failed'])
+
+  def test_plotly_figures(self):
+    answer = evidence.look_at_output(self.api, 2, 'figure.plotly.json')
+    self.assertIn('Title: `Recall per epoch`. 2 traces, 2 also in the reference', answer.text)
+    self.assertIn('| `recall` | scatter | 3 → 3 | 0.65 | 0.7 | +7.69% |', answer.text)
+    self.assertEqual(answer.data['charts'][0], {'name': 'recall', 'new': [[0, 0.5], [1, 0.6], [2, 0.7]], 'reference': [[0, 0.5], [1, 0.6], [2, 0.65]]})
+
+  def test_logged_media(self):
+    answer = evidence.look_at_output(self.api, 2, 'media.jsonl')
+    self.assertIn('15 items logged under 8 keys; the reference logged 9 under 5.', answer.text)
+    self.assertIn('| `val/samples` | image | 2 → 3 | 10 → 20 | 2 |', answer.text)
+    # the files to compare: at the latest step both runs logged
+    self.assertIn('`media/val/samples/10_0.png`, `media/val/samples/10_1.png`', answer.text)
+
+  def test_files_not_in_their_format_are_text(self):
+    # like the web app's viewers, of files named like a format
+    with mock.patch.dict(fake.TEXTS, {'kitefin.benchmarks.json': ('{"not": "benchmarks"}\n', '{"not": "benchmarks", "at": "all"}\n')}):
+      answer = evidence.look_at_output(self.api, 2, 'kitefin.benchmarks.json')
+    self.assertIn("`kitefin.benchmarks.json` isn't a benchmarks file QA-Board reads (unknown benchmark file", answer.text)
+    self.assertIn(': shown as text.', answer.text)
+    self.assertIn('```diff', answer.text)
+
+  def test_a_reference_not_in_the_format(self):
+    with mock.patch.dict(fake.TEXTS, {'junit.xml': (fake.fixture('junit/junit.xml'), '<html/>')}):
+      answer = evidence.look_at_output(self.api, 2, 'junit.xml')
+    self.assertIn("Can't read the reference's file (junit.xml is not a JUnit XML report", answer.text)
+    self.assertIn('The tests that failed or were flaky', answer.text)
+
+  def test_top(self):
+    answer = evidence.look_at_output(self.api, 2, 'junit.xml', top=2)
+    self.assertIn('… and 5 more (`top` shows more).', answer.text)
+    self.assertEqual(len(answer.data['rows']), 7)
+
   def test_unknown_file(self):
     with self.assertRaisesRegex(evidence.EvidenceError, 'Did you mean: output.png'):
       evidence.look_at_output(self.api, 2, 'outputs.png')
+
+
+class TestOutputTypes(unittest.TestCase):
+  """The viewer the web app opens for a file (webapp/src/viewers/OutputViewer.jsx)"""
+  def kind(self, path, visualizations=()):
+    return evidence_outputs.output_type(path, visualizations).kind
+
+  def test_by_name(self):
+    self.assertEqual([self.kind(p) for p in ('a.tiff', 'x.plotly.json', 'cpu.folded.gz', 'TEST-a.xml', 'pytest.benchmarks.json', 'train.series.jsonl', 'media.jsonl', 'a.yaml', 'a.bin')],
+                     ['image', 'plotly', 'flame', 'junit', 'benchmarks', 'series', 'media', 'text', 'binary'])
+    # bench.json was a name projects used before the benchmark viewer
+    self.assertEqual(self.kind('bench.json'), 'text')
+
+  def test_types_in_qaboard_yaml_win_over_names(self):
+    views = [{'path': 'perf/:name.txt', 'type': 'flame/folded'}, {'path': 'series.json', 'type': 'text/plain'}, {'path': 'scan.dat', 'type': 'pointcloud/txt'}]
+    self.assertEqual((self.kind('perf/cpu.txt', views), self.kind('series.json', views)), ('flame', 'text'))
+    other = evidence_outputs.output_type('scan.dat', views)
+    self.assertEqual((other.kind, other.label), ('other', 'type `pointcloud/txt`'))
+    # but images are images
+    self.assertEqual(self.kind('a.png', [{'path': 'a.png', 'type': 'text/plain'}]), 'image')
+    self.assertEqual(evidence_outputs.output_type('timings.json', [{'path': 'timings.json', 'type': 'benchmarks/jmh'}]).declared, 'benchmarks/jmh')
+
+  def test_visualization_paths_like_the_web_app(self):
+    # path-to-regexp 1.x, not exact, not case sensitive
+    matches = evidence_outputs.path_matches
+    self.assertTrue(matches('frames/:frame/depth.bin', 'frames/12/depth.bin'))
+    self.assertFalse(matches('frames/:frame/depth.bin', 'frames/1/2/depth.bin'))
+    self.assertTrue(matches('a/:steps+/b', 'a/1/2/b'))
+    self.assertTrue(matches('(.*)\\.flame\\.json', 'out/cpu.flame.json'))
+    self.assertTrue(matches('*.prof', 'a/b.prof'))
+    self.assertTrue(matches('Out.TXT', 'out.txt'))
+    self.assertTrue(matches('debug', 'debug/x.png'))
+    self.assertFalse(matches('out.txt', 'out.txt.bak'))
+    self.assertFalse(matches('(?<frame>.*)', 'x'))  # JavaScript's named groups aren't Python's: no match rather than an error
+    self.assertEqual(evidence_outputs.visualizations_of({'qatools_config': {'outputs': {'detailed_views': [{'path': 'a'}], 'visualizations': [{'path': 'b'}, 'bad']}}}),
+                     [{'path': 'b'}, {'path': 'a'}])
+
+  def test_plotly_typed_arrays(self):
+    # what plotly.py 6 writes for numpy arrays
+    import array, base64
+    def typed(code, dtype, values):
+      return {'dtype': dtype, 'bdata': base64.b64encode(array.array(code, values).tobytes()).decode()}
+    trace = {'x': typed('i', 'i4', [10, 20]), 'y': typed('d', 'f8', [1.5, float('nan')])}
+    self.assertEqual(evidence_outputs.trace_points(trace), [[10, 1.5]])
+    self.assertEqual(evidence_outputs.trace_points({'y': {'dtype': 'f8', 'bdata': 'AAA='}}), [])
+
+  def test_charts_are_small(self):
+    points = [[i, i] for i in range(1000)]
+    thinned = evidence_outputs.thinned(points)
+    self.assertLessEqual(len(thinned), evidence_outputs.CHART_POINTS + 1)
+    self.assertEqual((thinned[0], thinned[-1]), ([0, 0], [999, 999]))
+
+  def test_names_from_runs_cant_break_tables(self):
+    self.assertEqual(evidence_outputs.markdown_table(['a', 'b'], [evidence_outputs.Row(['x|y`', '1|2'])])[-1], "| `x\\|y'` | 1\\|2 |")
 
 
 class TestHistoryAndLists(FakeServer):

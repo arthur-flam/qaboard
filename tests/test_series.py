@@ -15,7 +15,8 @@ from pathlib import Path
 from unittest import mock
 
 from qaboard.series import (
-  HISTORY, SUMMARY, Downsampled, Point, SeriesWriter, as_number, flatten, read_history, read_series, series_keys,
+  HISTORY, SUMMARY, Downsampled, Point, SeriesWriter, as_number, flatten, is_series, parse_series, read_history,
+  read_series, series_keys,
 )
 
 FIXTURES = Path(__file__).resolve().parent / 'fixtures' / 'series'
@@ -35,6 +36,27 @@ class TestFixtures(unittest.TestCase):
 
   def test_downsampled(self):
     self.assertEqual(self.summary(2), json.loads((FIXTURES / 'training.downsampled.expected.json').read_text()))
+
+  def test_parse_series_reads_both_files_into_one_model(self):
+    # like parse_series in webapp/src/viewers/series/series.js
+    history = (FIXTURES / 'training.series.jsonl').read_text()
+    expected = json.loads((FIXTURES / 'training.expected.json').read_text())
+    self.assertEqual(parse_series(history), {'started_at': expected['started_at'], 'series': expected['series']})
+    self.assertEqual(parse_series(history, max_points=2)['series'], json.loads((FIXTURES / 'training.downsampled.expected.json').read_text())['series'])
+    self.assertEqual(parse_series(json.dumps(expected))['series'], expected['series'])
+
+  def test_parse_series_refuses_other_files(self):
+    for text, error in (('', 'empty file'), ('{"format": "other"}', 'not a qaboard-series file'), ('[1, 2]', 'no line is a JSON object'),
+                        ('{"name": "x"}', 'no line has a number')):
+      with self.assertRaisesRegex(ValueError, error):
+        parse_series(text)
+
+  def test_names_like_the_web_app(self):
+    names = json.loads((FIXTURES.parent / 'file-types.json').read_text())['series']
+    for name in names['yes']:
+      self.assertTrue(is_series(name), name)
+    for name in names['no']:
+      self.assertFalse(is_series(name), name)
 
   def test_reading_skips_what_is_not_a_point(self):
     rows = list(read_history(FIXTURES / 'training.series.jsonl'))

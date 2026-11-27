@@ -10,7 +10,8 @@
   JSON-RPC over postMessage (the MCP Apps spec, 2026-01-26), without an SDK: QA-Board runs in networks without
   internet access, so everything is in this file. The messages follow the spec's JSON schema (e.g. `appInfo` in
   ui/initialize, `content` as a list in ui/message), which hosts validate. It renders the tool result's `structuredContent` (its `view` says
-  how), and its images. Links open the web app; "Ask" buttons post a question to the chat.
+  how: compare, history, images, files, and "table" for the outputs compared by their format, qaboard/evidence_outputs.py), and
+  its images. Links open the web app; "Ask" buttons post a question to the chat.
 -->
 <style>
   :root {
@@ -59,6 +60,10 @@
   figcaption { font-size: 11px; color: var(--fg2); margin-top: 2px; }
   pre { font: 12px/1.4 var(--mono); background: var(--bg2); padding: 8px; border-radius: var(--radius); overflow: auto; max-height: 420px; white-space: pre-wrap; }
   .empty { color: var(--fg2); padding: 20px 0; text-align: center; }
+  code { font: 12px var(--mono); background: var(--bg2); padding: 0 3px; border-radius: 3px; }
+  .legend { font-size: 11px; color: var(--fg2); }
+  .legend span::before { content: ""; display: inline-block; width: 14px; height: 2px; margin: 0 4px 3px 8px; vertical-align: middle; background: var(--accent); }
+  .legend span.ref::before { background: var(--fg2); }
 </style>
 </head>
 <body>
@@ -203,7 +208,7 @@ function render(result) {
   const text = (result.content || []).filter(c => c.type === "text").map(c => c.text);
   const images = imagesOf(result);
   if (result.isError) return show(`<pre>${esc(text.join("\n"))}</pre>`);
-  const views = { compare: renderCompare, history: renderHistory, images: renderImages, files: renderFiles };
+  const views = { compare: renderCompare, history: renderHistory, images: renderImages, files: renderFiles, table: renderTable };
   (views[data.view] || renderText)(data, text, images);
 }
 
@@ -259,31 +264,46 @@ function renderCompare(data) {
     ${movers}<div id="drill"></div>`);
 }
 
+// The types of files look_at_output compares with the reference's (the files' `type`, from evidence_outputs.py)
+const COMPARED = ["image", "benchmarks", "flame", "series", "junit", "plotly", "media"];
+
 async function drill(entry) {
   const target = document.getElementById("drill");
   target.innerHTML = `<div class="empty">Looking at run ${esc(entry.run_id)}…</div>`;
   try {
     const files = await callTool("look_at_output", { run_id: entry.run_id });
-    const images = (files.structuredContent?.files || []).filter(f => /\.(png|jpe?g|tiff?|bmp|webp|dng|raw|exr)$/i.test(f.path));
-    if (!images.length) return void (target.innerHTML = `<pre>${esc(files.content?.[0]?.text || "")}</pre>`);
-    target.innerHTML = `<h3>${esc(entry.test)}: images</h3><div class="row">${images.slice(0, 12).map(f =>
-      button(f.path, on(() => showImage(entry, f.path)))).join(" ")}</div><div id="image"></div>`;
-    showImage(entry, images[0].path);
+    // images first: they are what usually changes
+    const outputs = (files.structuredContent?.files || []).filter(f => COMPARED.includes(f.type))
+      .sort((a, b) => (a.type !== "image") - (b.type !== "image"));
+    if (!outputs.length) return void (target.innerHTML = `<pre>${esc(files.content?.[0]?.text || "")}</pre>`);
+    target.innerHTML = `<h3>${esc(entry.test)}: outputs</h3><div class="row">${outputs.slice(0, 12).map(f =>
+      fileButton(f, on(() => showOutput(entry, f.path)))).join(" ")}</div><div id="image"></div>`;
+    showOutput(entry, outputs[0].path);
   } catch (e) {
     target.innerHTML = `<pre>${esc(e.message)}</pre>`;
   }
 }
 
-async function showImage(entry, path) {
+function fileButton(file, action) {
+  const type = file.type && !["text", "binary"].includes(file.type) ? ` <span class="muted">${esc(file.type)}</span>` : "";
+  return `<button data-action="${esc(action)}">${esc(file.path)}${type}</button>`;
+}
+
+async function showOutput(entry, path) {
   const target = document.getElementById("image");
   target.innerHTML = `<div class="empty">Loading ${esc(path)}…</div>`;
   try {
     const result = await callTool("look_at_output", { run_id: entry.run_id, path, reference_run_id: entry.reference_run_id ?? undefined });
     const div = document.createElement("div");
     target.replaceChildren(div);
+    const data = result.structuredContent || {};
     const text = (result.content || []).filter(c => c.type === "text").map(c => c.text);
-    const images = imagesOf(result);
-    div.innerHTML = imagesHtml(result.structuredContent || {}, text, images);
+    if (data.view === "table") {
+      div.innerHTML = tableHtml(data);
+      drawCurves(div, data.charts);
+    } else {
+      div.innerHTML = imagesHtml(data, text, imagesOf(result));
+    }
   } catch (e) {
     target.innerHTML = `<pre>${esc(e.message)}</pre>`;
   }
@@ -322,9 +342,67 @@ function renderImages(data, text, images) {
 
 function renderFiles(data, text) {
   show(`<h2>Files of run ${esc(data.run_id)}</h2><div class="row">${(data.files || []).slice(0, 200).map(f =>
-    button(f.path, on(() => showImageInPlace(data.run_id, f.path)))).join(" ")}</div><div id="image"></div>`);
+    fileButton(f, on(() => showOutput({ run_id: data.run_id, reference_run_id: data.reference_run_id }, f.path)))).join(" ")}</div><div id="image"></div>`);
 }
-function showImageInPlace(run_id, path) { showImage({ run_id }, path); }
+
+// Outputs compared by their format: summary lines, a table, and curves of new and reference
+function renderTable(data) {
+  const links = data.links || {};
+  show(`<h2>${esc(data.path)} <span class="muted">· run ${esc(data.run_id)}${data.reference_run_id ? ` vs ${esc(data.reference_run_id)}` : ""}</span></h2>
+    <div class="row" style="margin-bottom:8px">${links.run ? button("Open in the web app", on(() => openLink(links.run))) : ""}
+      ${links.file ? button("Open the file", on(() => openLink(links.file))) : ""}</div>
+    ${tableHtml(data)}`);
+  drawCurves(app, data.charts);
+}
+
+// Inline code from the answers' Markdown, on text already escaped
+function inline(text) { return esc(text).replace(/`([^`]*)`/g, "<code>$1</code>"); }
+
+function tableHtml(data) {
+  const marks = { better: "better", worse: "worse", changed: "muted" };
+  const rows = (data.rows || []).map(row => {
+    const cells = Array.isArray(row.cells) ? row.cells : [];
+    const mark = marks[row.verdict] ? `<span class="${marks[row.verdict]}" title="${esc(row.verdict)}">● </span>` : "";
+    return `<tr><td class="name">${mark}${esc(cells[0])}</td>${cells.slice(1).map(c => `<td>${esc(c)}</td>`).join("")}</tr>`;
+  }).join("");
+  const more = Number(data.more) > 0 ? `<div class="muted">… and ${Number(data.more)} more: ask for them, or open the file.</div>` : "";
+  const charts = (data.charts || []).map((chart, index) => `<div class="chart" data-chart="${index}"><strong>${esc(chart.name)}</strong>
+    <span class="legend"><span>new</span>${chart.reference?.length ? `<span class="ref">reference</span>` : ""}</span><svg role="img" aria-label="${esc(chart.name)}"></svg></div>`).join("");
+  return `<h3>${inline(data.title)}</h3>${(data.summary || []).map(line => `<div class="sub">${inline(line)}</div>`).join("")}
+    ${rows ? `<div class="scroll"><table><tr>${(data.columns || []).map(c => `<th>${esc(c)}</th>`).join("")}</tr>${rows}</table></div>${more}` : ""}
+    ${charts ? `<div class="charts" style="margin-top:10px">${charts}</div>` : ""}`;
+}
+
+// The curves of a table's charts, new and reference on the same axes
+function drawCurves(root, charts) {
+  root.querySelectorAll("[data-chart]").forEach(container => {
+    const chart = (charts || [])[Number(container.dataset.chart)] || {};
+    const points = curve => (Array.isArray(curve) ? curve : []).filter(p => Array.isArray(p) && [p[0], p[1]].every(v => typeof v === "number" && isFinite(v)));
+    const curves = [[points(chart.new), "var(--accent)", ""], [points(chart.reference), "var(--fg2)", "4 3"]];
+    const all = curves.flatMap(c => c[0]);
+    const svg = container.querySelector("svg");
+    if (!all.length) { svg.outerHTML = `<div class="empty">No values</div>`; return; }
+    const width = svg.clientWidth || 320, height = 170, pad = { l: 46, r: 8, t: 8, b: 18 };
+    const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+    let [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    if (x0 === x1) { x0 -= 1; x1 += 1; }
+    if (y0 === y1) { y0 -= Math.abs(y0) * 0.05 || 1; y1 += Math.abs(y1) * 0.05 || 1; }
+    const x = v => pad.l + (v - x0) / (x1 - x0) * (width - pad.l - pad.r);
+    const y = v => pad.t + (1 - (v - y0) / (y1 - y0)) * (height - pad.t - pad.b);
+    const ns = "http://www.w3.org/2000/svg";
+    const el = (name, attrs) => { const e = document.createElementNS(ns, name); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); svg.appendChild(e); return e; };
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    for (const tick of [y0, (y0 + y1) / 2, y1]) {
+      el("line", { x1: pad.l, x2: width - pad.r, y1: y(tick), y2: y(tick), stroke: "var(--border)", "stroke-width": 1 });
+      el("text", { x: pad.l - 4, y: y(tick) + 4, "text-anchor": "end", "font-size": 10, fill: "var(--fg2)" }).textContent = rawNum(tick);
+    }
+    for (const [x_, anchor] of [[x0, "start"], [x1, "end"]])
+      el("text", { x: x(x_), y: height - 2, "text-anchor": anchor, "font-size": 10, fill: "var(--fg2)" }).textContent = rawNum(x_);
+    // the reference under the new curve
+    for (const [curve, color, dash] of curves.slice().reverse())
+      if (curve.length) el("path", { d: curve.map((p, k) => `${k ? "L" : "M"}${x(p[0])},${y(p[1])}`).join(""), fill: "none", stroke: color, "stroke-width": 1.6, "stroke-dasharray": dash });
+  });
+}
 
 function renderHistory(data) {
   const points = data.points || [];

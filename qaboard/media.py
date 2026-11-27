@@ -55,7 +55,7 @@ import wave
 import zlib
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 INDEX = 'media.jsonl'
 FOLDER = 'media'
@@ -762,27 +762,31 @@ class MediaLog:
 
 # --- reading --------------------------------------------------------------------------------------------------------
 def read_media(output_dir: str | Path, key: str | None = None) -> list[dict[str, Any]]:
-  """The items a run logged (of a key), as the index has them, sorted by key, step and index; the last of duplicates"""
-  path = Path(output_dir) / INDEX
-  items: dict[tuple[str, int, int], dict[str, Any]] = {}
+  """The items a run logged (of a key), from its index: see parse_media_index. Nothing if there is no index."""
   try:
-    f = open(path, encoding='utf-8')
+    f = open(Path(output_dir) / INDEX, encoding='utf-8')
   except OSError:
     return []
   with f:
-    for text in f:
-      try:
-        line = json.loads(text)
-      except ValueError:
-        continue
-      if not isinstance(line, dict) or line.get('kind') not in KINDS or not isinstance(line.get('key'), str):
-        continue
-      step, index = line.get(STEP), line.get('index', 0)
-      if isinstance(step, float) and step.is_integer():
-        step = line[STEP] = int(step)  # 10.0: what some JSON writers make of 10
-      if not isinstance(step, int) or isinstance(step, bool) or not isinstance(index, int) or isinstance(index, bool):
-        continue
-      if key is not None and line['key'] != key:
-        continue
-      items[(line['key'], step, index)] = line
+    return parse_media_index(f, key)
+
+
+def parse_media_index(lines: Iterable[str], key: str | None = None) -> list[dict[str, Any]]:
+  """The items of the lines of a media.jsonl (of a key), sorted by key, step and index; the last of duplicates"""
+  items: dict[tuple[str, int, int], dict[str, Any]] = {}
+  for text in lines:
+    try:
+      line = json.loads(text)
+    except ValueError:
+      continue
+    if not isinstance(line, dict) or line.get('kind') not in KINDS or not isinstance(line.get('key'), str):
+      continue
+    step, index = line.get(STEP), line.get('index', 0)
+    if isinstance(step, float) and step.is_integer():
+      step = line[STEP] = int(step)  # 10.0: what some JSON writers make of 10
+    if not isinstance(step, int) or isinstance(step, bool) or not isinstance(index, int) or isinstance(index, bool):
+      continue
+    if key is not None and line['key'] != key:
+      continue
+    items[(line['key'], step, index)] = line
   return [items[k] for k in sorted(items)]

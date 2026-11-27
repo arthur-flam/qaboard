@@ -30,12 +30,13 @@ import contextlib
 import json
 import math
 import os
+import re
 import threading
 import time as time_module
 import uuid
 from pathlib import Path
 from typing import Any, ContextManager, IO, NamedTuple
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 
 HISTORY = 'series.jsonl'
 SUMMARY = 'series.json'
@@ -47,6 +48,14 @@ TIME = '_time'
 # Series keep between MAX_POINTS and 2 x MAX_POINTS buckets in series.json
 MAX_POINTS = 500
 NON_FINITE = {'NaN': math.nan, 'Infinity': math.inf, '-Infinity': -math.inf}
+# Like the web app (is_series in webapp/src/viewers/series/series.js, both tested on tests/fixtures/file-types.json):
+# series.json, results/series.jsonl, train.series.json... Other names need `type: series`
+FILE_PATTERN = re.compile(r'(^|/)([^/]*[._-])?series\.(json|jsonl|ndjson)$', re.IGNORECASE)
+
+
+def is_series(path: str | Path) -> bool:
+  """Whether a file is named like series, as the web app's series viewer recognizes them"""
+  return bool(FILE_PATTERN.search(Path(path).as_posix()))
 
 
 class Point(NamedTuple):
@@ -169,42 +178,107 @@ def _not_json(constant: str) -> float:
 
 
 def read_history(path: str | Path) -> Iterator[tuple[int, float, dict[str, float]]]:
-  """
-  The lines of a series.jsonl: (step, time, {key: value}). Lines that aren't objects are skipped, like a last line
-  cut by a run that was killed, and values that aren't numbers. Lines without "_step" count from the previous one.
-  """
-  step = -1
+  """The lines of a series.jsonl file, see parse_history. Nothing if there is no file."""
   try:
     file = open(path, encoding='utf-8')
   except OSError:
     return
   with file:
-    for line in file:
-      line = line.strip()
-      if not line:
+    yield from parse_history(file)
+
+
+def parse_history(lines: Iterable[str]) -> Iterator[tuple[int, float, dict[str, float]]]:
+  """
+  The lines of a series.jsonl: (step, time, {key: value}). Lines that aren't objects are skipped, like a last line
+  cut by a run that was killed, and values that aren't numbers. Lines without "_step" count from the previous one.
+  """
+  step = -1
+  for line in lines:
+    line = line.strip()
+    if not line:
+      continue
+    try:
+      # NaN and Infinity as bare words are not JSON: browsers refuse the line, so do we
+      row = json.loads(line, parse_constant=_not_json)
+    except ValueError:
+      continue
+    if not isinstance(row, dict):
+      continue
+    row_step = row.get(STEP)
+    # 5 or 5.0, like JavaScript, where they are the same number
+    if isinstance(row_step, (int, float)) and not isinstance(row_step, bool) and row_step == int(row_step):
+      step = int(row_step)
+    else:
+      step += 1
+    row_time = row.get(TIME)
+    values = {}
+    for key, value in row.items():
+      if key in (STEP, TIME):
         continue
-      try:
-        # NaN and Infinity as bare words are not JSON: browsers refuse the line, so do we
-        row = json.loads(line, parse_constant=_not_json)
-      except ValueError:
-        continue
-      if not isinstance(row, dict):
-        continue
-      row_step = row.get(STEP)
-      # 5 or 5.0, like JavaScript, where they are the same number
-      if isinstance(row_step, (int, float)) and not isinstance(row_step, bool) and row_step == int(row_step):
-        step = int(row_step)
-      else:
-        step += 1
-      row_time = row.get(TIME)
-      values = {}
-      for key, value in row.items():
-        if key in (STEP, TIME):
-          continue
-        number = _decode(value)
-        if number is not None:
-          values[key] = number
-      yield step, float(row_time) if isinstance(row_time, (int, float)) and not isinstance(row_time, bool) else 0.0, values
+      number = _decode(value)
+      if number is not None:
+        values[key] = number
+    yield step, float(row_time) if isinstance(row_time, (int, float)) and not isinstance(row_time, bool) else 0.0, values
+
+
+def parse_series(text: str, max_points: int = MAX_POINTS) -> dict[str, Any]:
+  """
+  The content of a series.json or of a series.jsonl, as one model, like parse_series in the web app (both tested on
+  tests/fixtures/series/): {"started_at": ..., "series": {key: {points, step, time, value, min?, max?}}}, with at
+  most ~2 x max_points points per series. Raises ValueError when it is neither.
+  """
+  if not text.strip():
+    raise ValueError('empty file')
+  try:
+    data = json.loads(text)
+  except ValueError:
+    data = None  # several lines
+  # series.json is one JSON object on one line... like the only line of a short series.jsonl: the format says which
+  if isinstance(data, dict) and 'format' in data:
+    return _parse_summary(data)
+  series: dict[str, Downsampled] = {}
+  started_at: float | None = None
+  rows = 0
+  for step, time, values in parse_history(text.splitlines()):
+    rows += 1
+    if started_at is None:
+      started_at = time
+    for key, value in values.items():
+      series.setdefault(key, Downsampled(max_points)).add(step, value, time)
+  if rows == 0:
+    raise ValueError('no line is a JSON object')
+  # e.g. another program's series.json: an object, but not lines of values
+  if not series:
+    raise ValueError('no line has a number')
+  return {'started_at': round(started_at or 0.0, 3), 'series': {key: s.to_dict(started_at or 0.0) for key, s in series.items()}}
+
+
+def _is_finite(value: Any) -> bool:
+  return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _is_list(value: Any, length: int | None = None) -> bool:
+  return isinstance(value, list) and (length is None or len(value) == length)
+
+
+def _parse_summary(data: dict[str, Any]) -> dict[str, Any]:
+  if data.get('format') != FORMAT:
+    raise ValueError(f'not a {FORMAT} file')
+  if not isinstance(data.get('series'), dict):
+    raise ValueError('no series')
+  series = {}
+  for key, s in data['series'].items():
+    if not isinstance(s, dict) or not _is_list(s.get('step')) or not _is_list(s.get('value'), len(s['step'])):
+      continue
+    length = len(s['step'])
+    series[key] = {
+      'points': s['points'] if _is_finite(s.get('points')) else length,
+      'step': s['step'],
+      'time': s['time'] if _is_list(s.get('time'), length) else [0] * length,
+      'value': s['value'],
+      **({'min': s['min'], 'max': s['max']} if _is_list(s.get('min'), length) and _is_list(s.get('max'), length) else {}),
+    }
+  return {'started_at': data['started_at'] if _is_finite(data.get('started_at')) else 0, 'series': series}
 
 
 def read_series(output_dir: str | Path, key: str) -> list[Point]:

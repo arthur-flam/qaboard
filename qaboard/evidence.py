@@ -860,7 +860,15 @@ def find_reference_run(api: Api, run: Dict[str, Any], reference: Optional[str]) 
 
 
 def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_run_id: Optional[int] = None, compare_with_reference: bool = True,
-                   reference: Optional[str] = None, where: str = 'differences', region: Optional[Sequence[int]] = None, max_size: int = 768) -> Answer:
+                   reference: Optional[str] = None, where: str = 'differences', region: Optional[Sequence[int]] = None, max_size: int = 768,
+                   top: int = 10) -> Answer:
+  """
+  A run's file next to the reference run's, by its type, like the web app's viewers: images as PNG (crops of where
+  they differ), benchmarks, flame graphs, series, test reports, Plotly figures and logged media compared
+  (evidence_outputs.py: `top` rows), text as a diff, logs' end. Without `path`, the run's files and their types.
+  """
+  # the answers by type build on this module's helpers
+  from . import evidence_outputs as outputs
   try:
     run = api.get(f"output/{run_id}")
   except ResultsError as e:
@@ -894,6 +902,8 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
       except ResultsError:
         ref_run = None
   ref_manifest = (api.get(f"output/{reference_run_id}/manifest") or {}) if ref_run and ref_run.get('output_dir_url') else {}
+  # the types projects give their files in qaboard.yaml
+  visualizations = outputs.visualizations_of(api.project(run['project'])) if run.get('project') else []
 
   if not path:
     files = sorted(manifest.items())
@@ -914,16 +924,18 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
       lines.append(f"{counts['changed']} changed, {counts['identical']} identical, {counts['only in this run']} only in this run, {len(gone)} only in the reference.")
     # changed files first: those are the ones to look at
     shown = sorted(files, key=lambda f: (changes[f[0]] != 'changed', f[0]))
+    types = {name: outputs.output_type(name, visualizations) for name, _ in files}
     for name, meta in shown[:150]:
-      kind = 'image' if extension(name) in IMAGES else 'text' if extension(name) in TEXTS else ''
-      details = ', '.join(d for d in (format_bytes(meta.get('st_size')), kind, changes[name]) if d)
+      details = ', '.join(d for d in (format_bytes(meta.get('st_size')), types[name].label, changes[name]) if d)
       lines.append(f"- {code(name)} ({details})")
     if len(files) > 150:
       lines.append(f"- … and {len(files) - 150} more")
-    lines.append(f"Also {', '.join(NOT_IN_MANIFESTS[:1])}, the run's log. Call `look_at_output` again with `path`" + (f" and `reference_run_id={reference_run_id}`" if ref_run else '') + ". "
+    lines.append(f"Also {', '.join(NOT_IN_MANIFESTS[:1])}, the run's log. Call `look_at_output` again with `path`" + (f" and `reference_run_id={reference_run_id}`" if ref_run else '')
+                 + ": it compares images, text, " + ', '.join(form.label for form in outputs.FORMATS.values()) + " with the reference's. "
                  + (f"In the web app: {links['run']}" if links.get('run') else ''))
     return Answer('\n'.join(lines), {'view': 'files', 'version': 1, 'run_id': run_id, 'reference_run_id': reference_run_id if ref_run else None,
-                                      'files': [{'path': p, 'size': m.get('st_size'), 'change': changes[p]} for p, m in shown[:MAX_ITEMS * 4]], 'links': links})
+                                      'files': [{'path': p, 'size': m.get('st_size'), 'change': changes[p], 'type': types[p].kind} for p, m in shown[:MAX_ITEMS * 4]],
+                                      'links': links})
 
   if path not in manifest and path not in NOT_IN_MANIFESTS and not re.fullmatch(r'log\.attempt\d+\.txt', path):
     close = difflib.get_close_matches(path, list(manifest), n=5, cutoff=0.4)
@@ -942,8 +954,16 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
     return Answer(text, {'view': 'identical', 'run_id': run_id, 'path': path, 'links': links})
 
   ext = extension(path)
-  data: Dict[str, Any] = {'view': 'images', 'version': 1, 'run_id': run_id, 'reference_run_id': reference_run_id if ref_run else None, 'path': path, 'links': links, 'regions': []}
-  if ext in IMAGES:
+  base = {'version': 1, 'run_id': run_id, 'reference_run_id': reference_run_id if ref_run else None, 'path': path, 'links': links}
+  kind = outputs.output_type(path, visualizations)
+  if kind.kind in outputs.FORMATS:
+    try:
+      return outputs.look_at(api, kind, run, ref_run, path, header, notes, base, top)
+    except outputs.Unreadable as e:
+      # like the web app's viewers of files named like their format
+      notes.append(f"{e}: shown as text.")
+  data: Dict[str, Any] = {**base, 'view': 'images', 'regions': []}
+  if kind.kind == 'image':
     new_image = Image(api, run, path)
     ref_image = Image(api, ref_run, path) if ref_run else None
     size = new_image.size()
