@@ -7,9 +7,12 @@
     "check": "node check.js"
   },
   "devDependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.4",
-    "@modelcontextprotocol/sdk": "1.32.2",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/core": "^2.0.0",
+    "@modelcontextprotocol/ext-apps": "2.0.4",
+    "@modelcontextprotocol/server": "^2.0.0",
     "esbuild": "0.28.2",
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "zod": "^4.2.0"
   }
 }
