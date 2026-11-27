@@ -67,10 +67,15 @@ class Answer:
 # ---------------------------------------------------------------------------- talking to the server
 
 class Api:
-  """QA-Board's server, with the token qa uses for it (qa auth login, QABOARD_TOKEN)"""
+  """
+  QA-Board's server, with the token qa uses for it (qa auth login, QABOARD_TOKEN), or the one given.
+  `public_url`: where people and clients reach it, for links, when `server` is an internal address (e.g. `qa mcp
+  --http` in a container next to the backend). By default, `server`.
+  """
 
-  def __init__(self, server: Optional[str] = None, token: Optional[str] = None):
+  def __init__(self, server: Optional[str] = None, token: Optional[str] = None, public_url: Optional[str] = None):
     self.server = (server or default_server()[0]).rstrip('/')
+    self.public_url = (public_url or self.server).rstrip('/')
     self._token = token
     self._config: Optional[Dict[str, Any]] = None
     self._projects: Dict[str, Dict[str, Any]] = {}
@@ -83,7 +88,7 @@ class Api:
     if not url:
       return self
     server = parse_url(url).server.rstrip('/')
-    if same_server(server, self.server) or url.startswith(self.server + '/'):
+    if any(same_server(server, ours) or url.startswith(ours + '/') for ours in (self.server, self.public_url)):
       return self
     if find_login(read_hosts(), server)[1]:
       return Api(server)
@@ -92,8 +97,8 @@ class Api:
 
   def is_ours(self, url: str) -> bool:
     """Whether a URL is on this server's origin: only those get the token (image servers can be on other hosts)"""
-    ours, theirs = urlsplit(self.server), urlsplit(url)
-    return (theirs.scheme, theirs.netloc) == (ours.scheme, ours.netloc)
+    theirs = urlsplit(url)
+    return any((theirs.scheme, theirs.netloc) == (ours.scheme, ours.netloc) for ours in (urlsplit(self.server), urlsplit(self.public_url)))
 
   def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     return _request(self.server, path, params, self._token)
@@ -153,7 +158,7 @@ class Api:
 
   # ---- the web app's pages, for people (webapp/src/selection.js, route_paths.js)
   def page(self, project: str, kind: str, name: Optional[str] = None, **query: Any) -> str:
-    path = f"{self.server}/{quote(project, safe='/')}/{kind}"
+    path = f"{self.public_url}/{quote(project, safe='/')}/{kind}"
     if name:
       path += f"/{quote(str(name), safe='/')}"
     query = {k: v for k, v in query.items() if v not in (None, '')}
@@ -166,8 +171,13 @@ class Api:
     # filters are regular expressions, the text searched ends with the run's id (like Run.url)
     return self.page(project, 'commit', commit, batch=label, filter=f"id:{run_id}$", reference=reference, batch_ref=reference_label)
 
+  def file_path(self, output_dir_url: str, path: str) -> str:
+    """A run's file, as a path on the server, to fetch()"""
+    return f"{output_dir_url.rstrip('/')}/{quote(path)}"
+
   def file_url(self, output_dir_url: str, path: str) -> str:
-    return f"{self.server}{output_dir_url.rstrip('/')}/{quote(path)}"
+    """A run's file, for people"""
+    return f"{self.public_url}{self.file_path(output_dir_url, path)}"
 
 
 # ---------------------------------------------------------------------------- what the question is about
@@ -195,7 +205,8 @@ def select(api: Api, url: Optional[str] = None, project: Optional[str] = None, c
   with results, nothing: the latest commit with results). What's given explicitly wins over the URL.
   """
   if url:
-    selection = parse_url(url, api.server if url.startswith(api.server + '/') else None)
+    prefix = next((ours for ours in (api.server, api.public_url) if url.startswith(ours + '/')), None)
+    selection = parse_url(url, prefix)
     project = project or selection.new.project
     commit = commit or selection.new.commit
     branch = branch or selection.new.branch
@@ -551,7 +562,7 @@ def compare(api: Api, selection: Selection, metrics: Optional[Sequence[str]] = N
   answer_data = {
     'view': 'compare',
     'version': 1,
-    'server': api.server,
+    'server': api.public_url,
     'project': project,
     'status': data.get('status'),
     'messages': [*(data.get('messages') or []), *notes],
@@ -815,7 +826,7 @@ class Image:
       ext = extension(self.path)
       if region is None and ext in DIRECT_IMAGES:
         try:
-          data = self.api.fetch(self.api.file_url(self.output['output_dir_url'], self.path), max_bytes=DIRECT_IMAGE_BYTES, truncate=False)
+          data = self.api.fetch(self.api.file_path(self.output['output_dir_url'], self.path), max_bytes=DIRECT_IMAGE_BYTES, truncate=False)
         except TooLarge as too_large:
           raise EvidenceError(f"The image server can't open {self.path} ({e}), and the file is too large to send ({too_large}). Open it in the web app.") from e
         return data, 'image/jpeg' if ext in ('jpg', 'jpeg') else f"image/{ext}"
@@ -865,7 +876,7 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
   if path in NOT_IN_MANIFESTS or re.fullmatch(r'log\.attempt\d+\.txt', path or ''):
     # logs: their end says what happened, a diff with the reference's says little
     try:
-      log = api.fetch(api.file_url(run['output_dir_url'], path), tail=LOG_TAIL_BYTES).decode('utf-8', errors='replace')  # type: ignore[arg-type]
+      log = api.fetch(api.file_path(run['output_dir_url'], path), tail=LOG_TAIL_BYTES).decode('utf-8', errors='replace')  # type: ignore[arg-type]
     except ResultsError as e:
       raise EvidenceError(f"Can't read {path} of run {run_id}: {e}") from e
     tail_lines = ANSI.sub('', log).rstrip().splitlines()[-150:]
@@ -979,7 +990,7 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
   file_size: int = meta.get('st_size') or 0
   if ext in TEXTS or file_size < 64_000:
     try:
-      new_text = decode_text(api.fetch(links['file'], max_bytes=TEXT_BYTES))
+      new_text = decode_text(api.fetch(api.file_path(run['output_dir_url'], path), max_bytes=TEXT_BYTES))
     except ResultsError as e:
       raise EvidenceError(f"Can't read {path} of run {run_id}: {e}") from e
     if new_text is None:
@@ -988,7 +999,7 @@ def look_at_output(api: Api, run_id: int, path: Optional[str] = None, reference_
     lines = [header, *notes]
     if ref_run:
       try:
-        ref_text = decode_text(api.fetch(api.file_url(ref_run['output_dir_url'], path), max_bytes=TEXT_BYTES)) or ''
+        ref_text = decode_text(api.fetch(api.file_path(ref_run['output_dir_url'], path), max_bytes=TEXT_BYTES)) or ''
       except ResultsError:
         ref_text = ''
       diff = list(difflib.unified_diff(ref_text.splitlines(), new_text.splitlines(), f"reference/{path}", f"new/{path}", lineterm='', n=2))
@@ -1111,7 +1122,7 @@ def metric_history(api: Api, project: str, metrics: Optional[Sequence[str]] = No
     undeclared = [m for m in asked if m not in definitions]
     raise EvidenceError(f"No values of {', '.join(asked)} in the runs labeled `{label}`" + (f" ({', '.join(undeclared)}: not a metric the project declares)" if undeclared else '')
                         + f". Declared metrics: {', '.join(sorted(definitions)[:60]) or 'none'}. Only numbers have medians.")
-  data = {'view': 'history', 'version': 1, 'server': api.server, 'project': project, 'branch': branch, 'label': label, 'metrics': metrics,
+  data = {'view': 'history', 'version': 1, 'server': api.public_url, 'project': project, 'branch': branch, 'label': label, 'metrics': metrics,
           'points': points, 'series': series, 'links': {'history': history_url}}
 
   lines = [f"## {', '.join(metrics)} on {project} {('branch ' + branch) if branch else '(all branches)'}, label `{label}`: {len(points)} commit(s) with results, last {days} days",
@@ -1155,7 +1166,7 @@ def find_results(api: Api, project: Optional[str] = None, branch: Optional[str] 
     def latest(item):
       return str((item[1] or {}).get('latest_output_datetime') or '')
     items.sort(key=latest, reverse=True)
-    lines = [f"## {len(items)} project(s) on {api.server}, most recent results first"]
+    lines = [f"## {len(items)} project(s) on {api.public_url}, most recent results first"]
     for name, info in items[:40]:
       lines.append(f"- {code(name)}" + (f": last results {latest((name, info))[:10]}" if latest((name, info)) else ''))
     if len(items) > 40:
@@ -1207,7 +1218,7 @@ def runs_table(api: Api, selection: Selection, metrics: Optional[Sequence[str]] 
   outputs = batch_outputs(api, selection.project, selection.commit, selection.label)
   from .filters import filter_runs
   shown = filter_runs(selection.filter, list(outputs.values())) if selection.filter else list(outputs.values())
-  runs = [Run.from_api(o, project=selection.project, commit=selection.commit, batch=selection.label, server=api.server) for o in shown]
+  runs = [Run.from_api(o, project=selection.project, commit=selection.commit, batch=selection.label, server=api.public_url) for o in shown]
   runs = [r for r in runs if r.type not in HIDDEN_RUN_TYPES and not r.deleted]
   runs.sort(key=lambda r: (r.input, r.id or 0))
   metric_names = list(metrics) if metrics else sorted({k for r in runs for k, v in r.metrics.items() if isinstance(v, (int, float, str, bool)) or v is None})
