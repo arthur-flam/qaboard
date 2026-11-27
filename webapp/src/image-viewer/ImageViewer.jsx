@@ -25,6 +25,9 @@ import './image-viewer.css';
 
 const GAP = 4;
 const ZOOM_STEP = 1.5;
+// With quietToolbar: the tools that show only when the pointer is over the viewer or it has the focus (image-viewer.css).
+// Not the ones that say what's on, e.g. a blind test or adjusted colors
+const SECONDARY = 'qiv-secondary';
 // The keyboard shortcuts work all over the page: they go to the viewer in full screen, else the one under the mouse, else
 // the one with the focus, else the one used last if it's in view, else the first in view
 const viewers = new Set();
@@ -117,6 +120,7 @@ export const ImageViewer = ({
   defaultDetails = true,
   onDetailsChange,
   compact = false,
+  quietToolbar = false,
   compareWith = [],
   compared: compared_prop,
   defaultCompared = null,
@@ -791,7 +795,7 @@ export const ImageViewer = ({
 
   return <div
     ref={root}
-    className={`qiv ${fullscreen ? 'qiv-fullscreen' : ''} ${alternative && !hidden ? 'qiv-vs-other' : ''} ${n_way ? 'qiv-n-way' : ''} ${compact && !fullscreen ? `qiv-compact ${chrome ? 'qiv-chrome-open' : ''}` : ''} ${className}`}
+    className={`qiv ${fullscreen ? 'qiv-fullscreen' : ''} ${alternative && !hidden ? 'qiv-vs-other' : ''} ${n_way ? 'qiv-n-way' : ''} ${compact && !fullscreen ? `qiv-compact ${chrome ? 'qiv-chrome-open' : ''}` : ''} ${quietToolbar && !fullscreen ? 'qiv-quiet' : ''} ${className}`}
     data-theme={theme}
     style={{ ...imageColors(images.a, images.b), ...style }}
     onPointerEnter={() => { hovered_viewer = last_viewer = root.current; }}
@@ -820,7 +824,7 @@ export const ImageViewer = ({
         <Popover open={picker_open} onOpenChange={setPickerOpen} button={props => <Button
           {...props}
           icon={alternative ? 'document' : 'comparison'}
-          className={`qiv-compare-button ${alternative ? 'qiv-intent' : ''}`}
+          className={`qiv-compare-button ${alternative ? 'qiv-intent' : SECONDARY}`}
           disabled={hidden}
           title={hidden ? 'Pick what to compare with after the blind test'
             : `Compare with ${alternative ? candidateLabel(alternative) : reference ? the_reference : 'another image'}. Click to compare with another image (c: ${alternative ? `back to ${the_reference}` : 'the image picked last'})`}
@@ -856,14 +860,14 @@ export const ImageViewer = ({
         aria-pressed={diff_between}
         onClick={toggleDiffLayout}
       />}
-      {comparing && !n_way && <Button icon="exchange" text="Swap" title={`${flip_title} (t)`} label={`${flip_title} (t)`} onClick={flip} active={swapped && !hidden} aria-pressed={swapped && !hidden} />}
+      {comparing && !n_way && <Button icon="exchange" text="Swap" title={`${flip_title} (t)`} label={`${flip_title} (t)`} onClick={flip} active={swapped && !hidden} aria-pressed={swapped && !hidden} className={swapped && !hidden ? '' : SECONDARY} />}
       {comparing && !n_way && <Button
         icon={!blind ? 'eye-off' : blind.revealed ? 'tick' : 'eye-open'}
         text={!blind ? 'Blind test' : blind.revealed ? 'Done' : 'Reveal'}
         title={!blind ? 'Blind test: the images in a random order, called A and B (h)'
           : blind.revealed ? 'End the blind test: new and reference again, new first (h)'
           : 'Blind test: reveal which image is which (h)'}
-        className={blind ? 'qiv-intent' : ''}
+        className={blind ? 'qiv-intent' : SECONDARY}
         active={!!blind}
         aria-pressed={!!blind}
         onClick={nextBlindStep}
@@ -890,11 +894,11 @@ export const ImageViewer = ({
         text={active_set ? active_set.label : announced ? `${announced_count} ${announced.noun ?? 'regions'}` : undefined}
         label="Regions of interest"
         title={announced && !active_set ? `${announced_count} ${announced.noun ?? 'regions'} in ${announced.label}: click to show them` : 'Regions of interest'}
-        className={active_set ? 'qiv-intent' : announced ? 'qiv-announce' : ''}
+        className={active_set ? 'qiv-intent' : announced ? 'qiv-announce' : SECONDARY}
       />}>
         {({ close }) => <RegionsMenu sets={regionSets} selected={active_set?.id ?? null} actions={regionActions} onSelect={selectSet} onCopy={copyRegion} close={close} />}
       </Popover>
-      <Popover align="end" button={props => <Button {...props} icon="flash" title="Adjust the display: brightness, contrast, gamma, channels…" className={adjusted ? 'qiv-intent qiv-dot' : ''} />}>
+      <Popover align="end" button={props => <Button {...props} icon="flash" title="Adjust the display: brightness, contrast, gamma, channels…" className={adjusted ? 'qiv-intent qiv-dot' : SECONDARY} />}>
         <AdjustmentsPanel adjustments={adjustments} onChange={setAdjustments} />
       </Popover>
       <Popover align="end" button={props => <Button
@@ -902,7 +906,7 @@ export const ImageViewer = ({
         icon="numerical"
         label="Pixel values"
         title={`Values written on the pixels when zoomed in: ${pixel_source === 'image' ? "the image's own" : pixel_source === 'display' ? 'the displayed ones' : 'off'} (p)`}
-        className={pixel_source !== 'off' ? 'qiv-intent' : ''}
+        className={`${pixel_source !== 'off' ? 'qiv-intent' : ''} ${SECONDARY}`}
       />}>
         <ValuesPanel source={pixel_source} available={!!getPixels} unavailable={imageValuesUnavailable} onChange={setValues} />
       </Popover>
@@ -910,6 +914,7 @@ export const ImageViewer = ({
         icon="properties"
         label="Values under the pointer"
         title={`${show_details ? 'Hide' : 'Show'} the values under the pointer${n_way ? ', and how far apart the images are' : ''}`}
+        className={SECONDARY}
         active={show_details}
         aria-pressed={show_details}
         onClick={() => setDetails(!show_details)}
@@ -917,20 +922,21 @@ export const ImageViewer = ({
       <Button
         icon={ANALYSIS_ICONS[analysis]}
         title={`${show_analysis ? 'Hide' : 'Show'} the analysis of the view: histogram, row and column profiles, statistics (a)`}
+        className={SECONDARY}
         active={show_analysis}
         aria-pressed={show_analysis}
         onClick={toggleAnalysis}
       />
-      <span className="qiv-group">
+      <span className={`qiv-group ${SECONDARY}`}>
         <Button icon="zoom-out" title="Zoom out (−)" onClick={() => controller.zoomBy(1 / ZOOM_STEP)} />
         <Button className="qiv-zoom" text={zoom ? `${zoom < 0.1 ? (100 * zoom).toFixed(1) : Math.round(100 * zoom)}%` : '–'} title="Fit (0). Scroll or pinch to zoom, drag to pan. 100%: one image pixel per screen pixel" onClick={() => controller.fit()} />
         <Button icon="zoom-in" title="Zoom in (+)" onClick={() => controller.zoomBy(ZOOM_STEP)} />
         <Button text="1:1" title="Actual pixels: one image pixel per screen pixel" onClick={() => controller.actualSize()} />
       </span>
-      <Popover align="end" button={props => <Button {...props} icon="duplicate" title="Copy or save the images" />}>
+      <Popover align="end" button={props => <Button {...props} icon="duplicate" title="Copy or save the images" className={SECONDARY} />}>
         {export_menu}
       </Popover>
-      <Popover align="end" button={props => <Button {...props} icon="key-command" title="Keyboard shortcuts" />}>
+      <Popover align="end" button={props => <Button {...props} icon="key-command" title="Keyboard shortcuts" className={SECONDARY} />}>
         <Shortcuts />
       </Popover>
       {can_fullscreen && <Button
