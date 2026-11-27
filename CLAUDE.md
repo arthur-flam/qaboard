@@ -91,6 +91,8 @@ Pieces in different directories that must agree; each side's `CLAUDE.md` points 
 ## Design docs, known warts, TODO
 - Design: `docs/design/` (ingest/upload/SDK, Kubernetes runner, logged media, user management...), `docs/rfcs/`
   (SDK runs, local changes, ...). Read the relevant one before changing a subsystem.
+- Plans: `docs/quality-ledger-plan.md` (noise, the gate, the decision record), `docs/evals-and-reviews-plan.md`
+  (LLM evals, trials, blind reviews by several people).
 - **Known warts**: `docs/warts.md`, by area (Security, Backend, CLI, SDK runs, Local changes, Logged media, Uploads,
   Runners, Webapp, Deployments). Add what you find but don't fix there, under its area.
 - Site-specific leftovers: `docs/known-issues.md`. Docs to-dos: `docs/TODO.md`; web app follow-ups: `webapp/TODO.md`.

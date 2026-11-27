@@ -15,6 +15,11 @@ export const is_junit = path => /(^|\/)(junit|[^/]*[._-]junit|TEST-[^/]*)\.xml$/
 // benchmark files are shown as text, as before.
 export const is_benchmarks = path => /(^|\/)(([^/]*[._-])?benchmarks?|[^/]*[._-]bench)\.(json|jsonl|ndjson)$/i.test(path || '');
 
+// Conversations with LLMs, shown by the transcript viewer (transcript/): transcript.json, agent.transcript.jsonl...
+// Inspect's logs have names of their own (<date>_<task>_<id>.json): they need `type: transcript`. Files picked by their
+// name that aren't conversations are shown as text.
+export const is_transcript = path => /(^|\/)([^/]*[._-])?transcripts?\.(json|jsonl|ndjson)$/i.test(path || '');
+
 // Patches: shown as text, highlighted as diffs (text.jsx). Runs save their local changes as .qaboard/local-changes.patch
 export const is_patch = path => /\.(patch|diff)$/i.test(path || '');
 

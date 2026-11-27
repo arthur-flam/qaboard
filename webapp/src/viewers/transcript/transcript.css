@@ -1,0 +1,349 @@
+/* The transcript viewer (TranscriptReport.jsx). Colors follow the theme; each role has its own. */
+.qa-transcript {
+  --transcript-system: #738091;
+  --transcript-user: #1c6e42;
+  --transcript-assistant: #2d72d2;
+  --transcript-tool: #935610;
+  --transcript-bad: #ac2f33;
+  --transcript-good: #1c6e42;
+  --transcript-added-bg: rgba(35, 133, 81, 0.2);
+  --transcript-removed-bg: rgba(205, 66, 70, 0.2);
+  --transcript-changed: #c87619;
+  --transcript-mark: rgba(251, 179, 96, 0.6);
+  --transcript-border: var(--qa-border, rgba(17, 20, 24, 0.15));
+  --transcript-muted: var(--qa-text-muted, #5f6b7c);
+  --transcript-surface: var(--qa-surface, #ffffff);
+  --transcript-surface-alt: var(--qa-surface-alt, #f6f7f9);
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--qa-text, rgba(0, 0, 0, 0.85));
+  outline: none;
+}
+.bp6-dark .qa-transcript {
+  --transcript-system: #abb3bf;
+  --transcript-user: #72ca9b;
+  --transcript-assistant: #8abbff;
+  --transcript-tool: #fbb360;
+  --transcript-bad: #fa999c;
+  --transcript-good: #72ca9b;
+  --transcript-added-bg: rgba(50, 164, 103, 0.3);
+  --transcript-removed-bg: rgba(231, 106, 110, 0.3);
+  --transcript-changed: #fbb360;
+  --transcript-mark: rgba(200, 118, 25, 0.65);
+}
+.qa-transcript-body:focus { outline: none; }
+
+.qa-transcript-muted { color: var(--transcript-muted); font-weight: 400; }
+.qa-transcript-good { color: var(--transcript-good); }
+.qa-transcript-bad { color: var(--transcript-bad); }
+.qa-transcript-empty { padding: 16px; text-align: center; }
+
+.qa-transcript-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.qa-transcript-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 6px 10px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 4px;
+  background: var(--transcript-surface-alt);
+  color: var(--transcript-muted);
+}
+.qa-transcript-help kbd {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 1px 5px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 3px;
+  background: var(--transcript-surface);
+  white-space: pre;
+}
+
+/* The sample in numbers */
+.qa-transcript-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-variant-numeric: tabular-nums;
+}
+.qa-transcript-stat { display: inline-flex; align-items: baseline; gap: 5px; }
+.qa-transcript-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--transcript-muted);
+}
+.qa-transcript-stat-ref { color: var(--transcript-reference); }
+.qa-transcript-stat-ref::before { content: "vs "; color: var(--transcript-muted); font-size: 11px; }
+
+.qa-transcript-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 4px;
+  background: var(--transcript-surface);
+}
+.qa-transcript-score { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.qa-transcript-score-flipped { font-weight: 600; }
+.qa-transcript-score-name { min-width: 72px; color: var(--transcript-muted); font-weight: 400; }
+.qa-transcript-score-answer { min-width: 0; overflow-wrap: anywhere; font-weight: 400; }
+.qa-transcript-score-why { flex-basis: 100%; font-weight: 400; }
+
+/* The outline: a cell per message, colored by role, marked when it differs */
+.qa-transcript-outline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.qa-transcript-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--transcript-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.qa-transcript-legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--role); }
+.qa-transcript-legend[aria-pressed="false"] { text-decoration: line-through; opacity: 0.6; }
+.qa-transcript-legend:focus-visible, .qa-transcript-cell:focus-visible { outline: 2px solid var(--qa-intent-primary, #2d72d2); outline-offset: 1px; }
+.qa-transcript-cells { display: flex; flex: 1 1 200px; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.qa-transcript-cell {
+  width: 10px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--role);
+  opacity: 0.45;
+  cursor: pointer;
+}
+.qa-transcript-cell:hover { opacity: 1; }
+.qa-transcript-cell-single { opacity: 0.75; }
+.qa-transcript-cell-changed, .qa-transcript-cell-added, .qa-transcript-cell-removed {
+  opacity: 1;
+  box-shadow: 0 3px 0 var(--transcript-changed);
+  margin-bottom: 3px;
+}
+
+.qa-transcript-system { --role: var(--transcript-system); }
+.qa-transcript-user { --role: var(--transcript-user); }
+.qa-transcript-assistant { --role: var(--transcript-assistant); }
+.qa-transcript-tool { --role: var(--transcript-tool); }
+
+/* The conversation */
+.qa-transcript-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 12px;
+}
+.qa-transcript-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  overflow-y: auto;
+}
+.qa-transcript-row { min-width: 0; scroll-margin: 60px; }
+.qa-transcript-row-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 3px;
+  margin: -3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--transcript-changed) 9%, transparent);
+}
+.qa-transcript-row-current { box-shadow: 0 0 0 2px var(--transcript-changed); }
+.qa-transcript-row-pair > .qa-transcript-message:first-child { box-shadow: inset 0 2px 0 var(--transcript-new); }
+.qa-transcript-row-pair > .qa-transcript-message:last-child { box-shadow: inset 0 2px 0 var(--transcript-reference); }
+.qa-transcript-absent {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: 1px dashed var(--transcript-border);
+  border-radius: 4px;
+  color: var(--transcript-muted);
+  font-size: 12px;
+}
+.qa-transcript-same-run {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 3px;
+  border: 1px dashed var(--transcript-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--transcript-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.qa-transcript-same-run:hover { background: var(--qa-hover, rgba(45, 114, 210, 0.08)); }
+
+.qa-transcript-message {
+  min-width: 0;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--transcript-border);
+  border-left: 3px solid var(--role);
+  border-radius: 4px;
+  background: var(--transcript-surface);
+}
+.qa-transcript-message.qa-transcript-user { background: color-mix(in srgb, var(--role) 6%, var(--transcript-surface)); }
+.qa-transcript-message.qa-transcript-tool { margin-left: 18px; background: var(--transcript-surface-alt); }
+.qa-transcript-row-pair .qa-transcript-message.qa-transcript-tool { margin-left: 0; }
+.qa-transcript-message.qa-transcript-failed { border-left-color: var(--transcript-bad); }
+.qa-transcript-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.qa-transcript-title, .qa-transcript-system-fold > .qa-transcript-fold-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--role);
+}
+.qa-transcript-system-fold { flex: 1; min-width: 0; }
+.qa-transcript-role { font-weight: 600; font-size: 12px; }
+.qa-transcript-tool-name {
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--qa-text, inherit);
+}
+.qa-transcript-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--transcript-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.qa-transcript-copy {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--transcript-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.qa-transcript-message:hover .qa-transcript-copy, .qa-transcript-copy:focus-visible { opacity: 1; }
+.qa-transcript-status {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--qa-text, inherit);
+  background: color-mix(in srgb, var(--transcript-changed) 28%, transparent);
+  white-space: nowrap;
+}
+.qa-transcript-status-added { background: var(--transcript-added-bg); }
+.qa-transcript-status-removed { background: var(--transcript-removed-bg); }
+
+.qa-transcript-text {
+  position: relative;
+  margin-top: 3px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.qa-transcript-mono { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.qa-transcript-clamped { max-height: 15em; overflow: hidden; }
+.qa-transcript-more {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 26px 0 2px;
+  border: 0;
+  background: linear-gradient(transparent, var(--transcript-surface) 60%);
+  color: var(--qa-link, #1b69b6);
+  font: 12px inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.qa-transcript-message.qa-transcript-tool .qa-transcript-more { background: linear-gradient(transparent, var(--transcript-surface-alt) 60%); }
+.qa-transcript-added { background: var(--transcript-added-bg); border-radius: 2px; }
+.qa-transcript-removed { background: var(--transcript-removed-bg); border-radius: 2px; }
+.qa-transcript-mark { background: var(--transcript-mark); color: inherit; border-radius: 2px; }
+.qa-transcript-error { margin-top: 3px; color: var(--transcript-bad); overflow-wrap: anywhere; }
+
+.qa-transcript-call {
+  margin-top: 5px;
+  padding: 4px 8px 5px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 4px;
+  background: var(--transcript-surface-alt);
+}
+.qa-transcript-call-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--transcript-tool);
+}
+
+.qa-transcript-fold-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.qa-transcript-fold-title:focus-visible, .qa-transcript-copy:focus-visible, .qa-transcript-more:focus-visible, .qa-transcript-same-run:focus-visible {
+  outline: 2px solid var(--qa-intent-primary, #2d72d2);
+  outline-offset: 1px;
+}
+.qa-transcript-reasoning {
+  margin-top: 3px;
+  padding-left: 8px;
+  border-left: 2px solid var(--transcript-border);
+  color: var(--transcript-muted);
+  font-style: italic;
+}
+.qa-transcript-reasoning > .qa-transcript-fold-title { font-style: normal; font-size: 12px; }
+
+.qa-transcript-tools {
+  padding: 5px 10px;
+  border: 1px solid var(--transcript-border);
+  border-radius: 4px;
+  background: var(--transcript-surface);
+}
+.qa-transcript-tools > .qa-transcript-fold-title { font-size: 12px; font-weight: 600; gap: 6px; }
+.qa-transcript-tooldef { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--transcript-border); }
+.qa-transcript-tooldef .qa-transcript-status { margin-left: 6px; }
+.qa-transcript-tooldef .qa-transcript-fold-title { font-size: 12px; color: var(--transcript-muted); }
+
+/* In narrow run cards, the two sides are stacked */
+@container (max-width: 560px) {
+  .qa-transcript-row-pair, .qa-transcript-sides { grid-template-columns: minmax(0, 1fr); }
+  .qa-transcript-absent { display: none; }
+}

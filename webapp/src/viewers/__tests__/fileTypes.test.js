@@ -3,7 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { is_junit, is_benchmarks, is_flame_graph, is_audio } from '../fileTypes';
+import { is_junit, is_benchmarks, is_flame_graph, is_audio, is_transcript } from '../fileTypes';
 import { is_series } from '../series/series';
 
 const names = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../../../../tests/fixtures/file-types.json'), 'utf8'));
@@ -17,4 +17,10 @@ describe('audio files', () => {
   it.each(['speech.wav', 'media/audio/step-0012.WAV', 'a.mp3', 'a.flac', 'a.ogg', 'a.oga', 'a.opus', 'a.m4a', 'a.aac'])('%s is one', name => expect(is_audio(name)).toBe(true));
   // Ogg and WebM videos stay videos
   it.each(['a.ogv', 'a.webm', 'a.mp4', 'wav.txt', 'a.wav.json', '', undefined])("%s isn't", name => expect(is_audio(name)).toBe(false));
+});
+
+describe('transcripts', () => {
+  it.each(['transcript.json', 'out/Transcript.json', 'agent.transcript.jsonl', 'task-3_transcripts.ndjson'])('%s is one', name => expect(is_transcript(name)).toBe(true));
+  // the example's transcript.txt stays text; Inspect's logs need `type: transcript`
+  it.each(['transcript.txt', 'mytranscript.json', 'transcript.json.bak', '2026-11-27T14-00-24_fleet_abc.json', '', undefined])("%s isn't", name => expect(is_transcript(name)).toBe(false));
 });
