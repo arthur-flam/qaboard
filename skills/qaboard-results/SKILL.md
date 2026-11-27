@@ -59,7 +59,9 @@ A change is better when its runs beat the *same* runs on the reference, not when
 When the `qaboard` MCP server is connected (`qa mcp`, https://samsung.github.io/qaboard/docs/mcp), its tools do the
 steps below for you: `compare` (step 3-4, with the tests that moved most and a sign test), `failures` (failed runs
 grouped by error, new or not), `look_at_output` (a run's image next to the reference's, crops of where they differ, or
-a text diff), `metric_history`, `check_gate` (step 2). Still run the batch (step 1) and report with the links they give.
+a text diff), `metric_history`, `check_gate` (step 2), `my_work` (what the person ran lately, not the CI's).
+Still run the batch (step 1) and report with the links they give. When the person should start a tuning
+themselves, `prepare_tuning` gives a link to the web app's form filled in.
 
 1. Run the batch the project uses in CI, shared under a label:
    `qa --label <topic> batch ci --json`: once it's done, stdout has `ok`, `url` (the results' page) and the `runs`

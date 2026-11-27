@@ -51,7 +51,8 @@ are theirs), `local_changes.py`, `system_metrics.py` (+ `.series`). The web app 
 ## MCP server
 `qa mcp` (`mcp_server.py`, the `mcp` extra) serves read-only MCP tools shaped for tasks, not one per
 endpoint: compare with the reference, failures grouped by error, outputs next to the reference's, metrics over
-commits. Their answers are built in `evidence.py` (no MCP dependency), outputs by type in `evidence_outputs.py`
+commits, the person's own work and links to start tunings (`evidence_work.py`: agents prepare, people start). Their
+answers are built in `evidence.py` (no MCP dependency), outputs by type in `evidence_outputs.py`
 (reusing the parsers above, and the web app's file-type rules: `tests/fixtures/file-types.json`), on what both share
 in `evidence_base.py` (the API, answers, errors, formatting). Files come from runs: read them with limits (sizes,
 decompressed too), and content of an unexpected shape is shown as text, never a tool error. `mcp_app.html` is
