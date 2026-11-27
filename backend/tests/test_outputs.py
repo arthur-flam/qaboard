@@ -137,6 +137,20 @@ def test_unknown_outputs(outputs_api, dummy_app, method, call):
   assert status == 404 and response.get_json() == {"error": "Cannot find output 7"}
 
 
+def test_a_run_says_where_it_is(outputs_api, dummy_app):
+  # from a run's id alone, agents find its batch, commit and the reference's run (qaboard/mcp_server.py)
+  import backend.api.auth as auth
+  auth.is_authorized_user.return_value = True
+  output = outputs_api.test_output
+  output.batch = SimpleNamespace(id=3, label="nightly", ci_commit=SimpleNamespace(project_id="group/repo", hexsha="abc123"))
+  outputs_api.Output.query.filter.return_value.one.side_effect = None
+  outputs_api.Output.query.filter.return_value.one.return_value = output
+  with dummy_app.test_request_context("/api/v1/output/7"):
+    data = outputs_api.get_output(7).get_json()
+  assert data["project"] == "group/repo" and data["commit_id"] == "abc123" and data["batch_label"] == "nightly" and data["batch_id"] == 3
+  assert data["is_failed"] is True
+
+
 def test_pending_outputs_cant_be_deleted(outputs_api, dummy_app, monkeypatch):
   from flask import g
   import backend.api.auth as auth

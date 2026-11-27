@@ -210,6 +210,25 @@ services:
         - backend
         - rabbitmq
 
+  # The MCP server for remote clients (e.g. Open WebUI): `qa mcp --http` (qaboard/mcp_http.py), from the backend's
+  # image. The proxy serves it at $QABOARD_URL/mcp. Clients get a token for each person from QA-Board with OAuth, and
+  # it answers with what that token can read. Optional: COMPOSE_PROFILES=mcp in your env file, or --profile mcp.
+  # Stateless: replicas need nothing shared. See website/docs/mcp.mdx
+  mcp:
+    image: "${QABOARD_IMAGE:-ghcr.io/samsung/qaboard}:backend${QABOARD_VERSION:+-$QABOARD_VERSION}"
+    profiles: [mcp]
+    # Through the proxy, which serves the API and the runs' files (images, logs). Links and the OAuth metadata name
+    # QABOARD_URL: set it to the URL users reach QA-Board at (https:// for remote clients)
+    command: ["qa", "mcp", "--http", "--host", "0.0.0.0", "--port", "8000", "--server", "http://proxy", "--public-url", "${QABOARD_URL:-http://localhost:5151}"]
+    expose:
+    - "8000"
+    # No depends_on the proxy: deployments/deploy.py starts the proxy after the backend (nginx needs "backend" to start)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.build_opener(u.ProxyHandler({})).open('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+
   website:
     image: "${QABOARD_IMAGE:-ghcr.io/samsung/qaboard}:website${QABOARD_VERSION:+-$QABOARD_VERSION}"
     build:

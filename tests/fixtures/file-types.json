@@ -1,5 +1,5 @@
 {
-  "_": "Files recognized by their names, by the web app's viewers (webapp/src/viewers/fileTypes.js) and by `qa upload` (qaboard/junit.py, qaboard/benchmarks.py): both are tested on these names.",
+  "_": "Files recognized by their names, by the web app's viewers (webapp/src/viewers/fileTypes.js, is_series in viewers/series/series.js) and by Python (`qa upload`: qaboard/junit.py, qaboard/benchmarks.py; `qa mcp`: also qaboard/flamegraphs.py, qaboard/series.py): both are tested on these names.",
   "junit": {
     "yes": [
       "junit.xml",
@@ -44,6 +44,46 @@
       "benchmarks.json.bak",
       "mybenchmarks.json",
       "workbench.json"
+    ]
+  },
+  "flame_graph": {
+    "yes": [
+      "cpu.folded",
+      "out/cpu.folded.gz",
+      "perf.collapsed",
+      "app.stacks.txt",
+      "py-spy.speedscope.json",
+      "node.cpuprofile",
+      "flame.json",
+      "render.flame.json",
+      "CPU.FOLDED"
+    ],
+    "no": [
+      "cpu.folded.txt",
+      "stacks.txt",
+      "speedscope.json",
+      "profile.json",
+      "flame.json.bak",
+      "perf.script.txt",
+      "cpu.pb.gz"
+    ]
+  },
+  "series": {
+    "yes": [
+      "series.json",
+      "series.jsonl",
+      "results/series.jsonl",
+      "train.series.json",
+      "system.series.json",
+      "eval-series.ndjson",
+      "Series.JSON"
+    ],
+    "no": [
+      "myseries.json",
+      "series.txt",
+      "series.json.bak",
+      "timeseries.csv",
+      "series"
     ]
   }
 }

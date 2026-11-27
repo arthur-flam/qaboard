@@ -72,7 +72,7 @@ Also asked for:
 | C | **Flag changes to the gate's rules.** Loosening a threshold to pass is the obvious failure: say so on the commit page and in the PR comment. | Done in `qa gate`'s output and comment (`rules_changes`). Not on the commit page yet. |
 | D | **Record the decision.** "Approve as the new reference": who, when, with the verdict and the Metrics Diff they saw. | Not started. |
 | E | **A review inbox.** Batches awaiting a decision, ranked by what moved beyond noise, new failures, outputs that changed. | Not started. Needs D and item 1. |
-| F | **An evidence pack**, for a read-only MCP server and the PR comment alike: compare, explain a regression with the worst tests and image crops, history, a Markdown summary. | Not started. Item 3 is its first renderer. |
+| F | **An evidence pack**, for a read-only MCP server and the PR comment alike: compare, explain a regression with the worst tests and image crops, history, a Markdown summary. | Started: `qa mcp` (`qaboard/evidence.py`, `docs/rfcs/mcp-server.md`). The PR comment doesn't use it yet. |
 | G | **Agents as reviewers.** Notes on a commit's outputs, labeled, for people to spot-check. | Later, after B and D. |
 
 Order: A, then C with item 3, then B, D, E, F.

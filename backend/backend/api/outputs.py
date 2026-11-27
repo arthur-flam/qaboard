@@ -162,7 +162,15 @@ def get_output(output_id):
     return jsonify({"error": f"Cannot find output {output_id}"}), 404
   if not is_authorized_user(None, output.batch.ci_commit.project_id):
     return forbidden_project(output.batch.ci_commit.project_id)
-  return jsonify(output.to_dict())
+  # Where the run is: from a run's id alone, scripts and agents find its batch, commit and the reference's run
+  batch = output.batch
+  return jsonify({
+    **output.to_dict(),
+    'project': batch.ci_commit.project_id,
+    'commit_id': batch.ci_commit.hexsha,
+    'batch_id': batch.id,
+    'batch_label': batch.label,
+  })
 
 
 def run_label(output) -> str:

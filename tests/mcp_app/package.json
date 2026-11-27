@@ -1,0 +1,18 @@
+{
+  "name": "qaboard-mcp-app-check",
+  "private": true,
+  "description": "Checks the app of `qa mcp` in a host that uses the official MCP Apps AppBridge. See README.md.",
+  "scripts": {
+    "build": "esbuild host.js --bundle --format=iife --outfile=host.bundle.js",
+    "check": "node check.js"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/core": "^2.0.0",
+    "@modelcontextprotocol/ext-apps": "2.0.4",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
+    "zod": "^4.2.0"
+  }
+}

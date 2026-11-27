@@ -57,7 +57,7 @@ DB_USER, DB_PASSWORD, DB_NAME = 'qaboard', 'password', 'qaboard'
 ADMIN_USER, ADMIN_PASSWORD = 'admin', 'qaboard-dev'
 DOCKER_IMAGE = 'postgres:12-alpine'   # like docker-compose.yml
 MARKER_PREFIX = 'qaboard-dev '
-SERVICES = ('redis', 'backend', 'proxy', 'jobs-worker', 'webapp')
+SERVICES = ('redis', 'backend', 'proxy', 'jobs-worker', 'webapp', 'mcp')
 # Variables that point `qa` or the backend somewhere else, or say they run in a CI: never inherited
 SCRUBBED_ENV = re.compile(r'^(QABOARD_.*|QA_.*|CI|CI_.*|GITHUB_.*|GITLAB_.*|GIT_.*|JENKINS_.*|BUILD_URL|REDIS_.*|FLASK_.*|'
                           r'SECRET_KEY|SENTRY_.*|VIRTUAL_ENV.*|REACT_APP_.*|MLFLOW_.*|WANDB_.*|DATABASE_URL|PG.*)$')
@@ -129,20 +129,31 @@ def last_start(text: str, lines: int) -> str:
   return '\n'.join(since.splitlines()[-lines:])
 
 
+# `qa mcp --http` (up --mcp), like nginx's location for it in services/nginx/conf.d/qaboard.conf
+MCP_PATHS = re.compile(r'^/(mcp|\.well-known/oauth-protected-resource(/mcp)?)$')
+
+
 def proxy_route(method: str, path: str) -> str:
-  """Where the proxy sends a request: 'files' (the runs' files, GET /s/...), 'backend', or 'webapp' (the app's pages)"""
+  """Where the proxy sends a request: 'files' (the runs' files, GET /s/...), 'mcp', 'backend', or 'webapp' (the app's pages)"""
   path = urllib.parse.urlsplit(path).path
   if path.startswith('/s/') and method in ('GET', 'HEAD'):
     return 'files'
+  if MCP_PATHS.match(path):
+    return 'mcp'
   # Vite proxies /iiif/ and /docs/ here: redirecting them to the web app would loop. No IIIF server, no docs: 404s
-  if path.startswith(('/api/', '/s/', '/webhook', '/iiif/', '/docs/')) or method not in ('GET', 'HEAD'):
+  if path.startswith(('/api/', '/s/', '/webhook', '/iiif/', '/docs/', '/.well-known/oauth-authorization-server')) or method not in ('GET', 'HEAD'):
     return 'backend'
   return 'webapp'
 
 
 def pick_ports(port: int, web_port: int) -> Dict[str, int]:
-  """The proxy (what clients call "the server") on `port`, flask right after it, the web app on `web_port`"""
-  return {'server': port, 'backend': port + 1, 'web': web_port}
+  """The proxy (what clients call "the server") on `port`, flask right after it, then `qa mcp --http`, the web app on `web_port`"""
+  return {'server': port, 'backend': port + 1, 'mcp': port + 2, 'web': web_port}
+
+
+def mcp_port(ports: Dict[str, int]) -> int:
+  """States saved before `up --mcp` existed have no port for it"""
+  return ports.get('mcp', ports['server'] + 2)
 
 
 def postgres_bin_dirs(root: Path = Path('/usr/lib/postgresql')) -> List[Path]:
@@ -610,7 +621,7 @@ def up(args):
     save_state(state)
     log(f"new development server {server_id} in {STATE_DIR}")
   else:
-    changed = {k: v for k, v in pick_ports(args.port, args.web_port).items() if args.ports_given and v != state['ports'][k]}
+    changed = {k: v for k, v in pick_ports(args.port, args.web_port).items() if args.ports_given and v != state['ports'].get(k)}
     if changed:
       state['ports'].update(changed)
       save_state(state)
@@ -643,8 +654,17 @@ def up(args):
   spawn('backend', uv_backend('flask', 'run', '--host', '127.0.0.1', '--port', str(ports['backend']), '--with-threads'),
         cwd=REPO / 'backend', env=env)
   spawn('proxy', [sys.executable, str(Path(__file__).resolve()), '_proxy', '--port', str(ports['server']),
-                  '--backend-port', str(ports['backend']), '--root', str(STATE_DIR / 'results'), '--web-url', urls(state)['web']],
+                  '--backend-port', str(ports['backend']), '--mcp-port', str(mcp_port(ports)), '--root', str(STATE_DIR / 'results'),
+                  '--web-url', urls(state)['web']],
         cwd=REPO, env=clean_env(os.environ, QABOARD_DEV_DIR=str(STATE_DIR)))
+  if args.mcp:
+    # the remote MCP server, from this checkout's qaboard. Its public URL is the web app's, which is also the OAuth
+    # issuer the backend names (QABOARD_URL): Vite relays /mcp and /.well-known/ to the proxy, the proxy to it
+    spawn('mcp', ['uv', 'run', '--project', str(REPO), '--extra', 'mcp', '--quiet', 'qa', 'mcp', '--http', '--port', str(mcp_port(ports)),
+                  '--server', f"http://127.0.0.1:{ports['server']}", '--public-url', urls(state)['web']],
+          cwd=REPO, env=clean_env(os.environ, QA_NO_CHECK_FOR_UPDATES='1', QA_NO_ANALYTICS='1'))
+  else:
+    stop('mcp')
   if not args.no_worker:
     # the server's jobs (Admin > Storage): deletions, retention rules, silent runs...
     spawn('jobs-worker', uv_backend('qaboard-admin', 'jobs', 'worker'), cwd=REPO / 'backend', env=env)
@@ -952,6 +972,8 @@ def proxy(args):
       where = proxy_route(self.command, self.path)
       if where == 'files':
         return super().do_GET()
+      if where == 'mcp':
+        return self.forward(Handler.mcp_port)
       if where == 'webapp':
         # the app's pages, e.g. the links `qa` prints: nginx serves the app there, here it's Vite's dev server
         self.send_response(302)
@@ -964,7 +986,10 @@ def proxy(args):
     def do_HEAD(self):
       self.do_GET()
 
-    do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = lambda self: self.forward()
+    def do_POST(self):
+      self.forward(Handler.mcp_port if proxy_route(self.command, self.path) == 'mcp' else Handler.backend_port)
+
+    do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_POST
 
     def read_chunked(self) -> bytes:
       body = b''
@@ -977,7 +1002,8 @@ def proxy(args):
         body += self.rfile.read(size)
         self.rfile.readline()
 
-    def forward(self):
+    def forward(self, port: Optional[int] = None):
+      port = port or Handler.backend_port
       headers = {k: v for k, v in self.headers.items() if k.lower() not in hop_by_hop}
       headers.setdefault('X-Forwarded-Host', self.headers.get('Host', ''))
       headers.setdefault('X-Forwarded-Proto', 'http')
@@ -988,12 +1014,13 @@ def proxy(args):
       else:
         length = int(self.headers.get('Content-Length') or 0)
         body = Body(self.rfile, length) if length else None
-      connection = http.client.HTTPConnection('127.0.0.1', Handler.backend_port, timeout=900)
+      connection = http.client.HTTPConnection('127.0.0.1', port, timeout=900)
       try:
         connection.request(self.command, self.path, body=body, headers=headers)
         response = connection.getresponse()
       except OSError as e:
-        return self.error(502, f"the backend (127.0.0.1:{Handler.backend_port}) doesn't answer: {e}")
+        what = 'qa mcp --http (up --mcp)' if port == Handler.mcp_port else 'the backend'
+        return self.error(502, f"{what} (127.0.0.1:{port}) doesn't answer: {e}")
       self.send_response_only(response.status, response.reason)
       length = response.getheader('Content-Length')
       for key, value in response.getheaders():
@@ -1017,6 +1044,7 @@ def proxy(args):
   Handler.roots = [Path(os.path.realpath(r)) for r in args.root]
   Handler.backend = f"http://127.0.0.1:{args.backend_port}"
   Handler.backend_port = args.backend_port
+  Handler.mcp_port = args.mcp_port
   server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
   server.daemon_threads = True
   print(f"proxy on http://127.0.0.1:{args.port}: /s/ from {', '.join(map(str, Handler.roots))}, the rest to {Handler.backend}", flush=True)
@@ -1037,6 +1065,7 @@ def main(argv=None):
   p.add_argument('--no-web', action='store_true', help="don't start the web app (npm start)")
   p.add_argument('--no-worker', action='store_true', help="don't start the jobs worker")
   p.add_argument('--no-redis', action='store_true', help="don't start redis-server, even if installed")
+  p.add_argument('--mcp', action='store_true', help="also start the remote MCP server (qa mcp --http) at <web app>/mcp")
   p.set_defaults(func=up)
   p = commands.add_parser('seed', help="send a small dataset to the development server, with qa")
   p.add_argument('--force', action='store_true', help="seed again, even if already seeded")
@@ -1058,6 +1087,7 @@ def main(argv=None):
   p = commands.add_parser('_proxy')  # started by up
   p.add_argument('--port', type=int, required=True)
   p.add_argument('--backend-port', type=int, required=True)
+  p.add_argument('--mcp-port', type=int, required=True)
   p.add_argument('--web-url', required=True)
   p.add_argument('--root', action='append', required=True)
   p.set_defaults(func=proxy)

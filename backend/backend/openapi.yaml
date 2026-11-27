@@ -54,6 +54,12 @@ tags:
     description: Named, versioned lists of inputs, for batches (`collections:` in batch files).
   - name: Account
     description: Who you are, and which token you use.
+  - name: OAuth
+    description: >-
+      QA-Board as an OAuth 2.1 authorization server, for MCP clients like Open WebUI: apps that admins register get
+      read-only tokens of the users who allow them (authorization code flow with PKCE). Their metadata (RFC 8414) is at
+      `/.well-known/oauth-authorization-server`, outside of `/api/v1`. Errors are OAuth's: `{error, error_description}`
+      ([connect MCP clients](/docs/backend-admin/mcp-clients)).
   - name: Server
     description: The server's health.
   - name: Administration
@@ -334,6 +340,7 @@ paths:
       tags: [Runs]
       operationId: getRun
       summary: Get a run
+      description: The run, and where it is (its project, commit and batch), e.g. to find its reference's run with the compare API.
       parameters:
         - $ref: "#/components/parameters/outputId"
       responses:
@@ -341,7 +348,15 @@ paths:
           description: The run.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Run"}
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Run"
+                  - type: object
+                    properties:
+                      project: {type: string, description: The run's project.}
+                      commit_id: {type: string, description: The commit of the run's batch.}
+                      batch_id: {type: integer}
+                      batch_label: {type: string, description: "The batch's label (`qa --label`), `default` for the CI's."}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
@@ -1503,6 +1518,140 @@ paths:
         "403": {description: "No service account trusts this job, issuer or audience."}
         "503": {description: "The CI's issuer can't be reached."}
 
+  /oauth/authorize:
+    get:
+      tags: [OAuth]
+      operationId: oauthAuthorize
+      summary: Ask a user to allow an app
+      description: >-
+        The authorization endpoint (RFC 6749 §4.1.1): apps send users' browsers here. QA-Board sends them to its consent
+        page (signed in first), then back to the `redirect_uri` with `code`, `state` and `iss` (RFC 9207), or with
+        `error=access_denied`. Other errors go back to the app too, except an unknown `client_id` or `redirect_uri`:
+        then users see an error page (400). Recorded in the audit log (`oauth.approve`, `oauth.deny`).
+      security:
+        - {}
+      parameters:
+        - {name: client_id, in: query, required: true, schema: {type: string}, example: qab_app_3kTq9WcZ7xLmPa2RbN5sVd8E}
+        - {name: redirect_uri, in: query, required: true, description: "One of the app's registered redirect URIs, exactly.", schema: {type: string, format: uri}}
+        - {name: response_type, in: query, required: true, schema: {type: string, const: code}}
+        - {name: code_challenge, in: query, required: true, description: "PKCE (RFC 7636): base64url(sha256(code_verifier)), without padding.", schema: {type: string}}
+        - {name: code_challenge_method, in: query, required: true, schema: {type: string, const: S256}}
+        - {name: scope, in: query, description: "`read` (the default). Other scopes are ignored.", schema: {type: string, default: read}}
+        - {name: state, in: query, description: Sent back as it is., schema: {type: string}}
+        - {name: resource, in: query, description: "What the token is for (RFC 8707), e.g. QA-Board's MCP server `https://<qaboard>/mcp`: recorded, the token works on the whole API.", schema: {type: string, format: uri}}
+      responses:
+        "302": {description: "To the consent page, or back to the app with an error."}
+        "400": {description: "Unknown app (`invalid_client`) or redirect URI (`invalid_request`): an HTML page for users."}
+
+  /oauth/token:
+    post:
+      tags: [OAuth]
+      operationId: oauthToken
+      summary: Get or refresh an app's tokens
+      description: >-
+        The token endpoint. Apps authenticate with their secret: HTTP Basic (`client_secret_basic`) or in the form
+        (`client_secret_post`). `authorization_code` exchanges a code (single use, 2 minutes) checking its PKCE
+        `code_verifier`; `refresh_token` gives new tokens. Refresh tokens are used once: a used one, like a used code,
+        revokes what it gave. The access token is a QA-Board token (`qab_tmp_…`, kind `oauth`, scope `read`) that
+        works on the whole API for an hour; `GET /user/me/` says which app it is for. Refresh tokens expire after
+        `oauth.refresh_idle_expiry_days` (90) days without use. Recorded in the audit log (`oauth.token`).
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type: {type: string, enum: [authorization_code, refresh_token]}
+                code: {type: string}
+                redirect_uri: {type: string, description: The one of the authorization request.}
+                code_verifier: {type: string}
+                refresh_token: {type: string}
+                scope: {type: string, description: "With refresh_token: at most the grant's."}
+                resource: {type: string, description: "The grant's, if sent."}
+                client_id: {type: string}
+                client_secret: {type: string}
+      responses:
+        "200":
+          description: The tokens (RFC 6749 §5.1).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: {type: string}
+                  token_type: {type: string, const: Bearer}
+                  expires_in: {type: integer, description: Seconds (3600).}
+                  refresh_token: {type: string, description: "`qab_rft_…`: use it once."}
+                  scope: {type: string, example: read}
+        "400": {description: "`invalid_request`, `invalid_grant` (unknown, used, expired code or refresh token, PKCE mismatch, revoked grant), `invalid_scope`, `invalid_target`, `unsupported_grant_type`."}
+        "401": {description: "`invalid_client`: unknown app, wrong secret, or revoked registration. With HTTP Basic, a `WWW-Authenticate` header."}
+
+  /oauth/revoke:
+    post:
+      tags: [OAuth]
+      operationId: oauthRevoke
+      summary: Revoke an app's tokens
+      description: >-
+        RFC 7009. An app's refresh token or access token revokes everything the user allowed it: its tokens stop
+        working. Other tokens are ignored. Apps authenticate like for `/oauth/token`. Recorded in the audit log
+        (`oauth_grant.revoke`).
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+                token_type_hint: {type: string, enum: [refresh_token, access_token]}
+                client_id: {type: string}
+                client_secret: {type: string}
+      responses:
+        "200": {description: "Revoked, or not a token of this app."}
+        "400": {description: "`invalid_request`: no `token`."}
+        "401": {description: "`invalid_client`."}
+
+  /user/apps:
+    get:
+      tags: [Account]
+      operationId: listMyApps
+      summary: List the apps you allowed
+      description: The apps that get tokens for you (OAuth), and can use them now. In the web app, **Settings → Connected apps**.
+      responses:
+        "200":
+          description: The apps.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apps: {type: array, items: {$ref: "#/components/schemas/OAuthGrant"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+
+  /user/apps/{grant_id}:
+    delete:
+      tags: [Account]
+      operationId: revokeMyApp
+      summary: Revoke an app you allowed
+      description: Its tokens stop working, it must ask you again. Recorded in the audit log (`oauth_grant.revoke`).
+      parameters:
+        - {name: grant_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        "200":
+          description: Revoked.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OAuthGrant"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
   /health:
     get:
       tags: [Server]
@@ -1590,6 +1739,104 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {description: "Not a data folder (`reason: not_found`)."}
+
+  /admin/oauth/clients:
+    get:
+      tags: [Administration]
+      operationId: listOAuthClients
+      summary: List the registered apps
+      description: The apps users can allow to get tokens for them (OAuth), active first. In the web app, **Admin → Connected apps**.
+      responses:
+        "200":
+          description: The apps.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clients: {type: array, items: {$ref: "#/components/schemas/OAuthClient"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+    post:
+      tags: [Administration]
+      operationId: registerOAuthClient
+      summary: Register an app
+      description: >-
+        E.g. Open WebUI, to connect to QA-Board's MCP server. Its secret is only returned now. Redirect URIs are http(s)
+        URLs, compared exactly. Recorded in the audit log (`oauth_client.create`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, redirect_uris]
+              properties:
+                name: {type: string, example: Open WebUI}
+                redirect_uris:
+                  type: array
+                  items: {type: string, format: uri}
+                  example: ["https://openwebui.example.com/oauth/clients/mcp:qaboard/callback"]
+      responses:
+        "201":
+          description: The app, with its `client_secret`.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: "#/components/schemas/OAuthClient"}
+                  - type: object
+                    properties:
+                      client_secret: {type: string, description: "`qab_sec_…`, only shown now."}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+
+  /admin/oauth/clients/{client_id}:
+    patch:
+      tags: [Administration]
+      operationId: updateOAuthClient
+      summary: Rename an app or change its redirect URIs
+      description: Recorded in the audit log (`oauth_client.update`).
+      parameters:
+        - {name: client_id, in: path, required: true, description: "The app's `id` (a number, not its `client_id`).", schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                redirect_uris: {type: array, items: {type: string, format: uri}}
+      responses:
+        "200":
+          description: The app.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OAuthClient"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [Administration]
+      operationId: revokeOAuthClient
+      summary: Revoke an app's registration
+      description: >-
+        The app can't get tokens anymore, and those users allowed it stop working. Kept, revoked, for the audit log
+        (`oauth_client.revoke`, and `oauth_grant.revoke` for each user).
+      parameters:
+        - {name: client_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        "200":
+          description: The app, revoked.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OAuthClient"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
 
 components:
   securitySchemes:
@@ -1856,6 +2103,41 @@ components:
           schema: {$ref: "#/components/schemas/Error"}
 
   schemas:
+    OAuthClient:
+      type: object
+      properties:
+        id: {type: integer}
+        client_id: {type: string, example: qab_app_3kTq9WcZ7xLmPa2RbN5sVd8E}
+        name: {type: string, example: Open WebUI}
+        redirect_uris: {type: array, items: {type: string}}
+        secret_prefix: {type: string, description: "The secret's first characters, to recognize it."}
+        created_at: {type: string, format: date-time}
+        created_by: {$ref: "#/components/schemas/UserRef"}
+        revoked_at: {type: [string, "null"], format: date-time}
+        status: {type: string, enum: [active, revoked]}
+        users: {type: integer, description: How many users allowed it and it can get tokens for now.}
+    OAuthGrant:
+      type: object
+      description: An app a user allowed.
+      properties:
+        id: {type: integer}
+        client:
+          type: object
+          properties:
+            id: {type: integer}
+            name: {type: string}
+            client_id: {type: string}
+        scopes:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string, example: read}
+              description: {type: string, example: Read your projects and results}
+        resource: {type: [string, "null"], example: "https://qaboard.example.com/mcp"}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time, description: When it last called the API or got a token.}
+        status: {type: string, enum: [active, revoked, idle_expired]}
     DataFolder:
       type: object
       properties:
@@ -2473,7 +2755,7 @@ components:
             id: {type: integer}
             name: {type: string}
             prefix: {type: string, description: The token's first characters, to recognize it.}
-            kind: {type: string}
+            kind: {type: string, description: "`personal`, `cli` (`qa auth login`), `service`, `ci`, `batch`, `oauth` (an app the user allowed, e.g. an MCP client), `legacy`."}
             scopes: {type: array, items: {type: string, enum: [read, ingest, act, admin]}}
             projects: {type: array, items: {type: string}, description: "The projects it's restricted to, empty: all."}
             expires_at: {type: [string, "null"], format: date-time}

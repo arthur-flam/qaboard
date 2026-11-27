@@ -53,6 +53,15 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   rolling deploy or after a rollback. It doesn't shadow the built-in (other argument type), but on PostgreSQL < 15
   every role can create functions in `public`: databases shared with other roles (e.g. a BI tool's) should
   `REVOKE CREATE ON SCHEMA public FROM PUBLIC`. Drop the shim in a later migration once no older version runs. [S]
+- **Connected apps (OAuth, `backend/oauth.py`)**: the `resource` apps ask for is recorded, not enforced: an app's
+  token works on the whole API (with the `read` scope), not only on the MCP server. Two refreshes with the same
+  refresh token at once (an app without a lock) revoke the grant: RFC 9700 asks for it, a short grace period would be
+  kinder. No dynamic client registration (RFC 7591) yet: MCP clients that require it can't connect. [M, API]
+- **Connected apps' rows are only cleaned up as the flow goes**: new codes delete those expired over a day ago,
+  refreshes delete the grant's expired access tokens and old used refresh tokens, revoking a grant deletes its refresh
+  tokens. A grant that goes idle (`oauth.refresh_idle_expiry_days`) without being revoked or replaced keeps its
+  refresh tokens and its last, expired access token, and revoked grants stay, for Settings and the audit log. A daily
+  job in `backend/jobs/` could delete them, and grants revoked long ago. [S, storage]
 
 ## Backend
 
@@ -139,6 +148,16 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   batch_log.py, the Kubernetes runner's pod script), the output of `bkill`/`scancel`... that the LSF and dask runners'
   `stop_jobs` print on stdout (the server calls them in-process), the integrations' own prefixes (`wandb: WARNING`),
   site_config.py's warnings about secrets files (read when qaboard is imported) and sentry_utils.py's. [S, no change]
+- `qa mcp --http` (qaboard/mcp_http.py): without `commit`, `evidence.select` still tries the commit checked out where
+  the server runs (`checkout_head`): meaningless remotely, harmless in the image (no git checkout there); the tools'
+  descriptions still say so. When QA-Board can't be reached to check a token, the client gets a 500 and the log a
+  traceback (Starlette's authentication middleware), not a 503. The MCP SDK's `MCPServer` configures logging handlers
+  itself, against qaboard/CLAUDE.md's rule. A public URL with a path (`https://host/qaboard`) isn't supported: the
+  app serves `/mcp`, not `<path>/mcp`. [S]
+- `look_at_output` (qaboard/evidence_outputs.py) reads files of a format whole up to 32 MB (decompressed too), but the
+  parsers have no limit of their own: a 32 MB folded profile of short unique stacks, or a series.jsonl of many keys,
+  still takes a few hundred MB while it's compared. series.py's `parse_series` keeps only numbers (or gaps) in a
+  series.json's values, min and max; the web app's (webapp/src/viewers/series/series.js) keeps what the file says. [S]
 
 ## Runs created from code (`qaboard.start_run()`, November 2026)
 

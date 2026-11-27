@@ -299,8 +299,18 @@ the description can't drift from what the server does.
 JSON output from every `qa` command, so that scripts and agents read results without parsing text.
 </RoadmapItem>
 
-<RoadmapItem status="next" title="An MCP server, read-only first">
-`qa mcp` lets agents read results, Metrics Diffs, failing tests and image crops. Starting batches comes later: until then, agents use [`qa batch --commit`](/docs/tuning-from-the-webapp#from-the-command-line).
+<RoadmapItem status="experimental" title="An MCP server, read-only first">
+`qa mcp` lets coding agents and chat clients compare a commit with its reference, explain failures, look at outputs
+next to the reference's (image crops of where they differ, text diffs) and follow metrics over commits, with links to
+the web app. Clients that render MCP Apps show charts and images in the conversation. Starting batches comes later:
+until then, agents use [`qa batch --commit`](/docs/tuning-from-the-webapp#from-the-command-line). See
+[MCP server](/docs/mcp).
+</RoadmapItem>
+
+<RoadmapItem status="experimental" title="A remote MCP server">
+The same tools served by your QA-Board server at `/mcp`, for chat clients that only connect to remote servers, such as
+a self-hosted Open WebUI: users allow the client once, with OAuth, and it reads QA-Board as them, read-only. See
+[Connect MCP clients](/docs/backend-admin/mcp-clients). Next: dynamic client registration, for clients that need it.
 </RoadmapItem>
 
 <RoadmapItem status="experimental" title="Skills for coding agents">

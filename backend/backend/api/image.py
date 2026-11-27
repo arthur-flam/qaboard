@@ -13,7 +13,7 @@ from backend import app
 from .image_diff import METHODS, difference_map, find_regions
 from ..images import read_image, ImageType
 from ..sensor import sensor_info
-from .auth import login_required
+from .auth import login_required, reads_only
 from .files import readable_file
 
 import os
@@ -307,6 +307,7 @@ REGIONS_VERSION = 3
 
 @app.route("/api/v1/output/image/diff", methods=['POST'])
 @login_required
+@reads_only
 def get_rois():
   """
   The regions where two images differ most, the largest difference first: [{x, y, w, h, peak_x, peak_y, value, diff}]

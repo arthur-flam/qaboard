@@ -29,7 +29,7 @@ overview pages:
   ("for algorithm teams", "for algo engineers").
 - **People and coding agents review together.** Agents run the same tests, read the same results and meet the same
   targets as people; a person decides what ships. Claim only what agents can do today (`qaboard.runs(url)`,
-  `qa runs`, the compare API, the skills, `qa gate` labeled Experimental); the MCP server is on the roadmap.
+  `qa runs`, the compare API, the skills, `qa gate` and `qa mcp` labeled Experimental); a remote MCP server is on the roadmap.
 - **Proven in production, not "the best".** Earn trust with facts: Samsung's central quality platform since 2018,
   about 50 projects, more than 40 million runs; zero-downtime upgrades and the Helm chart tested in CI. Say "Samsung",
   not the name of one of its R&D centers. No superlatives (see Voice): numbers convince, adjectives don't.

@@ -3,7 +3,7 @@ API tokens: their format, how we store and check them.
 
 Format: `qab_pat_` + 40 random base62 characters + a 6-character base62 checksum (crc32 of the random part).
 Service accounts' tokens start with `qab_svc_` (backend/service_accounts.py), and the short-lived tokens the server
-issues (CI jobs' token exchange, backend/ci_trust.py) with `qab_tmp_`.
+issues (CI jobs' token exchange, backend/ci_trust.py; the apps users allow, backend/oauth.py) with `qab_tmp_`.
 - The prefix tells what it is, so secret scanners (and people) recognize leaked QA-Board tokens.
 - The checksum rejects typos and random strings without a database lookup.
 We only store sha256(token): it has ~238 random bits, a salt or a slow hash wouldn't make it harder to guess.
@@ -29,7 +29,7 @@ TEMPORARY_PREFIX = 'qab_tmp_'
 # the token of a batch QA-Board starts (tokens.mint_for_batch): runners forward it to the runs' pods
 BATCH_PREFIX = BATCH_TOKEN_PREFIX
 # token kinds that the server issues for a short time
-TEMPORARY_KINDS = ('ci', 'batch')
+TEMPORARY_KINDS = ('ci', 'batch', 'oauth')
 BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 RANDOM_LENGTH = 40
 CHECKSUM_LENGTH = 6
@@ -180,11 +180,12 @@ def iso(date: Optional[datetime.datetime]) -> Optional[str]:
 
 def mint(user, name: str, scopes: List[str], kind: str = 'personal', projects: Optional[List[str]] = None,
          expires_at: Optional[datetime.datetime] = None, idle_expiry_days: Optional[int] = None,
-         created_by=None, data: Optional[dict] = None, actor=None, audit_action: str = 'token.create',
+         created_by=None, data: Optional[dict] = None, actor=None, audit_action: Optional[str] = 'token.create',
          audit_meta: Optional[dict] = None):
   """
   Creates a token for the user, added to the database session (the caller commits) and audited (`audit_action`, e.g.
-  token.exchange for CI jobs' tokens, with `audit_meta`). Returns (token, secret): the secret is only known now.
+  token.exchange for CI jobs' tokens, with `audit_meta`; None for routine tokens, like an app's hourly refresh, the
+  caller audited their first). Returns (token, secret): the secret is only known now.
   """
   from backend import db_session
   from .models import Token
@@ -208,10 +209,11 @@ def mint(user, name: str, scopes: List[str], kind: str = 'personal', projects: O
   )
   db_session.add(token)
   db_session.flush()
-  audit(audit_action, 'token', token.id, name, meta={
-    "user": user.user_name, "kind": kind, "scopes": token.scopes, "projects": token.projects,
-    "expires_at": iso(expires_at), "idle_expiry_days": idle_expiry_days, **(audit_meta or {}),
-  }, actor=actor)
+  if audit_action is not None:
+    audit(audit_action, 'token', token.id, name, meta={
+      "user": user.user_name, "kind": kind, "scopes": token.scopes, "projects": token.projects,
+      "expires_at": iso(expires_at), "idle_expiry_days": idle_expiry_days, **(audit_meta or {}),
+    }, actor=actor)
   return token, secret
 
 
@@ -388,7 +390,10 @@ def end_batch_token(session, command_id: Optional[str]) -> None:
 
 
 def revoke(token, by=None, reason: Optional[str] = None, actor=None):
-  """Revokes a token (added to the session, the caller commits) and audits it"""
+  """
+  Revokes a token (added to the session, the caller commits) and audits it. An app's access token (kind oauth) also
+  revokes what the user allowed the app: its refresh tokens would get it new ones.
+  """
   from .audit import audit
   if status(token) == 'revoked':
     return False
@@ -396,4 +401,7 @@ def revoke(token, by=None, reason: Optional[str] = None, actor=None):
   token.revoked_at = utcnow()
   token.revoked_by_id = by.id if by is not None else None
   audit('token.revoke', 'token', token.id, token.name, meta={"user": token.user.user_name if token.user else None, **({"reason": reason} if reason else {})}, actor=actor)
+  if token.kind == 'oauth':
+    from .oauth import revoke_grant_of
+    revoke_grant_of(token, by=by, actor=actor)
   return True

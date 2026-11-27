@@ -31,6 +31,14 @@ data:
   # proxy, which serves the files they fetch (like `proxy` in docker-compose.yml)
   QABOARD_HOST: {{ printf "%s-proxy" (include "qaboard.fullname" .) | quote }}
   {{- end }}
+  {{- if .Values.mcp.enabled }}
+  {{- if not (hasKey .Values.config "QABOARD_URL") }}
+  # The MCP server sends its clients to the backend's OAuth metadata: its issuer must be the URL the MCP server names
+  QABOARD_URL: {{ include "qaboard.publicUrl" . | quote }}
+  {{- else if ne (toString .Values.config.QABOARD_URL | trimSuffix "/") (include "qaboard.publicUrl" .) }}
+  {{- fail "config.QABOARD_URL and mcp.publicUrl differ: MCP clients would refuse QA-Board's OAuth metadata. Leave mcp.publicUrl empty" }}
+  {{- end }}
+  {{- end }}
   {{- if and .Values.cantaloupe.enabled (not (hasKey .Values.config "QABOARD_IMAGE_SERVERS")) }}
   # The web app gets image tiles from /iiif/2/<path of the image> (see cantaloupe.yaml)
   QABOARD_IMAGE_SERVERS: '{"default": "/iiif/2/"}'

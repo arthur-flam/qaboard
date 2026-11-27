@@ -1,4 +1,5 @@
-// /settings: the user's profile, preferences, sign-in methods, sessions, access tokens, CLI sign-ins and activity.
+// /settings: the user's profile, preferences, sign-in methods, sessions, access tokens, CLI sign-ins, connected apps
+// and activity.
 // The tab is in the URL.
 import { Tab, Tabs } from "@blueprintjs/core";
 
@@ -8,6 +9,7 @@ import { ProfileTab } from "./ProfileTab";
 import { PreferencesTab } from "./PreferencesTab";
 import { TokensTab } from "./TokensTab";
 import { CliTab } from "./CliTab";
+import { AppsTab } from "./AppsTab";
 import { ActivityTab } from "./ActivityTab";
 import { SignInTab } from "./SignInTab";
 import { SessionsTab } from "./SessionsTab";
@@ -20,6 +22,7 @@ export const tabs = [
   { id: 'sessions', title: 'Sessions', icon: 'desktop', Panel: SessionsTab },
   { id: 'tokens', title: 'Access tokens', icon: 'key', Panel: TokensTab },
   { id: 'cli', title: 'CLI sign-ins', icon: 'console', Panel: CliTab },
+  { id: 'apps', title: 'Connected apps', icon: 'applications', Panel: AppsTab },
   { id: 'activity', title: 'Activity', icon: 'history', Panel: ActivityTab },
 ];
 

@@ -23,6 +23,9 @@ const proxy = {
   '^/s/': { target: QABOARD_SERVER_URL, changeOrigin: true },
   '^/iiif/': { target: QABOARD_SERVER_URL, changeOrigin: true },
   '^/docs/': { target: QABOARD_SERVER_URL, changeOrigin: true },
+  // OAuth's metadata, and the remote MCP server (`scripts/dev.py up --mcp`): the app's URL is the OAuth issuer
+  '^/\\.well-known/oauth-': { target: QABOARD_SERVER_URL, changeOrigin: true, xfwd: true },
+  '^/mcp$': { target: QABOARD_SERVER_URL, changeOrigin: true, xfwd: true },
 }
 
 // Sentry's release: the version of the image, e.g. the commit it was built from (see Dockerfile)

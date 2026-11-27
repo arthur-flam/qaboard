@@ -4,13 +4,14 @@ The fixtures in tests/fixtures/flamegraphs/ are real profiles (py-spy, Go's runt
 perf.script.txt, written like `perf script` prints. The web app's tests read them too (webapp/src/viewers/flamegraph/).
 """
 import gzip
+import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
 
-from qaboard.flamegraphs import (Profile, collapse_perf_script, detect_format, read_folded, read_pprof, read_profile,
-                                 save_flame_graph)
+from qaboard.flamegraphs import (Profile, collapse_perf_script, detect_format, is_flame_graph, read_folded, read_pprof,
+                                 read_profile, save_flame_graph)
 
 FIXTURES = Path(__file__).resolve().parent / 'fixtures' / 'flamegraphs'
 
@@ -206,6 +207,16 @@ def loaded_by_the_cli():
     process = subprocess.run([sys.executable, '-c', code], cwd=tmp, capture_output=True, text=True, check=True,
                              env={**os.environ, 'QA_NO_CHECK_FOR_UPDATES': '1'})
   return set(process.stdout.split())
+
+
+class TestNames(unittest.TestCase):
+  def test_names_like_the_web_app(self):
+    # is_flame_graph in webapp/src/viewers/fileTypes.js
+    names = json.loads((FIXTURES.parent / 'file-types.json').read_text())['flame_graph']
+    for name in names['yes']:
+      self.assertTrue(is_flame_graph(name), name)
+    for name in names['no']:
+      self.assertFalse(is_flame_graph(name), name)
 
 
 class TestIsolation(unittest.TestCase):

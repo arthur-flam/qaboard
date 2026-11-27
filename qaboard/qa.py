@@ -135,7 +135,7 @@ def qa(ctx, platform, configurations, label, tuning, tuning_filepath, dryrun, sh
   # One usage event per command, sent when it ends (qaboard/analytics.py), never from CI
   analytics.start(ctx.invoked_subcommand, share=share, tuning=bool(tuning or tuning_filepath), dryrun=dryrun, offline=offline)
   # Signing in is global, per server: it doesn't need a project
-  if ctx.invoked_subcommand in ('auth', 'runs'):
+  if ctx.invoked_subcommand in ('auth', 'runs', 'mcp'):
     return
   # `qa upload` works outside a project too: it reads --label, --configuration and --platform itself
   # `qa fetch-artifacts` and `qa send-batch-log` only talk to the server, e.g. in a pod before it has the commit's qaboard.yaml
@@ -1930,6 +1930,10 @@ from .inputs import inputs
 qa.add_command(inputs)
 from .restore import restore
 qa.add_command(restore)
+
+
+from .mcp_server import mcp_command
+qa.add_command(mcp_command)
 
 
 @qa.command(name='runs')

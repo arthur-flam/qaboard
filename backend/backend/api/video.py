@@ -11,7 +11,7 @@ import threading
 from flask import request, jsonify, Response
 
 from backend import app
-from .auth import login_required
+from .auth import login_required, reads_only
 from .files import readable_file
 from .image import image_cache_dir, MAX_REGION_PIXELS, _for_javascript
 from .. import videos
@@ -122,6 +122,7 @@ def get_video_pixels():
 
 @app.route("/api/v1/output/video/diff", methods=['POST'])
 @login_required
+@reads_only
 def get_video_diff():
   """
   Where two videos differ, frame by frame, on their decoded values. JSON body: output_dir_url_new, output_dir_url_ref,

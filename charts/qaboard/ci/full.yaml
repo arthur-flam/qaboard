@@ -28,6 +28,9 @@ cantaloupe:
   enabled: true
 celery:
   enabled: true
+mcp:
+  enabled: true
+  replicas: 2
 backup:
   enabled: true
 # A new PersistentVolumeClaim, next to the extraVolumes above

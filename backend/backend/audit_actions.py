@@ -64,6 +64,15 @@ ACTIONS = {
   # it creates a CLI token: its own token.create event follows
   'device.approve': Action("Approved a CLI sign-in", 'tokens'),
   'device.deny': Action("Denied a CLI sign-in", 'tokens'),
+  # Apps users allow to get tokens for them (backend/oauth.py)
+  'oauth_client.create': Action("Registered an app", 'tokens'),
+  'oauth_client.update': Action("Changed an app's registration", 'tokens'),
+  'oauth_client.revoke': Action("Revoked an app's registration", 'tokens'),
+  'oauth.approve': Action("Allowed an app", 'tokens'),
+  'oauth.deny': Action("Denied an app", 'tokens'),
+  # the grant's first tokens only: the app's hourly refreshes are routine, like the runs' heartbeats (backend/oauth.py)
+  'oauth.token': Action("Gave a token to an app", 'tokens'),
+  'oauth_grant.revoke': Action("Revoked an app's access", 'tokens'),
   # Users and groups
   'user.create': Action("Created a user", 'users'),
   'user.update': Action("Updated a user", 'users'),

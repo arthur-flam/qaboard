@@ -25,7 +25,7 @@ The `qa` CLI / SDK runs user code and sends results; the backend stores them in 
 Python with `uv` (the backend needs 3.11+; CI tests `qa` on 3.11 and 3.14), `npm` for the web app, `yarn` for the website.
 ```bash
 docker compose -f docker-compose.yml -f development.yml up -d   # full dev stack (SIRC: see deployments/CLAUDE.md)
-uv sync --extra dev        # qaboard + dev tools; runner extras: --extra celery --extra dask --extra kubernetes --extra dask-kubernetes --extra mlflow
+uv sync --extra dev        # qaboard + dev tools; runner extras: --extra celery --extra dask --extra kubernetes --extra dask-kubernetes --extra mlflow; `qa mcp`: --extra mcp
 cd webapp && npm install && npm start      # Vite dev server, proxies the API to localhost:5151
 cd website && yarn install && yarn start   # docs site
 ```

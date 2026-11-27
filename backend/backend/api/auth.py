@@ -293,7 +293,8 @@ def login_required(f):
   """
   Decorator for endpoints that need a logged-in user (session cookie, SAML session or API token).
   The user's info is available as `flask.g.user` (see get_current_user).
-  With a token, writes need the "act" scope, and the token must allow `?project=`.
+  With a token, writes need the "act" scope, and the token must allow `?project=`. POSTs that only read and compute
+  (marked with @reads_only, below @login_required) need the "read" scope.
   With `?project=`, the user must be able to see it. Endpoints that change a project check more with
   require_project_access (e.g. runs.act), on the project of the object they load.
   """
@@ -305,7 +306,7 @@ def login_required(f):
     project = request.args.get('project')
     actor = g.get('actor')
     if actor is not None and actor.token is not None:
-      scope = 'read' if request.method in ('GET', 'HEAD') else 'act'
+      scope = 'read' if request.method in ('GET', 'HEAD') or getattr(f, 'reads_only', False) is True else 'act'
       if not actor.has_scope(scope):
         return jsonify({"error": f"This token can't do this: it needs the \"{scope}\" scope.", "reason": "missing_scope", "required": scope}), 403
       if project and not actor.allows_project(project):
@@ -318,6 +319,15 @@ def login_required(f):
     g.user = user_info
     return f(*args, **kwargs)
   return wrapper
+
+
+def reads_only(f):
+  """
+  For POST endpoints that change nothing, e.g. those that compare two images with a JSON body: a token with the
+  "read" scope can call them. Put it below @login_required.
+  """
+  f.reads_only = True
+  return f
 
 
 def authenticated(f):

@@ -1,0 +1,61 @@
+{{- if .Values.mcp.enabled }}
+# `qa mcp --http` (qaboard/mcp_http.py): it calls QA-Board through the proxy, which serves the API and the runs' files,
+# with the token of each request; the proxy routes /mcp and /.well-known/oauth-protected-resource to it
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qaboard.fullname" . }}-mcp
+  labels: {{- include "qaboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+spec:
+  replicas: {{ .Values.mcp.replicas }}
+  selector:
+    matchLabels: {{- include "qaboard.selectorLabels" (list . "mcp") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "qaboard.selectorLabels" (list . "mcp") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # it needs no Kubernetes API, and no credentials of its own
+      automountServiceAccountToken: false
+      containers:
+        - name: mcp
+          image: {{ include "qaboard.image" (list . "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - qa
+            - mcp
+            - --http
+            - --host=0.0.0.0
+            - --port={{ .Values.mcp.port }}
+            - --server=http://{{ include "qaboard.fullname" . }}-proxy
+            - --public-url={{ include "qaboard.publicUrl" . }}
+          ports: [{name: http, containerPort: {{ .Values.mcp.port }}}]
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 20
+          resources: {{- toYaml .Values.mcp.resources | nindent 12 }}
+      {{- with .Values.mcp.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "qaboard.fullname" . }}-mcp
+  labels: {{- include "qaboard.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "qaboard.selectorLabels" (list . "mcp") | nindent 4 }}
+  ports: [{name: http, port: {{ .Values.mcp.port }}, targetPort: http}]
+{{- end }}

@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QA-Board results</title>
+<!--
+  The MCP App of `qa mcp` (qaboard/mcp_server.py): hosts that render MCP Apps (Claude, Claude Desktop, VS Code...)
+  show it next to the answers of `compare`, `metric_history` and `look_at_output`. It talks to the host with
+  JSON-RPC over postMessage (the MCP Apps spec, 2026-01-26), without an SDK: QA-Board runs in networks without
+  internet access, so everything is in this file. The messages follow the spec's JSON schema (e.g. `appInfo` in
+  ui/initialize, `content` as a list in ui/message), which hosts validate. It renders the tool result's `structuredContent` (its `view` says
+  how: compare, history, images, files, and "table" for the outputs compared by their format, qaboard/evidence_outputs.py), and
+  its images. Links open the web app; "Ask" buttons post a question to the chat.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: var(--color-background-primary, light-dark(#ffffff, #1c1c1c));
+    --bg2: var(--color-background-secondary, light-dark(#f5f5f4, #262626));
+    --fg: var(--color-text-primary, light-dark(#1c1917, #f5f5f4));
+    --fg2: var(--color-text-secondary, light-dark(#57534e, #a8a29e));
+    --border: var(--color-border-secondary, light-dark(#e7e5e4, #3f3f46));
+    --better: var(--color-text-success, light-dark(#15803d, #4ade80));
+    --worse: var(--color-text-danger, light-dark(#b91c1c, #f87171));
+    --accent: var(--color-text-info, light-dark(#1d4ed8, #93c5fd));
+    --radius: var(--border-radius-md, 6px);
+    --font: var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+    --mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 12px 14px; font: 13px/1.45 var(--font); color: var(--fg); background: var(--bg); }
+  h2 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+  h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
+  .sub { color: var(--fg2); margin-bottom: 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button, .link { font: inherit; border: 1px solid var(--border); background: var(--bg2); color: var(--fg); border-radius: var(--radius);
+    padding: 3px 9px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .badge { display: inline-block; padding: 0 6px; border-radius: 9px; font-size: 11px; border: 1px solid var(--border); }
+  .better { color: var(--better); } .worse { color: var(--worse); } .muted { color: var(--fg2); }
+  table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--fg2); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.name { white-space: normal; word-break: break-all; }
+  .bar { display: inline-flex; width: 90px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--bg2); vertical-align: middle; }
+  .bar span { display: block; height: 100%; }
+  .scroll { overflow-x: auto; }
+  .clickable { cursor: pointer; } .clickable:hover td { background: var(--bg2); }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .chart { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; position: relative; }
+  .chart svg { width: 100%; height: 170px; display: block; overflow: visible; }
+  .tip { position: absolute; pointer-events: none; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 4px 6px; font-size: 12px; max-width: 260px; box-shadow: 0 2px 8px rgba(0,0,0,.15); display: none; z-index: 2; }
+  .pairs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  figure { margin: 0; } figure img { width: 100%; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 4px; display: block; }
+  figcaption { font-size: 11px; color: var(--fg2); margin-top: 2px; }
+  pre { font: 12px/1.4 var(--mono); background: var(--bg2); padding: 8px; border-radius: var(--radius); overflow: auto; max-height: 420px; white-space: pre-wrap; }
+  .empty { color: var(--fg2); padding: 20px 0; text-align: center; }
+  code { font: 12px var(--mono); background: var(--bg2); padding: 0 3px; border-radius: 3px; }
+  .legend { font-size: 11px; color: var(--fg2); }
+  .legend span::before { content: ""; display: inline-block; width: 14px; height: 2px; margin: 0 4px 3px 8px; vertical-align: middle; background: var(--accent); }
+  .legend span.ref::before { background: var(--fg2); }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty">Waiting for QA-Board…</div></div>
+<script>
+"use strict";
+// ---------------------------------------------------------------- talking to the host (MCP Apps, JSON-RPC over postMessage)
+const pending = new Map();
+let nextId = 1;
+let hostContext = {};
+let hostCapabilities = {};
+
+function send(message) { window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*"); }
+function request(method, params) {
+  const id = nextId++;
+  send({ id, method, params });
+  return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+}
+function notify(method, params) { send({ method, params }); }
+
+window.addEventListener("message", event => {
+  // only the host talks to us
+  if (event.source !== window.parent) return;
+  const message = event.data;
+  if (!message || message.jsonrpc !== "2.0") return;
+  if (message.id !== undefined && !message.method) {  // an answer to one of our requests
+    const waiting = pending.get(message.id);
+    if (!waiting) return;
+    pending.delete(message.id);
+    if (message.error) waiting.reject(new Error(message.error.message || "error")); else waiting.resolve(message.result);
+    return;
+  }
+  const params = message.params || {};
+  switch (message.method) {
+    case "ui/notifications/tool-result": render(params); break;
+    case "ui/notifications/tool-input": toolInput = params.arguments || {}; break;
+    case "ui/notifications/tool-cancelled": show(`<div class="empty">Cancelled.</div>`); break;
+    case "ui/notifications/host-context-changed": applyContext({ ...hostContext, ...params }); break;
+    case "ui/resource-teardown": case "ping":
+      if (message.id !== undefined) send({ id: message.id, result: {} });
+      break;
+    default:
+      if (message.id !== undefined) send({ id: message.id, error: { code: -32601, message: `Unknown method ${message.method}` } });
+  }
+});
+
+let toolInput = {};
+function applyContext(context) {
+  hostContext = context || {};
+  const variables = hostContext.styles?.variables || {};
+  for (const [name, value] of Object.entries(variables)) if (value) document.documentElement.style.setProperty(name, value);
+  if (hostContext.theme) document.documentElement.dataset.theme = hostContext.theme;
+}
+
+async function start() {
+  try {
+    const result = await request("ui/initialize", {
+      protocolVersion: "2026-01-26",
+      appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+      appInfo: { name: "qaboard-results", title: "QA-Board results", version: "1.0.0" },
+    });
+    hostCapabilities = result?.hostCapabilities || {};
+    applyContext(result?.hostContext);
+    notify("ui/notifications/initialized", {});
+  } catch (e) {
+    console.warn("QA-Board: the host didn't answer ui/initialize", e);
+  }
+  // hosts size the frame to what we show
+  let last = "";
+  new ResizeObserver(() => {
+    const size = { width: Math.ceil(document.documentElement.scrollWidth), height: Math.ceil(document.documentElement.scrollHeight) };
+    const key = `${size.width}x${size.height}`;
+    if (key !== last) { last = key; notify("ui/notifications/size-changed", size); }
+  }).observe(document.documentElement);
+}
+
+function openLink(url) {
+  if (!url) return;
+  request("ui/open-link", { url }).catch(() => window.open(url, "_blank", "noopener"));
+}
+function ask(text) {
+  request("ui/message", { role: "user", content: [{ type: "text", text }] }).catch(e => console.warn("QA-Board: can't post to the chat", e));
+}
+async function callTool(name, args) {
+  const result = await request("tools/call", { name, arguments: args });
+  if (result?.isError) throw new Error(result.content?.[0]?.text || "error");
+  return result;
+}
+
+// ---------------------------------------------------------------- helpers
+const app = document.getElementById("app");
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+// Everything below that comes from the server (names, units, messages) is escaped: projects' data is written by
+// whoever sends results, and HTML in it must not run here, where it could post to the chat as the user.
+function num(value, suffix = "", scale = 1) {
+  return esc(rawNum(value, suffix, scale));
+}
+function rawNum(value, suffix = "", scale = 1) {
+  if (value === null || value === undefined || typeof value !== "number" || !isFinite(value)) return "–";
+  const v = value * (scale || 1);
+  const a = Math.abs(v);
+  const text = a === 0 ? "0" : (a >= 1000 || a < 0.001) ? v.toPrecision(4) : a < 1 ? v.toPrecision(3) : v.toFixed(Math.max(0, 3 - Math.floor(Math.log10(a))));
+  return `${text}${suffix || ""}`;
+}
+function change(relative) {
+  if (typeof relative !== "number" || !isFinite(relative)) return "–";
+  return Math.abs(relative) < 10 ? `${relative >= 0 ? "+" : ""}${(relative * 100).toFixed(2)}%` : `${relative >= 0 ? "+" : ""}${relative.toFixed(1)}×`;
+}
+// Images from tool results: only these types, only base64, as data: URLs
+function imageSrc(c) {
+  const mime = c.mimeType || c.mime_type;
+  if (!/^image\/(png|jpeg|gif|webp)$/.test(mime) || typeof c.data !== "string" || !/^[A-Za-z0-9+/=\s]*$/.test(c.data)) return null;
+  return `data:${mime};base64,${c.data.replace(/\s/g, "")}`;
+}
+function imagesOf(result) {
+  const images = [];
+  (result.content || []).forEach((c, i, all) => {
+    const src = c.type === "image" ? imageSrc(c) : null;
+    if (src) images.push({ src, caption: all[i - 1]?.type === "text" ? String(all[i - 1].text) : "" });
+  });
+  return images;
+}
+// Names from runs, in a question posted to the chat as the user: quoted, on one line, short
+function quoted(text) { return `"${String(text ?? "").replace(/["`\s]+/g, " ").trim().slice(0, 120)}"`; }
+const verdictClass = v => v === "better" ? "better" : v === "worse" ? "worse" : "muted";
+const verdictMark = v => ({ better: "▲ better", worse: "▼ worse", same: "= same", changed: "≠ changed" })[v] || "?";
+function button(label, action, title = "") { return `<button data-action="${esc(action)}" title="${esc(title)}">${esc(label)}</button>`; }
+const actions = {};
+let actionId = 0;
+function on(handler) { const key = `a${actionId++}`; actions[key] = handler; return key; }
+app.addEventListener("click", event => {
+  const target = event.target.closest("[data-action]");
+  if (target && actions[target.dataset.action]) { event.preventDefault(); actions[target.dataset.action](target); }
+});
+// A view replaces the page: the actions of what it replaced go (views register theirs with on() as they build their
+// HTML, before show(); drill-downs add theirs to the page later, until the next view)
+function show(html) {
+  app.innerHTML = html;
+  const shown = new Set([...app.querySelectorAll("[data-action]")].map(element => element.dataset.action));
+  for (const key of Object.keys(actions)) if (!shown.has(key)) delete actions[key];
+}
+
+// ---------------------------------------------------------------- views
+function render(result) {
+  const data = result.structuredContent || {};
+  const text = (result.content || []).filter(c => c.type === "text").map(c => c.text);
+  const images = imagesOf(result);
+  if (result.isError) return show(`<pre>${esc(text.join("\n"))}</pre>`);
+  const views = { compare: renderCompare, history: renderHistory, images: renderImages, files: renderFiles, table: renderTable };
+  (views[data.view] || renderText)(data, text, images);
+}
+
+function renderText(data, text) {
+  const links = Object.entries(data.links || {}).map(([name, url]) => button(`Open ${name.replace(/_/g, " ")}`, on(() => openLink(url)))).join(" ");
+  show(`<pre>${esc(text[0] || "")}</pre><div class="row">${links}</div>`);
+}
+
+function renderCompare(data) {
+  const commit = data.commit || {}, ref = data.reference || {};
+  const refName = ref.name || data.reference_asked || (ref.id || "").slice(0, 8) || "no reference";
+  const status = data.status === "complete" ? "" : `<span class="badge worse">${esc(data.status)}</span>`;
+  const rows = (data.metrics || []).slice(0, 15).map(m => {
+    const t = m.tests && { better: Number(m.tests.better) || 0, worse: Number(m.tests.worse) || 0, same: Number(m.tests.same) || 0 };
+    const total = t ? t.better + t.worse + t.same : 0;
+    const bar = t && total ? `<span class="bar" title="${t.better} better, ${t.worse} worse, ${t.same} same">
+        <span style="width:${100 * t.better / total}%;background:var(--better)"></span>
+        <span style="width:${100 * t.worse / total}%;background:var(--worse)"></span>
+        <span style="width:${100 * t.same / total}%;background:var(--border)"></span></span>
+        <span class="muted">${t.better}/${t.worse}/${t.same}</span>` : "–";
+    const direction = m.smaller_is_better === true ? "↓" : m.smaller_is_better === false ? "↑" : "?";
+    return `<tr><td class="name" title="${esc(m.label)}">${esc(m.metric)} <span class="muted" title="better when ${m.smaller_is_better ? "lower" : "higher"}">${direction}</span></td>
+      <td class="num">${num(m.ref, m.suffix, m.scale)}</td><td class="num">${num(m.new, m.suffix, m.scale)}</td>
+      <td class="num ${verdictClass(m.median)}">${change(m.delta_relative)}</td>
+      <td class="num">${change(m.paired_change)}</td>
+      <td>${bar}</td><td class="${/better/.test(m.consistency) ? "better" : /worse/.test(m.consistency) ? "worse" : "muted"}"
+        title="${typeof m.sign_test_p === "number" ? `sign test p=${m.sign_test_p.toPrecision(2)}` : ""}">${esc(m.consistency)}</td></tr>`;
+  }).join("");
+  const movers = (data.movers || []).map(mover => {
+    const list = (title, entries, cls) => entries.length ? `<tr><th colspan="4">${title}</th></tr>` + entries.map(e => `
+      <tr class="clickable" data-action="${on(() => drill(e))}" title="Show the outputs of run ${Number(e.run_id)} next to the reference's">
+        <td class="name">${esc(e.test)}</td><td class="num">${num(e.ref)}</td><td class="num">${num(e.new)}</td>
+        <td class="num ${cls}">${change(e.delta_relative)}</td></tr>`).join("") : "";
+    if (!mover.regressions.length && !mover.improvements.length) return "";
+    return `<h3>${esc(mover.metric)}: tests that moved most</h3><div class="scroll"><table>
+      <tr><th>test</th><th class="num">reference</th><th class="num">new</th><th class="num">change</th></tr>
+      ${list("Worst regressions", mover.regressions, "worse")}${list("Best improvements", mover.improvements, "better")}</table></div>`;
+  }).join("");
+  const worst = (data.movers || []).flatMap(m => m.regressions.slice(0, 1).map(r => ({ metric: m.metric, ...r })))[0];
+  show(`
+    <h2>${esc(data.project)} ${esc((commit.id || "").slice(0, 8))} <span class="muted">vs</span> ${esc(refName)} ${status}</h2>
+    <div class="sub">${esc(commit.message ? commit.message.split("\n")[0] : "")} · label <code>${esc(commit.batch || "default")}</code>
+      · ${esc(commit.runs?.total ?? "?")} runs${data.failed ? `, <span class="worse">${esc(data.failed)} failed${ref.id ? ` (${esc(data.new_failures)} new)` : ""}</span>` : ""}</div>
+    ${data.chosen ? `<div class="muted">Commit: ${esc(data.chosen)}</div>` : ""}
+    ${data.filter_ignored ? `<div class="muted">The URL's filter isn't applied: the whole batch is compared.</div>` : ""}
+    ${(data.messages || []).map(m => `<div class="muted">• ${esc(m)}</div>`).join("")}
+    <div class="row">${button("Open the Metrics Diff", on(() => openLink(data.links?.metrics_diff)))}
+      ${worst ? button("Ask about the worst regression", on(() => ask(`Why did the metric ${quoted(worst.metric)} regress on the test ${quoted(worst.test)} (run ${Number(worst.run_id)} vs reference run ${Number(worst.reference_run_id)})? Look at its outputs with look_at_output.`))) : ""}
+      ${data.failed ? button(`Why did ${Number(data.failed)} run(s) fail?`, on(() => ask(`Use failures to explain why runs failed in the project ${quoted(data.project)}, commit ${quoted(commit.id)}, label ${quoted(commit.batch || "default")}.`))) : ""}</div>
+    <div class="scroll"><table><tr><th>metric</th><th class="num">reference</th><th class="num">new</th><th class="num">change</th><th class="num">per test</th>
+      <th>tests better/worse/same</th><th title="a sign test: did tests move consistently one way?">tests moved</th></tr>${rows}</table></div>
+    <div class="muted" style="font-size:11px">"change" compares the medians of the runs; "per test" is the median of each test's change.</div>
+    ${movers}<div id="drill"></div>`);
+}
+
+// The types of files look_at_output compares with the reference's (the files' `type`, from evidence_outputs.py)
+const COMPARED = ["image", "benchmarks", "flame", "series", "junit", "plotly", "media"];
+
+async function drill(entry) {
+  const target = document.getElementById("drill");
+  target.innerHTML = `<div class="empty">Looking at run ${esc(entry.run_id)}…</div>`;
+  try {
+    const files = await callTool("look_at_output", { run_id: entry.run_id });
+    // images first: they are what usually changes
+    const outputs = (files.structuredContent?.files || []).filter(f => COMPARED.includes(f.type))
+      .sort((a, b) => (a.type !== "image") - (b.type !== "image"));
+    if (!outputs.length) return void (target.innerHTML = `<pre>${esc(files.content?.[0]?.text || "")}</pre>`);
+    target.innerHTML = `<h3>${esc(entry.test)}: outputs</h3><div class="row">${outputs.slice(0, 12).map(f =>
+      fileButton(f, on(() => showOutput(entry, f.path)))).join(" ")}</div><div id="image"></div>`;
+    showOutput(entry, outputs[0].path);
+  } catch (e) {
+    target.innerHTML = `<pre>${esc(e.message)}</pre>`;
+  }
+}
+
+function fileButton(file, action) {
+  const type = file.type && !["text", "binary"].includes(file.type) ? ` <span class="muted">${esc(file.type)}</span>` : "";
+  return `<button data-action="${esc(action)}">${esc(file.path)}${type}</button>`;
+}
+
+async function showOutput(entry, path) {
+  const target = document.getElementById("image");
+  target.innerHTML = `<div class="empty">Loading ${esc(path)}…</div>`;
+  try {
+    const result = await callTool("look_at_output", { run_id: entry.run_id, path, reference_run_id: entry.reference_run_id ?? undefined });
+    const div = document.createElement("div");
+    target.replaceChildren(div);
+    const data = result.structuredContent || {};
+    const text = (result.content || []).filter(c => c.type === "text").map(c => c.text);
+    if (data.view === "table") {
+      div.innerHTML = tableHtml(data);
+      drawCurves(div, data.charts);
+    } else {
+      div.innerHTML = imagesHtml(data, text, imagesOf(result));
+    }
+  } catch (e) {
+    target.innerHTML = `<pre>${esc(e.message)}</pre>`;
+  }
+}
+
+function imagesHtml(data, text, images) {
+  if (!images.length) return `<pre>${esc(text[0] || "")}</pre>`;
+  // new, reference, new, reference...: side by side
+  let html = "";
+  for (let i = 0; i < images.length; i++) {
+    const a = images[i], b = images[i + 1];
+    const paired = b && a.caption.startsWith("new") && b.caption.startsWith("reference");
+    const flicker = paired ? button("Flicker", on(el => {
+      const img = el.closest(".pair").querySelector("img");
+      const [first, second] = [a, b];
+      let shown = 0;
+      const timer = setInterval(() => { shown = 1 - shown; img.src = shown ? second.src : first.src; }, 450);
+      setTimeout(() => { clearInterval(timer); img.src = first.src; }, 4500);
+    }), "Alternate new and reference in place") : "";
+    html += `<div class="pair"><div class="pairs">
+      <figure><img src="${esc(a.src)}" alt="${esc(a.caption)}"><figcaption>${esc(a.caption)}</figcaption></figure>
+      ${paired ? `<figure><img src="${esc(b.src)}" alt="${esc(b.caption)}"><figcaption>${esc(b.caption)}</figcaption></figure>` : "<div></div>"}
+      </div><div class="row" style="margin:4px 0 10px">${flicker}</div></div>`;
+    if (paired) i++;
+  }
+  return html;
+}
+
+function renderImages(data, text, images) {
+  const links = data.links || {};
+  show(`<h2>${esc(data.path)} <span class="muted">· run ${esc(data.run_id)}${data.reference_run_id ? ` vs ${esc(data.reference_run_id)}` : ""}</span></h2>
+    <div class="row" style="margin-bottom:8px">${links.run ? button("Open in the image viewer", on(() => openLink(links.run))) : ""}
+      ${links.file ? button("Open the file", on(() => openLink(links.file))) : ""}</div>
+    ${imagesHtml(data, text, images)}`);
+}
+
+function renderFiles(data, text) {
+  show(`<h2>Files of run ${esc(data.run_id)}</h2><div class="row">${(data.files || []).slice(0, 200).map(f =>
+    fileButton(f, on(() => showOutput({ run_id: data.run_id, reference_run_id: data.reference_run_id }, f.path)))).join(" ")}</div><div id="image"></div>`);
+}
+
+// Outputs compared by their format: summary lines, a table, and curves of new and reference
+function renderTable(data) {
+  const links = data.links || {};
+  show(`<h2>${esc(data.path)} <span class="muted">· run ${esc(data.run_id)}${data.reference_run_id ? ` vs ${esc(data.reference_run_id)}` : ""}</span></h2>
+    <div class="row" style="margin-bottom:8px">${links.run ? button("Open in the web app", on(() => openLink(links.run))) : ""}
+      ${links.file ? button("Open the file", on(() => openLink(links.file))) : ""}</div>
+    ${tableHtml(data)}`);
+  drawCurves(app, data.charts);
+}
+
+// Inline code from the answers' Markdown, on text already escaped
+function inline(text) { return esc(text).replace(/`([^`]*)`/g, "<code>$1</code>"); }
+
+function tableHtml(data) {
+  const marks = { better: "better", worse: "worse", changed: "muted" };
+  const rows = (data.rows || []).map(row => {
+    const cells = Array.isArray(row.cells) ? row.cells : [];
+    const mark = marks[row.verdict] ? `<span class="${marks[row.verdict]}" title="${esc(row.verdict)}">● </span>` : "";
+    return `<tr><td class="name">${mark}${esc(cells[0])}</td>${cells.slice(1).map(c => `<td>${esc(c)}</td>`).join("")}</tr>`;
+  }).join("");
+  const more = Number(data.more) > 0 ? `<div class="muted">… and ${Number(data.more)} more: ask for them, or open the file.</div>` : "";
+  const charts = (data.charts || []).map((chart, index) => `<div class="chart" data-chart="${index}"><strong>${esc(chart.name)}</strong>
+    <span class="legend"><span>new</span>${chart.reference?.length ? `<span class="ref">reference</span>` : ""}</span><svg role="img" aria-label="${esc(chart.name)}"></svg></div>`).join("");
+  return `<h3>${inline(data.title)}</h3>${(data.summary || []).map(line => `<div class="sub">${inline(line)}</div>`).join("")}
+    ${rows ? `<div class="scroll"><table><tr>${(data.columns || []).map(c => `<th>${esc(c)}</th>`).join("")}</tr>${rows}</table></div>${more}` : ""}
+    ${charts ? `<div class="charts" style="margin-top:10px">${charts}</div>` : ""}`;
+}
+
+// The curves of a table's charts, new and reference on the same axes
+function drawCurves(root, charts) {
+  root.querySelectorAll("[data-chart]").forEach(container => {
+    const chart = (charts || [])[Number(container.dataset.chart)] || {};
+    const points = curve => (Array.isArray(curve) ? curve : []).filter(p => Array.isArray(p) && [p[0], p[1]].every(v => typeof v === "number" && isFinite(v)));
+    const curves = [[points(chart.new), "var(--accent)", ""], [points(chart.reference), "var(--fg2)", "4 3"]];
+    const all = curves.flatMap(c => c[0]);
+    const svg = container.querySelector("svg");
+    if (!all.length) { svg.outerHTML = `<div class="empty">No values</div>`; return; }
+    const width = svg.clientWidth || 320, height = 170, pad = { l: 46, r: 8, t: 8, b: 18 };
+    const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+    let [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    if (x0 === x1) { x0 -= 1; x1 += 1; }
+    if (y0 === y1) { y0 -= Math.abs(y0) * 0.05 || 1; y1 += Math.abs(y1) * 0.05 || 1; }
+    const x = v => pad.l + (v - x0) / (x1 - x0) * (width - pad.l - pad.r);
+    const y = v => pad.t + (1 - (v - y0) / (y1 - y0)) * (height - pad.t - pad.b);
+    const ns = "http://www.w3.org/2000/svg";
+    const el = (name, attrs) => { const e = document.createElementNS(ns, name); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); svg.appendChild(e); return e; };
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    for (const tick of [y0, (y0 + y1) / 2, y1]) {
+      el("line", { x1: pad.l, x2: width - pad.r, y1: y(tick), y2: y(tick), stroke: "var(--border)", "stroke-width": 1 });
+      el("text", { x: pad.l - 4, y: y(tick) + 4, "text-anchor": "end", "font-size": 10, fill: "var(--fg2)" }).textContent = rawNum(tick);
+    }
+    for (const [x_, anchor] of [[x0, "start"], [x1, "end"]])
+      el("text", { x: x(x_), y: height - 2, "text-anchor": anchor, "font-size": 10, fill: "var(--fg2)" }).textContent = rawNum(x_);
+    // the reference under the new curve
+    for (const [curve, color, dash] of curves.slice().reverse())
+      if (curve.length) el("path", { d: curve.map((p, k) => `${k ? "L" : "M"}${x(p[0])},${y(p[1])}`).join(""), fill: "none", stroke: color, "stroke-width": 1.6, "stroke-dasharray": dash });
+  });
+}
+
+function renderHistory(data) {
+  const points = data.points || [];
+  if (!points.length) return show(`<div class="empty">No results with the label ${esc(data.label)}.</div>`);
+  const charts = (data.series || []).map((s, index) => {
+    const step = (s.worst_steps || [])[0];
+    const askStep = step ? button(`Ask about ${step.commit.slice(0, 8)} (${change(step.delta_relative)})`, on(() =>
+      ask(`Why did the metric ${quoted(s.metric)} change at commit ${quoted(step.commit)} in the project ${quoted(data.project)}? Use compare with reference ${quoted(step.from_commit)} and label ${quoted(data.label)}.`)),
+      "The biggest step the wrong way, in red") : "";
+    return `<div class="chart" id="chart${index}">
+      <div class="row" style="justify-content:space-between"><strong>${esc(s.metric)}</strong>
+      <span class="muted">${s.smaller_is_better === true ? "lower is better" : s.smaller_is_better === false ? "higher is better" : ""}</span></div>
+      <svg role="img" aria-label="${esc(s.metric)} over commits"></svg><div class="tip"></div><div class="row">${askStep}</div></div>`;
+  }).join("");
+  show(`<h2>${esc(data.project)} <span class="muted">· ${esc(data.branch || "all branches")} · label ${esc(data.label)} · ${points.length} commits</span></h2>
+    <div class="row" style="margin:6px 0 10px">${button("Open the History page", on(() => openLink(data.links?.history)))}</div>
+    <div class="charts">${charts}</div>`);
+  (data.series || []).forEach((s, index) => drawLine(document.getElementById(`chart${index}`), s, points, data));
+}
+
+function drawLine(container, series, points, data) {
+  const svg = container.querySelector("svg"), tip = container.querySelector(".tip");
+  const values = points.map((p, i) => ({ i, p, v: p.values?.[series.metric] })).filter(d => typeof d.v === "number" && isFinite(d.v));
+  if (!values.length) { svg.outerHTML = `<div class="empty">No values</div>`; return; }
+  const width = svg.clientWidth || 320, height = 170, pad = { l: 46, r: 8, t: 8, b: 18 };
+  let lo = Math.min(...values.map(d => d.v)), hi = Math.max(...values.map(d => d.v));
+  if (typeof series.target === "number") { lo = Math.min(lo, series.target); hi = Math.max(hi, series.target); }
+  if (lo === hi) { lo -= Math.abs(lo) * 0.05 || 1; hi += Math.abs(hi) * 0.05 || 1; }
+  const margin = (hi - lo) * 0.08;
+  lo -= margin; hi += margin;
+  const x = i => pad.l + (points.length === 1 ? 0.5 : i / (points.length - 1)) * (width - pad.l - pad.r);
+  const y = v => pad.t + (1 - (v - lo) / (hi - lo)) * (height - pad.t - pad.b);
+  const worst = new Set((series.worst_steps || []).map(s => s.commit));
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (name, attrs) => { const e = document.createElementNS(ns, name); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); svg.appendChild(e); return e; };
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  for (const tick of [lo, (lo + hi) / 2, hi]) {
+    el("line", { x1: pad.l, x2: width - pad.r, y1: y(tick), y2: y(tick), stroke: "var(--border)", "stroke-width": 1 });
+    el("text", { x: pad.l - 4, y: y(tick) + 4, "text-anchor": "end", "font-size": 10, fill: "var(--fg2)" }).textContent = rawNum(tick);
+  }
+  if (typeof series.target === "number")
+    el("line", { x1: pad.l, x2: width - pad.r, y1: y(series.target), y2: y(series.target), stroke: "var(--accent)", "stroke-dasharray": "4 3", "stroke-width": 1 });
+  el("path", { d: values.map((d, k) => `${k ? "L" : "M"}${x(d.i)},${y(d.v)}`).join(""), fill: "none", stroke: "var(--accent)", "stroke-width": 1.8 });
+  for (const d of values) {
+    const bad = worst.has(d.p.commit);
+    const dot = el("circle", { cx: x(d.i), cy: y(d.v), r: bad ? 5 : 3, fill: bad ? "var(--worse)" : "var(--accent)", stroke: "var(--bg)", "stroke-width": 1.5, style: "cursor:pointer" });
+    dot.addEventListener("mouseenter", () => {
+      const step = (series.worst_steps || []).find(s => s.commit === d.p.commit);
+      tip.innerHTML = `<strong>${num(d.v, series.suffix, series.scale)}</strong> · ${esc(d.p.commit.slice(0, 8))} · ${esc((d.p.date || "").slice(0, 10))}<br>
+        ${esc(d.p.message)}${step ? `<br><span class="worse">${change(step.delta_relative)} vs the commit before</span>` : ""}
+        <br><span class="muted">click: open · shift-click: ask why</span>`;
+      tip.style.display = "block";
+      // on the side of the point with room, so that it doesn't hide it
+      tip.style.left = x(d.i) > width / 2 ? "" : `${x(d.i) + 14}px`;
+      tip.style.right = x(d.i) > width / 2 ? `${width - x(d.i) + 14}px` : "";
+      tip.style.top = `${Math.max(0, y(d.v) - 10)}px`;
+    });
+    dot.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+    dot.addEventListener("click", event => {
+      const step = (series.worst_steps || []).concat(series.best_steps || []).find(s => s.commit === d.p.commit);
+      if (event.shiftKey) ask(`Why did the metric ${quoted(series.metric)} change at commit ${quoted(d.p.commit)} in the project ${quoted(data.project)}? Use compare with reference ${step ? quoted(step.from_commit) : "the commit before it"}.`);
+      else openLink(d.p.url);
+    });
+  }
+}
+
+start();
+</script>
+</body>
+</html>

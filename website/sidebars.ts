@@ -238,11 +238,11 @@ const sidebars: SidebarsConfig = {
       items: ['storage/uploads', 'storage/artifacts', 'storage/deleting-old-data'],
     },
     {
-      // Results read from scripts, CI jobs and agents: Python and qa, then any language
+      // Results read from scripts, CI jobs and agents: Python and qa, then any language, then MCP clients
       type: 'category',
       label: 'Results in scripts',
       link: {type: 'doc', id: 'apis'},
-      items: ['http-api'],
+      items: ['http-api', 'mcp'],
     },
     {
       type: 'category',
@@ -264,7 +264,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Users and access',
       collapsed: false,
-      items: ['backend-admin/user-management', 'backend-admin/sign-in', 'backend-admin/project-access', 'backend-admin/audit-log'],
+      items: ['backend-admin/user-management', 'backend-admin/sign-in', 'backend-admin/project-access', 'backend-admin/mcp-clients', 'backend-admin/audit-log'],
     },
     {
       type: 'category',

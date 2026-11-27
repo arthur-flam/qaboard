@@ -1,0 +1,151 @@
+---
+id: mcp
+title: Connect agents and chat clients with MCP
+sidebar_label: MCP server
+description: qa mcp lets coding agents and chat clients compare a commit with its reference, explain failures, look at outputs next to the reference's and follow metrics over commits, with links to the web app.
+---
+import StatusBadge from '@site/src/components/StatusBadge';
+
+<StatusBadge status="experimental" />
+
+:::caution[Experimental]
+`qa mcp`, its tools and their answers may change without notice. Tell us what your agent got wrong in
+[GitHub issues](https://github.com/Samsung/qaboard/issues). `qa mcp` isn't in the latest release on PyPI yet: see
+[Installation](/docs/installation#install).
+:::
+
+`qa mcp` serves QA-Board's results to coding agents (Claude Code, Codex, Cursor...) and chat clients (Claude Desktop,
+VS Code's chat, Open WebUI...) over the Model Context Protocol. Ask *"Is my commit better than main?"* or *"How did the nightly
+do this week?"*: the agent compares the runs with the reference's, looks at the outputs that changed most, and answers
+with the links to the pages that show it, so you can check.
+
+It answers questions, it doesn't mirror the HTTP API: scripts keep using [`qaboard.runs(url)`](/docs/apis#runs-in-scripts)
+and the [HTTP API](/docs/http-api).
+
+## Connect your agent {/* #connect */}
+Install `qa` with the MCP extra, sign in once, then add the server to your client:
+
+```bash
+pip install "qaboard[mcp]"
+qa auth login https://qaboard.example.com
+```
+
+<details>
+<summary>Open WebUI, or another client of your QA-Board server</summary>
+
+Your QA-Board server can also serve MCP itself, at `https://<your-qaboard>/mcp`, for chat clients that only connect
+to remote servers, such as a self-hosted Open WebUI: nothing to install. An admin turns it on and registers the client
+([Connect MCP clients](/docs/backend-admin/mcp-clients)); then connect it from a chat's tools. QA-Board asks you once to
+allow the app, which then reads QA-Board as you, with read-only tokens. Its tools are the same, without `check_gate`.
+
+</details>
+
+<details>
+<summary>Claude Code</summary>
+
+```bash
+claude mcp add qaboard -e QABOARD_URL=https://qaboard.example.com -- qa mcp
+```
+
+Start it from your project's checkout: `check_gate` reads its *qaboard.yaml*.
+
+</details>
+
+<details>
+<summary>Claude Desktop</summary>
+
+In **Settings → Developer → Edit Config**, add to *claude_desktop_config.json*:
+
+```json
+{
+  "mcpServers": {
+    "qaboard": {"command": "qa", "args": ["mcp"], "env": {"QABOARD_URL": "https://qaboard.example.com"}}
+  }
+}
+```
+
+Give the full path of `qa` if Claude Desktop doesn't find it (`which qa`).
+
+</details>
+
+<details>
+<summary>VS Code, Cursor, Codex</summary>
+
+VS Code, in *.vscode/mcp.json*:
+
+```json
+{"servers": {"qaboard": {"command": "qa", "args": ["mcp"], "env": {"QABOARD_URL": "https://qaboard.example.com"}}}}
+```
+
+Cursor takes the same in *.cursor/mcp.json*, under `mcpServers`. Codex: `codex mcp add qaboard -- qa mcp`.
+
+</details>
+
+`qa mcp` uses your credentials, like `qa`: what `qa auth login` saved, or `QABOARD_TOKEN`. A token with only the
+`read` scope is enough, and it's what we recommend for agents: create one in the web app, **Settings → Tokens**.
+It only sends them to your QA-Board server: links to other servers need a `qa auth login` there, and image servers
+on other hosts get no token.
+
+Without a commit, the tools use the commit checked out where `qa mcp` runs if it has results, else the project's
+latest commit with results, and say which.
+
+## What to ask {/* #what-to-ask */}
+- *"Did my change improve the detector? Check with QA-Board before saying so."*
+- *"Review https://qaboard.example.com/group/repo/commit/abc123?batch=ci for me."* Paste any commit page: the agent
+  reads the project, commit, label and reference from the URL.
+- *"Why did runs fail on my last commit? Are the failures new?"*
+- *"Show me where the output images differ from the reference on the worst test."*
+- *"How did psnr evolve on main for the nightly label this month? Which commits made it drop?"*
+
+Clients that show MCP prompts offer three procedures as commands: **did_my_change_help**, **review_results** and
+**nightly_report** (in Claude Code: `/mcp__qaboard__did_my_change_help`).
+
+## What the agent sees {/* #tools */}
+| Tool | Answers |
+|---|---|
+| `compare` | Is this commit better than its reference? Per metric: the medians of the **Summary** and their change, the median change per test, how many tests got better and worse and whether consistently, the tests that moved most, failed runs (new or not), and the link to the **Metrics Diff**. |
+| `failures` | Why runs failed: the failed runs grouped by the error at the end of their logs, with an excerpt, and whether the same test failed in the reference. |
+| `look_at_output` | A run's files and their types, the changed ones first; any of them next to the reference's, by its type, like the web app's viewers: images (whole, and where they differ most, in any format the image viewer opens), benchmarks, flame graphs, series such as training curves, test reports (JUnit), Plotly figures, logged media; text files as a diff; the end of the log. |
+| `metric_history` | Medians per commit on a branch, like the **History** page, with the biggest steps and the commits that made them. |
+| `find_results` | Projects, their latest commits with results, labels, run counts and milestones. |
+| `runs_table` | One row per run (input, status, the parameters that differ, metrics) as CSV, for the agent's own analyses. |
+| `check_gate` | The [quality gate](/docs/quality-gate)'s verdict, rule by rule, when `qa mcp` runs on your computer in the project's checkout. It's the verdict CI trusts; `compare` is the evidence. |
+
+The numbers are the server's, the same as the web app's. With each answer, the agent gets the links to the web app
+pages that show it: give them to the people who review the change.
+
+Tests that moved in the same direction say more than a median: `compare` counts them and says whether they moved
+consistently (a sign test, which needs at least 6 tests). QA-Board doesn't know yet how much a metric moves between
+identical runs, so an agent shouldn't call a small change of a noisy metric, such as a latency, an improvement
+without repeated runs.
+
+### An agent's own experiments {/* #experiments */}
+Have the agent label its runs, `qa --label agent/denoise batch --commit <sha> ci`. `compare` compares them with the
+reference's CI runs when the reference has none with that label, and says so; to compare two experiments, give the
+other one as `reference` (its commit) and `reference_label`. `metric_history` with `label` follows them over commits.
+
+## Charts and images in the conversation {/* #apps */}
+Clients that render MCP Apps (Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Open WebUI,
+Goose...) show the answers of `compare`, `metric_history` and `look_at_output` in an interactive view: the metrics
+table with the tests that moved most, charts of metrics over commits, images side by side, tables and curves of the
+other outputs. Click a test to see its images, a point
+to open its commit, and **Ask about...** to send the question to the chat. Other clients, such as Claude Code in a
+terminal, get the same answer as text, and the agent sees the images.
+
+The view loads nothing from the internet. Images are converted to 8-bit PNG by your server's image server: small
+differences of high bit-depth outputs may not show, check them in the [image viewer](/docs/user-guide/image-viewer).
+
+## What agents can't do with it {/* #limits */}
+- **Change anything.** Every tool only reads. To test a change, an agent pushes it and runs
+  `qa --label <name> batch --commit <sha> <batch>` ([start batches from a terminal](/docs/tuning-from-the-webapp#from-the-command-line)).
+- **Follow instructions written in your results.** Logs, commit messages and inputs' names are shown to the model as
+  quoted data. Keep the agent's other permissions to what the task needs anyway: a log can say anything.
+- **Connect from claude.ai or Microsoft 365 Copilot.** They reach MCP servers from their own cloud, which can't reach
+  a QA-Board server inside your network, and they register their clients dynamically, which QA-Board doesn't support
+  yet. Clients you host, like Open WebUI, connect to [your server's MCP endpoint](/docs/backend-admin/mcp-clients).
+
+<Cards>
+  <Card title="Coding agents" to="/docs/agents">Skills that teach agents to integrate a project and to read results.</Card>
+  <Card title="Quality gate" to="/docs/quality-gate">The verdict CI trusts, rule by rule.</Card>
+  <Card title="HTTP API" to="/docs/http-api">Results from scripts, in any language.</Card>
+</Cards>

@@ -196,6 +196,33 @@ class TestConnections(unittest.TestCase):
     with mock.patch('os.getpid', return_value=-1):
       self.assertIsNot(http_client._session(), session)
 
+  def test_sessions_that_keep_no_cookies(self):
+    # for requests made for different people (`qa mcp --http`): what the server sets for one isn't sent with another's
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    cookies = []
+
+    class Handler(BaseHTTPRequestHandler):
+      def log_message(self, *args):
+        pass
+
+      def do_GET(self):
+        cookies.append(self.headers.get('Cookie'))
+        self.send_response(200)
+        self.send_header('Set-Cookie', 'session=alice; Path=/')
+        self.send_header('Content-Length', '2')
+        self.end_headers()
+        self.wfile.write(b'{}')
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    self.addCleanup(server.server_close)
+    self.addCleanup(server.shutdown)
+    with mock.patch.object(http_client, '_sessions', threading.local()):
+      self.assertIsNot(http_client._session(keep_cookies=False), http_client._session())
+      for keep_cookies in (False, False, True, True):
+        request_json(f"http://127.0.0.1:{server.server_address[1]}", 'x', token='t', keep_cookies=keep_cookies)
+    self.assertEqual(cookies, [None, None, None, 'session=alice'])
+
 
 if __name__ == '__main__':
   unittest.main()

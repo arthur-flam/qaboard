@@ -63,6 +63,7 @@ def pytest_configure():
     auth_mod.matches_rules = MagicMock()
     # Pass-through: the decorator itself is tested in tests/test_security.py
     auth_mod.login_required = lambda f: f
+    auth_mod.reads_only = lambda f: f
     auth_mod.session_required = lambda f: f
     auth_mod.authenticated = lambda f: f
     auth_mod.admin_required = lambda f: f

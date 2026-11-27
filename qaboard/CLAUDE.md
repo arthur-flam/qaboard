@@ -48,6 +48,19 @@ are theirs), `local_changes.py`, `system_metrics.py` (+ `.series`). The web app 
 - `tests/test_active_run.py` has a fake server that answers like the real endpoints: change them together.
 - Design and decisions: `docs/design/ingest-upload-sdk.md` (what's left: §3); limits: `docs/warts.md`.
 
+## MCP server
+`qa mcp` (`mcp_server.py`, the `mcp` extra) serves read-only MCP tools shaped for tasks, not one per
+endpoint: compare with the reference, failures grouped by error, outputs next to the reference's, metrics over
+commits. Their answers are built in `evidence.py` (no MCP dependency), outputs by type in `evidence_outputs.py`
+(reusing the parsers above, and the web app's file-type rules: `tests/fixtures/file-types.json`), on what both share
+in `evidence_base.py` (the API, answers, errors, formatting). Files come from runs: read them with limits (sizes,
+decompressed too), and content of an unexpected shape is shown as text, never a tool error. `mcp_app.html` is
+the MCP App hosts render (escape everything from results). The token only goes to the server's origin.
+`qa mcp --http` (`mcp_http.py`) is the remote server, an OAuth protected resource: each call uses its caller's token,
+never the machine's, and keeps no cookies (threads answer every caller). Tests: `tests/test_mcp_server.py` against `tests/fake_qaboard.py` (answers like the real
+endpoints: change them together), `tests/test_mcp_http.py`; the app in a real host: `tests/mcp_app/README.md`.
+Design and what's left: `docs/rfcs/mcp-server.md`; user docs: `website/docs/mcp.mdx`.
+
 ## Local changes
 Local runs record how their code differs from their commit (`local_changes.py`): a summary in `data.local_changes`,
 the patches in the run's `.qaboard/` (out of manifests). `qa batch` computes them once for its runs, which check a

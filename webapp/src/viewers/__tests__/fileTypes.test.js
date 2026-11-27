@@ -1,12 +1,14 @@
-// Files recognized by their names: the same names as `qa upload` (tests/test_junit.py), from one list
+// Files recognized by their names: the same names as `qa upload` and `qa mcp` (tests/test_junit.py, test_series.py,
+// test_flamegraphs.py), from one list
 import fs from 'fs';
 import path from 'path';
 
-import { is_junit, is_benchmarks, is_audio } from '../fileTypes';
+import { is_junit, is_benchmarks, is_flame_graph, is_audio } from '../fileTypes';
+import { is_series } from '../series/series';
 
 const names = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../../../../tests/fixtures/file-types.json'), 'utf8'));
 
-describe.each([['junit', is_junit], ['benchmarks', is_benchmarks]])('%s files', (kind, is_kind) => {
+describe.each([['junit', is_junit], ['benchmarks', is_benchmarks], ['flame_graph', is_flame_graph], ['series', is_series]])('%s files', (kind, is_kind) => {
   it.each(names[kind].yes)('%s is one', name => expect(is_kind(name)).toBe(true));
   it.each(names[kind].no)("%s isn't", name => expect(is_kind(name)).toBe(false));
 });
