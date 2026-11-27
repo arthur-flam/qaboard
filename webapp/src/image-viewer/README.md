@@ -334,6 +334,7 @@ resolution), and show a cross where the pointer is on the others. Viewers off-sc
 | `shown`, `defaultShown`, `onShownChange` | index | `0` | With `more`: the image shown in single mode |
 | `details`, `defaultDetails`, `onDetailsChange` | boolean | `true` | The values under the pointer; with `more`, of every image, and how far apart they are |
 | `compact` | boolean | `false` | With `more`: one row of images, the toolbar on demand |
+| `quietToolbar` | boolean | `false` | The secondary tools and the hints show only on hover or focus (not in full screen): e.g. for pages with many viewers |
 | `compareWith` | `[{ id, image, label?, group?, detail?, title? }]` | `[]` | [Other images](#comparing-with-other-images) users can compare with instead of the reference |
 | `compared`, `defaultCompared`, `onComparedChange` | `string \| null` | `null` | The id of the image of `compareWith` compared with, `null`: the reference |
 | `compareScopes`, `compareScope`, `onCompareScopeChange` | `[{ value, label, title?, phrase? }]`, `string` | `[]` | Where a pick applies, e.g. `'all'` the runs or this `'run'` |

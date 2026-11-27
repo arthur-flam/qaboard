@@ -274,6 +274,10 @@ const Sider = styled.div`
 
     background: var(--qa-sider-background);
     border-right: ${borders.width.thin} solid rgba(0, 0, 0, 0.3);
+    /* the dark page is almost as dark as the sidebar: a light line tells them apart */
+    .bp6-dark & {
+        border-right-color: var(--qa-border-subtle);
+    }
     color: ${colors.textPrimary};
     font-size: ${typography.base};
 

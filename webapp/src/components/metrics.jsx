@@ -89,16 +89,17 @@ const MetricTag = ({ metrics_new, metrics_ref, metric_info, added_metrics }) => 
     compare_tag = <Tag round minimal intent={intent_compare} htmlTitle="vs the reference run">{format_delta(delta_relative)}</Tag>;
   }
 
-  const intent =
+  // Colors are for what needs a look: a metric that misses its target is red, one that meets it stays neutral (it's
+  // the expected case, and most metrics are in it). How it changed vs the reference has its own colors, in compare_tag.
+  const misses_target =
     (value > metric_info.target && metric_info.smaller_is_better) ||
-    (value < metric_info.target && !metric_info.smaller_is_better)
-      ? Intent.DANGER
-      : Intent.SUCCESS;
+    (value < metric_info.target && !metric_info.smaller_is_better);
+  const has_target = !!metric_info.target && !is_direction_unknown(metric_info);
   const { key: _key, ...metric_info_rest } = metric_info;
   return <CompoundTag
     style={{margin: '3px', paddingTop: "0px", paddingBottom: "0px"}}
     minimal
-    intent={metric_info.target && !is_direction_unknown(metric_info) ? intent : null}
+    intent={has_target && misses_target ? Intent.DANGER : null}
     leftContent={<MetricHeader condensed {...metric_info_rest}/>}
   >
     {value_component}

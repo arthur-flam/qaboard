@@ -11,6 +11,7 @@
   --qa-text-muted: #5f6b7c;
   --qa-link: #1b69b6;
   --qa-border: rgba(17, 20, 24, 0.15);
+  --qa-border-subtle: rgba(17, 20, 24, 0.1);
   --qa-hover: rgba(45, 114, 210, 0.08);
   --qa-sider-background: #1c2127;
   /* Blueprint's primary intent, e.g. what differs from the defaults */
@@ -42,15 +43,19 @@
   --qa-code-key: #0550ae;
   --qa-code-variable: #953800;
 }
+/* Dark theme: few surfaces, far enough apart to tell them at a glance. The page and its chrome (headers, the View options
+   panel) are the darkest; the results' cards are lighter and bordered; text comes in 3 levels (primary, secondary,
+   muted), brightness being what ranks things on a dark page. */
 .bp6-dark {
-  --qa-background: #1c2127;
-  --qa-surface: #252a31;
-  --qa-surface-alt: #2f343c;
-  --qa-text: #f6f7f9;
-  --qa-text-secondary: rgba(255, 255, 255, 0.72);
-  --qa-text-muted: #abb3bf;
+  --qa-background: #15181d;
+  --qa-surface: #22272e;
+  --qa-surface-alt: #2b313a;
+  --qa-text: #e6e9ed;
+  --qa-text-secondary: #b6bec9;
+  --qa-text-muted: #8f99a8;
   --qa-link: #8abbff;
   --qa-border: rgba(255, 255, 255, 0.15);
+  --qa-border-subtle: rgba(255, 255, 255, 0.09);
   --qa-hover: rgba(138, 187, 255, 0.1);
   --qa-sider-background: #111418;
   --qa-intent-primary: #4c90f0;
@@ -117,6 +122,16 @@ span.bp6-popover-target {
 .bp6-card.output-card {
   padding: 5px;
   margin-bottom: 15px;
+}
+/* Dark theme: the cards stand out from the page (see the colors above) */
+.bp6-dark .bp6-card {
+  background-color: var(--qa-surface);
+  box-shadow: 0 0 0 1px var(--qa-border-subtle), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+/* and the headers are chrome, like the page */
+.bp6-dark .bp6-navbar {
+  background-color: var(--qa-background);
+  box-shadow: inset 0 -1px 0 var(--qa-border-subtle);
 }
 /* Compact run cards (Settings → Preferences, or above the cards): less room around the visualizations */
 .bp6-card.output-card.compact {

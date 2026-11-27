@@ -9,7 +9,8 @@ import { Button, Classes, Collapse, Icon, Tag, Tooltip } from "@blueprintjs/core
 import { is_typing } from "./HelpSheet";
 import { sidebar } from "../design/tokens";
 
-export const rail_width = 40;
+// wide enough for a short label under each icon
+export const rail_width = 56;
 export const min_width = 260;
 export const max_width = 480;
 export const default_width = 300;
@@ -72,6 +73,11 @@ const Aside = styled.aside`
   flex-direction: column;
   background: var(--qa-surface);
   border-left: 1px solid var(--qa-border);
+  /* dark theme: chrome, like the page and its headers, under the results' lighter cards */
+  .bp6-dark & {
+    background: var(--qa-background);
+    border-left-color: var(--qa-border-subtle);
+  }
   transition: width 150ms cubic-bezier(0.4, 0, 0.2, 1);
   &[data-resizing] {
     transition: none;
@@ -203,27 +209,41 @@ const Rail = styled.div`
   .side-panel-rail-item {
     position: relative;
   }
-  .side-panel-separator {
-    width: 20px;
-    border-top: 1px solid var(--qa-border);
-    margin: 2px 0;
-  }
-  .side-panel-rail-label {
-    writing-mode: vertical-rl;
-    margin-top: 4px;
-    padding: 10px 0;
-    width: 30px;
+  /* an icon and a short label under it: icons alone don't say what the sections are */
+  .side-panel-rail-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 50px;
+    padding: 6px 2px 4px;
     border: none;
-    border-radius: 2px;
+    border-radius: 3px;
     background: none;
     font: inherit;
-    font-size: 12px;
-    color: var(--qa-text-muted);
+    color: var(--qa-text-secondary);
     cursor: pointer;
     &:hover {
       color: var(--qa-text);
       background: var(--qa-hover);
     }
+    &:focus-visible {
+      outline: 2px solid var(--qa-intent-primary);
+      outline-offset: -2px;
+    }
+  }
+  .side-panel-rail-text {
+    max-width: 100%;
+    font-size: 10.5px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .side-panel-separator {
+    width: 20px;
+    border-top: 1px solid var(--qa-border);
+    margin: 2px 0;
   }
   .side-panel-rail-bottom {
     margin-top: auto;
@@ -233,13 +253,18 @@ const Rail = styled.div`
 // What differs from the defaults
 export const ChangedDot = styled.span`
   position: absolute;
+  /* at the icon's top right */
   top: 4px;
-  right: 4px;
+  right: 13px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--qa-intent-primary);
+  /* a ring of the panel's color */
   box-shadow: 0 0 0 2px var(--qa-surface);
+  .bp6-dark & {
+    box-shadow: 0 0 0 2px var(--qa-background);
+  }
   pointer-events: none;
 `;
 
@@ -260,7 +285,8 @@ export const ChangesTooltip = ({ changes }) => <div style={{ maxWidth: 260 }}>
 
 
 /**
- * sections: [{ id, title, icon, summary, changes: [], summary_has_changes, meta, isOpen, content }]
+ * railLabel: under the expand button of the collapsed panel, e.g. "Options" (default: the title)
+ * sections: [{ id, title, short, icon, summary, changes: [], summary_has_changes, meta, isOpen, content }]
  * onToggleSection(id), onOpenSection(id): a rail icon opens its section
  * changes: what differs from the defaults (a count in the header, its list on hover)
  * reset: { onClick, tooltip } when there is something to reset
@@ -268,6 +294,7 @@ export const ChangesTooltip = ({ changes }) => <div style={{ maxWidth: 260 }}>
  */
 const SidePanel = ({
   title,
+  railLabel,
   shortcut,
   top,
   expanded,
@@ -399,33 +426,37 @@ const SidePanel = ({
     return <Aside ref={aside} $top={top} style={{ width: rail_width }} aria-label={title}>
       <Rail>
         <Tooltip content={<>Show the {title.toLowerCase()}{shortcut && <Kbd>{shortcut}</Kbd>}</>} placement="left">
-          <Button
+          <button
+            type="button"
             ref={toggle_ref}
-            icon="chevron-left"
-            variant="minimal"
+            className="side-panel-rail-button"
             aria-label={`Show the ${title.toLowerCase()}`}
             aria-expanded={false}
             onClick={() => toggle({ focus: true })}
-          />
+          >
+            <Icon icon="chevron-left" aria-hidden />
+            <span className="side-panel-rail-text" aria-hidden>{railLabel ?? title}</span>
+          </button>
         </Tooltip>
         <div className="side-panel-separator" />
         {sections.map(section => <div className="side-panel-rail-item" key={section.id}>
           <Tooltip content={<SectionTooltip section={section} />} placement="left" hoverOpenDelay={150}>
-            <Button
-              icon={section.icon}
-              variant="minimal"
+            <button
+              type="button"
+              className="side-panel-rail-button"
               aria-label={`${section.title}: ${section.summary}${section.changes.length ? ' (changed)' : ''}`}
               onClick={() => {
                 onOpenSection(section.id);
                 scroll_target.current = section.id;
                 setExpanded(true);
               }}
-            />
+            >
+              <Icon icon={section.icon} aria-hidden />
+              <span className="side-panel-rail-text" aria-hidden>{section.short ?? section.title}</span>
+            </button>
           </Tooltip>
           {section.changes.length > 0 && <ChangedDot data-testid={`changed-${section.id}`} />}
         </div>)}
-        {/* the label is for the eyes: the button above is the same for keyboards and screen readers */}
-        <button type="button" className="side-panel-rail-label" tabIndex={-1} aria-hidden onClick={() => toggle()}>{title}</button>
         {reset && <div className="side-panel-rail-bottom">
           <Tooltip content={reset.tooltip} placement="left">
             <Button icon="reset" variant="minimal" aria-label="Reset" onClick={reset.onClick} />

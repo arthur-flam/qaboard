@@ -124,7 +124,8 @@ Green is better, red is worse, everywhere. What "better" means depends on the vi
 | **Summary**, and the changes on run cards | Better than the reference by more than 1% | Worse by more than 1% | Gray: a change under 1% |
 | **Metrics Diff** | Better than the reference run | Worse than the reference run | Yellow for small changes, `=` when equal |
 | **Metrics Table** | Beats the target, greener the further | Misses the target, redder the further | Yellow near the target, blue without a target |
-| Metric tags on run cards, the Summary's bars | Meets the target | Misses the target | No color without a target |
+| The Summary's bars | Meets the target | Misses the target | No color without a target |
+| Metric tags on run cards | | Misses the target | Meets the target, or has none: only misses stand out |
 
 The Metrics Diff's colors are made for changes of a few percent: past about 10%, cells have their strongest color.
 Hover a metric's name for its full label and description, and a value for its exact number.
@@ -143,7 +144,7 @@ A target is the value a metric should reach: a mAP of at least 0.15, a latency u
 - in the Metrics Table's headers, `mAP [0.15]`, and in the cells' colors;
 - in the Summary, as the share of runs that meet it (hover the bar for the exact target) and the green and red zones of
   the box plots;
-- on the run cards, where the metric's tag is green or red.
+- on the run cards, where the metric's tag is red when it misses it.
 
 Some targets are pass or fail: their cells are green or red, without shades. The Metrics Diff doesn't use targets: it
 compares with the reference.

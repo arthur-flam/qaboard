@@ -455,6 +455,8 @@ const ImageViewerForRuns = ({
     details={show_details}
     onDetailsChange={setShowDetails}
     compact={contact_sheet && !fullscreen}
+    // many viewers on a page: their tools show on hover
+    quietToolbar
     compareWith={compare_with}
     compared={compared}
     onComparedChange={value => { use('compare'); setCompared(path, output_new.id, value, compared_page); }}

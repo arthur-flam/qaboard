@@ -234,6 +234,10 @@ export interface ImageViewerProps {
   onDetailsChange?: (shown: boolean) => void;
   /** With `more`, the images in one row. The toolbar shows when users ask for it: e.g. for the rows of a contact sheet */
   compact?: boolean;
+  /** The secondary tools (zoom, regions, adjustments, copy...) and the hints show only while the pointer is over the
+   * viewer or it has the focus; the comparison modes, full screen and what's on (e.g. adjusted colors) always show.
+   * E.g. for pages with many viewers. Not in full screen */
+  quietToolbar?: boolean;
 
   /** Other images users can compare the image with instead of the reference, e.g. its ground truth: picked in the "vs" menu */
   compareWith?: CompareWithItem[];

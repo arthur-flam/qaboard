@@ -2190,3 +2190,26 @@
 .qiv-chrome-toggle .qiv-icon {
   fill: currentColor;
 }
+
+/* quietToolbar: the secondary tools and the hints show while the pointer is over the viewer, or it has the focus. Still
+   there (opacity), so nothing moves. Pointers that can't hover, e.g. touch screens, always see them */
+@media (hover: hover) {
+  .qiv-quiet .qiv-secondary,
+  .qiv-quiet .qiv-readout-hint {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .qiv-quiet:hover .qiv-secondary,
+  .qiv-quiet:focus-within .qiv-secondary,
+  .qiv-quiet .qiv-secondary[aria-expanded="true"],
+  .qiv-quiet:hover .qiv-readout-hint,
+  .qiv-quiet:focus-within .qiv-readout-hint {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qiv-quiet .qiv-secondary,
+  .qiv-quiet .qiv-readout-hint {
+    transition: none;
+  }
+}

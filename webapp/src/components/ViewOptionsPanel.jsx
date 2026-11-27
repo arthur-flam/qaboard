@@ -400,6 +400,7 @@ const ViewOptionsPanel = ({
     shows_visualizations && {
       id: 'visualizations',
       title: 'Visualizations',
+      short: 'Visuals',
       icon: 'media',
       summary: `${nb_shown} of ${visualizations_in_runs.length} shown`,
       meta: visualizations.length > 0 && <Meta>{nb_shown} of {visualizations_in_runs.length} shown</Meta>,
@@ -428,6 +429,7 @@ const ViewOptionsPanel = ({
     shows_visualizations && option_rows.length > 0 && {
       id: 'dynamic_options',
       title: 'Files to show',
+      short: 'Files',
       icon: 'document',
       summary_has_changes: true,
       summary: option_infos.map(({ label, isSync, picked, selectedValue, default_label }) =>
@@ -440,6 +442,7 @@ const ViewOptionsPanel = ({
     shows_cards && viewer_switches.length > 0 && {
       id: 'viewers',
       title: 'Viewers',
+      short: 'Viewers',
       icon: 'eye-open',
       summary: viewers_summary,
       content: viewer_switches,
@@ -447,6 +450,7 @@ const ViewOptionsPanel = ({
     shows_files && {
       id: 'files',
       title: 'Output files',
+      short: 'Outputs',
       icon: 'folder-close',
       summary: file_options_on.length > 0 ? file_options_on.join(', ') : 'Changed files only',
       content: <FileOptionSwitches options={file_options} toggle={onToggleFileOption} />,
@@ -454,6 +458,7 @@ const ViewOptionsPanel = ({
     shared?.tokens.length > 0 && {
       id: 'configuration',
       title: 'Configuration',
+      short: 'Config',
       icon: 'properties',
       summary: `${shared.tokens.length} settings shared by all ${shared.runs} runs${shared.collapse ? (hide_shared ? ', hidden in each run' : ', shown in each run') : ''}`,
       meta: <Meta>{shared.tokens.length} shared</Meta>,
@@ -469,6 +474,7 @@ const ViewOptionsPanel = ({
     {
       id: 'display',
       title: 'Display',
+      short: 'Display',
       icon: 'list-detail-view',
       summary: [
         shows_cards && `${card_density === 'compact' ? 'Compact' : 'Comfortable'} cards`,
@@ -503,6 +509,7 @@ const ViewOptionsPanel = ({
     {
       id: 'sorting',
       title: 'Sort runs',
+      short: 'Sort',
       icon: 'sort',
       summary_has_changes: true,
       summary: sorting_applies ? `${sort_label(sort_value)}, ${order_label}` : 'Not used by the summary',
@@ -557,6 +564,7 @@ const ViewOptionsPanel = ({
 
   return <SidePanel
     title="View options"
+    railLabel="Options"
     shortcut="o"
     top={top}
     expanded={expanded}

@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ViewOptionsPanel from '../ViewOptionsPanel';
-import { useSidePanelExpanded } from '../SidePanel';
+import { rail_width, useSidePanelExpanded } from '../SidePanel';
 import { configureOption } from '../../utils/dynamicOptions';
 
 // The panel starts collapsed on narrow screens like jsdom's: most tests look at its content
@@ -179,7 +179,7 @@ describe('the docked panel', () => {
     resize(1440);
     panel({});
     expect(screen.getByRole('button', { name: 'Show the view options' })).toBeInTheDocument();
-    expect(space()).toBe('40px');
+    expect(space()).toBe(`${rail_width}px`);
   });
 
   test('o shows or hides it, unless typing', () => {
@@ -261,7 +261,7 @@ describe('the docked panel', () => {
   test('covers narrow content areas instead of narrowing them, and Esc closes it then', () => {
     resize(1100);
     panel({});
-    expect(space()).toBe('40px');
+    expect(space()).toBe(`${rail_width}px`);
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(screen.getByRole('button', { name: 'Show the view options' })).toBeInTheDocument();
   });

@@ -139,7 +139,8 @@ const BatchTags = ({ batch }) => {
   const { valid_outputs, running_outputs, pending_outputs, failed_outputs } = batch;
   return <>
     {valid_outputs > 0 && (
-      <Tag intent={Intent.SUCCESS} minimal round>
+      // neutral: finished runs are the usual case, the other states have colors
+      <Tag minimal round>
         {valid_outputs} run{valid_outputs === 1 ? '' : 's'}
       </Tag>
     )}{" "}
