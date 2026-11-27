@@ -37,6 +37,10 @@ class TestDevScript(unittest.TestCase):
     self.assertEqual(dev.proxy_route('POST', '/webhook/gitlab'), 'backend')
     self.assertEqual(dev.proxy_route('GET', '/iiif/2/x/info.json'), 'backend')  # Vite sends it here: no redirect loop
     self.assertEqual(dev.proxy_route('GET', '/dev/image-pipeline/commits'), 'webapp')
+    self.assertEqual(dev.proxy_route('GET', '/.well-known/oauth-authorization-server'), 'backend')
+    self.assertEqual(dev.proxy_route('POST', '/mcp'), 'mcp')
+    self.assertEqual(dev.proxy_route('GET', '/.well-known/oauth-protected-resource/mcp'), 'mcp')
+    self.assertEqual(dev.proxy_route('GET', '/mcpx'), 'webapp')
 
   def test_loopback_host(self):
     for host in ('localhost:5151', '127.0.0.1:3000', '[::1]:5151', 'LOCALHOST', '127.0.0.1'):
@@ -77,7 +81,7 @@ class TestDevScript(unittest.TestCase):
       self.assertEqual([p.parent.name for p in dev.postgres_bin_dirs(Path(root))], ['16', '12'])
 
   def test_ports(self):
-    self.assertEqual(dev.pick_ports(5161, 3010), {'server': 5161, 'backend': 5162, 'web': 3010})
+    self.assertEqual(dev.pick_ports(5161, 3010), {'server': 5161, 'backend': 5162, 'mcp': 5163, 'web': 3010})
 
   @unittest.skipIf(os.name == 'nt', "POSIX permissions")
   def test_the_token_is_private_from_the_start(self):

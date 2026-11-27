@@ -564,9 +564,6 @@ Pod Security, admission policies, Kueue/ResourceQuota) rather than re-implementi
 - **Cantaloupe**: drop `services/cantaloupe/logback.xml` with 5.0.9. 5.0.6 fixed TurboJpegProcessor's 415 on
   non-JPEG output: check whether `ManualSelectionStrategy` in `cantaloupe.properties` is still needed (keep Java2d
   for JPEG: the pixel tooltip and diffs need exact values). [S, no change]
-- **`/.well-known/oauth-authorization-server`** (the metadata of connected apps' OAuth server) is routed to the
-  backend by `services/nginx/conf.d/qaboard.conf` only: the Helm chart's `charts/qaboard/files/qaboard.conf` and the
-  sites' nginx overlays need the same location. [S, behaviour]
 - The `pgadmin` volume is mounted at `/root/.pgadmin`, but the image keeps its data in `/var/lib/pgadmin`: nothing
   persists (pgAdmin sets itself up again when its container is recreated). Mounting it at `/var/lib/pgadmin` keeps
   admins' pgAdmin settings, but the entrypoint only loads servers.json and the passfile when it creates its database:
