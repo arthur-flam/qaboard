@@ -43,7 +43,7 @@ from ..runner_jobs import driver_without_storage
 from .. import tokens
 from ..audit import audit, capped, fingerprint, update_meta
 from ..notifications.batches import request_batch_notification, cancel_batch_notification
-from .auth import login_required, require_project_access, is_authorized_user, forbidden_project
+from .auth import login_required, reads_only, require_project_access, is_authorized_user, forbidden_project
 
 logger = logging.getLogger(__name__)
 
@@ -676,6 +676,7 @@ def batch_definition(files_batches, name):
 
 @app.route("/api/v1/tests/batches", methods=["POST"])
 @login_required
+@reads_only
 def list_batches():
     """
     Lists the batches people can run on a commit: those of its batch files, and of QA-Board's shared and private files

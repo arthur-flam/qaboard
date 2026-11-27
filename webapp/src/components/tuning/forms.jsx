@@ -38,6 +38,8 @@ import StartFrom from './StartFrom'
 import { model_from_text, model_to_parameters, count_combinations, count_runs } from './model'
 import { transformCDERegisters } from './registers'
 import { form_from_request } from './history'
+import { clean_label } from './prefill'
+import { LinkPrefillNotice } from './LinkPrefill'
 import { BatchesForThisRunDialog, BatchesForThisRunCallout, changed_batches, expand_selection, snapshot_for_this_run } from './BatchesForThisRun'
 import { LegacyTuningForm } from './LegacyTuningForm'
 import { useTuningFormVersion, NewFormActions, PreviousFormBanner } from './FormVersion'
@@ -335,7 +337,6 @@ const NewTuningForm = ({ project, git, config, metrics, commit, available_tests_
 
   const update = name => e => updateTuning(project, { [name]: e?.target ? e.target.value : e });
   const updateSelection = text => updateTuning(project, { selected_group: text });
-  const clean_label = text => text.replace(/[^\w_.@:=]/g, "-");
   const updateExperimentName = e => updateTuning(project, { experiment_name: clean_label(e.target.value) });
   const updateParameterSearch = new_parameter_search => updateTuning(project, { parameter_search: new_parameter_search });
   const updateParameterSearchAuto = new_parameter_search => updateTuning(project, { parameter_search_auto: new_parameter_search });
@@ -772,9 +773,13 @@ const TuningForm = props => {
   const version = useTuningFormVersion();
   if (version === 'previous') return <>
     <PreviousFormBanner project={props.project}/>
+    <LinkPrefillNotice project={props.project}/>
     <LegacyTuningForm {...props}/>
   </>;
-  return <NewTuningForm {...props}/>;
+  return <>
+    <LinkPrefillNotice project={props.project}/>
+    <NewTuningForm {...props}/>
+  </>;
 };
 
 export { TuningForm };

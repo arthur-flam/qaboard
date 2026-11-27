@@ -85,6 +85,8 @@ Pieces in different directories that must agree; each side's `CLAUDE.md` points 
 - **Local changes** (`data.local_changes`): written by `qaboard/local_changes.py`, capped to known fields by
   `backend/backend/local_changes.py`, shown by `webapp/src/components/LocalChanges/`.
 - **What `qa` and the SDK send with results** is built in one place: `qaboard/payloads.py`.
+- **Links that open Run Tests / Tuning filled in** (`?selected_views=tuning&prefill=<JSON>`): built by
+  `prepare_tuning` in `qaboard/evidence_work.py`, read by `webapp/src/components/tuning/prefill_link.js`.
 
 ## Design docs, known warts, TODO
 - Design: `docs/design/` (ingest/upload/SDK, Kubernetes runner, logged media, user management...), `docs/rfcs/`

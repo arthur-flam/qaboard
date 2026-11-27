@@ -49,9 +49,11 @@ Terminal clients (Claude Code's CLI) don't render MCP Apps: they get the text an
 results do reach the model in Claude Code.
 
 ## Design principles
-- **Read-only first.** Every tool is annotated `readOnlyHint`. Starting batches stays with `qa batch --commit`
-  (needs the `act` scope, and a person should see what an agent starts). Writes come later, with a confirmation
-  (MCP's multi-round-trip requests, 2026-07-28 spec).
+- **Read-only first. Agents prepare, people start.** Every tool is annotated `readOnlyHint`. To start a tuning, an
+  agent gets a link to the web app's form filled in (`prepare_tuning`): the person checks it in the form they know
+  and starts it, which is the approval, and the form stays the one place that knows how to start batches (it is
+  becoming aware of each algorithm's parameters). Coding agents also have `qa batch --commit` (the `act` scope).
+  Write tools, if ever, come with a confirmation (MCP's multi-round-trip requests, 2026-07-28 spec).
 - **Same numbers as the web app.** Tools call the server's endpoints (`/compare`, `/commits`, `/output/<id>`...);
   medians, matching of reference runs and metric directions are the server's, as in the Summary and Metrics Diff.
 - **Text for the model, structure for the UI.** `content` is compact Markdown the model reads; `structuredContent`
@@ -70,6 +72,8 @@ results do reach the model in Claude Code.
 ## Tools (first version)
 | Tool | For the task | Built on |
 |---|---|---|
+| `my_work` | "How did my tuning go?" The person's batches and tunings started from the web app or a terminal (not the CI's: in a monorepo most CI runs have nothing to do with their work), across projects, by project and branch, with run counts, failures, unfinished runs and the default metric; the milestones they saved; with a project, the CI's results on their own commits. Chat clients know nothing else of what the person works on. | `/user/me/`, `/batches?scope=mine&origin=webapp,local`, `/milestones`, `/commits?scope=mine&only_ci_batches=true` |
+| `prepare_tuning` | "Try these values." A link to a commit's Run Tests / Tuning, filled in (`?selected_views=tuning&prefill=<JSON>`: label, batches, `parameter_search` as the server takes it, search type, `n_iter`); checks the batch names and counts the runs. Starts nothing. | `/tests/batches` (now `@reads_only`), `/commit/<sha>`; the web app reads the link in `webapp/src/components/tuning/` |
 | `find_results` | Orient: projects, recent commits with results (a branch, a search), their batches and run counts, milestones. | `/projects`, `/commits`, `/milestones` |
 | `compare` | "Is this commit better than the reference?" Per metric: medians, change, direction, tests better/worse (sign test); new failures; worst regressions and best improvements; reruns; links. Takes a web app URL as is. | `/commit/<sha>/compare`, `/commit/<sha>` |
 | `failures` | "Why did runs fail?" Failed runs grouped by the error at the end of their logs, with an excerpt, and whether the same test failed in the reference. | `/compare`, `/commit/<sha>`, `log.txt` tails |
@@ -153,6 +157,11 @@ logs are readable (they aren't in manifests); crops never upscale; `metric_histo
 typical step and flags steps where runs changed; unknown metrics are errors; lists in `data` are cut.
 
 ## Left for later
+- `my_work` per input or per parameter ("the values I tried for threshold"), across tunings.
+- Links filled in for other forms: a milestone to save, a comparison, failed runs to redo.
+- Provenance: mark what agents started (`run_context.agent`, from the variables coding agents set), shown as a badge.
+  Not a fourth `origin`: an agent's run from a terminal is still the person's and still local, and the pages'
+  filters (mine, without the CI) rely on that.
 - `runs_table` with the reference's values (`with_reference`), so agents don't join two tables.
 - `metric_history`: the reference's median as a baseline, and a `url` argument. The History link can't select metrics
   (the page doesn't read `selected_metrics`).

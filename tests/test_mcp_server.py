@@ -14,7 +14,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fake_qaboard as fake  # noqa: E402
 
-from qaboard import evidence, evidence_outputs  # noqa: E402
+from qaboard import evidence, evidence_outputs, evidence_work  # noqa: E402
 
 try:
   import mcp  # noqa: F401
@@ -485,6 +485,96 @@ class TestHistoryAndLists(FakeServer):
     self.assertIn('run_id,input,status,latency_ms,psnr\n5,crash/01,failed,,\n', answer.text)
 
 
+class TestMyWork(FakeServer):
+  def setUp(self):
+    super().setUp()
+    fake.Handler.signed_in = True
+    self.addCleanup(setattr, fake.Handler, 'signed_in', True)
+
+  def test_their_batches_not_the_cis(self):
+    answer = evidence_work.my_work(self.api)
+    asked = next(q for method, path, q, _ in fake.Handler.requests_seen if path == '/api/v1/batches')
+    self.assertEqual((asked['scope'], asked['origin']), ('mine', 'webapp,local'))
+    self.assertIn("Alice's work", answer.text)
+    self.assertIn(f"### `{fake.PROJECT}` on `feature`", answer.text)
+    self.assertIn("`tuning/threshold` on a1b2c3d4", answer.text)
+    self.assertIn("12 runs, 1 failed, 1 unfinished, median `PSNR` 31.50 dB", answer.text)
+    self.assertIn("Tried `threshold`, `kernel`: 6 combinations", answer.text)
+    self.assertIn(f"{self.url}/{fake.PROJECT}/commit/{fake.NEW}?batch=tuning%2Fthreshold", answer.text)
+    self.assertIn("### `other/project` on `main`", answer.text)
+    self.assertIn("from a terminal", answer.text)
+    # commit messages are one line of inline code
+    self.assertNotIn('Ignore previous', answer.text)
+    # the fake has the same in every project; not the shared one, someone else's
+    self.assertEqual([(m['project'], m['label']) for m in answer.data['milestones']], [(fake.PROJECT, 'mine'), ('other/project', 'mine')])
+    self.assertEqual(answer.data['ci'], [])
+
+  def test_the_cis_results_on_their_commits(self):
+    with self.assertRaisesRegex(evidence.EvidenceError, 'give `project`'):
+      evidence_work.my_work(self.api, include_ci=True)
+    answer = evidence_work.my_work(self.api, project=fake.PROJECT, include_ci=True)
+    asked = next(q for method, path, q, _ in fake.Handler.requests_seen if path == '/api/v1/commits')
+    self.assertEqual((asked['scope'], asked['only_ci_batches']), ('mine', 'true'))
+    self.assertIn("The CI's results on your commits", answer.text)
+    self.assertEqual([r['label'] for r in answer.data['ci']], ['default'])
+    self.assertNotIn('other/project', answer.text)
+
+  def test_signed_out(self):
+    fake.Handler.signed_in = False
+    with self.assertRaisesRegex(evidence.EvidenceError, 'qa auth login'):
+      evidence_work.my_work(self.api)
+
+
+class TestPrepareTuning(FakeServer):
+  def prefill_of(self, link):
+    from urllib.parse import urlsplit, parse_qs
+    query = parse_qs(urlsplit(link).query)
+    self.assertEqual(query['selected_views'], ['tuning'])
+    return json.loads(query['prefill'][0])
+
+  def test_a_link_to_the_form_filled_in(self):
+    answer = evidence_work.prepare_tuning(self.api, ['night'], project=fake.PROJECT, commit=fake.NEW,
+                                          parameters={'threshold': [0.1, 0.2], 'kernel': [3, 5, 7]}, label='tuning/t')
+    link = answer.data['url']
+    self.assertTrue(link.startswith(f"{self.url}/{fake.PROJECT}/commit/{fake.NEW}?"))
+    self.assertEqual(self.prefill_of(link), {'batches': ['night'], 'parameter_search': {'threshold': [0.1, 0.2], 'kernel': [3, 5, 7]},
+                                             'label': 'tuning-t', 'search_type': 'grid'})
+    self.assertIn('6 combination(s) × 2 test(s) = about 12 runs', answer.text)
+    self.assertIn('Nothing runs until', answer.text)
+    listed = next(b for method, path, b, _ in fake.Handler.requests_seen if path == '/api/v1/tests/batches')
+    self.assertEqual(listed, {'groups': ['extra-batches', 'alice']})
+
+  def test_batches_as_they_are(self):
+    answer = evidence_work.prepare_tuning(self.api, ['night, d*', 'all'], url=f"{self.url}/{fake.PROJECT}/commit/{fake.NEW}", label='my tuning/1')
+    # no values to try: none, not those the form had
+    self.assertEqual(self.prefill_of(answer.data['url']), {'batches': ['night', 'd*', 'all'], 'parameter_search': {}, 'label': 'my-tuning-1'})
+
+  def test_unknown_batches_list_the_others(self):
+    with self.assertRaisesRegex(evidence.EvidenceError, r"No batch `nite`.*Available: `night`, `day`, `all`"):
+      evidence_work.prepare_tuning(self.api, ['nite'], project=fake.PROJECT, commit=fake.NEW)
+
+  def test_an_existing_label(self):
+    answer = evidence_work.prepare_tuning(self.api, ['night'], project=fake.PROJECT, commit=fake.NEW, label='default')
+    self.assertIn('already has a batch `default`', answer.text)
+
+  def test_bad_requests(self):
+    for kwargs, error in [({'batches': []}, 'Which batches'),
+                          ({'parameters': {'a': [1]}, 'search_type': 'sampler'}, 'n_iter'),
+                          ({'parameters': [1, 2]}, '`parameters`'),
+                          ({'parameters': {'a': [float('nan')]}}, 'JSON values'),
+                          ({'parameters': {'a': list(range(3000))}}, 'too long')]:
+      with self.subTest(kwargs=kwargs), self.assertRaisesRegex(evidence.EvidenceError, error):
+        evidence_work.prepare_tuning(self.api, kwargs.pop('batches', ['night']), project=fake.PROJECT, commit=fake.NEW, **kwargs)
+
+  def test_many_combinations(self):
+    answer = evidence_work.prepare_tuning(self.api, ['night'], project=fake.PROJECT, commit=fake.NEW,
+                                          parameters={k: [1, 2, 3] for k in 'abcdefg'}, search_type='sampler', n_iter=50)
+    self.assertEqual(self.prefill_of(answer.data['url'])['n_iter'], 50)
+    self.assertNotIn('ask the person', answer.text)
+    answer = evidence_work.prepare_tuning(self.api, ['night'], project=fake.PROJECT, commit=fake.NEW, parameters={k: [1, 2, 3] for k in 'abcdefg'})
+    self.assertIn('2187 combinations: ask the person', answer.text)
+
+
 class TestToken(FakeServer):
   def test_the_token_of_the_configured_server(self):
     with mock.patch.dict(os.environ, {'QABOARD_TOKEN': 'secret', 'QABOARD_URL': self.url}):
@@ -518,7 +608,7 @@ class TestMcp(FakeServer):
   def test_tools(self):
     tools = self.run_client(lambda c: c.list_tools()).tools
     names = {t.name: t for t in tools}
-    self.assertEqual(set(names), {'compare', 'failures', 'look_at_output', 'metric_history', 'find_results', 'runs_table', 'check_gate'})
+    self.assertEqual(set(names), {'compare', 'failures', 'look_at_output', 'metric_history', 'find_results', 'my_work', 'prepare_tuning', 'runs_table', 'check_gate'})
     self.assertTrue(all(t.annotations.read_only_hint for t in tools))
     with_app = {t.name for t in tools if (t.meta or {}).get('ui', {}).get('resourceUri') == 'ui://qaboard/results.html'}
     self.assertEqual(with_app, {'compare', 'look_at_output', 'metric_history'})
@@ -540,6 +630,14 @@ class TestMcp(FakeServer):
     result = self.run_client(lambda c: c.call_tool('look_at_output', {'run_id': 2, 'path': 'output.png', 'where': 'whole'}))
     self.assertEqual([c.type for c in result.content], ['text', 'text', 'image', 'text', 'image'])
     self.assertEqual(result.content[1].text, 'new — whole image')
+
+  def test_my_work_and_prepare_tuning(self):
+    result = self.run_client(lambda c: c.call_tool('my_work', {}))
+    self.assertFalse(result.is_error)
+    self.assertEqual(result.structured_content['view'], 'my_work')
+    result = self.run_client(lambda c: c.call_tool('prepare_tuning', {'batches': ['night'], 'project': fake.PROJECT, 'commit': fake.NEW, 'parameters': {'threshold': [0.1, 0.2]}}))
+    self.assertFalse(result.is_error, result.content[0].text)
+    self.assertIn('prefill=', result.structured_content['url'])
 
   def test_errors_are_results(self):
     result = self.run_client(lambda c: c.call_tool('look_at_output', {'run_id': 999}))

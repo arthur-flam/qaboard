@@ -91,6 +91,8 @@ latest commit with results, and say which.
 
 ## What to ask {/* #what-to-ask */}
 - *"Did my change improve the detector? Check with QA-Board before saying so."*
+- *"How did my tuning from yesterday go? Which values were best?"* The agent starts from what you ran.
+- *"Prepare a tuning of the threshold from 0.1 to 0.5 on the night batch."* You get a link to the form, filled in.
 - *"Review https://qaboard.example.com/group/repo/commit/abc123?batch=ci for me."* Paste any commit page: the agent
   reads the project, commit, label and reference from the URL.
 - *"Why did runs fail on my last commit? Are the failures new?"*
@@ -107,6 +109,8 @@ Clients that show MCP prompts offer three procedures as commands: **did_my_chang
 | `failures` | Why runs failed: the failed runs grouped by the error at the end of their logs, with an excerpt, and whether the same test failed in the reference. |
 | `look_at_output` | A run's files and their types, the changed ones first; any of them next to the reference's, by its type, like the web app's viewers: images (whole, and where they differ most, in any format the image viewer opens), benchmarks, flame graphs, series such as training curves, test reports (JUnit), Plotly figures, logged media; text files as a diff; the end of the log. |
 | `metric_history` | Medians per commit on a branch, like the **History** page, with the biggest steps and the commits that made them. |
+| `my_work` | What you ran lately, across projects: your batches and tunings from the web app or a terminal, by project and branch, with run counts, failures, unfinished runs, the default metric and links, and the milestones you saved. Not the CI's runs: in a monorepo most have nothing to do with your work. With a project, it can add the CI's results on your own commits. |
+| `prepare_tuning` | A link that opens a commit's **Run Tests / Tuning** form filled in: the batches, the values to try, the label. It checks the batch names and counts the runs, and starts nothing: you check the form and start it. |
 | `find_results` | Projects, their latest commits with results, labels, run counts and milestones. |
 | `runs_table` | One row per run (input, status, the parameters that differ, metrics) as CSV, for the agent's own analyses. |
 | `check_gate` | The [quality gate](/docs/quality-gate)'s verdict, rule by rule, when `qa mcp` runs on your computer in the project's checkout. It's the verdict CI trusts; `compare` is the evidence. |
@@ -118,6 +122,16 @@ Tests that moved in the same direction say more than a median: `compare` counts 
 consistently (a sign test, which needs at least 6 tests). QA-Board doesn't know yet how much a metric moves between
 identical runs, so an agent shouldn't call a small change of a noisy metric, such as a latency, an improvement
 without repeated runs.
+
+### Your work, and new tunings {/* #your-work */}
+Agents in a chat client don't know what you work on: `my_work` tells them, from what you started yourself. Ask
+about "my tuning" or "what I ran this week" without links.
+
+To try other values, the agent prepares the tuning and you start it: `prepare_tuning` gives a link to the commit's
+**Run Tests / Tuning**, filled in with the batches, the values and the label. The form shows what the link filled
+in, and nothing runs until you click start, so you check what the agent asked for, and change what you want, in the
+form you know ([links that fill the form](/docs/user-guide/running-from-the-webapp#prefilled-links)). Then ask the
+agent how it went.
 
 ### An agent's own experiments {/* #experiments */}
 Have the agent label its runs, `qa --label agent/denoise batch --commit <sha> ci`. `compare` compares them with the
@@ -136,8 +150,9 @@ The view loads nothing from the internet. Images are converted to 8-bit PNG by y
 differences of high bit-depth outputs may not show, check them in the [image viewer](/docs/user-guide/image-viewer).
 
 ## What agents can't do with it {/* #limits */}
-- **Change anything.** Every tool only reads. To test a change, an agent pushes it and runs
-  `qa --label <name> batch --commit <sha> <batch>` ([start batches from a terminal](/docs/tuning-from-the-webapp#from-the-command-line)).
+- **Change or start anything.** Every tool only reads. `prepare_tuning` gives you a link to the form filled in,
+  and you start it. A coding agent can push its change and run `qa --label <name> batch --commit <sha> <batch>`
+  ([start batches from a terminal](/docs/tuning-from-the-webapp#from-the-command-line)).
 - **Follow instructions written in your results.** Logs, commit messages and inputs' names are shown to the model as
   quoted data. Keep the agent's other permissions to what the task needs anyway: a log can say anything.
 - **Connect from claude.ai or Microsoft 365 Copilot.** They reach MCP servers from their own cloud, which can't reach

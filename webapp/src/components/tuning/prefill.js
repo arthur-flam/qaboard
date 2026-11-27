@@ -3,6 +3,9 @@
 // It takes plain data and returns what to put in the form's stored state (stores/prefs.js, `tuning[project]`).
 import { model_to_text } from './model';
 
+/** The batch label as the form keeps it: letters, digits and _.@:=, other characters become "-" */
+export const clean_label = text => String(text).replace(/[^\w_.@:=]/g, "-");
+
 /**
  * Only what is given changes: e.g. without `batches`, the form keeps the tests it had.
  * - `model`: the values to try (model.js); for "Choose the values"
