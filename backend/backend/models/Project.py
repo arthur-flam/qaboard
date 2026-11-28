@@ -13,7 +13,7 @@ from contextvars import ContextVar
 
 from sqlalchemy.orm import relationship
 from sqlalchemy import Column
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import or_, and_, literal, func
 from sqlalchemy.orm.exc import NoResultFound
@@ -62,6 +62,16 @@ class Project(Base):
   id = Column(String(), primary_key=True)
   data = Column(JSONB(), nullable=False, default=dict, server_default='{}')
   latest_output_datetime = Column(DateTime())
+  # Its lifecycle (backend/projects.py). Projects from before have none of these but namespace_id.
+  # the namespace of the id's first segment
+  namespace_id = Column(Integer, ForeignKey('namespaces.id', ondelete='SET NULL'), nullable=True, index=True)
+  created_at = Column(DateTime(), nullable=True)
+  created_by_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+  # api (POST /api/v1/projects, listed before its first commit), ingest (the first results), webhook (a push)
+  created_via = Column(String(), nullable=True)
+  # archived projects are hidden from lists and refuse new results, until owners unarchive them
+  archived_at = Column(DateTime(), nullable=True)
+  archived_by_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
 
   ci_commits = relationship("CiCommit", order_by=CiCommit.authored_datetime, back_populates="project")
 
@@ -300,16 +310,47 @@ def update_project(data, db_session):
   if not commit_id:
     return
 
+  # The projects of this repository (backend/projects.py): those linked to it, else the one named like it
+  from .. import projects as projects_lib
+  from ..settings import setting
+  repository = data['project']['path_with_namespace'] # eg => dvs/psp_swip
+  linked = projects_lib.projects_for_repo(data['project'].get('host'), repository)
+  from .Namespace import ProjectRepo
+  root_ids = [p.project_id for p in ProjectRepo.query.filter(ProjectRepo.project_id.in_(linked), ProjectRepo.subdir == '').all()] if linked else []
+  if not root_ids:
+    root_ids = [repository]
+  # Without a policy that lets anyone create projects, pushes only update the projects that exist: there is no one to check
+  create_new = setting('projects.create') == 'anywhere'
+  for root_project_id in root_ids:
+    update_root_project(data, db_session, branch, commit_id, repository, root_project_id, create_new)
+
+
+def update_root_project(data, db_session, branch, commit_id, repository, root_project_id, create_new):
+  from .. import projects as projects_lib
+
+  def project_of(project_id):
+    """The project, created if the policy allows it. None if not."""
+    project = db_session.get(Project, project_id)
+    if project is not None:
+      return project
+    if not create_new or not projects_lib.check_create(None, project_id).allowed:
+      logger.info("Push to %s: not creating the project %s, projects.create doesn't let pushes create projects", repository, project_id)
+      return None
+    subdir = project_id[len(root_project_id):].strip('/')
+    return projects_lib.create(None, project_id, via='webhook',
+                               repository={"git_host": data['project'].get('host') or '', "repo_path": repository, "subdir": subdir})
+
   # Update the root project - all subprojects depend on it
-  root_project_id = data['project']['path_with_namespace'] # eg => dvs/psp_swip
-  root_project = Project.get_or_create(session=db_session, id=root_project_id)
+  root_project = project_of(root_project_id)
+  if root_project is None:
+    return
   update_project_data(root_project, data, db_session)
 
   try:
-    repo = repos.get(root_project_id, git=data['project'])
+    repo = repos.get(repository, git=data['project'])
     git_pull(repo)
   except Exception as e:
-    logger.warning("Could not fetch the git repository of %s: %s", root_project_id, type(e).__name__)
+    logger.warning("Could not fetch the git repository of %s: %s", repository, type(e).__name__)
     return
 
   @lru_cache(maxsize=128)
@@ -333,9 +374,11 @@ def update_project(data, db_session):
   repo_files = repo.git.ls_tree('--name-only', '-r', commit_id).splitlines()
   projects_config_paths = [Path(f) for f in repo_files if re.search(r'(/|^)qa(board|tools)\.yaml$', f)]
   for subproject_config_path in projects_config_paths:
-    project_id = str(root_project_id / subproject_config_path.parent)
+    project_id = (Path(root_project_id) / subproject_config_path.parent).as_posix()
     # Make sure the it exists in the database, with up-to-date metadata
-    project = Project.get_or_create(session=db_session, id=project_id)
+    project = project_of(project_id)
+    if project is None:
+      continue
     update_project_data(project, data, db_session)
     # we don't want to create commits ahead of time anymore
     # it started to cause issues with a huge monorepo with 100s of projects
