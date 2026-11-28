@@ -1,5 +1,6 @@
 # DSK (Device Solution Korea) compose overlay
-# Usage: docker compose -f docker-compose.yml -f production.yml -f deployments/dsk/dsk.yml up
+# Usage: docker compose -f docker-compose.yml -f production.yml -f "$QABOARD_SITE_DIR"/dsk/dsk.yml up
+# Paths use ${QABOARD_SITE_DIR}, the folder with this site's folder (default: deployments/ in the qaboard repository)
 
 # Set these in .env or override below with your DSK proxy/cert values:
 #   PROXY_URL, CA_CERT_URL, NO_PROXY
@@ -16,9 +17,12 @@ services:
       args:
         <<: *dsk-build-args
         QABOARD_EXTRA: "dsk"
+      # This folder: the site package (cli/)
+      additional_contexts:
+        site-config: ${QABOARD_SITE_DIR:-./deployments}/dsk
     env_file:
       - .env
-      - deployments/dsk/.env
+      - ${QABOARD_SITE_DIR:-./deployments}/dsk/.env
     environment:
       - QABOARD_LOGIN_TYPE=${QABOARD_LOGIN_TYPE:-SAML}
       - QABOARD_LOGIN_REQUIRED=${QABOARD_LOGIN_REQUIRED:-}
@@ -28,6 +32,11 @@ services:
       - QABOARD_PROTOCOL=http
       - CELERY_BROKER_URL=pyamqp://${QABOARD_RABBITMQ_USER:-guest}:${QABOARD_RABBITMQ_PASSWORD:-guest}@rabbitmq:5672//
       - 'QABOARD_IMAGE_SERVERS={"default": "/iiif", "raw,hex,cde": "/iiif/cde"}'
+      # The SAML settings (python3-saml's settings.json and advanced_settings.json, the SP's keys in certs/): saml/
+      # in this folder. They used to be in the image, in backend/backend/api/saml/
+      - QABOARD_SAML_DIR=/etc/qaboard/saml
+    volumes:
+      - ${QABOARD_SITE_DIR:-./deployments}/dsk/saml:/etc/qaboard/saml:ro
 
   frontend:
     build:
@@ -40,8 +49,8 @@ services:
       args:
         <<: *dsk-build-args
     volumes:
-    # The folder, not the file: see deployments/sirc/sirc.yml
-    - ./deployments/dsk/nginx:/tmp/deployment/nginx/conf.d:ro
+    # The folder, not the file: a file's bind mount keeps showing the old version after `git checkout` replaces it
+    - ${QABOARD_SITE_DIR:-./deployments}/dsk/nginx:/tmp/deployment/nginx/conf.d:ro
 
   # The image server reads /iiif/2/<path> from /repository/<path>: the folders nginx serves under /s/ (dsk.conf).
   # docker-compose.yml used to mount the host's whole filesystem there.

@@ -15,7 +15,7 @@ export const quiet_tooltip = `Only the CI ran them in the last ${quiet_after_day
 // Projects that lists show: those with commits, with or without a qaboard.yaml (runs sent by `qa upload` or
 // `qaboard.start_run()` from outside a project create theirs, see qaboard/active_run.py).
 // And those created with New project, before their first results: the server lists them with 0 commits.
-// Not those imported from older tools (backend/backend/scripts/migrate_legacy_commits.py)
+// Not those imported from older tools (`data.legacy`, set by a one-off migration script)
 export const is_listed = details => !details.data?.legacy
   && ((details.latest_commit_datetime !== undefined && details.latest_commit_datetime !== null) || details.total_commits === 0);
 

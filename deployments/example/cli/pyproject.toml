@@ -1,0 +1,22 @@
+# The example site package: configures `qa` for the site's server (website/docs/installation.mdx), and gives the backend
+# the site's hooks. Users install it from your site repository:
+#   pip install "qaboard-site-example @ git+https://git.example.com/infra/qaboard-site#subdirectory=example/cli"
+# The backend image installs it with QABOARD_EXTRA=example (example.yml).
+[project]
+name = "qaboard-site-example"
+version = "1.0.0"
+description = "QA-Board site defaults for the example site"
+requires-python = ">=3.11"
+dependencies = []
+
+# Defaults for `qa` and the server: environment variables win (qaboard/site_config.py)
+[project.entry-points."qaboard.site"]
+example = "qaboard_site_example:defaults"
+
+# Hooks: e.g. fixing the permissions of folders written from Windows (qaboard/compat.py)
+[project.entry-points."qaboard.hooks"]
+fix_permissions = "qaboard_site_example.hooks:fix_permissions"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

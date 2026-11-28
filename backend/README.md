@@ -11,7 +11,7 @@ cd qaboard
 2. If you want to run a frontend, [go to the README](../webapp/README.md) and without docker run `cd webapp; npm install`.
 
 3. The development backend runs as your user (`$USER`) if the container knows it, else as root. To run as you, add your
-   user to _services/backend/passwd_ and mount it at `/etc/passwd` (like `deployments/sirc/sirc.yml` does), with a line
+   user to a _passwd_ file in your site's folder and mount it at `/etc/passwd` from your site overlay, with a line
    like `jdoe:*:1000:1000:Jane Doe:/home/jdoe:/bin/bash`: get yours with `getent passwd $USER`.
 
 4. Start the server:
@@ -19,10 +19,9 @@ cd qaboard
 ```bash
 docker compose -f docker-compose.yml -f development.yml up -d
 
-# At SIRC: mount the important folders first, then add SIRC's overlay
-source deployments/sirc/.envrc
-./at-sirc-before-up.py
-docker compose -f docker-compose.yml -f development.yml -f deployments/sirc/sirc.yml up -d
+# With your site's overlay, from its site directory (website/docs/backend-admin/site-directory.mdx)
+export QABOARD_SITE_DIR=../qaboard-site
+docker compose -f docker-compose.yml -f development.yml -f "$QABOARD_SITE_DIR"/mysite/mysite.yml up -d
 
 # for more build logs
 export BUILDKIT_PROGRESS=plain
@@ -43,7 +42,7 @@ Consult also:
 - [Troubleshooting Guide](https://samsung.github.io/qaboard/docs/backend-admin/troubleshooting).
 - To learn how to restore from a backup, read [Backups](https://samsung.github.io/qaboard/docs/backend-admin/deployment#backups).
 
-At SIRC:
+On hosts with many concurrent connections, raise the listen backlog:
 ```bash
 sudo sysctl -w net.core.somaxconn=65536
 ```
@@ -109,7 +108,7 @@ and times the endpoints behind the projects list, the lists of commits and the b
 Run it with `--backend` pointing to another checkout to compare versions. See the script's docstring.
 
 ### Custom database config
-`services/db/qaboard.conf` holds the PostgreSQL settings that differ from the defaults (sized for SIRC's production host).
+`services/db/qaboard.conf` holds the PostgreSQL settings that differ from the defaults (sized for a host with 8 cores and 31 GB of RAM, shared with other services).
 `services/db/init.sh` loads it: use it as the `db` service's entrypoint (the folder is mounted at `/opt` by *docker-compose.yml*),
 and point `QABOARD_DB_CONFIG` to your own file to size it for your host:
 ```yaml
@@ -120,7 +119,7 @@ and point `QABOARD_DB_CONFIG` to your own file to size it for your host:
 ```
 It copies the file into `$PGDATA` and includes it at the end of `postgresql.conf`, at every start (and after `initdb` for a new
 database, where it also creates the `pg_stat_statements` extension). Changes need a restart: `docker compose restart db`.
-`ALTER SYSTEM` values (`postgresql.auto.conf`) win over the file. See `deployments/sirc/runbooks/database.md`.
+`ALTER SYSTEM` values (`postgresql.auto.conf`) win over the file. See [Deployments](https://samsung.github.io/qaboard/docs/backend-admin/deployment).
 
 ### Tuning
 Queries:

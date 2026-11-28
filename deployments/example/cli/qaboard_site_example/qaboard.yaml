@@ -1,0 +1,5 @@
+# Defaults for every project of the site: projects' qaboard.yaml are merged on top of it (QABOARD_SITE_CONFIG).
+# Check them with the JSON schema: tests/test_schemas.py
+storage: /mnt/qaboard
+runners:
+  default: local

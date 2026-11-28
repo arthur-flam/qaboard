@@ -56,6 +56,11 @@ class TestDecide(unittest.TestCase):
     self.assertEqual(runs(["uv.lock"])[1], {"python", "docker"})
     self.assertEqual(runs(["webapp/package-lock.json"])[1], {"webapp", "docker"})
 
+  def test_example_site(self):
+    # The docker job builds it from outside the repository, the helm job renders the chart with its values
+    self.assertEqual(runs(["deployments/example/cli/pyproject.toml"])[1], {"python", "docker"})
+    self.assertEqual(runs(["deployments/example/values.yaml"])[1], {"python", "docker", "helm"})
+
   def test_chart(self):
     self.assertEqual(runs(["charts/qaboard/templates/backend.yaml"])[1], {"helm", "helm-e2e"})
     # the Python tests check the chart's nginx config and values

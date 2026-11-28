@@ -78,16 +78,8 @@ mlflow = [
 mcp = [
     "mcp>=2.3",
 ]
-# Unfortunately pip does not understand tool.uv.sources
-# and uv does not understand syntax with "qaboard-site-sirc @ file:deployements/sirc/cli"
-# and if we use an ssh syntax in uv it will try to resolve even if it is part of an unused extra
-# so we are forced to really split into 2 packages
-# sirc = [
-#     "qaboard-site-sirc",
-# ]
-# dsk = [
-#     "qaboard-site-dsk",
-# ]
+# Site packages (qaboard-site-<site>, in your site directory's <site>/cli) are installed next to qaboard, not as extras:
+# uv resolves every extra, even unused ones, and the site packages' dependencies are often on private git hosts.
 
 [project.scripts]
 qa = "qaboard.qa:main"
@@ -137,10 +129,6 @@ packages = [
     "qatools",
 ]
 
-# See above
-# [tool.uv.sources]
-# qaboard-site-sirc = { path = "deployments/sirc/cli" }
-# qaboard-site-dsk = { path = "deployments/dsk/cli" }
 
 [tool.hatch.metadata]
 allow-direct-references = true
