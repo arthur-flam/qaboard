@@ -43,7 +43,7 @@ them locally (commands in `docs/ci.md`) or add the label.** `ci-ok` is the one r
 output of `changes`, an `if:` on it, and a place in `ci-ok`'s `needs`.
 ```bash
 uv run green tests                                      # qaboard tests (unittest, green runner)
-uv run python .github/scripts/shuffled_tests.py --repeat 3   # in random order (--load N: under load), and checks they leave nothing in the checkout
+uv run python .github/scripts/shuffled_tests.py --repeat 3   # in random order, in 4 processes (--jobs 1: one; --load N: under load), and checks they leave nothing in the checkout
 uv run flake8 backend qaboard                           # lint (config: .flake8)
 uv run mypy -p qaboard --ignore-missing-imports         # types
 cd backend && uv run python -m pytest -q -p no:cacheprovider tests   # needs C headers, see backend/tests/TESTING.md
@@ -51,6 +51,9 @@ cd webapp && npm run lint && npm run typecheck && npm test -- --run  # oxlint, t
 cd webapp && npm run build && npm run e2e               # Playwright smoke tests on the production build
 uv run website/release-notes/release_notes.py check --strict
 ```
+Iterate on the tests your change touches, then run the suites once before you push (each takes minutes):
+`uv run green tests.test_config`, `cd webapp && npx vitest related --run src/<changed files>` (or
+`npx vitest run --changed origin/master`), `pytest tests/test_<area>.py` in `backend/`. More: `docs/ci.md`.
 CI also checks that merged Alembic migrations are never changed (`.github/scripts/check_migrations.py`) and that
 `backend/uv.lock` is up to date (`uv lock --check --directory backend`).
 

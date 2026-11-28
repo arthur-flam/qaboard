@@ -40,20 +40,34 @@ From the repository's root. The end-to-end jobs need docker, and kind, kubectl a
   To find tests that depend on each other or on time: `uv run python .github/scripts/shuffled_tests.py --repeat 3`
   (`--load 4` alongside busy processes; a failure prints the seed to run again with `--seed`)
 - **webapp**: `cd webapp && npm ci && npm run lint && npm run typecheck && npm test -- --run && npm run build && npm run e2e`
-  (the first time: `npx playwright install chromium`)
+  (the first time: `npx playwright install chromium`). CI runs it in 3 parallel parts: the unit tests in 2 shards
+  (`--shard=1/2`, `--shard=2/2`), and lint, types, build and the Playwright tests.
+
+### While you work: the tests your change needs
+
+The whole suites take minutes (Python: about 1.5 min in 4 processes; the web app: about 3.5 min on 4 cores). Run
+what your change touches first, then everything once before you push:
+
+```bash
+uv run green tests.test_config tests.test_cli                       # some Python modules (green runs them in parallel)
+uv run python .github/scripts/shuffled_tests.py tests.test_config   # the same, in a random order
+cd webapp && npx vitest related --run src/defaults.js src/viewers/series/series.js   # the tests that import these files
+cd webapp && npx vitest run --changed origin/master                  # the tests of every file your branch changed
+cd backend && uv run python -m pytest -q -p no:cacheprovider tests/test_milestones.py
+```
 
 ## Tests in a random order
 
 CI runs the tests in a random order, so that a test that depends on another fails in the pull request that adds it:
-the `python` job on Python 3.14 runs `shuffled_tests.py` (one process, and it fails if the tests leave files in the
-checkout) instead of `green`, and the `webapp` job runs vitest with `--sequence.shuffle`. The seed is the run's id
-modulo 100000: a re-run of the job gets the same order. The log prints it (`--- seed N` for Python, `vitest seed: N`
-for the web app); to get the same order on your computer:
+the `python` job on Python 3.14 runs `shuffled_tests.py` (the shuffled tests dealt to 4 processes, `--jobs 4`, and it
+fails if the tests leave files in the checkout) instead of `green`, and the `webapp` job runs vitest with
+`--sequence.shuffle`. The seed is the run's id modulo 100000: a re-run of the job gets the same order. The log prints
+it (`--- seed N` for Python, `vitest seed: N` for the web app); to get the same order on your computer:
 
 ```bash
 uv sync --extra dev --extra celery --extra dask --extra kubernetes --extra dask-kubernetes --extra mlflow  # as the 3.14 job
-uv run python .github/scripts/shuffled_tests.py --seed N                  # add --failfast, or the failing modules
-cd webapp && npm test -- --run --sequence.shuffle --sequence.seed=N      # add a file's name to run only it
+uv run python .github/scripts/shuffled_tests.py --seed N --jobs 4        # add --failfast; --jobs 1 for one process
+cd webapp && npm test -- --run --sequence.shuffle --sequence.seed=N --shard=K/2   # add a file's name to run only it
 ```
 
 A test that fails in some orders only usually reads state an earlier test left: in Python a module global of `qa`
@@ -85,4 +99,7 @@ job: a file the mapping doesn't know runs the Python tests. A new job in `ci.yam
 an `if:` on it, and a place in `ci-ok`'s `needs` (the test checks it).
 
 GitLab (`.gitlab-ci.yml`): merge requests skip `lint`, `type-check` and `webapp-tests` when they don't change their
-inputs; master, which deploys, runs everything.
+inputs; master, which deploys, runs everything. Its `unit-tests` asks this mapping (`ci_changes.py --check python`):
+off master, a change the Python tests don't read (the web app, the chart...) runs none. The tests that send real jobs
+to LSF (`QA_TESTS_LSF=1`, `tests/sample_project.py`) run on master, and elsewhere only for changes to what they
+protect (`SITE_CHECKS["lsf"]`, `--check lsf`); without them the sample projects' copies stay off the NFS checkout.

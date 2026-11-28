@@ -743,7 +743,10 @@ class TestIngestMessages(AuthTestCase):
                              'hint: Set QABOARD_TOKEN to a valid token with the ingest scope for group/repo.\n')
 
   def test_in_ci_other_failures_stay_warnings(self):
-    with mock.patch('qaboard.config.is_ci', True):
+    from qaboard.http_client import FINAL_RETRY_DELAYS
+    # as many tries, without waiting between them
+    no_wait = mock.patch('qaboard.http_client.FINAL_RETRY_DELAYS', (0.0,) * len(FINAL_RETRY_DELAYS))
+    with mock.patch('qaboard.config.is_ci', True), no_wait:
       for failure in [requests.ConnectionError('Connection refused'), response(500, {"error": "Internal error"}), response(401, {"error": "You need to be logged-in to do this."})]:
         os.environ.pop('QA_AUTH_WARNING_SHOWN', None)
         with mock.patch('qaboard.auth._warnings_shown', set()):

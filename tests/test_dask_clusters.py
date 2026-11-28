@@ -728,7 +728,10 @@ class TestDoctor(TempDirTestCase):
     self.assertIn('uid=', test.message)
 
   def test_unreachable_scheduler(self):
-    checks = self.doctor(scheduler_address='tcp://127.0.0.1:1')
+    from distributed import Client
+    # qa doctor waits 10s for the scheduler
+    with mock.patch('distributed.Client', lambda address, timeout: Client(address, timeout=0.5)):
+      checks = self.doctor(scheduler_address='tcp://127.0.0.1:1')
     self.assertEqual(checks['Dask: scheduler tcp://127.0.0.1:1'].status, 'error')
     self.assertIn('dask scheduler', checks['Dask: scheduler tcp://127.0.0.1:1'].fix)
 

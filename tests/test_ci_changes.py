@@ -50,7 +50,10 @@ class TestDecide(unittest.TestCase):
   def test_qaboard_package(self):
     self.assertEqual(runs(["qaboard/config.py"])[1], {"python", "docker"})
     self.assertEqual(runs(["qaboard/runners/kubernetes.py"])[1], {"python", "docker", "helm-e2e", "kubernetes-runner-e2e"})
-    self.assertEqual(runs(["qaboard/runners/lsf.py"])[1], {"python", "docker", "kubernetes-runner-e2e"})
+    # the kubernetes runner doesn't import the other runners
+    self.assertEqual(runs(["qaboard/runners/lsf.py"])[1], {"python", "docker"})
+    self.assertEqual(runs(["qaboard/runners/celery_app.py", "qaboard/runners/dask_runner.py"])[1], {"python", "docker"})
+    self.assertEqual(runs(["qaboard/runners/base.py"])[1], {"python", "docker", "kubernetes-runner-e2e"})
 
   def test_dependencies(self):
     self.assertEqual(runs(["uv.lock"])[1], {"python", "docker"})
@@ -88,6 +91,19 @@ class TestDecide(unittest.TestCase):
   def test_events_that_run_everything(self):
     self.assertEqual(runs(None, full="release"), ("full", ALL))
     self.assertEqual(runs(["webapp/src/a.jsx"], full="push to master"), ("full", ALL))
+
+  def test_site_checks(self):
+    # the tests that send jobs to LSF (.gitlab-ci.yml)
+    self.assertTrue(ci_changes.needed(["qaboard/runners/lsf.py"], "lsf"))
+    self.assertTrue(ci_changes.needed([".gitlab-ci.yml"], "lsf"))
+    self.assertTrue(ci_changes.needed([".github/scripts/ci_changes.py"], "lsf"))
+    self.assertTrue(ci_changes.needed(None, "lsf"))
+    self.assertFalse(ci_changes.needed(["qaboard/config.py", "webapp/src/a.jsx"], "lsf"))
+    self.assertFalse(ci_changes.needed(["qaboard/runners/README.md"], "lsf"))
+    # and the jobs of ci.yaml, for .gitlab-ci.yml's unit tests
+    self.assertTrue(ci_changes.needed(["qaboard/config.py"], "python"))
+    self.assertFalse(ci_changes.needed(["webapp/src/a.jsx", "docs/ci.md"], "python"))
+    self.assertTrue(ci_changes.needed(None, "python"))
 
   def test_patterns(self):
     self.assertTrue(ci_changes.matches("a/b/c.md", ["**.md"]))

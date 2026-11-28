@@ -10,7 +10,7 @@ import click
 from click.testing import CliRunner
 
 from qaboard._testing import reset_process_state
-from tests.sample_project import forget_runs, sample_project_class_fixture
+from tests.sample_project import forget_runs, lsf_tests, sample_project_class_fixture
 
 os.environ['QA_TESTING'] = 'true'
 
@@ -113,7 +113,7 @@ class TestQaCliSubproject(unittest.TestCase):
     # print('stderr:', result.stderr)
     assert result.exit_code == 0
 
-  @unittest.skipUnless(shutil.which('bsub'), 'needs LSF (bsub)')
+  @unittest.skipUnless(lsf_tests(), 'sends jobs to LSF: QA_TESTS_LSF=1, with bsub on the PATH')
   def test_sub_runner_lsf(self):
     result = self.qa('batch', '--batches-file', 'sub.batches.yaml', 'images', '--runner=lsf', 'echo "{input_path} => {output_dir}"')
     assert result.exit_code == 0
