@@ -2,7 +2,7 @@
 // runs the server: it's in the backend's logs (backend/first_admin.py). The app comes here while the server needs it.
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Callout, Card, Classes, FormGroup, InputGroup, Intent, Spinner } from "@blueprintjs/core";
+import { Button, Callout, Card, Checkbox, Classes, FormGroup, InputGroup, Intent, Spinner } from "@blueprintjs/core";
 import styled from "styled-components";
 
 import { history, Link } from "../router";
@@ -57,6 +57,8 @@ const SetupForm = ({ status }) => {
       full_name: form.full_name,
       email: form.email,
       password: form.password,
+      // projects created by their namespace's members, internal, signed-in users viewers (backend/first_admin.py)
+      defaults: form.recommended ? 'recommended' : 'open',
     })
       .then(user => {
         toaster.show({ message: `Welcome, ${user?.full_name || user?.user_name}: you're QA-Board's admin`, intent: Intent.SUCCESS, icon: 'shield', timeout: 6000 });
@@ -93,6 +95,11 @@ const SetupForm = ({ status }) => {
     </FormGroup>
     <FormGroup label="Password, again" labelFor="setup-password-again" {...fieldError('password_again')}>
       <InputGroup id="setup-password-again" name="password_again" type="password" autoComplete="new-password" required intent={fieldError('password_again').intent}/>
+    </FormGroup>
+    <FormGroup helperText={<>Projects are created by the members of their namespace (anyone signed in has their own, and can claim
+      a new one), only signed-in users see them, and they need a role to send results. Unticked, anyone can create any project
+      and signed-in users are developers everywhere. Change it later in Admin → Settings.</>}>
+      <Checkbox name="recommended" defaultChecked label="Recommended access defaults"/>
     </FormGroup>
     <Button type="submit" size="large" intent={Intent.PRIMARY} fill loading={busy} text="Create the admin account"/>
   </form>;
