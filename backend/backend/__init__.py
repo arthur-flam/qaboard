@@ -10,6 +10,10 @@ from flask_cors import CORS
 app = Flask(__name__)
 # first: it times the other hooks too
 register_requests(app)
+# Metrics for Prometheus at /metrics, if $QABOARD_METRICS is set: see backend/monitoring.py
+from . import monitoring
+monitoring.register(app)
+monitoring.process_started()
 
 # This key will be used to sign session cookies
 # To generate a key: python -c 'import os; print(os.urandom(16))'
@@ -175,6 +179,7 @@ def warm_cache():
     threading.Thread(target=warm, name="warm-cache", daemon=True).start()
 
 def post_fork():
+  monitoring.process_started()
   init_sentry()
   warm_cache()
 

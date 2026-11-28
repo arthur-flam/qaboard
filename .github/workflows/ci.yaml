@@ -380,6 +380,11 @@ jobs:
             echo "--- $values"
             helm template qaboard charts/qaboard -f "$values" | ./kubeconform -strict -summary -ignore-missing-schemas
           done
+      - name: Validate the Prometheus alerts
+        # the chart's PrometheusRule, also loaded as is by Prometheus on Compose (deployments/prometheus.example.yml)
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/charts/qaboard/files:/rules:ro" prom/prometheus:v2.55.1 \
+            check rules /rules/prometheus-rules.yaml
 
   # The Docker Compose quickstart (deployments/quickstart/compose.yml, website/docs/get-started/quickstart.mdx), with
   # the images of this run. Its demo data is the seeder's test story, built into a demo-data image like the docs' demo

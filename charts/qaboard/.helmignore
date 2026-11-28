@@ -1,3 +1,5 @@
 ci/
 *.md.gotmpl
 .DS_Store
+# what generates files/grafana-dashboard.json
+files/*.py

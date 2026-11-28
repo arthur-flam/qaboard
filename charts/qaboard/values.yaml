@@ -318,6 +318,43 @@ runners:
 # Celery workers run the commands of the tasks they get: anyone who can connect to RabbitMQ can run commands on them.
 # Flower, at /flower/ through the ingress, can revoke tasks and shut the workers down: set FLOWER_BASIC_AUTH
 # (user:password) in the secret to ask for a login.
+# Metrics for Prometheus: request rates and latency per endpoint, runs, jobs, storage, the database's connections.
+# The backend serves them at /metrics on its own HTTP port (3001), which the proxy and the ingress don't route:
+# to pods of the cluster (private addresses), or, with a QABOARD_METRICS_TOKEN in the secret, to who sends it.
+# See https://samsung.github.io/qaboard/docs/backend-admin/monitoring
+metrics:
+  enabled: false
+  # true: `secret.values` (or your existingSecret) has a QABOARD_METRICS_TOKEN, and the ServiceMonitor sends it.
+  # Without it, any pod that reaches the backend's Service reads the metrics: use a NetworkPolicy, or the token.
+  token: false
+  # For the Prometheus Operator (monitoring.coreos.com/v1). Without it, scrape the Service <release>-qaboard-backend,
+  # port 3001, path /metrics.
+  serviceMonitor:
+    enabled: false
+    # Default: the release's namespace
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    # The labels your Prometheus selects ServiceMonitors with, e.g. {release: kube-prometheus-stack}
+    labels: {}
+    # Also Flower's metrics of the Celery workers and tasks, with celery.enabled
+    celery: true
+    relabelings: []
+    metricRelabelings: []
+  # Alerts (files/prometheus-rules.yaml): the backend or its database down, 5xx answers, slow requests, busy workers,
+  # jobs that fail or don't succeed anymore, no jobs worker, a storage almost full. To change thresholds, turn it off
+  # and load your copy of the file.
+  prometheusRule:
+    enabled: false
+    namespace: ""
+    labels: {}
+  # A ConfigMap with the Grafana dashboard (files/grafana-dashboard.json), for Grafana's dashboards sidecar
+  dashboard:
+    enabled: false
+    namespace: ""
+    labels: {grafana_dashboard: "1"}
+    annotations: {}
+
 celery:
   enabled: false
   rabbitmq:

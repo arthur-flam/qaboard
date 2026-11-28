@@ -1,0 +1,120 @@
+# Alerts on QA-Board's metrics (website/docs/backend-admin/monitoring.mdx, backend/backend/monitoring.py).
+# - Kubernetes: the chart makes a PrometheusRule from this file (metrics.prometheusRule.enabled).
+# - Elsewhere: load it as is with `rule_files:` in prometheus.yml (deployments/prometheus.example.yml).
+# Thresholds are starting points: copy the file to change them. `promtool check rules` validates it (CI does).
+groups:
+  - name: qaboard
+    rules:
+      - alert: QABoardDown
+        expr: absent(qaboard_build_info)
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: QA-Board's backend exports no metrics
+          description: Prometheus got nothing from QA-Board's backend for 5 minutes. It's down, or it can't be scraped anymore (QABOARD_METRICS, the token, the network).
+
+      - alert: QABoardDatabaseUnreachable
+        expr: min by (namespace, job) (qaboard_database_up) == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: QA-Board can't reach its database
+          description: The backend's last attempts to query PostgreSQL failed. The web app shows errors and runs can't send their results.
+
+      - alert: QABoardErrors
+        expr: |
+          sum by (namespace, job) (rate(qaboard_http_requests_total{status="5xx"}[5m]))
+            / sum by (namespace, job) (rate(qaboard_http_requests_total[5m])) > 0.05
+          and sum by (namespace, job) (rate(qaboard_http_requests_total[5m])) > 0.2
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of QA-Board''s requests fail'
+          description: More than 5% of the requests got a 5xx answer for 10 minutes. `topk(5, sum by (route) (rate(qaboard_http_requests_total{status="5xx"}[5m])))` says which routes; the backend's logs and Sentry say why.
+
+      - alert: QABoardSlowRequests
+        # not the routes that send or receive files (uploads, exports), nor the scrapes
+        expr: |
+          histogram_quantile(0.95, sum by (namespace, job, le) (
+            rate(qaboard_http_request_duration_seconds_bucket{route!~".*(/files|/export|/artifacts).*|/metrics"}[5m])
+          )) > 2.5
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: QA-Board is slow (p95 {{ $value | humanizeDuration }})
+          description: 5% of the API requests took more than 2.5 s for 15 minutes. Look at the slowest routes, at the database, and at whether uWSGI's workers are all busy (QABoardWorkersSaturated).
+
+      - alert: QABoardWorkersSaturated
+        expr: avg_over_time((sum by (namespace, job, instance) (qaboard_uwsgi_workers{status=~"idle|cheap"}))[10m:]) < 0.5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: All of QA-Board's web workers are busy
+          description: Scrapes of {{ $labels.instance }} mostly found no idle uWSGI worker for 10 minutes, so requests wait. Add processes (UWSGI_PROCESSES, backend.uwsgi.processes) or replicas, or find the slow requests.
+
+      - alert: QABoardDatabasePoolExhausted
+        expr: |
+          sum by (namespace, job, instance) (qaboard_db_pool_connections{state="checked_out"})
+            / sum by (namespace, job, instance) (qaboard_db_pool_limit) > 0.9
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: QA-Board uses almost all its database connections
+          description: More than 90% of the connections the backend may open are in use on {{ $labels.instance }}. Requests wait for one. Slow queries, or QABOARD_DB_POOL_SIZE too small for the load.
+
+      - alert: QABoardStorageAlmostFull
+        expr: qaboard_storage_free_bytes / qaboard_storage_size_bytes < 0.10
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: '{{ $labels.path }} is {{ $value | humanizePercentage }} free'
+          description: Less than 10% is free where QA-Board keeps runs or its data. Runs that upload their files are refused when it's full. Delete old results (Admin > Storage) or add space.
+
+      - alert: QABoardJobsWorkerDown
+        expr: max by (namespace, job) (qaboard_jobs_workers) == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: No QA-Board jobs worker is running
+          description: No jobs worker reported for 15 minutes. Deleted runs keep their files, schedules don't start, the storage usage isn't updated, silent runs aren't failed. It runs in the backend's container (`qaboard-admin jobs worker`), see its logs.
+
+      - alert: QABoardJobFailed
+        # the last job of a kind failed, and none succeeded since
+        expr: |
+          max by (namespace, job, kind) (qaboard_job_last_finished_timestamp_seconds{status="failed"})
+            > on (namespace, job, kind) (
+              max by (namespace, job, kind) (qaboard_job_last_finished_timestamp_seconds{status=~"done|done_with_errors"})
+              or max by (namespace, job, kind) (qaboard_job_last_finished_timestamp_seconds{status="failed"}) * 0
+            )
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: QA-Board's last "{{ $labels.kind }}" job failed
+          description: The latest {{ $labels.kind }} job crashed, and none succeeded since. Admin > Storage > Jobs shows its error.
+
+      - alert: QABoardScheduledJobNotSucceeding
+        # kinds that have an enabled schedule, e.g. the nightly "garbage_collect". Schedules that run less than every 2 days need another threshold.
+        expr: |
+          (time() - max by (namespace, job, kind) (qaboard_job_last_finished_timestamp_seconds{status=~"done|done_with_errors"})) > 2 * 86400
+          and on (namespace, job, kind) max by (namespace, job, kind) (qaboard_job_schedules) > 0
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: No "{{ $labels.kind }}" job succeeded in {{ $value | humanizeDuration }}
+          description: QA-Board schedules {{ $labels.kind }} jobs, and none ended well for 2 days. They fail, are cancelled, or no jobs worker runs them (Admin > Storage > Jobs).
+
+      - alert: QABoardSignInFailures
+        expr: sum by (namespace, job) (rate(qaboard_sign_ins_total{result="failure"}[10m])) > 0.5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Many sign-ins to QA-Board fail
+          description: More than 30 sign-ins per minute failed for 10 minutes. The identity provider or LDAP is broken, or someone guesses passwords. Admin > Audit says who and from where.
+
+      - alert: QABoardMetricsStale
+        expr: time() - max by (namespace, job) (qaboard_stats_last_refresh_timestamp_seconds) > 900
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: QA-Board's database and storage metrics are {{ $value | humanizeDuration }} old
+          description: The backend computes them in the background every minute. They stopped, e.g. a storage that doesn't answer. The metrics of runs, jobs and storage, and their alerts, can't be trusted until then.

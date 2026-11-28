@@ -345,6 +345,9 @@ class Output(Base):
         self.queued_at = self.queued_at or now
     elif was_pending or self.finished_at is None:
       self.finished_at = now
+      # counted for Prometheus once saved (backend/monitoring.py)
+      from backend.monitoring import run_ended
+      run_ended(self)
     self.is_pending = is_pending
     self.is_running = is_running
 

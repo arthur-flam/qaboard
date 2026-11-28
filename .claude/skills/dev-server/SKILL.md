@@ -21,6 +21,7 @@ uv run scripts/dev.py down    # stop everything when you're done; `reset` also d
 | Web app | http://localhost:3000 (`npm start`): proxies `/api` and `/s/` to the server |
 | Server | http://localhost:5151: the API (flask on :5152) and the runs' files under `/s/`; app pages redirect to :3000 |
 | Sign in | `admin` / `qaboard-dev` (admin). An API token is in `.dev/token` |
+| Metrics | `curl http://127.0.0.1:5152/metrics` (flask's port: Prometheus's format, `backend/backend/monitoring.py`) |
 | Logs | `uv run scripts/dev.py logs backend` (also `webapp`, `proxy`, `jobs-worker`, `postgres`) |
 
 Options: `up --no-web` (API only), `--no-worker`, `--port 5161 --web-port 3010` when the ports are taken (e.g. by

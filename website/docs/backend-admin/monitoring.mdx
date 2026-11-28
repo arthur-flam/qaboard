@@ -1,9 +1,158 @@
 ---
 id: monitoring
-sidebar_label: Monitoring with Sentry
-title: Monitoring with Sentry
-description: "Report the errors and traces of QA-Board's web app, backend, jobs and qa CLI to Sentry or a self-hosted Sentry."
+sidebar_label: Monitoring
+title: "Monitoring: Prometheus metrics and Sentry"
+description: "Scrape QA-Board's metrics with Prometheus, with alerts and a Grafana dashboard, and report the errors and traces of its web app, backend, jobs and qa CLI to Sentry."
 ---
+Two ways to watch a QA-Board server, both off until you turn them on:
+
+- **[Prometheus metrics](#prometheus-metrics)**: request rates, errors and latency per endpoint, runs, the server's jobs, storage and capacity, with alerts and a Grafana dashboard. For your existing monitoring stack.
+- **[Sentry](#sentry)**: each error with its stack trace, traces and profiles, from the backend, the web app, the workers and `qa`.
+
+The backend's [logs](/docs/backend-admin/logs) are the third.
+
+## Prometheus metrics
+Set `QABOARD_METRICS=1` and the backend serves its metrics in Prometheus's format at `/metrics`, on **its own HTTP port (3001)**, not on the address users open:
+
+```bash
+docker compose exec backend curl -s http://localhost:3001/metrics
+```
+```text
+qaboard_http_requests_total{method="GET",route="/api/v1/projects",status="2xx"} 1284
+qaboard_http_request_duration_seconds_bucket{le="0.1",method="GET",route="/api/v1/projects"} 1250
+qaboard_runs_active{state="running"} 12
+qaboard_job_last_finished_timestamp_seconds{kind="garbage_collect",status="done"} 1.7958e+09
+qaboard_storage_free_bytes{path="/mnt/qaboard"} 6.2e+11
+```
+
+### Who can read them
+Metrics name your projects and show how busy the server is, so they aren't public:
+
+- The proxy (nginx) and the ingress don't route `/metrics`, and the backend refuses requests that came through a proxy.
+- Without a token, the backend answers clients that connect to port 3001 from a **private network** (loopback, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, and their IPv6 equivalents): the Compose project's network, or the cluster's pods. Compose doesn't publish that port.
+- With `QABOARD_METRICS_TOKEN`, it only answers who sends `Authorization: Bearer <token>`, from any address. Use it when others share the network: on Kubernetes, any pod that reaches the backend's Service could read them otherwise.
+
+**Admin → Overview** says in its security checklist when metrics are served without a token.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QABOARD_METRICS` | off | `1` serves `/metrics` on the backend's port 3001 |
+| `QABOARD_METRICS_TOKEN` | _none_ | The bearer token scrapers must send. Like other secrets: in `.env`, or the chart's secret |
+| `QABOARD_METRICS_ALLOWED_NETWORKS` | `private`, or `any` with a token | Comma-separated networks that may scrape (`10.2.0.0/16`), `private` or `any` |
+| `QABOARD_METRICS_STATS_SECONDS` | 60 | How often the metrics that need the database or the storage are computed |
+| `QABOARD_METRICS_MAX_PROJECTS` | 200 | How many projects get their own `project` label, the others are counted as `(other)` |
+| `QABOARD_METRICS_DIR` | /tmp/qaboard-metrics | Where the processes of a container share their metrics: a local folder of the container, not a shared storage |
+| `QABOARD_METRICS_JOBS_PORT` | _none_ | Only for a [jobs worker](#jobs-and-celery) that runs in its own container: the port it serves `/metrics` on |
+
+They only come from the server's environment, not from Admin → Settings: someone who takes over an admin's session can't open them.
+
+### Scrape it on Docker Compose
+Add `QABOARD_METRICS=1` to your `.env`, restart the backend, and scrape every replica at `backend:3001` from a Prometheus on the project's network. *deployments/prometheus.example.yml* is a Compose file that adds such a Prometheus, with the alerts:
+
+```bash
+docker compose -f docker-compose.yml -f production.yml -f deployments/prometheus.example.yml up -d
+```
+```yaml title="prometheus.yml"
+rule_files:
+  - /etc/prometheus/qaboard-rules.yaml   # charts/qaboard/files/prometheus-rules.yaml
+scrape_configs:
+  - job_name: qaboard
+    dns_sd_configs:
+      - {names: [backend], type: A, port: 3001}   # every replica: each has its own counters
+    # authorization: {credentials: <QABOARD_METRICS_TOKEN>}
+```
+A Prometheus that runs elsewhere needs to reach port 3001: publish it on an address only Prometheus reaches (`ports: ["10.0.0.5:3001:3001"]` for the backend, with one replica), and set `QABOARD_METRICS_TOKEN`.
+
+### Scrape it on Kubernetes
+With the [Helm chart](/docs/backend-admin/kubernetes):
+
+```yaml title="values.yaml"
+metrics:
+  enabled: true              # QABOARD_METRICS for the backend
+  token: true                # optional: the secret has QABOARD_METRICS_TOKEN, the ServiceMonitor sends it
+  serviceMonitor:
+    enabled: true            # for the Prometheus Operator
+    labels: {release: kube-prometheus-stack}   # what your Prometheus selects
+  prometheusRule:
+    enabled: true            # the alerts below
+    labels: {release: kube-prometheus-stack}
+  dashboard:
+    enabled: true            # a ConfigMap for Grafana's dashboards sidecar
+```
+Without the Prometheus Operator, scrape the Service `<release>-qaboard-backend`, port 3001, path `/metrics`: each pod is a target. With `celery.enabled`, the ServiceMonitor also scrapes Flower.
+
+### Alerts
+*charts/qaboard/files/prometheus-rules.yaml* is a rules file that Prometheus loads as is, and that the chart installs as a `PrometheusRule`. Thresholds are starting points: copy the file to change them.
+
+| Alert | Fires when |
+|-------|-----------|
+| `QABoardDown` | Prometheus got no metrics from the backend for 5 minutes |
+| `QABoardDatabaseUnreachable` | The backend can't query PostgreSQL |
+| `QABoardErrors` | More than 5% of the requests get a 5xx answer for 10 minutes |
+| `QABoardSlowRequests` | The p95 of API requests is over 2.5 s for 15 minutes (not uploads and exports) |
+| `QABoardWorkersSaturated` | Scrapes mostly find no idle uWSGI worker: requests wait |
+| `QABoardDatabasePoolExhausted` | Over 90% of the database connections the backend may open are in use |
+| `QABoardStorageAlmostFull` | A storage root or the data folder has less than 10% free |
+| `QABoardJobsWorkerDown` | No [jobs worker](/docs/backend-admin/storage#schedule-jobs) reported for 15 minutes |
+| `QABoardJobFailed` | The last job of a kind crashed, and none succeeded since |
+| `QABoardScheduledJobNotSucceeding` | A kind of job that has a schedule (e.g. the nightly "Delete old results") didn't succeed in 2 days |
+| `QABoardSignInFailures` | More than 30 sign-ins per minute fail |
+| `QABoardMetricsStale` | The metrics that need the database or the storage stopped being computed |
+
+### Grafana dashboard
+Import *charts/qaboard/files/grafana-dashboard.json* in Grafana (**Dashboards → New → Import**), and pick your Prometheus data source. It shows requests by status and by route, latency, uWSGI's workers and the database's connections, runs, sign-ins, jobs and storage.
+
+### What is exported
+Labels are bounded: `route` is the route's template (`/api/v1/output/<int:output_id>`), never a path; there are no users, run ids or commits. `project` is only on a few low-rate metrics, and capped (`QABOARD_METRICS_MAX_PROJECTS`).
+
+<details>
+<summary>Every metric</summary>
+
+| Metric | Labels | What |
+|--------|--------|------|
+| `qaboard_http_requests_total` | `method`, `route`, `status` (`2xx`...) | Requests answered |
+| `qaboard_http_request_duration_seconds` | `method`, `route` | Histogram of the time to answer, in the backend: not nginx, not the wait for a free worker |
+| `qaboard_http_requests_in_progress` | | Requests being answered now |
+| `qaboard_uwsgi_workers` | `status` (`idle`, `busy`, `cheap`) | uWSGI's workers, when Prometheus asks |
+| `qaboard_uwsgi_processes` | | Most workers uWSGI may run |
+| `qaboard_db_pool_connections` | `state` (`checked_out`) | Database connections in use |
+| `qaboard_db_pool_limit` | | Most connections the running processes may open |
+| `qaboard_runs_created_total` | `project` | Runs first sent to the server |
+| `qaboard_runs_finished_total` | `project`, `status` (`success`, `failed`) | Runs that ended, redos included |
+| `qaboard_runs_active` | `state` (`queued`, `running`) | Runs that didn't end yet |
+| `qaboard_upload_bytes_total`, `qaboard_upload_files_total` | | Files sent to the server over HTTP ([uploads](/docs/backend-admin/uploads)) |
+| `qaboard_batches_started_total` | `project` | Batches the server was asked to start, from the web app or `qa batch --commit` |
+| `qaboard_sign_ins_total` | `result` (`success`, `failure`) | Sign-in attempts |
+| `qaboard_token_authentications_total` | `result` | Requests that came with an API token |
+| `qaboard_audit_events_total` | `action` | [Audit log](/docs/backend-admin/audit-log) events recorded, e.g. `batch.delete` |
+| `qaboard_jobs_finished_total` | `kind`, `status` | Server jobs that ended on this host's jobs worker |
+| `qaboard_job_duration_seconds` | `kind` | Histogram of how long they ran |
+| `qaboard_jobs_active` | `status` (`queued`, `running`) | Jobs waiting for a worker, or running |
+| `qaboard_jobs_oldest_queued_timestamp_seconds` | | When the job that waits the longest was created |
+| `qaboard_job_last_finished_timestamp_seconds` | `kind`, `status` | When a job of this kind last ended with this status, on any host |
+| `qaboard_job_schedules`, `qaboard_job_schedule_next_run_timestamp_seconds` | `kind` | Enabled schedules, and when their next job is due |
+| `qaboard_jobs_workers` | | Jobs workers that reported in the last 2 minutes |
+| `qaboard_storage_free_bytes`, `qaboard_storage_size_bytes` | `path` | The filesystems of the storage roots and of the data folder |
+| `qaboard_storage_used_bytes`, `qaboard_storage_runs` | `project` | The runs' files, as [Admin → Storage](/docs/backend-admin/storage) knows them |
+| `qaboard_projects` | | Projects |
+| `qaboard_database_up` | | Whether the backend reached its database when it last looked |
+| `qaboard_stats_last_refresh_timestamp_seconds`, `qaboard_stats_refresh_duration_seconds` | | When the metrics that need the database or the storage were computed, and how long it took |
+| `qaboard_build_info` | `version` | The version of the backend's image |
+
+</details>
+
+Counters are per replica, and each replica computes the gauges that come from the database (runs, jobs, storage) on its own: sum the counters, and take the `max` of those gauges, as the dashboard does.
+
+### Jobs and Celery
+- **The jobs worker** runs in the backend's container, and its metrics are in the backend's `/metrics`: nothing more to scrape. Whether jobs succeed is read from the database (`qaboard_job_last_finished_timestamp_seconds`), so it's right whichever replica ran them. If you run `qaboard-admin jobs worker` in its own container (`QABOARD_JOBS_WORKER=0` for the backend), set `QABOARD_METRICS=1` and `QABOARD_METRICS_JOBS_PORT=9101` there, and scrape that port: the same rules decide who can.
+- **Celery workers** (a [runner for batches](/docs/celery-integration)) are exported by Flower, at `/flower/metrics` on its port 8888: workers online, tasks by state, their runtime. The example Compose file and the chart's ServiceMonitor have the scrape job.
+
+### How it works with uWSGI's processes
+uWSGI answers requests from several worker processes, and Prometheus only talks to one of them at a time. Each worker writes its counters in memory-mapped files in `QABOARD_METRICS_DIR`, and the one that answers `/metrics` adds them up, with the jobs worker's. Files are named after uWSGI's worker ids, not the processes' ids: workers are recycled every hour, a new one carries on with its predecessor's counters, and scrapes stay as fast after a month. The folder is emptied when the server starts, so counters restart from 0 with each deploy, as Prometheus expects.
+
+The metrics that need a query are computed in the background at most once a minute per container, and scrapes get the last values: scraping every 15 seconds doesn't load the database, and a storage that hangs doesn't hang the scrape (`QABoardMetricsStale` tells you).
+
+## Sentry
 QA-Board can report errors and performance data to [Sentry](https://sentry.io), or to your own [self-hosted Sentry](https://develop.sentry.dev/self-hosted/):
 
 - **Backend**: errors, traces of the API requests with their database queries, and profiles (which functions take time).

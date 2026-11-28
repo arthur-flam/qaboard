@@ -56,9 +56,13 @@ else:
     'QABOARD_GROUPS_SYNC_AUTO': '0',
     # audit() refuses actions missing from backend/audit_actions.py
     'QABOARD_AUDIT_STRICT': '1',
+    # every test also runs the hooks that count requests for Prometheus (test_monitoring.py)
+    'QABOARD_METRICS': '1',
+    'QABOARD_METRICS_DIR': str(data_dir / 'metrics'),
   })
   for name in ['QABOARD_LOGIN_TYPE', 'QABOARD_LOGIN_REQUIRED', 'QABOARD_DISABLE_SIGNUP', 'QABOARD_INGEST_AUTH',
-               'QABOARD_ADMINS', 'QABOARD_ADMIN_USER', 'QABOARD_ADMIN_PASSWORD', 'QABOARD_ADMIN_PASSWORD_FILE', 'QABOARD_SETUP_TOKEN', 'QABOARD_LOGIN_RESTRICTED', 'QABOARD_URL', 'QABOARD_ALLOWED_ORIGINS', 'SENTRY_DSN']:
+               'QABOARD_ADMINS', 'QABOARD_ADMIN_USER', 'QABOARD_ADMIN_PASSWORD', 'QABOARD_ADMIN_PASSWORD_FILE', 'QABOARD_SETUP_TOKEN', 'QABOARD_LOGIN_RESTRICTED', 'QABOARD_URL', 'QABOARD_ALLOWED_ORIGINS', 'SENTRY_DSN',
+               'QABOARD_METRICS_TOKEN', 'QABOARD_METRICS_ALLOWED_NETWORKS']:
     os.environ.pop(name, None)
 
 

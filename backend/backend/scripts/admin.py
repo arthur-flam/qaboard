@@ -194,6 +194,9 @@ def jobs():
 def jobs_worker(once, poll):
   """Runs the jobs: keep one running next to the backend (the `jobs` service). Stops gracefully on SIGTERM."""
   from backend.jobs.worker import Worker
+  from backend import monitoring
+  # its metrics, for Prometheus: with the web server's if it runs next to it (backend/monitoring.py)
+  monitoring.start_jobs_worker()
   Worker(poll_seconds=poll).loop(once=once)
 
 

@@ -61,6 +61,10 @@ data:
   {{- end }}
   {{- end }}
   {{- end }}
+  {{- if and .Values.metrics.enabled (not (hasKey .Values.config "QABOARD_METRICS")) }}
+  # metrics.enabled: the backend serves /metrics for Prometheus on its own port (backend/backend/monitoring.py)
+  QABOARD_METRICS: "true"
+  {{- end }}
   {{- range $key, $value := .Values.config }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}

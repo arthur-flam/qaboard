@@ -4,6 +4,7 @@ Nothing here depends on the web framework or on a task queue: the API (api/admin
 (`qaboard-admin jobs`) and the worker (backend/jobs/worker.py) call these functions.
 """
 import datetime
+import time
 import logging
 import traceback
 from typing import Optional
@@ -127,6 +128,7 @@ def run(job_id: int, stopping=lambda: False, echo=True) -> str:
   db_session.commit()
   report = DatabaseReporter(job_id, stopping=stopping, echo=echo)
   error, exception = None, None
+  started = time.monotonic()
   try:
     module = kinds.get(kind)
     params = module.validate(params)
@@ -165,6 +167,9 @@ def run(job_id: int, stopping=lambda: False, echo=True) -> str:
     job.log = [*(job.log or []), {"at": utcnow().isoformat() + 'Z', "level": 'error' if status == 'failed' else 'success' if status == 'done' else 'warning',
                "message": {"failed": "Failed", "cancelled": "Cancelled", "done": "Done", "done_with_errors": f"Done, with {report.nb_errors} errors"}[status]}][-300:]
   db_session.commit()
+  # for Prometheus (backend/monitoring.py)
+  from ..monitoring import job_finished
+  job_finished(kind, status, time.monotonic() - started)
   if status in ('failed', 'done_with_errors'):
     alerts.job_went_wrong(job, status, error=exception)
   return status

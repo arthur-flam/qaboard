@@ -183,6 +183,10 @@ def checklist() -> list:
 
   items.extend(encryption_items())
 
+  from ..monitoring import security_item
+  if metrics := security_item():
+    item('metrics', metrics['ok'], metrics.get('severity', 'info'), metrics['title'], metrics['detail'], metrics['detail'])
+
   from ..models import RoleGrant
   signed_in_role = settings_lib.setting('projects.signed_in_role')
   owned = RoleGrant.query.filter(RoleGrant.resource_type == 'project', RoleGrant.role == 'owner').count()
@@ -267,6 +271,11 @@ def value_checklist() -> list:
   item('git_hosts', hosts,
        "Git hosts are configured" if hosts else "No git host is configured",
        "Add your git hosts in Admin → Settings → Git hosts, and their webhooks: commits, branches and messages then show up as they're pushed, before runs arrive.")
+
+  from ..monitoring import enabled as metrics_enabled
+  item('prometheus', metrics_enabled(),
+       "Metrics are exported for Prometheus" if metrics_enabled() else "No metrics for Prometheus",
+       "Set QABOARD_METRICS=1 and scrape /metrics on the backend's own port: request rates and latency, runs, jobs and storage, with alerts and a Grafana dashboard.")
 
   sentry = bool(os.environ.get('SENTRY_DSN'))
   item('sentry', sentry, "Errors are reported to Sentry" if sentry else "Errors aren't reported anywhere",

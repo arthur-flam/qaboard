@@ -1,0 +1,96 @@
+{{- /*
+Prometheus: how to scrape the backend's /metrics (backend/backend/monitoring.py), alerts, and a Grafana dashboard.
+The backend itself only needs metrics.enabled (QABOARD_METRICS, in config.yaml).
+*/ -}}
+{{- if and (or .Values.metrics.serviceMonitor.enabled .Values.metrics.prometheusRule.enabled .Values.metrics.dashboard.enabled) (not .Values.metrics.enabled) }}
+{{- fail "metrics.serviceMonitor, metrics.prometheusRule and metrics.dashboard need metrics.enabled: the backend exports nothing without it" }}
+{{- end }}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "qaboard.fullname" . }}-backend
+  namespace: {{ .Values.metrics.serviceMonitor.namespace | default .Release.Namespace }}
+  labels: {{- include "qaboard.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace | quote }}]
+  selector:
+    matchLabels: {{- include "qaboard.selectorLabels" (list . "backend") | nindent 6 }}
+  endpoints:
+    # uwsgi's own HTTP port: not the one the proxy talks to
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      {{- if .Values.metrics.token }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ include "qaboard.secretName" . }}
+          key: QABOARD_METRICS_TOKEN
+      {{- end }}
+      {{- with .Values.metrics.serviceMonitor.relabelings }}
+      relabelings: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.metrics.serviceMonitor.metricRelabelings }}
+      metricRelabelings: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if and .Values.celery.enabled .Values.metrics.serviceMonitor.celery }}
+---
+# Flower exports the Celery workers' and tasks' metrics itself
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "qaboard.fullname" . }}-flower
+  namespace: {{ .Values.metrics.serviceMonitor.namespace | default .Release.Namespace }}
+  labels: {{- include "qaboard.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace | quote }}]
+  selector:
+    matchLabels: {{- include "qaboard.selectorLabels" (list . "flower") | nindent 6 }}
+  endpoints:
+    - port: http
+      # FLOWER_URL_PREFIX (celery.yaml)
+      path: /flower/metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+{{- end }}
+{{- end }}
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "qaboard.fullname" . }}
+  namespace: {{ .Values.metrics.prometheusRule.namespace | default .Release.Namespace }}
+  labels: {{- include "qaboard.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec: {{- .Files.Get "files/prometheus-rules.yaml" | fromYaml | toYaml | nindent 2 }}
+{{- end }}
+{{- if and .Values.metrics.enabled .Values.metrics.dashboard.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "qaboard.fullname" . }}-grafana-dashboard
+  namespace: {{ .Values.metrics.dashboard.namespace | default .Release.Namespace }}
+  labels: {{- include "qaboard.labels" . | nindent 4 }}
+    {{- with .Values.metrics.dashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.metrics.dashboard.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  qaboard.json: |- {{- .Files.Get "files/grafana-dashboard.json" | nindent 4 }}
+{{- end }}
