@@ -12,6 +12,7 @@ Usage (from anywhere: compose runs in the root of this repository):
     deployments/deploy.py ENV_FILE status
     deployments/deploy.py ENV_FILE restore-db [DUMP|latest]
     deployments/deploy.py ENV_FILE seed-db [--source URL] [--days N]   # recent data only, e.g. for staging
+    deployments/deploy.py ENV_FILE upgrade-postgres [--jobs N]          # PostgreSQL 12 -> 18 (services/db/postgres-18.yml)
     deployments/deploy.py ENV_FILE compose ARGS...     # e.g. compose logs -f backend
 
 ENV_FILE describes an environment, e.g. ../qaboard-site/mysite/production.env. It's a docker compose env file
@@ -137,6 +138,24 @@ def read_env_file(path: Path) -> Dict[str, str]:
             value = value[1:-1]
         env[key] = value
     return env
+
+
+def major_minor(version: str) -> Optional[tuple]:
+    """'3.13.7' or the tag of 'rabbitmq:4.2-management' -> (3, 13), (4, 2); None if there's no version"""
+    m = re.match(r"(\d+)(?:\.(\d+))?", version.rsplit(":", 1)[-1] if ":" in version else version.strip())
+    return (int(m.group(1)), int(m.group(2) or 0)) if m else None
+
+
+def rabbitmq_upgrade_error(running_version: str, image: str) -> Optional[str]:
+    """Why the running RabbitMQ can't be replaced by `image`, if it can't: 4.x upgrades only from 3.13"""
+    running, target = major_minor(running_version), major_minor(image)
+    if running and target and running[0] < 4 <= target[0] and running < (3, 13):
+        return (f"RabbitMQ {running_version} can't be upgraded to {image}: 4.x only starts on the data of 3.13. "
+                "Upgrade it to 3.13 first: set `image: rabbitmq:3.13-management` for the rabbitmq service in your "
+                "site's compose overlay and deploy (older than 3.11: through 3.11 and 3.12 too, see RabbitMQ's upgrade "
+                "guide), then remove it and deploy again. If nothing in RabbitMQ needs keeping (queued tasks, accounts "
+                "added with rabbitmqctl), you can instead stop it and remove its rabbitmq-data volume.")
+    return None
 
 
 class Deployment:
@@ -314,6 +333,46 @@ class Deployment:
             log(f"Running pre-deploy hook: {hook}")
             subprocess.run(hook, shell=True, cwd=ROOT, env=self.env, check=True)
 
+    # --- pre-flight: before anything changes ---
+    def check_db_volumes(self, config: dict) -> None:
+        """
+        A database volume that doesn't exist yet, in a deployment that does, would start an empty database: e.g. a new
+        PostgreSQL version's volume before its data was restored into it (website/docs/backend-admin/deployment.mdx).
+        """
+        db = config["services"].get("db")
+        if not db:
+            return
+        names = config.get("volumes") or {}
+        for volume in db.get("volumes") or []:
+            if not isinstance(volume, dict) or volume.get("type") != "volume" or not volume.get("source"):
+                continue
+            name = (names.get(volume["source"]) or {}).get("name") or f"{self.project}_{volume['source']}"
+            if subprocess.run(["docker", "volume", "inspect", name], capture_output=True).returncode:
+                die(f"The db service's volume {name} doesn't exist: the database would start empty. To upgrade "
+                    "PostgreSQL, restore the data into it first (\"Upgrading PostgreSQL\" in "
+                    "website/docs/backend-admin/deployment.mdx). If an empty database is really what you want, pass --init.")
+
+    def prepare_rabbitmq(self, config: dict) -> None:
+        """
+        A new RabbitMQ image starts on the data of the running one only if all the feature flags are enabled (4.x
+        requires those of 3.13). We enable them before replacing it, and refuse to jump from before 3.13 to 4.x.
+        """
+        service = config["services"].get("rabbitmq")
+        running = self.containers("rabbitmq", all_states=False)
+        if not service or len(running) != 1:
+            return
+        image = service.get("image", "")
+        if self.docker("inspect", "-f", "{{.Config.Image}}", running[0]) == image:
+            return
+        version = self.docker("exec", running[0], "rabbitmqctl", "version", check=False)
+        error = rabbitmq_upgrade_error(version, image)
+        if error:
+            die(error)
+        log(f"RabbitMQ {version or '(unknown version)'} will be replaced by {image}: enabling its feature flags first")
+        r = subprocess.run(["docker", "exec", running[0], "rabbitmqctl", "enable_feature_flag", "all"], text=True, capture_output=True)
+        if r.returncode:
+            die(f"`rabbitmqctl enable_feature_flag all` failed, RabbitMQ was left as it was: {(r.stderr or r.stdout).strip()}")
+
     # --- deploy ---
     def up(self, build: bool = False, pull: bool = True, init: bool = False) -> None:
         log(f"Deploying {self.project} version={self.version or '(untagged)'} with {self.env_file}")
@@ -330,6 +389,9 @@ class Deployment:
             die("No backend service in the compose configuration")
         replicas = int(self.settings.get("QABOARD_BACKEND_REPLICAS") or (backend.get("deploy") or {}).get("replicas") or 1)
         self.run_hook()
+        if not init:
+            self.check_db_volumes(config)
+        self.prepare_rabbitmq(config)
 
         # 1. Images
         built = [name for name, s in config["services"].items() if s.get("build")]
@@ -527,6 +589,105 @@ class Deployment:
             self.reconfigure_proxy(list(self.config()["services"]))
 
 
+    def upgrade_postgres(self, jobs: int) -> None:
+        """
+        Moves the database to the PostgreSQL version of the compose configuration (services/db/postgres-18.yml), into
+        its new volume: dumps the old volume's data with the new pg_dump, restores it, analyzes it, and checks that
+        every table has the same number of rows. The old volume is never changed: it's the rollback.
+        """
+        config = self.config()
+        db = config["services"].get("db") or die("No db service in the compose configuration")
+        image = db.get("image", "")
+        new_volume = next((v for v in db.get("volumes") or [] if isinstance(v, dict) and v.get("type") == "volume"), None)
+        if not new_volume:
+            die("The db service has no volume")
+        new_volume_name = ((config.get("volumes") or {}).get(new_volume["source"]) or {}).get("name") or f"{self.project}_{new_volume['source']}"
+        if subprocess.run(["docker", "volume", "inspect", new_volume_name], capture_output=True).returncode == 0:
+            die(f"The volume {new_volume_name} exists already: was the database upgraded? To start over, "
+                f"`docker volume rm {new_volume_name}` (it deletes the data in it) and run upgrade-postgres again.")
+        old = self.containers("db")
+        if len(old) != 1:
+            die("Expected one db container, of the version to upgrade from")
+        old_image, _, old_volume = self.docker(
+            "inspect", "-f", '{{.Config.Image}} {{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}',
+            old[0]).partition(" ")
+        if old_image == image:
+            die(f"The db container already runs {image}")
+        if not old_volume:
+            die(f"The db container {old[0]} has no volume at /var/lib/postgresql/data: nothing to upgrade from")
+        network = ((config.get("networks") or {}).get("default") or {}).get("name") or f"{self.project}_default"
+        temporary = f"{self.project}-db-upgrade-from"
+        log(f"Upgrading the database from {old_image} (volume {old_volume}) to {image} (volume {new_volume_name}). "
+            "QA-Board is stopped meanwhile.")
+
+        self.compose("stop")  # every writer, and the old database: one PostgreSQL at a time on its data
+        try:
+            # Its data's settings, with less memory: both databases run at the same time
+            self.docker("run", "-d", "--name", temporary, "--network", network, "-e", "POSTGRES_PASSWORD=unused",
+                        "-v", f"{old_volume}:/var/lib/postgresql/data", old_image, "postgres", "-c", "shared_buffers=512MB")
+            self.compose("up", "-d", "--no-deps", "--no-build", "db")  # creates the new volume and database
+
+            def sql(where: str, query: str) -> str:
+                # Inside the new db container, with its pg_dump/psql. The old server is reached by its container name.
+                host = f"-h {temporary}" if where == "old" else ""
+                return self.compose("exec", "-T", "db", "sh", "-c",
+                                    f'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -v ON_ERROR_STOP=1 -At {host} -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c {shlex.quote(query)}',
+                                    capture=True).stdout.strip()
+
+            # On TCP: while the new database is initialized, its temporary server only listens on its socket
+            for where in ("old", "new"):
+                for _ in range(120):
+                    if self.compose("exec", "-T", "db", "sh", "-c",
+                                    f'pg_isready -q -h {temporary if where == "old" else "127.0.0.1"} -U "$POSTGRES_USER"', check=False).returncode == 0:
+                        break
+                    time.sleep(1)
+                else:
+                    die(f"The {where} database didn't start: `docker logs {temporary}` / `deploy.py ... compose logs db`")
+            log(f"Old: {sql('old', 'SELECT version()')}, {sql('old', 'SELECT pg_size_pretty(pg_database_size(current_database()))')}")
+
+            dump = "/var/lib/postgresql/upgrade-dump"  # in the new volume, next to the data
+            log(f"Dumping, then restoring, with {jobs} jobs")
+            started = time.time()
+            script = f"""
+                set -eu
+                export PGPASSWORD="$POSTGRES_PASSWORD"
+                rm -rf {dump}
+                pg_dump -h {temporary} -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fd -j {jobs} -f {dump}
+                # Roles made by hand (e.g. a dashboard's): the dump only has their grants. Ours exists already, but would get
+                # its old (md5) password back: we set it again
+                pg_dumpall -h {temporary} -U "$POSTGRES_USER" --roles-only | psql -X -q -U "$POSTGRES_USER" -d postgres 2>&1 | grep -v 'already exists' || true
+                echo 'ALTER ROLE :"user" PASSWORD :'"'"'password'"'"';' | psql -X -q -v ON_ERROR_STOP=1 -v user="$POSTGRES_USER" -v password="$POSTGRES_PASSWORD" -U "$POSTGRES_USER" -d postgres
+                dropdb -U "$POSTGRES_USER" "$POSTGRES_DB"
+                createdb -U "$POSTGRES_USER" -T template0 "$POSTGRES_DB"
+                pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" -j {jobs} --exit-on-error {dump}
+                psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
+                vacuumdb -U "$POSTGRES_USER" -d "$POSTGRES_DB" -j {jobs} --analyze-in-stages
+            """
+            self.compose("exec", "-T", "db", "sh", "-c", script)
+            log(f"Dumped, restored and analyzed in {(time.time() - started) / 60:.1f} minutes")
+
+            log("Checking that every table has the same number of rows")
+            counts = ("SELECT table_schema || '.' || table_name || ' ' || (xpath('/row/c/text()', query_to_xml(format("
+                      "'SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text "
+                      "FROM information_schema.tables WHERE table_type = 'BASE TABLE' "
+                      "AND table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1")
+            before, after = sql("old", counts), sql("new", counts)
+            if before != after:
+                differ = sorted(set(before.splitlines()) ^ set(after.splitlines()))
+                die("The restored database differs from the old one: " + ", ".join(differ[:20]) +
+                    f". Nothing was changed in {old_volume}: see the rollback in deployment.mdx")
+            log(f"{len(after.splitlines())} tables, the same rows. New: {sql('new', 'SELECT version()')}")
+            md5 = sql("new", "SELECT string_agg(rolname, ', ') FROM pg_authid WHERE rolpassword LIKE 'md5%'")
+            if md5:
+                log(f"These roles have md5 passwords, which this PostgreSQL refuses from the network: {md5}. "
+                    "Set their passwords again: ALTER ROLE <name> PASSWORD '...'")
+            self.compose("exec", "-T", "db", "rm", "-rf", dump)
+        finally:
+            subprocess.run(["docker", "rm", "-f", temporary], capture_output=True)
+        log(f"✅ The database runs {image}. Start QA-Board: deployments/deploy.py {self.env_file} up. Keep the volume "
+            f"{old_volume} until you're sure: without services/db/postgres-18.yml in COMPOSE_FILE, a deploy goes back to it.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--site-dir", help="the folder with the sites' folders (default: $QABOARD_SITE_DIR, else the "
@@ -546,6 +707,9 @@ def main() -> None:
     seed = sub.add_parser("seed-db", help="replace the database with recent data from another one (e.g. staging from production)")
     seed.add_argument("--source", help="postgresql://user:password@host:port/database (default: $QABOARD_SEED_SOURCE)")
     seed.add_argument("--days", type=int, help="keep the commits of the last N days (default: $QABOARD_SEED_DAYS or 30)")
+    upgrade = sub.add_parser("upgrade-postgres", help="move the database to the PostgreSQL version of the configuration "
+                             "(services/db/postgres-18.yml), in its new volume. QA-Board is stopped meanwhile")
+    upgrade.add_argument("--jobs", type=int, default=min(4, os.cpu_count() or 1), help="parallel dump/restore jobs (default: 4)")
     compose = sub.add_parser("compose", help="run docker compose for this environment and version")
     compose.add_argument("args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -561,6 +725,8 @@ def main() -> None:
         deployment.seed_db(args.source, args.days)
     elif args.command == "restore-db":
         deployment.restore_db(args.dump)
+    elif args.command == "upgrade-postgres":
+        deployment.upgrade_postgres(args.jobs)
     elif args.command == "compose":
         sys.exit(deployment.compose(*args.args, check=False).returncode)
 

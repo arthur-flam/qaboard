@@ -1,0 +1,19 @@
+# PostgreSQL 18 for the db and the backups, in a new volume: the data of the PostgreSQL 12 volume (`db`) can't be read
+# by 18, it's dumped and restored by `deployments/deploy.py <env file> upgrade-postgres`.
+# Add it to COMPOSE_FILE right after production.yml (before your site's overlays, which add their mounts), then run
+# upgrade-postgres: website/docs/backend-admin/deployment.mdx#upgrading-postgresql.
+# Until the data is restored, `deploy.py up` refuses to start: the new volume would be an empty database.
+# Rollback: remove it from COMPOSE_FILE and deploy. The old volume is never changed.
+services:
+  db:
+    image: postgres:18-alpine
+    volumes: !override
+    # From 18, the image keeps the data in a folder per version, /var/lib/postgresql/18/docker: the volume is its parent
+    - db18:/var/lib/postgresql
+    - ./services/db:/opt
+  cron-backup-db:
+    # pg_dump must be as new as the server
+    image: postgres:18-alpine
+
+volumes:
+  db18: {}

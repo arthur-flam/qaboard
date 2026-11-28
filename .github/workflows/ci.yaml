@@ -305,6 +305,24 @@ jobs:
           QABOARD_VERSION="$QABOARD_VERSION-next" ./deployments/deploy.py deployments/production.env up --no-pull
           sleep 5 && touch "$STOP_FILE"
           wait $load
+      - name: PostgreSQL 12 to 18, with the data of the tests above, then the backend's tests on 18
+        # website/docs/backend-admin/deployment.mdx#upgrading-postgresql
+        env:
+          COMPOSE_FILE: docker-compose.yml:production.yml:services/db/postgres-18.yml
+        run: |
+          if ./deployments/deploy.py deployments/production.env up --no-pull; then
+            echo "::error::deploy.py started PostgreSQL 18 on an empty volume"; exit 1
+          fi
+          ./deployments/deploy.py deployments/production.env upgrade-postgres --jobs 2
+          ./deployments/deploy.py deployments/production.env up --no-pull
+          ./deployments/deploy.py deployments/production.env compose exec -T db postgres --version | grep -q ' 18\.'
+          curl -sSf --retry 20 --retry-all-errors --retry-delay 3 http://localhost:5151/api/v1/health
+          curl -sSf http://localhost:5151/api/v1/projects | grep -q '"id"'
+          ./deployments/deploy.py deployments/production.env compose exec -T \
+            -e BACKEND_TEST_MODE=no-mock -e QABOARD_TEST_DATABASE_URL=postgresql://qaboard:password@db:5432/qaboard \
+            backend python -m pytest -q -p no:cacheprovider integration_tests
+          # The backups' pg_dump is 18 too
+          ./deployments/deploy.py deployments/production.env compose run --rm --no-deps cron-backup-db pg_dump --version | grep -q ' 18\.'
       - name: Logs on failure
         if: failure()
         run: |

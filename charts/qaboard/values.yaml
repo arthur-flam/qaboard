@@ -321,7 +321,7 @@ runners:
 celery:
   enabled: false
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:4.2-management
     # RabbitMQ's account, created when it starts (it keeps no data). The backend and Flower connect with it.
     # The password is QABOARD_RABBITMQ_PASSWORD in the secret with passwordFromSecret, else `password`. URL-safe characters
     user: guest

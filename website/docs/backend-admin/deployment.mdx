@@ -128,6 +128,11 @@ If staging uses the same storage and task runners as production, runs started fr
 :::
 
 ## Backups
+:::warning[The database only]
+These backups don't include the results' files, the uploaded runs, or the keys the server generated in its data
+folder. Back those up with your storage's tools: [Backups and disaster recovery](/docs/backend-admin/backups).
+:::
+
 The `cron-backup-db` service in *production.yml* makes daily backups of the database to `/backups`. Mount a host directory there in your site overlay, in the `db` service too (`restore-db` reads the backups from the database container), and copy the backups off the host:
 
 ```yaml title="../qaboard-site/mysite/mysite.yml"
@@ -151,6 +156,38 @@ To restore a backup (the backend is stopped meanwhile):
 ```bash
 deployments/deploy.py ../qaboard-site/mysite/production.env restore-db 2026-10-01.dump   # or "latest"
 ```
+
+## Upgrading PostgreSQL {/* #upgrading-postgresql */}
+*docker-compose.yml* runs PostgreSQL 12, which is end-of-life. PostgreSQL 18 can't read its data: `upgrade-postgres`
+dumps it, restores it into a new volume, and checks that every table has the same rows. QA-Board is down meanwhile:
+about the time of a daily backup, plus twice that for the restore. The old volume is never changed.
+
+1. **Rehearse on staging**, with a copy of production (`restore-db latest`): it tells you how long it takes. Upgrade
+   staging first anyway: `seed-db` and `restore-db` need a PostgreSQL at least as new as production's.
+2. **Check the disk**: the new volume needs about the database's size, plus its compressed dump during the upgrade.
+3. **Pause your automatic deploys**, and check that the latest daily backup worked.
+4. **Add `services/db/postgres-18.yml` to `COMPOSE_FILE`**, right after *production.yml*:
+   ```bash title="../qaboard-site/mysite/production.env"
+   COMPOSE_FILE=docker-compose.yml:production.yml:services/db/postgres-18.yml:${QABOARD_SITE_DIR}/mysite/mysite.yml
+   ```
+   From now on, `up` refuses to start until the data is restored: the new volume would be an empty database.
+5. **Upgrade, then deploy**:
+   ```bash
+   deployments/deploy.py ../qaboard-site/mysite/production.env upgrade-postgres    # --jobs N: parallel dump/restore (default 4)
+   deployments/deploy.py ../qaboard-site/mysite/production.env up
+   ```
+6. **Check** the web app, and the next daily backup. Then resume your automatic deploys.
+
+- **Rollback**: remove `services/db/postgres-18.yml` from `COMPOSE_FILE` and `up`: you're back on PostgreSQL 12,
+  with the data as it was before the upgrade. Changes made since are lost: decide within the maintenance window.
+  Remove the old volume (`docker volume rm <project>_db`) a few weeks later.
+- **If `upgrade-postgres` fails**, nothing changed in the old volume: roll back, or remove the new volume
+  (`docker volume rm <project>_db18`) and run it again.
+- **Other clients** of the database (dashboards, scripts) need a driver that supports SCRAM passwords (libpq 10 or
+  later, JDBC 42.2 or later): PostgreSQL 18's image doesn't accept md5 passwords from the network. Roles you created
+  by hand are copied, but with their md5 passwords (`upgrade-postgres` lists them): set their passwords again.
+- Settings files like *services/db/qaboard.conf* must be valid for 18: an unknown setting stops PostgreSQL.
+- With the Helm chart, the database is PostgreSQL 16 already.
 
 ## Database settings
 PostgreSQL starts with its defaults, sized for a small machine. To tune it, use `services/db/init.sh` as the `db` service's entrypoint, with a file of settings next to it, or set `QABOARD_DB_CONFIG` to your own file. `services/db/qaboard.conf` is an example, sized for an 8-core, 32 GB host shared with other services, with the reason for each value:

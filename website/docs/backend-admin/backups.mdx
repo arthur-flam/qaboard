@@ -1,0 +1,97 @@
+---
+id: backups
+sidebar_label: Backups & recovery
+title: Backups and disaster recovery
+description: "What QA-Board's backups cover (the database only) and what you must back up yourself: results, uploads, the server's data folder and keys. Recovery objectives, off-site copies, sensitive data, restore drills."
+---
+QA-Board's backups are **database backups only**: a daily `pg_dump` with docker compose
+([Backups](/docs/backend-admin/deployment#backups)), or with the Helm chart
+([Backups](/docs/backend-admin/kubernetes#backups)). They never include the runs' files, uploaded results, or the
+keys the server keeps on disk. To recover from losing the host or the storage, back up the four parts below, and
+restore them together.
+
+## What to back up {/* #what-to-back-up */}
+| What | Where | Covered by QA-Board's backups? | If you lose it |
+|------|-------|-------------------------------|----------------|
+| **The database**: projects, commits, batches, runs and their metrics, users, roles, tokens, settings, audit log | PostgreSQL (the `db` volume) | ✅ daily `pg_dump` | Everything that lists or compares results |
+| **The results**: runs' outputs and logs, commits' artifacts, exports, series and media logged from code | Your storage (`QABOARD_STORAGE_ROOTS`, the [storage locations](/docs/backend-admin/uploads#storage-locations)), mounted on the server and the runners | ❌ | The files behind every run: images, viewers, logs, diffs. Runs keep their metrics, without files |
+| **Uploaded results**: runs sent over HTTP, by `qa upload` or `qaboard.start_run()` | The upload root, by default the `results` volume at `/mnt/qaboard` ([where the files go](/docs/backend-admin/uploads#layout)) | ❌ | Same as the results |
+| **The server's data folder** | `QABOARD_DATA_DIR` (default `/var/qaboard`, the `data` volume; the chart's `-data` volume) | ❌ | See below |
+| **Secrets and configuration** | `.env`, your site directory, the chart's Secret | ❌ (keep them in your secret store and in git) | Sign-in, the database password, the encryption key |
+
+**The server's data folder** holds:
+- `encryption_key` and `secret_key`, **if the server generated them** (you didn't set `QABOARD_ENCRYPTION_KEY` and
+  `SECRET_KEY`). Without the encryption key, a restored database has everything but its stored secrets: sign-in
+  providers' and integrations' secrets go back to their defaults ([the encryption key](/docs/backend-admin/settings#secrets-and-the-encryption-key)).
+  Without `SECRET_KEY`, everyone is signed out.
+- `shared/`: the groups of tests saved from **Run Tests / Tuning**. They exist only there.
+- Caches it rebuilds by itself: git clones (`git/`), thumbnails, decoded images. No need to back them up.
+
+The other volumes are caches or rebuilt from the images: Cantaloupe's cache, the web app's and docs' bundles, Redis
+(caches, and the committers' avatars, learned again). RabbitMQ's volume has the queued Celery tasks and the accounts
+added with `rabbitmqctl`: back it up only if you created accounts there.
+
+:::tip[Keys first]
+Put `QABOARD_ENCRYPTION_KEY` and `SECRET_KEY` in your secret store before anything else, even when the server
+generated them (`qaboard-admin encryption show-key` prints the key). Never keep them in the same place as the
+database backups: whoever has both reads the stored secrets.
+:::
+
+## Recovery objectives {/* #rpo-rto */}
+- **Recovery point (RPO)**: the daily dump loses up to a day of runs, comments and settings. For less, on
+  Kubernetes, use CloudNativePG's continuous backups to object storage (point-in-time recovery to the second); with
+  docker compose, add your own more frequent `pg_dump`, or archive PostgreSQL's WAL with your backup tool.
+  The results' RPO is your storage's: its snapshots or backups.
+- **Recovery time (RTO)**: restoring the database takes longer than the dump, since it rebuilds the indexes: time it
+  in a drill (see below). The results' RTO is your storage's.
+- **High availability is not a backup**: CloudNativePG's replicas copy a mistaken deletion within a second, and a
+  NAS's replication copies a deleted folder. Keep backups that a mistake or an attacker can't change.
+
+## Keep copies off the host {/* #off-site */}
+QA-Board writes its dumps next to the database, on the same host (compose) or in one volume (the chart), and doesn't
+copy them anywhere else. Copy them off yourself, with your backup system:
+- At least one copy in another site, or on immutable storage (object lock, WORM), out of reach of the server's
+  accounts: ransomware or an admin's mistake on the host must not reach it.
+- Watch the copies, not just the dumps: alert when the newest dump is more than a day old or much smaller than the
+  previous ones (`ls -lt` of the backups folder, or your backup system's checks). A failed dump leaves no file:
+  the backup script never writes a partial one.
+- Retention: with docker compose, daily dumps older than `QABOARD_BACKUP_RETENTION_DAYS` (14) are deleted, but never
+  the newest 3; the chart deletes dumps older than `backup.keepDays` (14). Keep longer copies (e.g. monthly) in your
+  backup system.
+
+## The backups hold sensitive data {/* #sensitive-data */}
+A dump has the users' emails and names, their password hashes (accounts with a password), the hashes of tokens and
+of connected apps' secrets, IP addresses and browsers in the audit log and the tokens' last use, and the commits'
+author emails. Stored secrets are encrypted with the encryption key (not in the dump).
+- Encrypt the copies at rest, and restrict who can read them like you restrict the database.
+- Deleting a user or their data in QA-Board doesn't delete it from the backups: it's gone when the last backup that
+  has it expires. Say so in your retention policy, e.g. for privacy requests.
+- The results can hold your projects' data (images, logs, datasets' outputs): back them up with the access controls
+  of the projects' data, not the server's.
+
+## Restore the database and the files together {/* #consistency */}
+The database and the results are backed up at different times, so after a restore they rarely match. Restore both,
+then reconcile:
+- **Runs in the database whose files are gone** (the files are older than the database): their metrics show,
+  their files don't. [Purge runs whose files are gone](/docs/backend-admin/storage#purge-runs-whose-files-are-gone)
+  removes them from the database. It never purges when the storage looks unmounted.
+- **Runs on disk the database doesn't know** (the database is older than the files): [scan the storage](/docs/backend-admin/storage#scanning-the-storage),
+  then **Add runs to QA-Board**: they're imported again, with their metrics, from their files.
+- Make the storage's snapshot and the dump close in time (the dump runs at 02:00 with docker compose and with the
+  chart's default schedule) to keep these lists short.
+
+## Practice restores {/* #drills */}
+A backup you never restored is a hope. A few times a year, and after each change of your backup setup:
+1. Restore the latest dump on a staging server (`deployments/deploy.py <staging env file> restore-db latest`), with
+   the production encryption key.
+2. Mount a restored copy of the results, or a snapshot, at the same paths.
+3. Check: sign in, open a recent commit and its images, **Admin → Settings** shows no secret to fill again
+   (**Security → Encryption of the stored secrets** decrypts them all).
+4. Write down how long each step took: it's your RTO.
+
+## What QA-Board doesn't do {/* #limits */}
+- It doesn't back up, snapshot or replicate the results: use your storage's features (NAS snapshots, object
+  storage versioning and replication, a backup agent).
+- With docker compose, it doesn't copy the dumps off the host, encrypt them, or alert when they fail.
+- The chart's `pg_dump` CronJob keeps no minimum number of dumps: if backups fail for `keepDays`, the last ones
+  are deleted too. With CloudNativePG, configure its backups instead.

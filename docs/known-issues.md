@@ -46,12 +46,16 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
   website's rsync images), Node 24. The backend runs Python 3.14.
 - Cantaloupe 5.0.8 (Java 21) ships a `logback.xml` that logs nothing with its Logback 1.6:
   `services/cantaloupe/logback.xml` is upstream's fix, put in the jar by the Dockerfile. Drop it with the next release.
-- RabbitMQ (`rabbitmq:3-management`, compose and chart) is EOL. 4.x needs `rabbitmqctl enable_feature_flag all` on
-  3.13 first, and has no classic mirrored queues.
+- RabbitMQ is 4.2 (compose and chart). `deploy.py up` enables the feature flags of a running 3.13 before replacing
+  it, and refuses older 3.x. 4.4 is out: move to it once every site runs 4.2 (4.2's notes list upgrades from 3.13).
 - The baseline migration is empty: a new database can't be built by `alembic upgrade head`. The app creates the
   tables when it's imported (`Base.metadata.create_all`), and `migrate.sh` stamps a new database (no data, no version)
   at the head. A database with data but no version makes `migrate.sh` fail: stamp it by hand at the migration it has.
-- PostgreSQL 12 is EOL (Nov 2024). Upgrade with dump/restore, e.g. when moving to kubernetes (CloudNativePG uses 16).
+- PostgreSQL 12 is EOL (Nov 2024) and still docker-compose.yml's default. `services/db/postgres-18.yml` and
+  `deploy.py upgrade-postgres` move a site to 18 (website: deployment.mdx#upgrading-postgresql; SIRC:
+  `deployments/sirc/runbooks/postgres-18.md`). Once sites moved, make 18 the default in docker-compose.yml (the
+  overlay becomes empty), `scripts/dev.py`'s image and the DROP DATABASE workaround in integration_tests/conftest.py.
+  The chart runs 16 (EOL Nov 2028).
 - Deploys need docker compose ≥ 2.24 on the hosts and on the GitLab runner (`${VAR:+...}` interpolation,
   `pull --policy`). SIRC's hosts run Docker Engine 24 (API 1.43): fine, but not healthcheck `start_interval`.
 - With docker compose, nginx is restarted (~1s of refused connections) when the *proxy image* changes.

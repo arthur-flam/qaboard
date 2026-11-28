@@ -168,7 +168,7 @@ replace results, and make the server act on files in its storage. Either way, on
   pg_restore --clean --if-exists --no-owner -h <database host> -U qaboard -d qaboard qaboard.dump
   kubectl -n qaboard scale deploy/qaboard-backend --replicas 2   # backend.replicas
   ```
-- The results live in your storage: use its snapshots or backups. Keep a copy of the secret too (`SECRET_KEY`).
+- **These backups are the database's only.** The results (and uploaded runs) live in your storage: use its snapshots or backups. Keep a copy of the secret too, apart from the backups: `SECRET_KEY` and above all `QABOARD_ENCRYPTION_KEY`, without which a restored database loses its stored secrets. What else to back up, off-site copies, restore drills: [Backups and disaster recovery](/docs/backend-admin/backups).
 
 ### Upgrades and rollback
 ```bash

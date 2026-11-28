@@ -573,8 +573,10 @@ Pod Security, admission policies, Kueue/ResourceQuota) rather than re-implementi
 
 ## Deployments, services, charts
 
-- **PostgreSQL 12 is EOL** (compose, production.yml): upgrade with dump/restore (known-issues.md). [M, behaviour]
-- **RabbitMQ 3 is EOL**: move to 4.x after `rabbitmqctl enable_feature_flag all` (known-issues.md). [S, behaviour]
+- **PostgreSQL 12 is still compose's default**: 18 is opt-in per site (`services/db/postgres-18.yml`,
+  `deploy.py upgrade-postgres`), until the default flips (known-issues.md). [S, behaviour]
+- **Backups are the database's only**, kept on the host, with no off-host copy or alert when they fail (the TODO in
+  `services/db/backup`). The chart's CronJob keeps no minimum number of dumps. [M, behaviour]
 - **Cantaloupe**: drop `services/cantaloupe/logback.xml` with 5.0.9. 5.0.6 fixed TurboJpegProcessor's 415 on
   non-JPEG output: check whether `ManualSelectionStrategy` in `cantaloupe.properties` is still needed (keep Java2d
   for JPEG: the pixel tooltip and diffs need exact values). [S, no change]

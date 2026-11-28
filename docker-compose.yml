@@ -174,7 +174,7 @@ services:
   # Message broker used by the celery task scheduler
   # https://hub.docker.com/_/rabbitmq
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:4.2-management
     # To store the data at a non-random location
     hostname: rabbitmq-qaboard
     volumes:

@@ -161,6 +161,76 @@ class TestDeploy(unittest.TestCase):
     with self.assertRaises(SystemExit):
       deploy.Deployment(str(example / 'production.env'), site_dir='/no/such/site/dir')
 
+  def test_rabbitmq_upgrades(self):
+    self.assertEqual(deploy.major_minor('3.13.7\n'), (3, 13))
+    self.assertEqual(deploy.major_minor('rabbitmq:4.2-management'), (4, 2))
+    self.assertEqual(deploy.major_minor('registry:5000/rabbitmq:4-management'), (4, 0))
+    self.assertIsNone(deploy.major_minor('rabbitmq:management'))
+    self.assertIsNone(deploy.rabbitmq_upgrade_error('3.13.7', 'rabbitmq:4.2-management'))
+    self.assertIsNone(deploy.rabbitmq_upgrade_error('4.2.1', 'rabbitmq:4.4-management'))
+    self.assertIsNone(deploy.rabbitmq_upgrade_error('3.9.13', 'rabbitmq:3.13-management'))  # 3.x hops: RabbitMQ's call
+    self.assertIsNone(deploy.rabbitmq_upgrade_error('', 'rabbitmq:4.2-management'))  # unknown: try, flags enabled
+    self.assertIn('3.13 first', deploy.rabbitmq_upgrade_error('3.12.1', 'rabbitmq:4.2-management'))
+
+  def fake_docker(self, deployment, running_image, version='3.13.7', volumes=('qaboard_example_db',), flags_fail=False):
+    calls = []
+
+    def run(cmd, **kwargs):
+      calls.append(cmd)
+      fail = (cmd[:3] == ['docker', 'volume', 'inspect'] and cmd[3] not in volumes) or \
+             (flags_fail and 'enable_feature_flag' in cmd)
+      return subprocess.CompletedProcess(cmd, int(fail), stdout='', stderr='error' if fail else '')
+
+    def docker(*args, check=True):
+      calls.append(['docker', *args])
+      if args[0] == 'inspect':
+        return running_image
+      if args[:3] == ('exec', 'c1', 'rabbitmqctl'):
+        return version
+      return ''
+
+    mock.patch.object(deployment, 'containers', lambda service, all_states=True: ['c1']).start()
+    mock.patch.object(deployment, 'docker', docker).start()
+    mock.patch.object(deploy.subprocess, 'run', run).start()
+    self.addCleanup(mock.patch.stopall)
+    return calls
+
+  def test_prepare_rabbitmq(self):
+    config = {'services': {'rabbitmq': {'image': 'rabbitmq:4.2-management'}}}
+    deployment = deploy.Deployment(str(self.env_file))
+    calls = self.fake_docker(deployment, 'rabbitmq:3-management')
+    deployment.prepare_rabbitmq(config)
+    self.assertIn(['docker', 'exec', 'c1', 'rabbitmqctl', 'enable_feature_flag', 'all'], calls)
+
+    with self.subTest('same image: nothing to do'):
+      calls.clear()
+      mock.patch.stopall()
+      calls = self.fake_docker(deployment, 'rabbitmq:4.2-management')
+      deployment.prepare_rabbitmq(config)
+      self.assertFalse([c for c in calls if 'enable_feature_flag' in c])
+    for version, flags_fail in (('3.12.1', False), ('3.13.7', True)):
+      with self.subTest(version=version, flags_fail=flags_fail):
+        mock.patch.stopall()
+        self.fake_docker(deployment, 'rabbitmq:3-management', version=version, flags_fail=flags_fail)
+        with self.assertRaises(SystemExit):
+          deployment.prepare_rabbitmq(config)
+
+  def test_check_db_volumes(self):
+    config = {
+      'services': {'db': {'volumes': [
+        {'type': 'volume', 'source': 'db18', 'target': '/var/lib/postgresql'},
+        {'type': 'bind', 'source': '/srv/db', 'target': '/opt'},
+      ]}},
+      'volumes': {'db18': {'name': 'qaboard_example_db18'}},
+    }
+    deployment = deploy.Deployment(str(self.env_file))
+    self.fake_docker(deployment, '', volumes=('qaboard_example_db18',))
+    deployment.check_db_volumes(config)  # exists
+    mock.patch.stopall()
+    self.fake_docker(deployment, '', volumes=('qaboard_example_db',))
+    with self.assertRaises(SystemExit):
+      deployment.check_db_volumes(config)  # the new version's volume isn't there yet: it would start empty
+
 
 @unittest.skipUnless(has_docker_compose(), "needs docker compose")
 class TestComposeConfig(unittest.TestCase):
