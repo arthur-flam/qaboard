@@ -80,7 +80,7 @@ class TestProjectRefusals(unittest.TestCase):
     self.assertEqual(fix_for({'reason': 'project_archived', 'error': "x", 'hint': None}), None)
 
   def test_namespace_for(self):
-    from qaboard.config import namespace_for
+    from qaboard.conventions import namespace_for
     self.assertIsNone(namespace_for({'name': 'group/repo', 'namespace': 'alice'}, environ={}))
     self.assertIsNone(namespace_for({'name': 'isp'}, environ={}))
     self.assertEqual(namespace_for({'name': 'isp', 'namespace': 'alice'}, environ={'QABOARD_NAMESPACE': 'bob'}), 'alice')

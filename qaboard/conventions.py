@@ -104,6 +104,20 @@ UPLOAD_FIX = ("Set `storage` in qaboard.yaml (or QA_STORAGE) to a folder the ser
               "If your organization has a site package (qaboard-site-...), install it: it says where results are saved.")
 
 
+def namespace_for(project_config: dict, environ=None) -> str | None:
+  """
+  The namespace to put a project.name without one in: project.namespace, else $QABOARD_NAMESPACE. None for names that
+  have one (`group/repo`), or when neither is set.
+  """
+  environ = os.environ if environ is None else environ
+  name = project_config.get('name')
+  if not isinstance(name, str) or '/' in name.strip('/'):
+    return None
+  namespace = project_config.get('namespace') or environ.get('QABOARD_NAMESPACE') or ''
+  namespace = str(namespace).strip().strip('/')
+  return namespace or None
+
+
 def storage_setting(config: dict | None, qa_storage: str | None = None):
   """
   The storage setting that applies to a project, for `qa` and the server alike: $QA_STORAGE, else `storage` in
