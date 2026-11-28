@@ -18,8 +18,9 @@ ENV_FILE describes an environment, e.g. ../qaboard-site/mysite/production.env. I
 that sets at least COMPOSE_FILE and COMPOSE_PROJECT_NAME. Variables from the shell take precedence.
 
 The site directory holds one folder per site: its env files, compose overlay, nginx config, CLI package, site docs...
-(deployments/example/ is one). It's --site-dir, else $QABOARD_SITE_DIR (the shell's, then ENV_FILE's), else the folder
-above ENV_FILE's when ENV_FILE is outside this repository (<site dir>/<site>/<env>.env), else deployments/.
+(deployments/example/ is one). It's --site-dir, else the shell's $QABOARD_SITE_DIR, else the folder
+above ENV_FILE's when ENV_FILE is outside this repository (<site dir>/<site>/<env>.env), else ENV_FILE's
+QABOARD_SITE_DIR, else deployments/.
 Relative paths are from the root of this repository, like docker compose reads them. It's exported as an absolute
 QABOARD_SITE_DIR, which the overlays use in their paths, e.g. ${QABOARD_SITE_DIR}/mysite/nginx.
 
@@ -92,11 +93,14 @@ def from_root(path: str) -> Path:
 
 def site_dir_of(env_file: Path, settings: Dict[str, str], site_dir: Optional[str] = None) -> Path:
     """Where the sites' folders are: see the docstring at the top"""
-    explicit = site_dir or os.environ.get("QABOARD_SITE_DIR") or settings.get("QABOARD_SITE_DIR")
+    explicit = site_dir or os.environ.get("QABOARD_SITE_DIR")
     if explicit:
         return from_root(explicit)
+    # The env file is in its site's folder: wherever the site directory is cloned, that's it
     if not is_relative_to(env_file, ROOT):
         return env_file.parent.parent
+    if settings.get("QABOARD_SITE_DIR"):
+        return from_root(settings["QABOARD_SITE_DIR"])
     return ROOT / "deployments"
 
 

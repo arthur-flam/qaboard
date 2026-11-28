@@ -59,10 +59,10 @@ JOBS: Dict[str, List[str]] = {
   "docker": [
     "backend/**", "qaboard/**", "tests/**", "pyproject.toml", "uv.lock",
     "webapp/**", "website/release-notes/**", "website/package.json", "website/yarn.lock",
-    "services/**", "deployments/*", *DOCKERFILES,
+    "services/**", "deployments/*", "deployments/example/**", *DOCKERFILES,
     ".github/scripts/uploads_e2e.py", ".github/scripts/load.py",
   ],
-  "helm": ["charts/**"],
+  "helm": ["charts/**", "deployments/example/values.yaml"],
   # E2E: the Docker Compose quickstart, with its demo data
   "quickstart": ["deployments/quickstart/**", *DEMO_DATA, *DOCKERFILES],
   # E2E: the chart on kind, demo data, `qa batch` in the cluster, batches the server starts on Kubernetes

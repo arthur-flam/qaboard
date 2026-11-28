@@ -1,0 +1,3 @@
+# This folder is a build context of the images (site-config): its secrets and deploy states never go to the builder
+.env
+.deploy-state.*.json

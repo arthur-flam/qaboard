@@ -2,7 +2,6 @@
 The JSON schemas of qaboard.yaml, the batch, metrics and benchmarks files (qaboard/schemas/) are valid, and accept the repository's files.
 The web app checks the batch files with them too (webapp/src/components/tuning/batches_file.js).
 """
-import os
 import re
 import json
 import unittest
@@ -10,15 +9,19 @@ from pathlib import Path
 
 import yaml
 
+from tests import site_dir_under_test
+
 root_dir = Path(__file__).parent.parent.resolve()
 
 
 def site_qaboard_yamls():
-  """The base qaboard.yaml of the site packages: the example site's, and those in $QABOARD_SITE_DIR (relative to the repository)"""
+  """The base qaboard.yaml of the site packages: the example site's, and those of $QABOARD_SITE_DIR (relative to the repository)"""
   site_dirs = {root_dir / 'deployments'}
-  if os.environ.get('QABOARD_SITE_DIR'):
-    site_dirs.add((root_dir / os.environ['QABOARD_SITE_DIR']).resolve())
+  if site_dir_under_test:
+    site_dirs.add((root_dir / site_dir_under_test).resolve())
   return sorted({path for site_dir in site_dirs for path in site_dir.glob('*/cli/*/qaboard.yaml')})
+
+
 schemas_dir = root_dir / 'qaboard' / 'schemas'
 
 
