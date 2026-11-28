@@ -38,7 +38,7 @@ docker compose --env-file deployments/sirc/production.env run --rm cron-backup-d
 ## Restart
 After the boot, make sure everything is up:
 ```bash
-./at-sirc-before-up.py
+"${QABOARD_SITE_DIR:-deployments}"/sirc/at-sirc-before-up.py
 deployments/deploy.py deployments/sirc/production.env up
 deployments/deploy.py deployments/sirc/production.env status
 ```

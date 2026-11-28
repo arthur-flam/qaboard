@@ -2,6 +2,7 @@
 The JSON schemas of qaboard.yaml, the batch, metrics and benchmarks files (qaboard/schemas/) are valid, and accept the repository's files.
 The web app checks the batch files with them too (webapp/src/components/tuning/batches_file.js).
 """
+import os
 import re
 import json
 import unittest
@@ -10,6 +11,14 @@ from pathlib import Path
 import yaml
 
 root_dir = Path(__file__).parent.parent.resolve()
+
+
+def site_qaboard_yamls():
+  """The base qaboard.yaml of the site packages: the example site's, and those in $QABOARD_SITE_DIR (relative to the repository)"""
+  site_dirs = {root_dir / 'deployments'}
+  if os.environ.get('QABOARD_SITE_DIR'):
+    site_dirs.add((root_dir / os.environ['QABOARD_SITE_DIR']).resolve())
+  return sorted({path for site_dir in site_dirs for path in site_dir.glob('*/cli/*/qaboard.yaml')})
 schemas_dir = root_dir / 'qaboard' / 'schemas'
 
 
@@ -44,7 +53,7 @@ class TestSchemas(unittest.TestCase):
 
   def test_repository_files(self):
     files = {
-      'qaboard.schema.json': [*root_dir.glob('examples/*/qaboard.yaml'), *root_dir.glob('qaboard/sample_project/**/qaboard.yaml'), root_dir / 'docs-media/tests/fixture/qaboard.yaml', root_dir / 'deployments/sirc/cli/qaboard_site_sirc/qaboard.yaml'],
+      'qaboard.schema.json': [*root_dir.glob('examples/*/qaboard.yaml'), *root_dir.glob('qaboard/sample_project/**/qaboard.yaml'), root_dir / 'docs-media/tests/fixture/qaboard.yaml', *site_qaboard_yamls()],
       'batches.schema.json': [*root_dir.glob('examples/*/qa/batches.yaml'), root_dir / 'qaboard/sample_project/qa/batches.yaml', root_dir / 'docs-media/tests/fixture/qa/batches.yaml'],
       'metrics.schema.json': [*root_dir.glob('examples/*/qa/metrics.yaml'), root_dir / 'qaboard/sample_project/qa/metrics.yaml', root_dir / 'docs-media/tests/fixture/qa/metrics.yaml'],
     }

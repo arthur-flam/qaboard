@@ -32,6 +32,11 @@ services:
       - QABOARD_PROTOCOL=http
       - CELERY_BROKER_URL=pyamqp://${QABOARD_RABBITMQ_USER:-guest}:${QABOARD_RABBITMQ_PASSWORD:-guest}@rabbitmq:5672//
       - 'QABOARD_IMAGE_SERVERS={"default": "/iiif", "raw,hex,cde": "/iiif/cde"}'
+      # The SAML settings (python3-saml's settings.json and advanced_settings.json, the SP's keys in certs/): saml/
+      # in this folder. They used to be in the image, in backend/backend/api/saml/
+      - QABOARD_SAML_DIR=/etc/qaboard/saml
+    volumes:
+      - ${QABOARD_SITE_DIR:-./deployments}/dsk/saml:/etc/qaboard/saml:ro
 
   frontend:
     build:

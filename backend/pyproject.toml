@@ -105,8 +105,8 @@ homepage = "https://samsung.github.io/qaboard"
 
 [project.scripts]
 qaboard_clean = "backend.clean:clean"
-qaboard_clean_untracked_hwalg_artifacts = "backend.clean:clean_untracked_hwalg_artifacts"
-qaboard_clean_untracked_hwalg_outputs = "backend.clean:clean_untracked_hwalg_outputs"
+qaboard_clean_untracked_artifacts = "backend.clean:clean_untracked_artifacts"
+qaboard_clean_untracked_outputs = "backend.clean:clean_untracked_outputs"
 qaboard_init_database = "backend.scripts.init_database:init_database"
 qaboard-admin = "backend.scripts.admin:cli"
 

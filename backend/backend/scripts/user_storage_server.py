@@ -3,13 +3,17 @@ When running a migration we need to know user quotas, and update them.
 Since we need multiple server to make the migration server, we need to sync them somehow...
 The IT API is very slow..
 
+QABOARD_QUOTA_URL is the IT API that gives a user's quotas, with a {username} placeholder, e.g.
+    QABOARD_QUOTA_URL='http://quotas.example.com/quota/index.php?username={username}&limit=-1&type=raw'
+It answers one Python dict per line, with Project, Volume, Used and Limit (in MB).
+
 Test URLs
-- http://qatools01:3001/user/arthurf/storage
-- http://qatools01:3001/user/arthurf/storage/project/HP2
-- http://qatools01:3001/user/arthurf/storage/project/HP2/add?usage=2
-- http://qatools01:3001/user/arthurf/storage
+- http://localhost:3001/user/jdoe/storage
+- http://localhost:3001/user/jdoe/storage/project/P1
+- http://localhost:3001/user/jdoe/storage/project/P1/add?usage=2
 
 """
+import os
 import sys
 import json
 from pathlib import Path
@@ -40,7 +44,10 @@ missing_quota_info = {"volume": None, "used": 0, "limit": 100*1024*1024}
 
 
 def fetch_user_quota(username):
-    r = requests.get(f"http://itweb01/quota/index.php?username={username}&limit=-1&type=raw")
+    url = os.environ.get('QABOARD_QUOTA_URL')
+    if not url:
+        sys.exit("Set QABOARD_QUOTA_URL, e.g. 'http://quotas.example.com/quota/index.php?username={username}&limit=-1&type=raw'")
+    r = requests.get(url.format(username=username))
     usage = {}
     # The response is not an array, but 1 line per record...
     for line in r.text.splitlines():
@@ -67,7 +74,7 @@ if user_quota_path.exists():
         users_quotas = json.load(f)
 else:
     users_quotas = {
-        # "arthurf": {
+        # "jdoe": {
         #    "some-volume": {"used": 10, "limit": 1024}
         # }
     }

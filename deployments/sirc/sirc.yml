@@ -99,7 +99,7 @@ services:
     # The server only writes, deletes or runs code in these folders (the shared storage mounted below)
     - QABOARD_STORAGE_ROOTS=/algo:/stage:/home:/raid:/sim:/data:/net
     # Users only read the files under /s/ that their Unix account can read, in these folders. The backend must know
-    # the users' accounts: mount the output of `getent passwd` and `getent group` (services/backend/passwd is partial)
+    # the users' accounts: mount the output of `getent passwd` and `getent group` (backend/passwd is partial)
     # - QABOARD_FILES_UNIX_PERMISSIONS=/home:/raid/users
     # Users' accounts and groups, refreshed daily, since /etc/passwd is partial and /etc/group isn't mounted: export
     # copies are made as the user, with their groups, and file owners are named. Same ssh as the LSF bridge.
@@ -109,8 +109,8 @@ services:
     - QABOARD_GROUPS_COMMAND=ssh ispq@ispq-vdi getent group
 
     volumes:
-    - ./services/backend/passwd:/etc/passwd
-    - ./services/backend/ldap:/etc/ldap
+    - ${QABOARD_SITE_DIR:-./deployments}/sirc/backend/passwd:/etc/passwd
+    - ${QABOARD_SITE_DIR:-./deployments}/sirc/backend/ldap:/etc/ldap
     - /raid:/raid
     - /stage:/stage
     - /home:/home
@@ -146,7 +146,7 @@ services:
     - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.cer:/ssl/publish.cer
     - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.pem:/ssl/publish.pem
     - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.key:/ssl/publish.key
-    - ./services/nginx/passwd:/etc/passwd
+    - ${QABOARD_SITE_DIR:-./deployments}/sirc/proxy/passwd:/etc/passwd
     - /home:/home
     - /raid:/raid
     - /stage:/stage
