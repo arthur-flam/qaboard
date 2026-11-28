@@ -6,17 +6,27 @@
 """
 Deploys QA-Board with docker compose, with zero-downtime rolling updates of the backend.
 
-Usage (from the root of the repository):
-    deployments/deploy.py ENV_FILE up [--version VERSION] [--build]
+Usage (from anywhere: compose runs in the root of this repository):
+    deployments/deploy.py [--site-dir DIR] ENV_FILE up [--version VERSION] [--build]
     deployments/deploy.py ENV_FILE rollback
     deployments/deploy.py ENV_FILE status
     deployments/deploy.py ENV_FILE restore-db [DUMP|latest]
     deployments/deploy.py ENV_FILE seed-db [--source URL] [--days N]   # recent data only, e.g. for staging
     deployments/deploy.py ENV_FILE compose ARGS...     # e.g. compose logs -f backend
 
-ENV_FILE describes an environment, e.g. deployments/sirc/production.env. It's a docker compose env file
+ENV_FILE describes an environment, e.g. ../qaboard-site/mysite/production.env. It's a docker compose env file
 that sets at least COMPOSE_FILE and COMPOSE_PROJECT_NAME. Variables from the shell take precedence.
-Secrets stay in .env: the backend reads it, and we pass the compose files the ones they need (DOTENV_SECRETS).
+
+The site directory holds one folder per site: its env files, compose overlay, nginx config, CLI package, site docs...
+(deployments/example/ is one). It's --site-dir, else $QABOARD_SITE_DIR (the shell's, then ENV_FILE's), else the folder
+above ENV_FILE's when ENV_FILE is outside this repository (<site dir>/<site>/<env>.env), else deployments/.
+Relative paths are from the root of this repository, like docker compose reads them. It's exported as an absolute
+QABOARD_SITE_DIR, which the overlays use in their paths, e.g. ${QABOARD_SITE_DIR}/mysite/nginx.
+
+Secrets stay in .env next to ENV_FILE ($QABOARD_DOTENV overrides it; without it, or for env files in this repository,
+this repository's .env): the backend reads it (docker-compose.yml), and we pass the compose files the ones they need
+(DOTENV_SECRETS).
+The deployed versions, for `rollback` and `status`, are kept next to ENV_FILE too, in .deploy-state.<project>.json.
 
 `up` does:
 1. Pull the images for $QABOARD_VERSION (or build them with --build)
@@ -66,6 +76,47 @@ def die(msg: str) -> None:
     sys.exit(1)
 
 
+def is_relative_to(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+        return True
+    except ValueError:
+        return False
+
+
+def from_root(path: str) -> Path:
+    # ${QABOARD_SITE_DIR:-../site}: the value the env file gives when the shell doesn't set it
+    path = re.sub(r"^\$\{[A-Z_]+:-(.*)\}$", r"\1", path)
+    return (ROOT / os.path.expanduser(path)).resolve()
+
+
+def site_dir_of(env_file: Path, settings: Dict[str, str], site_dir: Optional[str] = None) -> Path:
+    """Where the sites' folders are: see the docstring at the top"""
+    explicit = site_dir or os.environ.get("QABOARD_SITE_DIR") or settings.get("QABOARD_SITE_DIR")
+    if explicit:
+        return from_root(explicit)
+    if not is_relative_to(env_file, ROOT):
+        return env_file.parent.parent
+    return ROOT / "deployments"
+
+
+def dotenv_of(env_file: Path, settings: Dict[str, str]) -> Optional[Path]:
+    """
+    The secrets' .env: $QABOARD_DOTENV, else next to the env file, else this repository's (where it used to be).
+    For env files in this repository, its .env comes first, as it always did.
+    """
+    explicit = os.environ.get("QABOARD_DOTENV") or settings.get("QABOARD_DOTENV")
+    if explicit:
+        return from_root(explicit)
+    candidates = [env_file.parent / ".env", ROOT / ".env"]
+    if is_relative_to(env_file, ROOT):
+        candidates.reverse()
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def read_env_file(path: Path) -> Dict[str, str]:
     """Minimal parser for docker compose env files (KEY=VALUE, comments, optional quotes)."""
     env = {}
@@ -85,7 +136,7 @@ def read_env_file(path: Path) -> Dict[str, str]:
 
 
 class Deployment:
-    def __init__(self, env_file: str, version: Optional[str] = None):
+    def __init__(self, env_file: str, version: Optional[str] = None, site_dir: Optional[str] = None):
         self.env_file = Path(env_file).resolve()
         if not self.env_file.exists():
             die(f"{env_file} does not exist")
@@ -93,13 +144,22 @@ class Deployment:
         # Like docker compose: the shell's environment takes precedence over the env file
         self.settings = {**file_env, **{k: os.environ[k] for k in file_env if k in os.environ}}
         self.project = self.settings.get("COMPOSE_PROJECT_NAME") or die(f"Set COMPOSE_PROJECT_NAME in {env_file}")
-        self.state_path = ROOT / f".deploy-state.{self.project}.json"
-        self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {"history": []}
+        self.site_dir = site_dir_of(self.env_file, self.settings, site_dir)
+        if not self.site_dir.is_dir():
+            die(f"The site directory {self.site_dir} does not exist: clone your site's repository there, "
+                "or pass --site-dir (see website/docs/backend-admin/site-directory.mdx)")
+        self.state_path = self.env_file.parent / f".deploy-state.{self.project}.json"
+        self.state = self.read_state()
         self.version = version or os.environ.get("QABOARD_VERSION") or self.deployed_version()
-        self.env = {**os.environ}
-        dotenv = ROOT / ".env"
-        if dotenv.is_file():
-            secrets = read_env_file(dotenv)
+        # The overlays' paths: ${QABOARD_SITE_DIR}/<site>/...
+        self.env = {**os.environ, "QABOARD_SITE_DIR": str(self.site_dir)}
+        self.dotenv = dotenv_of(self.env_file, self.settings)
+        if self.dotenv:
+            # docker-compose.yml gives it to the backend
+            self.env["QABOARD_DOTENV"] = str(self.dotenv)
+            if self.dotenv == ROOT / ".env" and not is_relative_to(self.env_file, ROOT):
+                log(f"The secrets are read from {self.dotenv}: move them next to the env file, to {self.env_file.parent / '.env'}")
+            secrets = read_env_file(self.dotenv)
             for key in DOTENV_SECRETS:
                 if key in secrets and key not in self.env and key not in file_env:
                     self.env[key] = secrets[key]
@@ -107,6 +167,17 @@ class Deployment:
             self.env["QABOARD_VERSION"] = self.version
         else:
             self.env.pop("QABOARD_VERSION", None)
+
+    def read_state(self) -> dict:
+        if self.state_path.exists():
+            return json.loads(self.state_path.read_text())
+        # It used to be in the repository's root, or next to the site's env files in deployments/<site>/: read from
+        # there, written next to the env file from now on
+        for legacy in (ROOT / self.state_path.name, ROOT / "deployments" / self.env_file.parent.name / self.state_path.name):
+            if legacy.exists():
+                log(f"Reading the deployed versions from {legacy}: from now on they are kept in {self.state_path}")
+                return json.loads(legacy.read_text())
+        return {"history": []}
 
     # --- helpers ---
     def compose_cmd(self, *args: str) -> List[str]:
@@ -230,7 +301,8 @@ class Deployment:
         return todo
 
     def run_hook(self) -> None:
-        # e.g. at SIRC: make sure autofs mounts are mounted before we bind them in containers
+        # e.g. make sure autofs mounts are mounted before we bind them in containers. It runs in the repository's root,
+        # with QABOARD_SITE_DIR set: "$QABOARD_SITE_DIR/mysite/before-up.py"
         hook = self.settings.get("QABOARD_DEPLOY_PRE_HOOK")
         if hook:
             log(f"Running pre-deploy hook: {hook}")
@@ -451,7 +523,9 @@ class Deployment:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("env_file", help="e.g. deployments/sirc/production.env")
+    parser.add_argument("--site-dir", help="the folder with the sites' folders (default: $QABOARD_SITE_DIR, else the "
+                        "folder above ENV_FILE's when it's outside this repository, else deployments/)")
+    parser.add_argument("env_file", help="e.g. ../qaboard-site/mysite/production.env")
     sub = parser.add_subparsers(dest="command", required=True)
     up = sub.add_parser("up", help="deploy a version")
     up.add_argument("--version", help="image version (default: $QABOARD_VERSION, else the deployed version)")
@@ -470,7 +544,7 @@ def main() -> None:
     compose.add_argument("args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
-    deployment = Deployment(args.env_file, version=getattr(args, "version", None))
+    deployment = Deployment(args.env_file, version=getattr(args, "version", None), site_dir=args.site_dir)
     if args.command == "up":
         deployment.up(build=args.build, pull=not args.no_pull, init=args.init)
     elif args.command == "rollback":

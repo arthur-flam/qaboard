@@ -1,5 +1,5 @@
 # SIRC (Samsung Israel R&D Center) compose overlay
-# Usage: docker compose -f docker-compose.yml -f production.yml -f deployments/sirc/sirc.yml -f deployments/sirc/prod.yml up
+# Usage: deployments/deploy.py "$QABOARD_SITE_DIR"/sirc/production.env up
 
 x-sirc-build-args: &sirc-build-args
   PROXY_URL: "http://webproxy.transchip.com:8080"
@@ -14,7 +14,7 @@ services:
     image: "gitlab-srv:4567/common-infrastructure/qaboard:fluentd${QABOARD_VERSION:+-$QABOARD_VERSION}"
     restart: always
     build:
-      context: deployments/sirc/fluentd
+      context: ${QABOARD_SITE_DIR:-./deployments}/sirc/fluentd
       dockerfile: fluentd.Dockerfile
       args:
         <<: *sirc-build-args
@@ -23,7 +23,7 @@ services:
       - "24224:24224"
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - ./deployments/sirc/fluentd/fluentd.conf:/fluentd/etc/fluentd.conf
+      - ${QABOARD_SITE_DIR:-./deployments}/sirc/fluentd/fluentd.conf:/fluentd/etc/fluentd.conf
     environment:
       - FLUENTD_CONF=fluentd.conf
 

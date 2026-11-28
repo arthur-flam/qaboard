@@ -6,6 +6,11 @@
 # - dev: node_modules and the sources, used by development.yml (`yarn start`)
 # - build: the static site
 # - production (default): only the site, copied to the /builds volume served by nginx
+# Named build context:
+# - site-config: your site's folder in your site directory, whose site-docs/ are built in with QABOARD_SITE, given by
+#   your overlay (`additional_contexts`, see deployments/example/example.yml). Without it, the empty stage below.
+FROM scratch AS site-config
+
 FROM node:24-alpine AS dev
 WORKDIR /website
 
@@ -50,9 +55,14 @@ COPY website/ ./
 ENV QABOARD_DOCS_FOR_WEBAPP=true
 ARG QABOARD_URL
 ENV QABOARD_URL=$QABOARD_URL
-# Adds the docs for the users of your site, from site-docs/$QABOARD_SITE/ (e.g. sirc)
+# Adds the docs for the users of your site: the site-docs/ of the site-config build context (your site's folder),
+# copied where docusaurus.config.ts also looks, website/site-docs/$QABOARD_SITE/
 ARG QABOARD_SITE=""
 ENV QABOARD_SITE=$QABOARD_SITE
+RUN --mount=type=bind,from=site-config,target=/site-config \
+    if [ -n "$QABOARD_SITE" ] && [ -f /site-config/site-docs/_site.json ]; then \
+      rm -rf "site-docs/$QABOARD_SITE" && mkdir -p site-docs && cp -r /site-config/site-docs "site-docs/$QABOARD_SITE"; \
+    fi
 # The build downloads the docs' screenshots and clips (docs-media/README.md): without network access, set
 # QABOARD_MEDIA=placeholder, or QABOARD_MEDIA_BASE_URL to a mirror of the media bucket. When a proxy blocks some files
 # (e.g. videos), QABOARD_MEDIA_MISSING=remote has readers load those shots from the bucket (or the mirror), or

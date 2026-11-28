@@ -1,5 +1,6 @@
 # SIRC (Samsung Israel R&D Center) compose overlay
-# Usage: docker compose -f docker-compose.yml -f production.yml -f deployments/sirc/sirc.yml up
+# Usage: deployments/deploy.py "$QABOARD_SITE_DIR"/sirc/production.env up (see production.env)
+# Paths use ${QABOARD_SITE_DIR}, the folder with this site's folder (default: deployments/ in the qaboard repository)
 
 x-sirc-build-args: &sirc-build-args
   PROXY_URL: "http://webproxy.transchip.com:8080"
@@ -35,10 +36,13 @@ services:
         GIT_SSL_VERIFY: "false"
         QABOARD_EXTRA: "sirc"
         # sirc-sso.sirc.co.il doesn't send its intermediate certificate
-        CA_CERTS: "deployments/sirc/certs/godaddy-g2-intermediate.crt"
+        CA_CERTS: "certs/godaddy-g2-intermediate.crt"
+      # This folder: the site package (cli/), the certificates (certs/)
+      additional_contexts:
+        site-config: ${QABOARD_SITE_DIR:-./deployments}/sirc
     env_file:
       - .env
-      - deployments/sirc/.env
+      - ${QABOARD_SITE_DIR:-./deployments}/sirc/.env
     environment:
     - GITLAB_HOST=http://gitlab-srv
     - QABOARD_PROXY_HOSTS=gitlab-srv,gitlab-srv.transchip.com,dag.sirc.co.il
@@ -136,7 +140,7 @@ services:
     volumes:
     # The folder, not each file: a file's bind mount keeps showing the old version after `git checkout` replaces it,
     # so deploys would reload nginx with the old configuration (see services/nginx/configure.sh)
-    - ./deployments/sirc/nginx:/tmp/deployment/nginx/conf.d:ro
+    - ${QABOARD_SITE_DIR:-./deployments}/sirc/nginx:/tmp/deployment/nginx/conf.d:ro
     - /home/ispq/qaboard_prod/services/nginx/ssl/qa/qa.key:/ssl/cert.key
     - /home/ispq/qaboard_prod/services/nginx/ssl/qa/cert.cer:/ssl/cert.cer
     - /home/ispq/qaboard_prod/services/nginx/ssl/publish/publish.cer:/ssl/publish.cer
@@ -203,6 +207,9 @@ services:
       args:
         <<: *sirc-build-args
         NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      # The docs for SIRC's users: site-docs/ in this folder (QABOARD_SITE=sirc, in the env files)
+      additional_contexts:
+        site-config: ${QABOARD_SITE_DIR:-./deployments}/sirc
 
   # Shares the backend image (which installs flower>=2.1.0), so only backend needs building
   flower:

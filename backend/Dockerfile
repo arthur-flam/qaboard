@@ -7,12 +7,18 @@
 # - site: site-specific packages (QABOARD_EXTRA, CDE_PACKAGE)
 # - dev: used by development.yml, which mounts the code: the compilers stay, for `uv run`
 # - production (default): base + the dependencies + the code, without the compilers and headers
+# Named build context:
+# - site-config: your site's folder in your site directory (its CLI package in cli/, CA certificates...), given by
+#   your overlay: `additional_contexts: {site-config: "${QABOARD_SITE_DIR}/mysite"}` (deployments/example/example.yml).
+#   Without it, the empty stage below: no site package.
+FROM scratch AS site-config
+
 FROM python:3.14-slim-trixie AS base
 
 LABEL maintainer="arthurf.flam@samsung.com"
 
 # Proxy/cert configuration — no-ops when args are empty (open-source builds)
-# SIRC/DSK pass values via compose overlay build args
+# Sites behind a proxy pass values via their compose overlay's build args
 ARG PROXY_URL=""
 ARG CA_CERT_URL=""
 ARG NO_PROXY=""
@@ -150,24 +156,27 @@ RUN --mount=type=ssh \
     --no-install-package qaboard
 
 
-# Install site-specific extras (e.g. QABOARD_EXTRA=sirc) in their own stage: they are installed again only when
-# deployments/ or the args change, not with each change of the code
+# Install the site package (QABOARD_EXTRA=mysite: qaboard-site-mysite, in the site-config context's cli/) in its own
+# stage: it's installed again only when the site's folder or the args change, not with each change of the code
 FROM base AS site
 WORKDIR /qaboard/backend
 ARG QABOARD_EXTRA=""
 ARG CDE_PACKAGE=""
-# deployments/ is only mounted during the build: images don't contain other sites' configuration
+# The site's folder is only mounted during the build: images don't contain its configuration
 RUN --mount=type=ssh \
     --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=deployments,target=/qaboard/deployments,rw \
+    --mount=type=bind,from=site-config,target=/qaboard/site-config,rw \
     mkdir -p /opt/site-packages && \
     if [ -n "$QABOARD_EXTRA" ]; then \
+      if [ ! -f /qaboard/site-config/cli/pyproject.toml ]; then \
+        echo "QABOARD_EXTRA=$QABOARD_EXTRA but there is no cli/pyproject.toml in the site-config build context:" \
+             "give your site's folder with additional_contexts in your overlay (deployments/example/example.yml)" >&2; \
+        exit 1; \
+      fi; \
       ## Cannot work as uv requires to resolve even extras...
       # uv sync --extra "$QABOARD_EXTRA" --refresh-package qaboard; \
-      ## Annoying for dev and when managing lock-files
-      # uv pip install "qaboard-site-$QABOARD_EXTRA @ file:../deployments/$QABOARD_EXTRA/cli" "$CDE_PACKAGE"; \
       uv pip install --no-deps --target /opt/site-packages \
-        "qaboard-site-$QABOARD_EXTRA @ file:../deployments/$QABOARD_EXTRA/cli" "$CDE_PACKAGE"; \
+        "qaboard-site-$QABOARD_EXTRA @ file:///qaboard/site-config/cli" ${CDE_PACKAGE:+"$CDE_PACKAGE"}; \
     fi
 
 
@@ -228,10 +237,11 @@ ENV QABOARD_EXTRA=${QABOARD_EXTRA}
 # Where we keep a cache of application data (e.g. git clones)
 VOLUME /var/qaboard
 
-# More CAs to trust: space-separated *.crt paths in the build context, e.g. an intermediate certificate that the IdP
-# doesn't send (browsers find it, requests doesn't: "unable to get local issuer certificate"). Late: it reads the context
+# More CAs to trust: space-separated *.crt paths in your site's folder (the site-config build context), e.g. an
+# intermediate certificate that the IdP doesn't send (browsers find it, requests doesn't: "unable to get local issuer
+# certificate"). Late: it reads the context
 ARG CA_CERTS=""
-RUN --mount=type=bind,target=/context \
+RUN --mount=type=bind,from=site-config,target=/context \
     set -e; if [ -n "$CA_CERTS" ]; then \
       for cert in $CA_CERTS; do cp "/context/$cert" /usr/local/share/ca-certificates/; done && \
       update-ca-certificates; \

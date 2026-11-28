@@ -1,3 +1,6 @@
+# Your site's folder, given with additional_contexts (see backend/Dockerfile). Without it: no site package
+FROM scratch AS site-config
+
 FROM mher/flower:2.2
 USER root
 
@@ -39,7 +42,7 @@ COPY . /qaboard
 
 RUN pip install /qaboard
 
-# Install site-specific extras (e.g. QABOARD_EXTRA=sirc)
+# Install the site package (QABOARD_EXTRA=mysite), from the site-config build context (see backend/Dockerfile)
 ARG GIT_SERVER=""
 RUN --mount=type=ssh \
     if [ -n "$GIT_SERVER" ]; then \
@@ -51,9 +54,10 @@ ARG QABOARD_EXTRA=""
 ARG CDE_PACKAGE=""
 RUN --mount=type=ssh \
     --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,from=site-config,target=/qaboard-site-config,rw \
     if [ -n "$QABOARD_EXTRA" ]; then \
       pip install --no-deps --target /opt/site-packages \
-        "qaboard-site-$QABOARD_EXTRA @ file:../deployments/$QABOARD_EXTRA/cli" "$CDE_PACKAGE"; \
+        "qaboard-site-$QABOARD_EXTRA @ file:///qaboard-site-config/cli" ${CDE_PACKAGE:+"$CDE_PACKAGE"}; \
     fi
 
 USER flower

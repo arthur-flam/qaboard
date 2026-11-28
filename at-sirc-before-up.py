@@ -52,7 +52,8 @@ with sirc_config_path.open() as f:
     sirc_config = yaml.load(f, Loader=ComposeLoader)
 volumes = sirc_config['services']['proxy']['volumes']
 volumes.append("/home:/home")
-volumes = [Path(v.split(':')[0]) for v in volumes]
+# Only the host's absolute paths: not the site directory's (${QABOARD_SITE_DIR}/...)
+volumes = [Path(v.split(':')[0]) for v in volumes if v.startswith('/')]
 
 for v in volumes:
     if "dockermounts" in str(v):
