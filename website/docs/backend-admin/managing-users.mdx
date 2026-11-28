@@ -122,7 +122,7 @@ manages it.
 
 ### Environment variables
 :::note
-With docker compose, set them in `services.backend.environment` in your site overlay (see `deployments/example.yml`),
+With docker compose, set them in `services.backend.environment` in your site overlay (see `deployments/example/example.yml`),
 and the passwords in `.env`, which the backend reads. `QABOARD_LOGIN_TYPE`, `QABOARD_LOGIN_REQUIRED`,
 `QABOARD_LOGIN_RESTRICTED`, `QABOARD_LOGIN_RESTRICTED_YAML`, `QABOARD_ADMINS` and `QABOARD_INGEST_AUTH` don't work
 in `.env` with `deploy.py`: *docker-compose.yml* sets them from your env file (see

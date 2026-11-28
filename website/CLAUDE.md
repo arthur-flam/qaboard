@@ -25,8 +25,9 @@ uv run release-notes/release_notes.py check   # notes' frontmatter, docs links, 
 - Entry points by audience: `docs/get-started/overview.mdx` ("Where to start") and the homepage's "Where to start"
   section (`src/pages/`): update both when a new audience-level entry point appears.
 - Without access to the media host, build with `QABOARD_MEDIA=remote yarn build` (CI builds with the media).
-- Pages for one site's users: `site-docs/<site>/`, built only into that site's web app (`QABOARD_SITE`). Internal
-  runbooks: `deployments/<site>/runbooks/`, not here.
+- Pages for one site's users: `site-docs/` in the site's folder of its site directory (`$QABOARD_SITE_DIR/<site>/`,
+  the example: `deployments/example/site-docs/`), built only into that site's web app (`QABOARD_SITE`). Sites' pages and
+  runbooks live in their own repositories, never here.
 
 ## Release notes
 Shown in the web app's "What's new" panel (pops up once when a period with notes is over; also the sidebar's sparkles

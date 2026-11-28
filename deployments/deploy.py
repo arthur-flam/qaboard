@@ -158,6 +158,8 @@ class Deployment:
         # The overlays' paths: ${QABOARD_SITE_DIR}/<site>/...
         self.env = {**os.environ, "QABOARD_SITE_DIR": str(self.site_dir)}
         self.dotenv = dotenv_of(self.env_file, self.settings)
+        if self.dotenv and not self.dotenv.is_file():
+            die(f"QABOARD_DOTENV is {self.dotenv}, which does not exist")
         if self.dotenv:
             # docker-compose.yml gives it to the backend
             self.env["QABOARD_DOTENV"] = str(self.dotenv)
