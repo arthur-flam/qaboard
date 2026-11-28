@@ -326,7 +326,7 @@ services:
       - source: pgadmin-passfile
         target: /pgadmin4/passfile
     # Only on this host: it can read and change the whole database. From elsewhere: ssh -L 5050:localhost:5050 <host>,
-    # or serve it through nginx (like /pgadmin4/ in deployments/sirc/nginx/qaboard.conf)
+    # or serve it through nginx (/pgadmin4/: include services/nginx/snippets/pgadmin.conf in your site's nginx config)
     ports:
     - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
 

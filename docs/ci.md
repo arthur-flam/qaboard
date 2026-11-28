@@ -84,5 +84,5 @@ Edit `JOBS` in `.github/scripts/ci_changes.py`, and its cases in `tests/test_ci_
 job: a file the mapping doesn't know runs the Python tests. A new job in `ci.yaml` needs an output of `changes`,
 an `if:` on it, and a place in `ci-ok`'s `needs` (the test checks it).
 
-GitLab (`.gitlab-ci.yml`): merge requests skip `lint`, `type-check` and `webapp-tests` when they don't change their
-inputs; master, which deploys, runs everything.
+Sites that deploy from their own CI keep its configuration in their site directory (e.g. SIRC's GitLab pipeline,
+`sirc/qaboard.gitlab-ci.yml` in its site repository): see website/docs/backend-admin/site-directory.mdx.

@@ -3,23 +3,25 @@
 Open-source, SIRC and DSK now share `master`. This lists what is still site-specific or rough,
 roughly by priority. None of it breaks the open-source version.
 
-## Deployment configs live in this repository
-`deployments/sirc` and `deployments/dsk` (compose overlays, nginx, CLI site packages, certificates, `.envrc`)
-are not sensitive, but they are internal. When it's worth it, move each to its own small private repo:
-- Keep `deployments/example.yml` here as the template.
-- Clone the site repo next to this one and point compose at it, e.g. `-f ../qaboard-deployments/sirc/sirc.yml`.
-  Relative paths in overlays are resolved from the first compose file's directory (this repo),
-  so `./deployments/sirc/...` paths become `../qaboard-deployments/sirc/...`.
-- The backend image only needs the site's CLI package at build time. The Dockerfile bind-mounts `deployments/`
-  during the build; with a separate repo, use a compose `additional_contexts: {deployments: ../qaboard-deployments}`
-  and `--mount=type=bind,from=deployments,...` in the Dockerfile.
-- `.gitlab-ci.yml` would clone the site repo before deploying.
+## Deployment configs live in their own repository
+SIRC's and DSK's configuration (overlays, env files, nginx, site packages, certificates, `.envrc`, site docs,
+runbooks, the GitLab pipeline) is in a private repository, `qaboard-deployments` (`sirc/`, `dsk/`), cloned next to
+this one: their *site directory* (`QABOARD_SITE_DIR`, website/docs/backend-admin/site-directory.mdx). Its README has
+the day-to-day commands and the migration runbook. `deployments/example/` is the template, checked by CI.
+- **Still in this repository's git history**: removing the folders from HEAD doesn't purge them. Paths to purge, if
+  wanted (a history rewrite of every clone and fork): `deployments/sirc/`, `deployments/dsk/`,
+  `website/site-docs/sirc/`, `website/site-docs/dsk/`, `services/backend/passwd`, `services/backend/ldap/`,
+  `services/nginx/passwd`, `backend/backend/api/saml/settings.json`, `backend/backend/api/saml/dev_settings.json`,
+  the IdP certificates in older versions of `backend/backend/api/saml/settings_example.json`, `at-sirc-before-up.py`,
+  `.gitlab-ci.yml`, the SIRC scripts that were in `backend/backend/scripts/` (migrate.py, migration_utils.py,
+  gen_parallel_migration.py...), the HW_ALG folders in older `backend/backend/clean.py`, the quota URL in older
+  `backend/backend/scripts/user_storage_server.py`, and the SIRC path mappings in older `tests/test_compat.py`.
 
 ## cde-python (was a git submodule)
 `third_party/cde-python` was unused: images and the SIRC site package install `cde` with pip
 (`CDE_PACKAGE` build arg, `qaboard-site-sirc` dependency). To hack on it locally:
 ```bash
-git clone git@gitlab-srv:cde/cde-python.git ../cde-python
+git clone <cde-python repository> ../cde-python
 uv pip install -e ../cde-python
 ```
 
@@ -32,13 +34,11 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
 - webapp: projects with `legacy` (`migrate_legacy_commits.py`) are hidden from the projects lists (`is_listed` in
   `explore/tree.js`).
 - webapp: a few docs links bypass `docs_root` (`tuning/optimize_config.js`, `login/SetupPage.jsx`).
-- CLI: `\\netapp\vol23_algo` → `vol24_algo` rewrite (`compat.py`), `CDE-Users/HW_ALG` manifest rules (`utils.py`),
-  `WEBCDE_CONNECTION_ID` in the celery runner, `idb.py`.
-- backend: DSK's SAML settings are in `backend/backend/api/saml/settings.json` (DSK must set `QABOARD_SAML_DIR`),
-  HW_ALG cleanup commands (`clean.py`), one-off SIRC scripts in `backend/backend/scripts/`,
-  `PYTHONWARNINGS` hides TLS warnings for everyone (`backend/Dockerfile`).
-- services: `services/backend/passwd`, `services/nginx/passwd` and `services/backend/ldap/` are SIRC data
-  (only mounted by `sirc.yml`); nginx runs with the `uucp` group.
+- CLI: `CDE-Users/HW_ALG` manifest rules (`utils.py`), `WEBCDE_CONNECTION_ID` in the celery runner, `idb.py`.
+  (The `vol23_algo` → `vol24_algo` rewrite is now SIRC's `QABOARD_PATH_REWRITES`, in its site package.)
+- backend: `PYTHONWARNINGS` hides TLS warnings for everyone (`backend/Dockerfile`). (DSK's SAML settings, the
+  HW_ALG folders of the untracked-folders cleanups and the one-off SIRC scripts are in the site repository.)
+- services: nginx runs with the `uucp` group. (The passwd files and LDAP config are in the site repository.)
 
 ## Ops
 - The cantaloupe admin endpoint is enabled with `qaboard`/`qaboard`. It is only reachable inside the compose network.
@@ -59,7 +59,7 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
 - SIRC staging uses the shared storage, the LSF bridge and `/home/ispq/qaboard/shared` like production.
 - The SIRC GitLab pipeline was written without access to SIRC's GitLab/runners: check on the first run that
   the registry is enabled (else `QABOARD_BUILD_ON_HOST=1`), and the one-time host setup in
-  `deployments/sirc/runbooks/deployment.md`.
+  `sirc/runbooks/deployment.md` of the site repository.
 - Publishing:
   - PyPI: create a GitHub release with a tag matching the version (`pypy.yml`). Needs trusted publishing
     configured on PyPI, or a `PYPI_API_TOKEN` secret.
@@ -69,4 +69,4 @@ Harmless for other sites (it only triggers on SIRC project names, paths or files
 - The website deploy workflow only runs on master pushes that touch what the site builds from (`paths:` in
   `website.yml`: `website/`, the chart, examples, the shots...).
 - The helm chart (`charts/qaboard`) runs on kind in CI (`helm-e2e`), not yet on a real cluster.
-  `deployments/sirc/values.yaml` has `TODO(sirc)`s, see `website/docs/backend-admin/kubernetes.mdx`.
+  SIRC's `sirc/values.yaml` has `TODO(sirc)`s, see `website/docs/backend-admin/kubernetes.mdx`.

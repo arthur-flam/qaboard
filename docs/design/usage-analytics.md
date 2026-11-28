@@ -42,7 +42,7 @@ Status: decided 2026-11-03, M1-M3 in progress. Section 12 has the contract as bu
 - Users have groups (`groups`, `group_members`, synced from LDAP and OIDC claims daily): "usage by team" is a join away.
   Projects are strings with the subproject path (`repo/subproject`): "usage per product and subproject" is a `GROUP BY`.
 - The jobs worker runs nightly maintenance (storage usage, groups): the place for retention and any rollup.
-- Metabase at SIRC reads the QA-Board database directly (`deployments/sirc/metabase.yml`).
+- Metabase at SIRC reads the QA-Board database directly (`qaboard-deployments/sirc/metabase.yml`).
 - The `qa` CLI knows if it runs in CI (`config.is_ci`, `run_context()`), has a server URL and a token from
   `qa auth login` (`api.headers_for`), an `--offline` flag, and already does one cheap network call a day
   (`check_for_updates`, PyPI, 1s timeout).
