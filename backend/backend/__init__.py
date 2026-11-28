@@ -122,6 +122,7 @@ import backend.api.tasks
 import backend.api.usage
 import backend.api.files
 import backend.api.access
+import backend.api.projects
 import backend.api.admin_access
 import backend.api.openapi
 import backend.api.setup

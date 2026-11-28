@@ -4,7 +4,7 @@
 FROM alpine:3.24
 
 # Proxy configuration — no-ops when args are empty (open-source builds)
-# e.g. at SIRC: --build-arg PROXY_URL=http://webproxy.transchip.com:8080
+# e.g. --build-arg PROXY_URL=http://proxy.example.com:8080
 ARG PROXY_URL=""
 ENV http_proxy=${PROXY_URL} \
     https_proxy=${PROXY_URL} \

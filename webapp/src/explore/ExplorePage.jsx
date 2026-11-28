@@ -40,6 +40,7 @@ import { project_web_url } from "../utils"
 import { build_tree, filter_projects, count_projects, is_listed, quiet_tooltip } from "./tree"
 import { Sparkline } from "./Sparkline"
 import { usePageTitle, app_title } from "../pageTitle";
+import { NewProjectButton } from "../projects/NewProjectDialog";
 
 
 const activity_words = { human: 'last used', run: 'last run', commit: 'last commit' };
@@ -266,7 +267,10 @@ export const ExploreList = () => {
           onChange={e => setQuery(e.target.value)}
         />
       </div>
-      {!isPending && !failed && <Tag intent={query ? Intent.PRIMARY : undefined} minimal>{nb_shown} {query ? 'filtered ' : ''}project{nb_shown === 1 ? '' : 's'}</Tag>}
+      <div style={{display: 'flex', gap: 10, alignItems: 'baseline'}}>
+        {!isPending && !failed && <Tag intent={query ? Intent.PRIMARY : undefined} minimal>{nb_shown} {query ? 'filtered ' : ''}project{nb_shown === 1 ? '' : 's'}</Tag>}
+        <NewProjectButton size="small"/>
+      </div>
     </div>
     {warnings}
     {content}

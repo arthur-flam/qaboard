@@ -286,6 +286,17 @@ DEFINITIONS = {
     'developer', str, env='QABOARD_SIGNED_IN_ROLE', choices=('viewer', 'developer'),
     label="Role of signed-in users", group='access',
   ),
+  'projects.create': Definition(
+    "Who creates new projects, explicitly or with their first results: \"anywhere\" (anyone who can send results, in any namespace: as before namespaces), \"namespace-members\" (developers and owners of the namespace, e.g. `camera-algo` for camera-algo/isp, or its owner for a personal namespace), \"admins\". Existing projects aren't affected.",
+    'anywhere', str, env='QABOARD_PROJECTS_CREATE', choices=('anywhere', 'namespace-members', 'admins'),
+    label="Who creates projects", group='access', docs="/docs/backend-admin/project-access#who-creates-projects",
+    default_text="\"anywhere\": what servers did before. New servers' setup page chooses \"namespace-members\".",
+  ),
+  'namespaces.create': Definition(
+    "Who claims new top-level names (namespaces, the first part of project ids): \"anyone\" signed in (they become its owner), or \"admins\". Signed-in users always have their own namespace, named like their user name.",
+    'anyone', str, env='QABOARD_NAMESPACES_CREATE', choices=('anyone', 'admins'),
+    label="Who claims new namespaces", group='access', docs="/docs/backend-admin/project-access#who-creates-projects",
+  ),
   'storage.others_visible_to': Definition(
     "Who sees other people's storage usage (Storage usage > Everyone's, Users): \"members\" (the project's developers and owners, from a grant, a group or qaboard.yaml: not every signed-in user) or \"signed_in\" (everyone who can see the project). Admins see everything.",
     'members', str, env='QABOARD_STORAGE_OTHERS_VISIBLE_TO', choices=('members', 'signed_in'),

@@ -5,6 +5,7 @@ from .Output import *
 from .Batch import *
 from .CiCommit import *
 from .Project import *
+from .Namespace import *
 from .User import *
 from .Milestone import *
 from .BatchNotification import *

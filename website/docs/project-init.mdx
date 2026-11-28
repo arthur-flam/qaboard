@@ -58,6 +58,32 @@ with the Python code that runs yours. This page creates them, says what to fill 
 
 Next, make `run()` run your code: see [Running your code](/docs/running-your-code).
 
+## The project on the server {/* #the-project-on-the-server */}
+Your first `qa run` creates the project on the QA-Board server, named after `project.name`, with you as its owner.
+Signed in (`qa auth login`), `qa init` already says whether it will:
+
+```bash
+qa project check      # does the project exist, else can I create it, else whom to ask?
+qa project create     # create it now, with its repository: before any run, e.g. to add your team first
+```
+
+Servers can restrict who creates projects. When yours refuses, `qa` says whom to ask, and offers your own namespace:
+the first part of project ids is a *namespace*, a team's (`camera-algo/isp`) or yours (your user name, `alice/isp`).
+Ask an owner of the namespace for the developer role, or use yours: set `project.name: alice/isp`, or keep
+`name: isp` and set `project.namespace: alice` (or `$QABOARD_NAMESPACE`). Project ids never change once results are
+sent: choose before your first run. In the web app, **New project** on the home page and in Explore does the same.
+
+<details>
+<summary>What the server's settings allow</summary>
+
+Admins choose with `projects.create` and `namespaces.create` ([Project access](/docs/backend-admin/project-access#who-creates-projects)):
+- `anywhere` (servers from before these settings): anyone who can send results creates any project.
+- `namespace-members`: developers and owners of a namespace create its projects; anyone signed in creates projects
+  in their own namespace, and claims new namespaces (unless only admins create namespaces).
+- `admins`: only admins create projects. Ask one, with the project's id.
+
+</details>
+
 ## What to fill in *qaboard.yaml* {/* #qaboard-yaml */}
 `qa init` writes a *qaboard.yaml* full of comments. Here are the settings of the camera ISP example, a complete
 project in the repository:
@@ -67,6 +93,7 @@ project in the repository:
 | Setting | What it is | Read more |
 |---|---|---|
 | `project.name` | The project's id in QA-Board, often the git repository's path. | |
+| `project.namespace` | Optional: for a `name` without namespace (`isp`), where to create it, e.g. your user name. | [The project on the server](#the-project-on-the-server) |
 | `project.url` | Where your git repository is hosted. | [Connect your git host](#optional-connect-your-git-host) |
 | `project.entrypoint` | The Python file with your `run()` function. | [Running your code](/docs/running-your-code) |
 | `project.reference_branch` | The branch whose latest results every commit is compared with. | [References](/docs/references-and-milestones) |

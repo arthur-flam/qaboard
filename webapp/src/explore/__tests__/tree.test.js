@@ -28,6 +28,8 @@ describe('is_listed', () => {
     expect(is_listed(project({ data: {} }))).toBe(true);
     expect(is_listed(project({ data: { legacy: true } }))).toBe(false);
     expect(is_listed(project({ latest_commit_datetime: null }))).toBe(false);
+    // created with New project, before their first results
+    expect(is_listed(project({ latest_commit_datetime: null, total_commits: 0 }))).toBe(true);
   });
 });
 

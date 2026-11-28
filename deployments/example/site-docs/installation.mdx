@@ -1,0 +1,15 @@
+---
+id: installation
+title: Installing qa at Example
+sidebar_label: Installation
+sidebar_position: 1
+---
+At Example, install `qaboard` and the site package, `qaboard-site-example`:
+
+```bash
+pip install --upgrade qaboard
+pip install --upgrade 'qaboard-site-example @ git+https://git.example.com/infra/qaboard-site#subdirectory=example/cli'
+```
+
+The site package configures `qa` for this site's server: you don't need to set environment variables. They still
+override it, e.g. `QABOARD_URL` to try another server. For the rest, follow the [client installation](/docs/installation) docs.

@@ -11,7 +11,7 @@ from backend import clock
 import ujson
 from flask import request, jsonify, make_response, g
 
-from sqlalchemy import func, and_, asc, text
+from sqlalchemy import func, and_, or_, asc, text
 from sqlalchemy.orm import selectinload
 
 from sqlalchemy.sql import label
@@ -617,7 +617,8 @@ def projects_usage(user_id=None, identity=None):
 @app.route("/api/v1/projects")
 def get_projects():
   """
-  The projects with commits, with their latest commit date and number of commits.
+  The projects with commits (and those created explicitly, before their first commit), with their latest commit date
+  and number of commits. Archived projects only with ?archived=true (they have "archived": true).
   With ?summary=true, we only give what lists of projects need from their data (git info, qaboard.yaml's project section):
   it's much smaller. Use /api/v1/project for the rest.
 
@@ -647,18 +648,25 @@ def get_projects():
               .query(
                 Project.id,
                 Project.latest_output_datetime,
+                Project.archived_at,
                 commits.c.latest_commit_datetime,
                 commits.c.total_commits,
                 *data_columns,
               )
-              .join(commits, commits.c.project_id == Project.id)
+              # and the projects created explicitly, before their first commit
+              .outerjoin(commits, commits.c.project_id == Project.id)
+              .filter(or_(commits.c.total_commits.isnot(None), Project.created_via == 'api'))
               .order_by(asc(func.lower(Project.id)))
              )
+  # archived projects: only with ?archived=true
+  archived = request.args.get('archived', 'false') != 'false'
+  if not archived:
+    projects = projects.filter(Project.archived_at.is_(None))
   user_info = get_current_user(to_jsonify=False)
   signed_in = user_info.get('is_authenticated')
   usage = projects_usage(user_info.get('user_id') if signed_in else None, identity_of(g.actor.user) if signed_in else None)
   response = {}
-  for project_id, latest_output_datetime, latest_commit_datetime, total_commits, *data in projects.yield_per(1000):
+  for project_id, latest_output_datetime, archived_at, latest_commit_datetime, total_commits, *data in projects.yield_per(1000):
     if not is_authorized_user(user_info, project_id):
       continue
 
@@ -683,8 +691,9 @@ def get_projects():
     response[project_id] = {
       'data': data,
       'latest_output_datetime': latest_output_datetime.isoformat() if latest_output_datetime else None, # isoformat not necessary?
-      'latest_commit_datetime': latest_commit_datetime.isoformat(),
-      'total_commits': total_commits,
+      'latest_commit_datetime': latest_commit_datetime.isoformat() if latest_commit_datetime else None,
+      'total_commits': total_commits or 0,
+      **({'archived': True} if archived_at is not None else {}),
       **usage(project_id),
     }
   response = make_response(ujson.dumps(response))

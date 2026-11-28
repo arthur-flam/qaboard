@@ -181,3 +181,7 @@ def qa_init(ctx):
   except Exception:
     from .ui import warning
     warning("Could not fill in the project's name and url.", hint="Edit them in qaboard.yaml")
+    return
+  # signed in to a server: what the first `qa run` will do with the project, or whom to ask
+  from .projects_command import init_hint
+  init_hint(name)

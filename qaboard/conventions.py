@@ -57,6 +57,9 @@ class Reason:
   api/batch.py) and qa compares them (qaboard/http_client.py `ResultsError.reason`): change them on both sides at once.
   The sign-in and access refusals (missing_scope, missing_role...) are backend/auth's, explained in qaboard/credentials.py.
   """
+  # --- projects (backend/backend/projects.py): 403s with a `hint` that says what to do ---
+  PROJECT_CREATE_DENIED = 'project_create_denied'              # the project doesn't exist, and projects.create doesn't let the sender create it
+  PROJECT_ARCHIVED = 'project_archived'                        # the project is archived: it takes no new results
   # --- the run or the project can't send files ---
   UPLOADS_DISABLED = 'uploads_disabled'                        # the server takes no files (QABOARD_UPLOAD_ROOT), or not this project's
   UPLOADS_UNSUPPORTED_PROJECT = 'uploads_unsupported_project'  # the project has a folder named like the server's runs folder
@@ -89,6 +92,8 @@ class Reason:
   BATCH_TOKEN_LIMITED = 'batch_token_limited'                  # a batch's token only changes its batch (commit + label) of its project
 
 
+# Refusals whose fix the server says (`hint`), e.g. whom to ask to create the project: qa shows it as is
+SERVER_HINTED_REFUSALS = (Reason.PROJECT_CREATE_DENIED, Reason.PROJECT_ARCHIVED)
 # Why the server refuses runs that send their files, and what to do about it (qa run, start_run(), qa upload)
 UPLOAD_REFUSALS = (Reason.UPLOADS_DISABLED, Reason.UPLOADS_UNSUPPORTED_PROJECT, Reason.INVALID_RUN)
 # Why the server takes no more file of a run: the uploader stops asking (qaboard/upload.py)
@@ -97,6 +102,20 @@ RUN_FILES_REFUSALS = (Reason.UPLOADS_DISABLED, Reason.NOT_UPLOADED, Reason.NOT_R
 NO_ARTIFACTS = (Reason.NOT_UPLOADED, Reason.DELETED, Reason.UNKNOWN_COMMIT)
 UPLOAD_FIX = ("Set `storage` in qaboard.yaml (or QA_STORAGE) to a folder the server reads too, or ask its administrators to accept files (QABOARD_UPLOAD_ROOT). "
               "If your organization has a site package (qaboard-site-...), install it: it says where results are saved.")
+
+
+def namespace_for(project_config: dict, environ=None) -> str | None:
+  """
+  The namespace to put a project.name without one in: project.namespace, else $QABOARD_NAMESPACE. None for names that
+  have one (`group/repo`), or when neither is set.
+  """
+  environ = os.environ if environ is None else environ
+  name = project_config.get('name')
+  if not isinstance(name, str) or '/' in name.strip('/'):
+    return None
+  namespace = project_config.get('namespace') or environ.get('QABOARD_NAMESPACE') or ''
+  namespace = str(namespace).strip().strip('/')
+  return namespace or None
 
 
 def storage_setting(config: dict | None, qa_storage: str | None = None):

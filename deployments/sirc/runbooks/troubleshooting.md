@@ -50,7 +50,7 @@ Symptom:
 
 ```bash
 # At SIRC we need to make sure important folders are mounted before starting containers...
-./at-sirc-before-up.py
+"${QABOARD_SITE_DIR:-deployments}"/sirc/at-sirc-before-up.py
 docker compose --env-file deployments/sirc/production.env restart backend
 # or everything (downtime!)
 docker compose --env-file deployments/sirc/production.env restart
@@ -70,7 +70,7 @@ journalctl -u docker --since "1 hour ago" | grep -i "failed to start"
 ```
 Then start everything again, in order:
 ```bash
-./at-sirc-before-up.py
+"${QABOARD_SITE_DIR:-deployments}"/sirc/at-sirc-before-up.py
 deployments/deploy.py deployments/sirc/production.env up
 ```
 
@@ -93,7 +93,7 @@ Remove the IIIF image cache:
 ```bash
 docker compose --env-file deployments/sirc/production.env stop cantaloupe
 docker compose --env-file deployments/sirc/production.env rm -v cantaloupe
-./at-sirc-before-up.py
+"${QABOARD_SITE_DIR:-deployments}"/sirc/at-sirc-before-up.py
 deployments/deploy.py deployments/sirc/production.env compose up -d cantaloupe
 ```
 

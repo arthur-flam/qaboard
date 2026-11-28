@@ -71,22 +71,11 @@ package = true
 # but not a good enough workaround..
 no-binary-package = ["uwsgi", "lxml", "xmlsec", "psycopg2"]
 
-# Unfortunately uv tries to resolve even extras we dont use
-# Leading to ssh issues all over the place. So we can't just
-# [project.optional-dependencies]
-# sirc = [
-#     "qaboard-site-sirc",
-#     "cde @ git+ssh://git@gitlab-srv/cde/cde-python",
-# ]
-# dsk = [
-#     "qaboard-site-dsk",
-#     'cde @ git+ssh://git@github.sec.samsung.net/CDE/cde-python',
-# ]
+# Site packages aren't extras (uv resolves every extra, and their dependencies are often on private git hosts): the
+# image installs one from the site-config build context (QABOARD_EXTRA, see Dockerfile)
 
 [tool.uv.sources]
 qaboard = { path = "../" }
-# qaboard-site-sirc = { path = "../deployments/sirc/cli" }
-# qaboard-site-dsk = { path = "../deployments/dsk/cli" }
 
 # [tool.uv.pip]
 # no-binary = ["uwsgi", "lxml", "xmlsec"]
@@ -107,8 +96,8 @@ homepage = "https://samsung.github.io/qaboard"
 
 [project.scripts]
 qaboard_clean = "backend.clean:clean"
-qaboard_clean_untracked_hwalg_artifacts = "backend.clean:clean_untracked_hwalg_artifacts"
-qaboard_clean_untracked_hwalg_outputs = "backend.clean:clean_untracked_hwalg_outputs"
+qaboard_clean_untracked_artifacts = "backend.clean:clean_untracked_artifacts"
+qaboard_clean_untracked_outputs = "backend.clean:clean_untracked_outputs"
 qaboard_init_database = "backend.scripts.init_database:init_database"
 qaboard-admin = "backend.scripts.admin:cli"
 

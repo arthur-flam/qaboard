@@ -10,6 +10,7 @@ Usage:
   ci_changes.py --base REF --head REF [--labels run-e2e]
   ci_changes.py --files -          the file names on stdin
   ci_changes.py --github           in CI: decides from the event, writes the jobs' outputs and a summary
+  ci_changes.py --check NAME ...   exit code 0 if the job (or the GitLab check of SITE_CHECKS) NAME runs, else 1
 
 - pushes to master, releases and workflow_dispatch run every job (a push to master with only docs, as before: none)
 - other branches and pull requests run the jobs whose inputs changed, compared with where they left master
@@ -59,10 +60,10 @@ JOBS: Dict[str, List[str]] = {
   "docker": [
     "backend/**", "qaboard/**", "tests/**", "pyproject.toml", "uv.lock",
     "webapp/**", "website/release-notes/**", "website/package.json", "website/yarn.lock",
-    "services/**", "deployments/*", *DOCKERFILES,
+    "services/**", "deployments/*", "deployments/example/**", *DOCKERFILES,
     ".github/scripts/uploads_e2e.py", ".github/scripts/load.py",
   ],
-  "helm": ["charts/**"],
+  "helm": ["charts/**", "deployments/example/values.yaml"],
   # E2E: the Docker Compose quickstart, with its demo data
   "quickstart": ["deployments/quickstart/**", *DEMO_DATA, *DOCKERFILES],
   # E2E: the chart on kind, demo data, `qa batch` in the cluster, batches the server starts on Kubernetes
@@ -72,10 +73,25 @@ JOBS: Dict[str, List[str]] = {
     "backend/backend/server_runner.py", "backend/backend/runner_jobs.py", "backend/backend/local_jobs.py",
     "backend/backend/tokens.py", "backend/backend/api/tuning.py", "backend/backend/api/commit_artifacts.py",
   ],
-  # E2E: `qa batch --runner kubernetes` on kind
-  "kubernetes-runner-e2e": ["qaboard/runners/**", ".github/scripts/kubernetes_runner_e2e.py"],
+  # E2E: `qa batch --runner kubernetes` on kind. Not the other runners: the kubernetes runner doesn't import them
+  "kubernetes-runner-e2e": [
+    "qaboard/runners/**", ".github/scripts/kubernetes_runner_e2e.py",
+    "!qaboard/runners/lsf.py", "!qaboard/runners/celery*.py", "!qaboard/runners/dask_runner.py",
+    "!qaboard/runners/jenkins_windows.py", "!qaboard/runners/local.py",
+  ],
 }
 E2E = {"quickstart", "helm-e2e", "kubernetes-runner-e2e"}
+
+# Not jobs of ci.yaml: what .gitlab-ci.yml (SIRC) asks with --check. Its default branch runs them all.
+SITE_CHECKS: Dict[str, List[str]] = {
+  # The tests that send real jobs to LSF (QA_TESTS_LSF=1, see tests/sample_project.py); tests/test_runners.py checks
+  # the bsub commands without LSF, everywhere
+  "lsf": [
+    "qaboard/runners/lsf.py", "qaboard/runners/env.py", "qaboard/runners/base.py", "qaboard/runners/job.py",
+    "qaboard/sample_project/**", "tests/sample_project.py", "tests/test_cli.py", "tests/test_cli_subproject.py",
+    "deployments/sirc/.envrc", ".gitlab-ci.yml",
+  ],
+}
 
 
 @lru_cache(maxsize=None)
@@ -128,6 +144,16 @@ def decide(files: Optional[Iterable[str]], labels: Iterable[str] = (), full: str
     if job in E2E and labeled:
       why[job] = f"the {LABEL} label"
   return "diff", why
+
+
+def needed(files: Optional[Iterable[str]], name: str, labels: Iterable[str] = ()) -> str:
+  """Why the job of JOBS, or the check of SITE_CHECKS, `name` runs ("" if it doesn't). files=None: unknown, it runs."""
+  if name in JOBS:
+    return decide(files, labels)[1][name]
+  if files is None:
+    return "the changed files are unknown"
+  files = [f for f in files if not matches(f, IGNORED)]
+  return next((f"{f} changed" for f in files if matches(f, [*SITE_CHECKS[name], *EVERYTHING])), "")
 
 
 def git(*args: str) -> str:
@@ -190,7 +216,14 @@ def main() -> int:
   parser.add_argument("--head", help="a commit (default: the working tree)")
   parser.add_argument("--files", help="a file with the changed files' names, one per line (-: stdin)")
   parser.add_argument("--labels", default="", help="the pull request's labels, comma-separated")
+  parser.add_argument("--check", choices=[*JOBS, *SITE_CHECKS], help="exit code 0 if it runs, 1 if not (for .gitlab-ci.yml)")
   args = parser.parse_args()
+
+  if args.check:
+    files = changed_files(args.base, args.head)
+    reason = needed(files, args.check, [label for label in args.labels.split(",") if label])
+    print(f"{args.check}: {'runs, ' + reason if reason else 'not needed by this change'}")
+    return 0 if reason else 1
 
   if args.github:
     mode, why = from_github()

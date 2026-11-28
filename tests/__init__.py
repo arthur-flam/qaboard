@@ -11,6 +11,8 @@ os.environ['PYTHONPATH'] = os.pathsep.join([root, *filter(None, [os.environ.get(
 # a site package (its runner, server, Sentry, path mappings, shared secrets with git hosts' tokens...),
 # QA_*/QABOARD_* variables (e.g. QA_BATCH_CONCURRENCY), the user's secrets, the runner's color settings (tests compare
 # plain text). Tests that need them set them; the CI's own variables stay: tests/environment.py removes them.
+# A site directory to check besides the example site's (tests/test_site_dir.py, test_schemas.py), e.g. in its own CI
+site_dir_under_test = os.environ.get('QABOARD_SITE_DIR')
 for name in list(os.environ):
   if name.startswith(('QA_', 'QABOARD_')) or name in ('GITLAB_ACCESS_TOKEN', 'GITHUB_ACCESS_TOKEN', 'GITHUB_TOKEN',
                                                       'NO_COLOR', 'FORCE_COLOR', 'CLICOLOR_FORCE'):

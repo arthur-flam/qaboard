@@ -71,8 +71,14 @@ paths:
       tags: [Projects]
       operationId: listProjects
       summary: List the projects you can read
-      description: The projects with results, sorted by name, as an object keyed by project id.
+      description: >-
+        The projects with results, and those created before their first results, sorted by name, as an object keyed
+        by project id. Archived projects only with `archived=true`.
       parameters:
+        - name: archived
+          in: query
+          description: "`true` also lists archived projects, with `archived: true`."
+          schema: {type: boolean, default: false}
         - name: summary
           in: query
           description: >-
@@ -98,6 +104,152 @@ paths:
                   views_90d: 14
                   my_last_view: null
         "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project
+      description: >-
+        Creates a project before its first results, with you as its owner (the web app's **New project**,
+        `qa project create`). The first results `qa` sends to a project that doesn't exist create it too, with the same
+        policy: the server settings `projects.create` (`anywhere`, `namespace-members`, `admins`) and `namespaces.create`
+        (`anyone`, `admins`). A new namespace (the id's first part) is created with you as its owner.
+        Needs a person, or a token with the `ingest` or `act` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project]
+              properties:
+                project: {type: string, description: "Its id, namespace/name. Ids never change: they're part of storage paths."}
+                display_name: {type: string, maxLength: 200}
+                visibility: {type: [string, "null"], enum: [public, internal, private, null], description: "null: the server's default."}
+                members:
+                  type: array
+                  items:
+                    type: object
+                    required: [subject, role]
+                    properties:
+                      subject:
+                        type: object
+                        properties:
+                          type: {type: string, enum: [user, group]}
+                          id: {type: integer}
+                      role: {type: string, enum: [viewer, developer, owner]}
+                repository:
+                  description: "Its git repository: {url} (a clone or web URL), or {git_host, repo_path}, with `subdir`, the project's folder in it."
+                  type: object
+                  properties:
+                    url: {type: string}
+                    git_host: {type: string}
+                    repo_path: {type: string}
+                    subdir: {type: string}
+            example: {project: camera-algo/isp, visibility: internal, repository: {url: "git@gitlab.example.com:camera-algo/isp.git"}}
+      responses:
+        "201":
+          description: The project.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProjectLifecycle"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403":
+          description: >-
+            You can't create it (`reason`: `project_create_denied`): `hint` says what to do (whom to ask, or the
+            namespace to use instead), `suggestion` a project id you could create, `ask` whom to ask.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreateRefusal"}
+        "409":
+          description: "It already exists (reason: exists)."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /projects/check:
+    get:
+      tags: [Projects]
+      operationId: checkNewProject
+      summary: Can I create this project?
+      description: Whether the project exists, else whether you may create it, and if not why and what to do (`qa init`, the New project dialog).
+      parameters:
+        - name: project
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: What creating it would do.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: "#/components/schemas/CreateRefusal"}
+                  - type: object
+                    properties:
+                      allowed: {type: boolean}
+                      exists: {type: boolean}
+                      new_namespace: {type: boolean, description: Creating it claims its namespace.}
+                      namespace_kind: {type: string, enum: [user, org]}
+                      personal_namespace: {type: [string, "null"], description: Your own namespace, your user name.}
+                      policy:
+                        type: object
+                        properties:
+                          projects_create: {type: string, enum: [anywhere, namespace-members, admins]}
+                          namespaces_create: {type: string, enum: [anyone, admins]}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /project/lifecycle:
+    get:
+      tags: [Projects]
+      operationId: getProjectLifecycle
+      summary: Who created a project, its namespace, repositories and owners
+      parameters:
+        - $ref: "#/components/parameters/project"
+      responses:
+        "200":
+          description: The project.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: "#/components/schemas/ProjectLifecycle"}
+                  - type: object
+                    properties:
+                      can_archive: {type: boolean}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /project/archive:
+    post:
+      tags: [Projects]
+      operationId: archiveProject
+      summary: Archive or unarchive a project
+      description: >-
+        Archived projects are hidden from lists (`GET /projects?archived=true` lists them) and refuse new results
+        (`reason`: `project_archived`). Their results stay. Owners (the `project.access` permission).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, archived]
+              properties:
+                project: {type: string}
+                archived: {type: boolean}
+      responses:
+        "200":
+          description: The project.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProjectLifecycle"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
 
   /project:
     get:
@@ -2196,6 +2348,49 @@ components:
         intent: {type: string, enum: [success, warning, danger, none], description: The color of a part in stacked charts.}
       additionalProperties: true
 
+    ProjectLifecycle:
+      type: object
+      properties:
+        id: {type: string}
+        display_name: {type: [string, "null"]}
+        namespace:
+          type: [object, "null"]
+          properties:
+            path: {type: string}
+            kind: {type: string, enum: [user, org]}
+            legacy: {type: boolean, description: Created by the upgrade for existing projects.}
+        created_at: {type: [string, "null"], format: date-time}
+        created_by: {type: [string, "null"]}
+        created_via: {type: [string, "null"], enum: [api, ingest, webhook, null]}
+        archived: {type: boolean}
+        archived_at: {type: [string, "null"], format: date-time}
+        archived_by: {type: [string, "null"]}
+        repositories:
+          type: array
+          items:
+            type: object
+            properties:
+              git_host: {type: [string, "null"]}
+              repo_path: {type: string}
+              subdir: {type: string}
+        owners:
+          type: array
+          items: {type: object, additionalProperties: true}
+
+    CreateRefusal:
+      type: object
+      properties:
+        error: {type: [string, "null"]}
+        reason: {type: [string, "null"], description: "project_create_denied, sign_in_required, token_project, invalid_project, exists"}
+        hint: {type: [string, "null"], description: What to do, for people.}
+        project: {type: string}
+        namespace: {type: [string, "null"]}
+        suggestion: {type: [string, "null"], description: A project id you could create instead, e.g. in your own namespace.}
+        ask:
+          type: array
+          description: Whom to ask (the namespace's owners, or admins).
+          items: {type: object, additionalProperties: true}
+
     ProjectSummary:
       type: object
       properties:
@@ -2206,8 +2401,9 @@ components:
             and `qatools_config.project` (the `project` section of its *qaboard.yaml*).
           additionalProperties: true
         latest_output_datetime: {type: [string, "null"], format: date-time}
-        latest_commit_datetime: {type: string, format: date-time}
+        latest_commit_datetime: {type: [string, "null"], format: date-time, description: "null for projects created before their first results."}
         total_commits: {type: integer}
+        archived: {type: boolean, description: "Only with archived=true, for archived projects."}
         latest_human_activity:
           type: [string, "null"]
           format: date-time

@@ -123,6 +123,28 @@ def log_setup_token():
   print("[setup] `qaboard-admin setup-token` shows it again. Automated installs can set QABOARD_ADMIN_PASSWORD instead.", flush=True)
 
 
+# What the setup page saves for a new server, unless the admin keeps the open defaults (docs/design/user-management.md,
+# Appendix G). The settings' defaults stay what servers did before: upgrades change nothing.
+RECOMMENDED_SETTINGS = {
+  # projects are created by the members of their namespace; anyone signed in claims a new namespace, or has their own
+  'projects.create': 'namespace-members',
+  'namespaces.create': 'anyone',
+  # only signed-in users see projects, and they need a role to send results or act on runs
+  'projects.default_visibility': 'internal',
+  'projects.signed_in_role': 'viewer',
+}
+
+
+def save_recommended_settings(user):
+  """In the current session, audited, as the first admin: the caller commits"""
+  from . import settings
+  from .audit import audit
+  for key, value in RECOMMENDED_SETTINGS.items():
+    before = settings.setting(key)
+    settings.save(key, value, by=user)
+    audit('setting.update', 'setting', key, key, user=user, changes={key: {"from": before, "to": value}}, meta={"from": "setup"})
+
+
 # ——— QABOARD_ADMIN_PASSWORD ———
 
 def env_admin_password() -> Optional[str]:

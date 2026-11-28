@@ -1,5 +1,5 @@
 # Staging at SIRC, see staging.env
-# Usage: deployments/deploy.py deployments/sirc/staging.env up
+# Usage: deployments/deploy.py "$QABOARD_SITE_DIR"/sirc/staging.env up
 
 services:
   backend:

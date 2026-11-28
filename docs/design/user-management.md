@@ -527,7 +527,7 @@ All additive. They keep the conventions: one alembic revision per milestone step
 | **M1** | **Foundations**: actor and default-deny, tokens, audit, settings, admins, preferences, admin panel v1, `qa auth` | Tokens page, `qa auth login`, verified runs, sign-in really required when configured, users list for admins, preferences that follow you | 3-4 intense sessions |
 | **M2** | **Sign-in**: providers in the database, OIDC, several at once, identities, server-side sessions, access policy and instance access requests | SSO with Entra/Keycloak next to LDAP, a clear sign-in page, "request access", admins notified | 3 sessions |
 | **M3** | **Authorization**: roles, grants, groups and rules (LDAP and SSO), visibility with inheritance, `authorize()` on every endpoint, Access tab, YAML import, project access requests | Owners manage who can see or upload, from the web app | 3-4 sessions |
-| **M4** | **Namespaces and organizations**: personal namespaces, orgs, service accounts, project creation policy, repository links | "Create an organization", your first runs land under your name, org CI tokens | 2-3 sessions |
+| **M4** | **Namespaces and organizations**: personal namespaces, orgs, service accounts, project creation policy, repository links | "Create an organization", your first runs land under your name, org CI tokens | 2-3 sessions. First slice built: Appendix G |
 | **M5** | **CI and ingest trust**: `QABOARD_INGEST_AUTH` per project, OIDC token exchange for GitHub and GitLab, token expiry emails, rate limits | CI uploads with no secret, owners can require verified runs | 2 sessions |
 | **M6** | **Enterprise and cloud**: SCIM, MFA/passkeys and email verification for local accounts, audit streaming and retention, admin "act as", git member import, account deletion and export | Ready for a public instance | ongoing |
 
@@ -1045,3 +1045,73 @@ Audit: `grant.create|update|delete`, `visibility.update`, `group.*`, `group_memb
   prints one warning and sends no token.
 - **Not done**: replay protection (an ID token can be exchanged several times until it expires: GitHub's last
   minutes), purging expired `ci` tokens (one row per job), per-project policies once namespaces exist (M4).
+
+## Appendix G: M4, first slice: as built (2026-11)
+Projects get a lifecycle: created explicitly or by their first results, in a namespace, with owners, by the people
+the server lets; archived by their owners. A subset of §6, nothing to throw away for a hosted version.
+
+**Data** (migration `e2f4a6c8b0d1`, also in the models for new databases):
+- `namespaces(id, path unique, kind user|org, display_name, user_id, created_by_id, created_at, legacy, data)`.
+  The migration creates one `legacy` org per first segment of the existing ids, **without members**: the grants on
+  those prefixes keep working as before, nobody gets a role. `data` is where entitlements and quotas will go (§14).
+- `projects` + `namespace_id`, `created_at`, `created_by_id`, `created_via` (api, ingest, webhook), `archived_at`,
+  `archived_by_id`. Ids never change, and stay `group/repo` for existing projects.
+- `project_repos(project_id, git_host, repo_path, subdir)`, backfilled from `data.git.path_with_namespace` (when it's a
+  prefix of the id: the rest is the sub-project's folder) and `data.git.host`, else from the id's first two segments.
+- **No second permission system**: a namespace's members are role grants on its path, as before (D.2). Developers of
+  `ns` create `ns/...`, its owners manage it. The owners of a personal namespace are its user, by a grant too.
+
+**Policy**, one function, `backend/projects.py` `check_create(actor, id)`, for every way projects are created:
+- `projects.create`: `anywhere` (default) | `namespace-members` (§6's `own-namespaces`, renamed: it's also about orgs) |
+  `admins`. `namespaces.create`: `anyone` (default) | `admins`. Admins create anything.
+- Your personal namespace is your user name (people only, not service accounts). A first segment that is a legacy
+  org named like a user stays the org's (§6's collision rule): the admin decides.
+- Under `namespace-members`, membership is the grant-based role only (`member_role`): `projects.signed_in_role:
+  developer` would otherwise make everyone a member of every public namespace. A grant on a deeper prefix (`ns/repo`)
+  lets its developers create sub-projects there. One-segment ids (`isp`) are refused there, with `alice/isp` offered.
+- Refusals: `project_create_denied` (`qaboard/conventions.py` `Reason`), 403, with `hint` (whom to ask: the
+  namespace's owners, else up to 3 admins; or set `project.name` to the one in your namespace), `suggestion`, `ask`.
+  `qa` prints the hint as is (`SERVER_HINTED_REFUSALS`), also at the end of CI jobs. Anonymous senders get
+  `sign_in_required` under a strict policy, whatever `ingest.auth` says: unverified results don't create projects.
+- **Who owns**: the creator of a project (a person, signed in) gets an owner grant on it, unless they own it through
+  its namespace already; claiming a new namespace makes you its owner. Under `anywhere` too: on existing servers new
+  projects now get an owner, nothing else changes. Service accounts and anonymous senders create without owners.
+
+**Fresh installs vs upgrades**: the defaults are today's behaviour, so an upgrade (and an install with
+`QABOARD_ADMIN_PASSWORD`, or Helm) changes nothing. The first admin's setup page (`POST /api/v1/setup`, `defaults:
+recommended`, ticked by default) saves `first_admin.RECOMMENDED_SETTINGS`: `namespace-members`, `anyone`,
+`internal`, `viewer`, audited as `setting.update` from setup. *Departs from the plan*, which had the migration write
+today's values and new defaults in code: the migration also runs on databases created before this version that are
+still empty, changing code defaults would have changed every test and the CI's e2e jobs (anonymous project lists),
+and the owner asked for stricter behaviour "only when an admin turns it on". The setup page is that moment.
+
+**Creation paths**:
+- `POST /api/v1/projects` `{project, display_name?, visibility?, members?, repository?: {url} | {git_host, repo_path, subdir}}`
+  (a person, or a token with `ingest` or `act`), audited `project.create` (+ `namespace.create`). `GET
+  /api/v1/projects/check?project=` says what creating it would do (the New project dialog, `qa init`).
+- The first results (`ingest_access`, before the role check): the project is created in the request's transaction,
+  with its repository from `qaboard_config.project.url`; a refusal stops the results.
+- Push webhooks resolve projects through `project_repos` (any host when a link has none), and create projects only
+  under `anywhere` (no one to check). Under a strict policy they update existing projects only.
+- `GET /api/v1/projects` lists projects created with `api` before their first commit (others still need one: commitless
+  projects created by old webhooks stay hidden, as before).
+
+**Archive**: `POST /api/v1/project/archive {project, archived}` (owners, `project.access`), audited
+`project.archive|unarchive`: hidden from `/api/v1/projects` (unless `?archived=true`), new results refused
+(`project_archived`). Reads keep working. The exact id only: sub-projects aren't archived with their parent.
+
+**CLI**: `qa project create|check|archive|unarchive`; `qa init`, when signed in, says what the first run will do.
+`project.namespace` (else `$QABOARD_NAMESPACE`) prefixes a `name` without namespace; the signed-in-user fallback of
+§6 is left out: it would change the id of existing one-segment projects. The refusals offer it instead.
+
+**Web app**: **New project** (home page's Your projects, Explore), checked as you type; the Access page's
+**Project** section (creator, namespace, repositories, Archive), and owners shown to managers too; the setup page's
+**Recommended access defaults**.
+
+**Left for M4**: organization pages and member management on the namespace itself (today: a grant on the prefix
+from any of its projects' Access tab, or Admin), "Create an organization" as an access request when
+`namespaces.create: admins`, namespace visibility, service accounts owned by namespaces and org CI tokens, the
+collision list in the admin panel, decoupled ids for new projects by default (the signed-in user fallback), several
+repositories per project in the UI, admin delete through the hard-delete job, project renames (`project_redirects`).
+**For a hosted version**: `namespaces.data` entitlements and quotas, per-namespace `projects.create`, and
+creation rate limits.

@@ -70,8 +70,24 @@ unit-tests:
   retry: 2 # solves frequent filesystem sync issues
   # The tests use this commit's code, and ignore the site package deploy:cli installed in the conda env,
   # and our QA_*/QABOARD_* variables: they expect qa's open-source defaults (see tests/__init__.py)
+  # The default branch and tags run every test, with coverage. Other pipelines compare with the target branch
+  # (.github/scripts/ci_changes.py, GitHub's mapping): no tests when the change needs none (the web app, the chart...),
+  # and the tests that send real jobs to LSF (slow, and their sample projects go on NFS) only when the change
+  # touches what they protect (`--check lsf`). When git can't tell, everything runs.
   script:
-    - green -vvv --quiet-stdout --run-coverage tests
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] || [ -n "$CI_COMMIT_TAG" ]; then
+        export QA_TESTS_LSF=1
+        COVERAGE=--run-coverage
+      else
+        TARGET="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-$CI_DEFAULT_BRANCH}"
+        git fetch -q --depth=200 origin "$TARGET"
+        git merge-base HEAD FETCH_HEAD > /dev/null || git fetch -q --unshallow origin "$TARGET"
+        if ! python3 .github/scripts/ci_changes.py --base FETCH_HEAD --head HEAD --check python; then exit 0; fi
+        if python3 .github/scripts/ci_changes.py --base FETCH_HEAD --head HEAD --check lsf; then export QA_TESTS_LSF=1; fi
+        COVERAGE=
+      fi
+    - green -vvv --quiet-stdout $COVERAGE tests
 
 # Merge requests skip type-check and lint when they change none of the files these read (`changes:` compares with
 # the target branch); master (which deploys), other branches and tags always run them. unit-tests always runs: the

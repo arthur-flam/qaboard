@@ -26,6 +26,8 @@
 # - The admin services (RabbitMQ, Flower, pgadmin) are only published on this host (127.0.0.1)
 # - Secrets go in .env (see website/docs/start-server.mdx), e.g. QABOARD_DB_PASSWORD. deployments/deploy.py passes
 #   those that the compose files read with ${...} to compose (it uses --env-file, so compose doesn't read .env itself)
+# - Your site's overlay, env files and config live in a site directory, e.g. a repository cloned next to this one:
+#   its paths use ${QABOARD_SITE_DIR}, see website/docs/backend-admin/site-directory.mdx and deployments/example/
 
 # General docker compose usage:
 #   docker compose up                    # start the whole stack
@@ -101,8 +103,9 @@ services:
     - results:/mnt/qaboard
     # Secrets (SECRET_KEY, GITLAB_ACCESS_TOKEN...) come from env files, not from `environment`:
     # an entry without a value there, like `- SECRET_KEY`, would unset what env files define if the shell doesn't set it.
+    # deployments/deploy.py sets QABOARD_DOTENV to the .env next to your env file, e.g. in your site directory
     env_file:
-    - path: .env
+    - path: ${QABOARD_DOTENV:-.env}
       required: false
     environment:
     - UWSGI_PROCESSES=2

@@ -72,6 +72,11 @@ storage:
 
 Every key: `references/qaboard-yaml.md`. Check the file in the editor with the schema above, or run `qa get config`.
 
+The first results `qa` sends create the project on the server, if the server lets you: `qa project check` says
+whether you can, else whom to ask, or which namespace to use instead (e.g. `project.name: <your user name>/repo`).
+`qa project create` creates it before any run. Don't rename `project.name` afterwards: results are stored under it
+(https://samsung.github.io/qaboard/docs/project-init#the-project-on-the-server).
+
 ## 2. Write `run()` in `qa/main.py`
 ```python
 from qaboard import Metric

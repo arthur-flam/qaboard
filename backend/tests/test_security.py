@@ -1558,9 +1558,13 @@ def test_auth_module_defines_each_name_once():
 # Routes that mention projects without calling one of PROJECT_CHECKS, and why
 PROJECT_CHECKS = {
   "is_authorized_user", "require_project_access", "forbidden_project", "ingest_access", "can", "authorize", "may_manage",
+  # who creates projects (backend/projects.py)
+  "check_create",
   "get_milestone", "get_collection", "resolved", "managed_account", "check_read_access", "readable_file", "_video_path", "input_path", "github_workflow", "gitlab_project", "jenkins_trigger_access",
 }
 UNCHECKED_PROJECT_ROUTES = {
+  # the first admin of a new server saves the recommended projects.* settings: no project yet, the setup token checks
+  ("setup.py", "setup_first_admin"),
   # admins: admin_required
   ("admin.py", "admin_audit"), ("admin_access.py", "admin_grants"), ("admin_access.py", "admin_delete_grant"),
   ("admin_jobs.py", "admin_estimate_job"), ("admin_jobs.py", "admin_jobs_projects"), ("admin_jobs.py", "admin_job_errors"),

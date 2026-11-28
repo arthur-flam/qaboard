@@ -37,6 +37,15 @@ In the **Access** tab:
 
 A project always keeps an owner: add another one before you leave.
 
+## Create a project
+**New project**, on the home page and in Explore, creates a project before its first results, with you as its owner:
+then add your team. Name it `namespace/name`: your user name, or your team's namespace. As you type, QA-Board says
+whether you can create it, and if not, whom to ask or which namespace to use instead. The first `qa run` of a new
+project creates it too ([The project on the server](/docs/project-init#the-project-on-the-server)).
+
+Owners **archive** projects they don't use anymore, in the **Project** section of the **Access** tab: they're hidden
+from the lists, and new results are refused. Their results stay, and **Unarchive** brings them back.
+
 ## Service accounts
 Give your CI a token that isn't one of yours: it keeps working when people leave, and runs say the CI sent them.
 In the **Access** tab, as an owner:

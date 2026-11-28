@@ -105,6 +105,11 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   drop the flag. [S, behaviour]
 - The ci_commits `deleted` column was renamed `artifacts_deleted` (c4e6a8b0d2f3): the API sends both. Drop
   `deleted` from `CiCommit.to_dict` and openapi.yaml once clients older than January 2027 are gone. [S, API]
+- Projects' lifecycle (backend/projects.py, user-management.md Appendix G): archiving is per project id, sub-projects
+  of an archived project still take results; `/api/v1/projects` lists commitless projects only when created with
+  New project (old webhooks created many commitless sub-projects); namespaces have no page of their own: members are
+  given on the prefix from a project's Access tab. A failed ingest after the creation check rolls the project back
+  with it, but endpoints that commit something before failing would keep an empty project. [M, behaviour]
 
 ## CLI
 

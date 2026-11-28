@@ -30,6 +30,7 @@ import {
 import { projectAccessQuery, setVisibility, saveGrant, deleteGrant, requestAccess, decideRequest } from "./api";
 import { usePageTitle, join_title, project_name } from "../pageTitle";
 import { ProjectAdminTabs } from "../projectAdmin/ProjectAdminTabs";
+import { ProjectLifecycle } from "../projects/Lifecycle";
 
 
 // Below the fixed navbar, like the other project pages
@@ -489,9 +490,11 @@ const ProjectAccess = ({ project }) => {
   const has_visibility = !!(data.visibility.effective ?? data.visibility.own ?? data.visibility.default);
   return <>
     <MyRole access={data}/>
+    <ProjectLifecycle project={project}/>
     {has_visibility && <Visibility access={data}/>}
     {data.can_manage
       ? <>
+        <Owners owners={data.owners}/>
         <Requests access={data}/>
         <Members access={data} onAdd={() => setAdding(true)}/>
         <AddMemberDialog access={data} isOpen={adding} onClose={() => setAdding(false)}/>

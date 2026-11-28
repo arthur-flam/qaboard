@@ -3,14 +3,14 @@ Site-specific configuration via Python entry points.
 
 Priority order (highest wins):
 1. Environment variables
-2. Installed site package defaults (e.g. qaboard-site-sirc)
+2. Installed site package defaults (e.g. qaboard-site-example, deployments/example/cli)
 3. Hardcoded open-source defaults
 
 Site packages can also provide a base `qaboard.yaml` that all projects' configurations are merged on,
 by pointing QABOARD_SITE_CONFIG to it (see `site_qaboard_config`).
 
-Install a site package to auto-configure, e.g. from deployments/<site>/cli in your copy of the repository:
-    pip install --upgrade "qaboard-site-mysite @ git+ssh://git@git.example.com/infra/qaboard#subdirectory=deployments/mysite/cli"
+Install a site package to auto-configure, e.g. from <site>/cli in your site directory (its own repository):
+    pip install --upgrade "qaboard-site-mysite @ git+ssh://git@git.example.com/infra/qaboard-site#subdirectory=mysite/cli"
 
 Set QABOARD_IGNORE_SITE=1 to ignore the installed site packages' defaults, e.g. in qaboard's own tests.
 """

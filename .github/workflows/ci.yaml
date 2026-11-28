@@ -127,10 +127,10 @@ jobs:
           git config --global user.name "Arthur Flam"
           git config --global user.email "arthur.flam@samsung.com"
           if [ "${{ matrix.python }}" = "3.14" ]; then
-            # In a random order, in one process, and checks the tests leave nothing in the checkout: finds tests that
-            # depend on others in the PR that adds them. The seed is the run's: a re-run gets the same order, and
-            # `uv run python .github/scripts/shuffled_tests.py --seed N` too (docs/ci.md)
-            uv run --no-sync python .github/scripts/shuffled_tests.py --seed $(( GITHUB_RUN_ID % 100000 ))
+            # In a random order, dealt to 4 processes (the runner's CPUs: the tests mostly wait), and checks the tests
+            # leave nothing in the checkout: finds tests that depend on others in the PR that adds them. The seed is
+            # the run's: a re-run gets the same orders, and `shuffled_tests.py --seed N --jobs 4` too (docs/ci.md)
+            uv run --no-sync python .github/scripts/shuffled_tests.py --seed $(( GITHUB_RUN_ID % 100000 )) --jobs 4
           else
             uv run --no-sync green -vvv --quiet-stdout tests
           fi
@@ -141,11 +141,18 @@ jobs:
           uv build
           uvx twine check dist/*
 
+  # In 3 parallel parts: the unit tests in 2 shards, and lint, types, build and the Playwright tests. One after the
+  # other, they took about 10 minutes, the longest job. ci-ok and the publishing jobs wait for all of them.
   webapp:
+    name: webapp (${{ matrix.part }})
     runs-on: ubuntu-24.04 # playwright 1.56 has no chromium for ubuntu 26.04
     needs: changes
     if: needs.changes.outputs.webapp == 'true'
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ['tests 1/2', 'tests 2/2', 'build and e2e']
     defaults:
       run:
         working-directory: webapp
@@ -159,21 +166,30 @@ jobs:
           cache: npm
           cache-dependency-path: webapp/package-lock.json
       - run: npm ci --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run typecheck
       - name: npm test, in a random order
+        if: startsWith(matrix.part, 'tests')
         # each file's tests in a random order, the files too: finds tests that depend on others in the PR that adds them.
-        # The seed is the run's: a re-run gets the same order, and `npm test -- --run --sequence.shuffle --sequence.seed=N` too
+        # The seed is the run's: a re-run gets the same order. A shard's files are picked before the shuffle, so
+        # `npm test -- --run --sequence.shuffle --sequence.seed=N --shard=K/2` gets the same order too
+        env:
+          SHARD: ${{ matrix.part == 'tests 1/2' && '1/2' || '2/2' }}
         run: |
           seed=$(( GITHUB_RUN_ID % 100000 ))
-          echo "vitest seed: $seed (npm test -- --run --sequence.shuffle --sequence.seed=$seed)"
-          npm test -- --run --sequence.shuffle --sequence.seed=$seed
+          echo "vitest seed: $seed (npm test -- --run --sequence.shuffle --sequence.seed=$seed --shard=$SHARD)"
+          npm test -- --run --sequence.shuffle --sequence.seed=$seed --shard=$SHARD
+      - run: npm run lint
+        if: matrix.part == 'build and e2e'
+      - run: npm run typecheck
+        if: matrix.part == 'build and e2e'
       # The docker image builds it again, but this takes seconds and fails faster
       - run: npm run build
+        if: matrix.part == 'build and e2e'
       - run: npx playwright install --with-deps chromium
+        if: matrix.part == 'build and e2e'
       - run: npm run e2e
+        if: matrix.part == 'build and e2e'
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: failure() && matrix.part == 'build and e2e'
         with:
           name: playwright-results
           path: webapp/test-results/
@@ -224,6 +240,20 @@ jobs:
             proxy.cache-to=type=gha,scope=proxy,mode=max,ignore-error=true
             cantaloupe.cache-from=type=gha,scope=cantaloupe
             cantaloupe.cache-to=type=gha,scope=cantaloupe,mode=max,ignore-error=true
+      - name: A site directory outside the repository
+        # deployments/example/ as a site's own repository, cloned next to this one (website/docs/backend-admin/site-directory.mdx):
+        # its overlay renders, the backend installs its site package, the docs build its site docs. The builder reuses
+        # the layers built above.
+        run: |
+          mkdir -p ../qaboard-site && cp -r deployments/example ../qaboard-site/example
+          ./deployments/deploy.py ../qaboard-site/example/production.env compose config --quiet
+          docker buildx build -f backend/Dockerfile --target site --load -t qaboard-site-example:backend \
+            --build-context site-config=../qaboard-site/example --build-arg QABOARD_EXTRA=example .
+          docker run --rm -e PYTHONPATH=/opt/site-packages qaboard-site-example:backend \
+            python -c "import qaboard_site_example; print(qaboard_site_example.defaults['QABOARD_URL'])"
+          docker buildx build -f website/Dockerfile --target build --load -t qaboard-site-example:website \
+            --build-context site-config=../qaboard-site/example --build-arg QABOARD_SITE=example .
+          docker run --rm qaboard-site-example:website sh -c 'find build/site -name "*.html" | grep installation'
       - name: Deploy
         # Silent runs fail after a minute, not 15: the end-to-end test of uploads kills one (.env: see docker-compose.yml).
         # It also starts a batch from the web app: the server runs it in its container only when asked to (local runner)
@@ -344,7 +374,9 @@ jobs:
           curl -sSfL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
           helm lint charts/qaboard -f charts/qaboard/ci/minimal.yaml
           helm lint charts/qaboard -f charts/qaboard/quickstart.yaml
-          for values in charts/qaboard/ci/*.yaml charts/qaboard/quickstart.yaml; do
+          # A site's values, from its site directory (deployments/example/values.yaml)
+          helm lint charts/qaboard -f deployments/example/values.yaml
+          for values in charts/qaboard/ci/*.yaml charts/qaboard/quickstart.yaml deployments/example/values.yaml; do
             echo "--- $values"
             helm template qaboard charts/qaboard -f "$values" | ./kubeconform -strict -summary -ignore-missing-schemas
           done

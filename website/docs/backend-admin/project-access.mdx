@@ -16,6 +16,13 @@ The defaults keep how QA-Board worked before roles:
   delete runs (`projects.signed_in_role`).
 - Projects in `QABOARD_LOGIN_RESTRICTED_YAML` stay restricted: they're private, and the users its rules match are
   their developers.
+- **Anyone who can send results creates projects**, with their first results (`projects.create: anywhere`,
+  `namespaces.create: anyone`). The upgrade gives every existing first part of project ids a namespace without
+  members: the roles you gave on those prefixes keep working. Nothing changes until you set `projects.create`.
+- New projects get an owner: whoever created them, signed in. Whoever claims a new namespace owns it.
+
+New servers ask on their setup page: **Recommended access defaults** saves `projects.create: namespace-members`,
+`projects.default_visibility: internal` and `projects.signed_in_role: viewer`.
 
 ## Give projects owners, then tighten
 1. **Make owners.** Open a project's **Access** tab, add its owners (you're an owner of every project as an admin).
@@ -48,6 +55,38 @@ Visibility is inherited: a project's effective visibility is the most restrictiv
 project can be more private than its group, never more public. Without any, `projects.default_visibility` applies.
 
 Tokens never have more than their user, their scopes (`read`, `ingest`, `act`) and their projects allow.
+
+</details>
+
+## Who creates projects {/* #who-creates-projects */}
+Projects are named `namespace/name`: the namespace is a team's (`camera-algo`) or a person's (their user name).
+Members of a namespace are the people and groups with a role on it, given in the **Access** tab of any of its
+projects as on `camera-algo`, or in **Admin → Groups**.
+
+| `projects.create` | Who creates `camera-algo/isp` |
+|---|---|
+| `anywhere` (the default) | anyone who can send results to the server, as before namespaces |
+| `namespace-members` | developers and owners of `camera-algo`; in their own namespace (`alice/...`), its owner |
+| `admins` | admins only |
+
+`namespaces.create` says who claims a namespace that doesn't exist yet, e.g. a new team's: `anyone` signed in (the
+default: they become its owner), or `admins`. Archived projects are hidden from the lists and refuse new results:
+owners archive and unarchive them in their **Access** tab, or with `qa project archive`.
+
+People create projects with **New project** (home page, Explore), `qa project create`, or their first `qa run`. When
+they can't, the web app and `qa` say why and whom to ask: the namespace's owners, else admins, and the project they
+could create in their own namespace. Push webhooks only create projects with `projects.create: anywhere`.
+
+<details>
+<summary>Move an existing server to namespace-members</summary>
+
+1. Give each namespace your teams use an owner: add them in the **Access** tab of one of its projects, as an owner
+   of `team` (the prefix, not the project), or as a group's role.
+2. Set `projects.create` to `namespace-members` in **Admin → Settings**. Existing projects keep working: only new
+   project ids are checked. CI jobs that create sub-projects need their token's user (or service account) to be a
+   developer of the namespace.
+3. Optionally, set `namespaces.create` to `admins`, so that new teams ask you for theirs: create their first
+   project (**New project**), which creates the namespace with you as its owner, then give them the owner role on it.
 
 </details>
 

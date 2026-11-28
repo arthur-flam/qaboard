@@ -1,0 +1,107 @@
+---
+id: site-directory
+sidebar_label: Site directory
+title: Keep your site's configuration in its own repository
+description: "A site directory holds your compose overlay, env files, nginx config, site package and site docs, outside QA-Board's repository: how to set it up, deploy from it, build the images and docs with it."
+---
+Your QA-Board server needs files of its own: a compose overlay with your storage and settings, env files per
+environment, nginx configuration, certificates, a [site package](/docs/installation#with-your-organizations-site-package)
+for `qa`, pages for your users. Keep them in a **site directory**, a private repository cloned next to your checkout of
+QA-Board, with one folder per site. You then upgrade QA-Board with a plain `git checkout`, and your configuration keeps
+its own history and access rights.
+
+```text
+qaboard/                     # QA-Board's repository: a release tag or master
+qaboard-site/                # your site directory, e.g. git@git.example.com:infra/qaboard-site
+  mysite/
+    production.env           # an environment for deploy.py
+    staging.env
+    mysite.yml               # the compose overlay
+    .env                     # secrets, not committed
+    nginx/                   # added to nginx's conf.d
+    cli/                     # your site package, qaboard-site-mysite
+    site-docs/               # pages for your users in the web app's docs
+    values.yaml              # values for the Helm chart
+```
+
+## Start from the example site
+`deployments/example/` uses every place a site can add something. Copy it:
+
+```bash
+git clone https://github.com/Samsung/qaboard
+git init qaboard-site
+cp -r qaboard/deployments/example qaboard-site/mysite   # rename "example" to "mysite" in its files and folders
+cp qaboard-site/mysite/.env.example qaboard-site/mysite/.env && chmod 600 qaboard-site/mysite/.env
+echo .env >> qaboard-site/.gitignore
+```
+
+Then edit the overlay and the env file as in [Starting a server](/docs/deploy#3-describe-your-site).
+
+## Deploy
+Run `deploy.py` from QA-Board's checkout, with your env file:
+
+```bash
+cd qaboard
+deployments/deploy.py ../qaboard-site/mysite/production.env up --version 1.2.0 --init   # first time
+deployments/deploy.py ../qaboard-site/mysite/production.env status|up|rollback|compose ...
+```
+
+- **`QABOARD_SITE_DIR`**: the folder with your sites' folders. `deploy.py` finds it (the folder above your env file's)
+  and sets it for docker compose: your overlay's paths are `${QABOARD_SITE_DIR}/mysite/...`. Override it with
+  `--site-dir` or the shell's `QABOARD_SITE_DIR`. Relative paths are from QA-Board's checkout, like docker compose
+  reads them.
+- **Secrets**: `.env` next to your env file. `deploy.py` gives it to the backend (`QABOARD_DOTENV`).
+- **Deployed versions** for `status` and `rollback`: `.deploy-state.<project>.json`, next to your env file.
+- Plain `docker compose --env-file ../qaboard-site/mysite/production.env ps` works too, when your env file sets
+  `QABOARD_SITE_DIR=${QABOARD_SITE_DIR:-../qaboard-site}`. It reads the checkout's `.env`: set `QABOARD_DOTENV`, or use
+  `deploy.py ... compose ps`.
+
+## Images and docs with your site
+Your overlay gives the images your site's folder as a named build context, `site-config`:
+
+```yaml title="qaboard-site/mysite/mysite.yml"
+services:
+  backend:
+    build:
+      args:
+        QABOARD_EXTRA: mysite          # installs cli/, the package qaboard-site-mysite
+        # CA_CERTS: certs/extra.crt    # certificates to trust, in your site's folder
+      additional_contexts:
+        site-config: ${QABOARD_SITE_DIR}/mysite
+  website:
+    build:
+      additional_contexts:
+        site-config: ${QABOARD_SITE_DIR}/mysite   # site-docs/, built with QABOARD_SITE=mysite
+```
+
+- The backend image installs your site package, for the server's [annotations](/docs/backend-admin/annotations),
+  [thumbnails](/docs/backend-admin/thumbnails) and the defaults it shares with `qa`. Images never contain the rest.
+- The web app's docs add the pages of `site-docs/` when your env file sets `QABOARD_SITE=mysite`. `_site.json` names
+  your site and its navbar item. Preview them with `QABOARD_SITE=mysite QABOARD_SITE_DIR=../qaboard-site yarn start`
+  in `website/`.
+- Add a `.dockerignore` with `.env` to your site's folder: it's sent to the image builder.
+
+## Kubernetes
+The chart takes your site's values: `helm upgrade --install qaboard charts/qaboard -f ../qaboard-site/mysite/values.yaml`.
+nginx configuration goes in `proxy.siteConfig`. The chart doesn't build images: install your site package in your own
+image, built from QA-Board's `backend/Dockerfile` with the `site-config` context.
+
+## CI
+Clone both repositories side by side, then deploy as above. To deploy when either changes, run the pipeline in QA-Board's
+mirror and trigger it from your site repository. Your site repository's CI can run QA-Board's checks of site folders:
+`QABOARD_SITE_DIR=../qaboard-site uv run python -m unittest tests.test_site_dir tests.test_schemas` (overlay files,
+site package, site docs, base *qaboard.yaml*).
+
+<details>
+<summary>Moving a site from deployments/ in your checkout</summary>
+
+Sites used to live in `deployments/<site>/` of QA-Board's checkout, which is still the default site directory.
+To move one:
+
+1. Copy `deployments/<site>/` into your site directory, with its history if you want it (`git filter-repo --path deployments/<site>/ --path-rename deployments/<site>/:<site>/`).
+2. In your overlay, write paths to your site's files as `${QABOARD_SITE_DIR:-./deployments}/<site>/...`, and add the
+   `site-config` build contexts. Move files your overlay mounted from elsewhere in the checkout into your site's folder.
+3. Merge the checkout's `.env` into `<site>/.env`.
+4. Deploy from the new env file. `deploy.py` reads the deployed versions kept in the checkout once, so `rollback` still
+   works, and keeps them next to the env file from then on.
+</details>

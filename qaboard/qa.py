@@ -1930,6 +1930,8 @@ from .inputs import inputs
 qa.add_command(inputs)
 from .restore import restore
 qa.add_command(restore)
+from .projects_command import project as project_command
+qa.add_command(project_command)
 
 
 from .mcp_server import mcp_command
