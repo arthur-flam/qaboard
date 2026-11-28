@@ -55,8 +55,8 @@ is_doctor_command = is_qa_program(sys.argv) and invoked_command(sys.argv) == 'do
 ignore_config_errors = ignore_config_errors or is_doctor_command
 # `qa upload` saves files as a run, also outside a project: it says itself what it misses (qaboard/upload_command.py)
 # `qa fetch-artifacts` and `qa send-batch-log` only talk to the server
-# `qa completion` and `qa version` don't need one either
-COMMANDS_WITHOUT_PROJECT = ('upload', 'fetch-artifacts', 'send-batch-log', 'restore', 'completion', 'version')
+# `qa completion` and `qa version` don't need one either, nor `qa project` (it uses the project's name when there is one)
+COMMANDS_WITHOUT_PROJECT = ('upload', 'fetch-artifacts', 'send-batch-log', 'restore', 'completion', 'version', 'project')
 is_command_without_project = is_qa_program(sys.argv) and invoked_command(sys.argv) in COMMANDS_WITHOUT_PROJECT
 ignore_config_errors = ignore_config_errors or is_command_without_project
 # `qa --version`, and shell completion (qaboard/completion.py): it prints nothing but candidates, without a project too
@@ -156,6 +156,19 @@ def invalid_settings(config: dict) -> list[tuple[tuple[str, ...], Any, tuple]]:
       if name != 'default' and settings is not None and not isinstance(settings, dict):
         invalid.append((('runners', str(name)), settings, (dict,)))
   return invalid
+
+
+def namespace_for(project_config: dict, environ=os.environ) -> str | None:
+  """
+  The namespace to put a project.name without one in: project.namespace, else $QABOARD_NAMESPACE. None for names that
+  have one (`group/repo`), or when neither is set.
+  """
+  name = project_config.get('name')
+  if not isinstance(name, str) or '/' in name.strip('/'):
+    return None
+  namespace = project_config.get('namespace') or environ.get('QABOARD_NAMESPACE') or ''
+  namespace = str(namespace).strip().strip('/')
+  return namespace or None
 
 
 def drop_invalid_settings(config: dict):
@@ -259,6 +272,14 @@ else:
   interpolation_vars = {"root_path": root_qatools, "project_path": project_dir}
   root_qatools_config['project']['name'] = expand_paths(root_qatools_config['project']['name'], interpolation_vars)
   config['project']['name'] = expand_paths(config['project']['name'], interpolation_vars)
+  # A name without namespace (`name: isp`) goes in project.namespace, else $QABOARD_NAMESPACE, when one is set:
+  # `alice/isp`. Without either, names stay as they are (docs/design/user-management.md, Appendix G)
+  namespace = namespace_for(root_qatools_config['project'])
+  if namespace:
+    original = root_qatools_config['project']['name']
+    root_qatools_config['project']['name'] = f"{namespace}/{original}"
+    if config['project']['name'] == original:
+      config['project']['name'] = root_qatools_config['project']['name']
   # project.url is optional: the git remote, or the CI, say where the repository is
   for project_config in (root_qatools_config['project'], config['project']):
     if project_config.get('url'):
@@ -371,7 +392,7 @@ commands_using_storage = {
 
 def storage_needed_by(command: str | None, share: bool, is_ci: bool) -> str | None:
   """Why a command needs the storage, or None if it doesn't. Runs in CI or with --share save their results there."""
-  if command in ('auth', 'init'):
+  if command in ('auth', 'init', 'project'):
     return None
   if is_ci:
     return 'In CI, `qa` saves results there'

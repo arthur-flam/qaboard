@@ -397,6 +397,22 @@ with qb.start_run(input="train/coco-mini") as run:
     self.assertEqual(len(server.requests), 2)  # when it starts, when it ends: not every few seconds
     self.assertTrue((self.storage / 'kitefin/detector').is_dir())
 
+  def test_projects_the_sender_cant_create_say_whom_to_ask(self):
+    # like backend/projects.py refusal(): the server says what to do, qa repeats it
+    server = self.server(output_status=403, output_error={
+      'error': "Only the developers and owners of the namespace kitefin create its projects, and kitefin/detector doesn't exist yet.",
+      'reason': 'project_create_denied', 'project': 'kitefin/detector', 'suggestion': 'alice/detector',
+      'hint': "Ask an owner of kitefin (bob) for the developer role on kitefin, or to create kitefin/detector.",
+    })
+    result = self.python(server=server, code="""
+import qaboard as qb
+with qb.start_run(input="train/coco-mini") as run:
+  run.log({"loss": 1.0})
+""")
+    self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertIn("doesn't exist yet", result.stderr)
+    self.assertIn("Ask an owner of kitefin (bob)", result.stderr)
+
   def test_a_server_that_comes_back_gets_everything(self):
     # nothing answers when the run starts; then the server is there
     import socket

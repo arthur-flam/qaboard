@@ -69,3 +69,19 @@ class TestConventions(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main()
+
+
+class TestProjectRefusals(unittest.TestCase):
+  """backend/backend/projects.py refusals: qa shows the server's hint"""
+  def test_server_hint(self):
+    from qaboard.credentials import fix_for
+    refused = {'reason': 'project_create_denied', 'error': "x", 'hint': "Ask an owner of camera (bob)."}
+    self.assertEqual(fix_for(refused, ci=True), "Ask an owner of camera (bob).")
+    self.assertEqual(fix_for({'reason': 'project_archived', 'error': "x", 'hint': None}), None)
+
+  def test_namespace_for(self):
+    from qaboard.config import namespace_for
+    self.assertIsNone(namespace_for({'name': 'group/repo', 'namespace': 'alice'}, environ={}))
+    self.assertIsNone(namespace_for({'name': 'isp'}, environ={}))
+    self.assertEqual(namespace_for({'name': 'isp', 'namespace': 'alice'}, environ={'QABOARD_NAMESPACE': 'bob'}), 'alice')
+    self.assertEqual(namespace_for({'name': 'isp'}, environ={'QABOARD_NAMESPACE': 'bob/'}), 'bob')

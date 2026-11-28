@@ -97,7 +97,7 @@ def print_auth_error(r, message="Failed to update QA-Board", ingest=False):
     results_refused = refused
   if not first_time(f"{refused['reason']}: {refused['error']}"):
     return True
-  fix = None if ingest and is_ci and refused['reason'] != 'missing_role' else fix_for(refused, qa_token_source, ci=is_ci, project=project_name(), server=qaboard_url)
+  fix = None if ingest and is_ci and refused['reason'] not in ('missing_role', *SERVER_HINTED_REFUSALS) else fix_for(refused, qa_token_source, ci=is_ci, project=project_name(), server=qaboard_url)
   from .ui import warning
   warning(f"{message}: {refused['error']}", hint=fix)
   return True
@@ -105,7 +105,7 @@ def print_auth_error(r, message="Failed to update QA-Board", ingest=False):
 
 # Why a server doesn't take the results of runs that would send it their files (backend/api/outputs.py)
 
-from .conventions import UPLOAD_FIX, UPLOAD_REFUSALS  # noqa: E402 (shared with qaboard/active_run.py)
+from .conventions import UPLOAD_FIX, UPLOAD_REFUSALS, SERVER_HINTED_REFUSALS  # noqa: E402 (shared with qaboard/active_run.py)
 
 
 def print_upload_refusal(r) -> bool:
@@ -141,6 +141,8 @@ def exit_if_results_refused():
   project = project_name()
   if results_refused['reason'] in UPLOAD_REFUSALS:
     fix = UPLOAD_FIX
+  elif results_refused['reason'] in SERVER_HINTED_REFUSALS and results_refused.get('hint'):
+    fix = results_refused['hint']
   elif results_refused['reason'] == 'missing_role':
     fix = f"The user of {env_name} must be a developer of {results_refused.get('project') or project or 'the project'}."
   else:

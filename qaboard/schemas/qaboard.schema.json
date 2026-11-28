@@ -40,6 +40,7 @@
       "type": "object",
       "properties": {
         "name": {"type": "string", "description": "The project's id, often the git repository's path, e.g. `group/repo`. Subprojects get `<name>/<subfolder>`. `{root_path}` and `{project_path}` are replaced."},
+        "namespace": {"type": "string", "description": "For a `name` without namespace (`isp`): the namespace to create it in, e.g. your user name: the project is `<namespace>/<name>`. Default: $QABOARD_NAMESPACE, else none."},
         "url": {"type": "string", "description": "The git repository's URL, e.g. `git@github.com:group/repo.git`. The same in all subprojects."},
         "type": {"type": "string", "description": "Unused, `git`."},
         "remote_type": {"type": "string", "description": "Unused: the git host's type is found from `url`."},
