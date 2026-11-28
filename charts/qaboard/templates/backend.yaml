@@ -121,6 +121,8 @@ kind: Service
 metadata:
   name: {{ include "qaboard.fullname" . }}-backend
   labels: {{- include "qaboard.labels" . | nindent 4 }}
+    # what the ServiceMonitor selects (metrics.yaml)
+    app.kubernetes.io/component: backend
 spec:
   selector: {{- include "qaboard.selectorLabels" (list . "backend") | nindent 4 }}
   ports:

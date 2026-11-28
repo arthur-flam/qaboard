@@ -28,6 +28,22 @@ cantaloupe:
   enabled: true
 celery:
   enabled: true
+# Prometheus: the ServiceMonitors (backend, flower), the alerts, the dashboard, with a token
+metrics:
+  enabled: true
+  token: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    labels: {release: kube-prometheus-stack}
+    metricRelabelings:
+      - {sourceLabels: [route], regex: /metrics, action: drop}
+  prometheusRule:
+    enabled: true
+    labels: {release: kube-prometheus-stack}
+  dashboard:
+    enabled: true
+    annotations: {grafana_folder: QA-Board}
 mcp:
   enabled: true
   replicas: 2

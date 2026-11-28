@@ -73,6 +73,8 @@ kind: Service
 metadata:
   name: {{ include "qaboard.fullname" . }}-flower
   labels: {{- include "qaboard.labels" . | nindent 4 }}
+    # what the ServiceMonitor selects (metrics.yaml)
+    app.kubernetes.io/component: flower
 spec:
   selector: {{- include "qaboard.selectorLabels" (list . "flower") | nindent 4 }}
   ports: [{name: http, port: 8888, targetPort: http}]
