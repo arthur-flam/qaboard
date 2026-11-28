@@ -62,6 +62,24 @@ def test_setup_creates_the_first_admin_and_signs_in(setup_on, client):
   assert event.target_label == 'admin' and PASSWORD not in str((event.meta, event.changes))
 
 
+@pytest.mark.parametrize('defaults', [None, 'recommended', 'open'])
+def test_setup_saves_the_recommended_access_defaults(setup_on, client, defaults):
+  """By default, or when asked: projects created by namespace members, internal, signed-in users viewers"""
+  from backend import settings
+  from backend.first_admin import RECOMMENDED_SETTINGS
+  response = setup(client, **({"defaults": defaults} if defaults else {}))
+  assert response.status_code == 201, response.get_json()
+  settings.invalidate_cache()
+  saved = {key: settings.source(key) for key in RECOMMENDED_SETTINGS}
+  if defaults == 'open':
+    assert set(saved.values()) == {'default'}
+    assert settings.setting('projects.create') == 'anywhere'
+  else:
+    assert set(saved.values()) == {'database'}
+    assert {key: settings.setting(key) for key in RECOMMENDED_SETTINGS} == RECOMMENDED_SETTINGS
+    assert len(events('setting.update')) == len(RECOMMENDED_SETTINGS)
+
+
 def test_setup_needs_the_token(setup_on, client):
   response = client.post('/api/v1/setup', json={"token": "nope", "user_name": "eve", "password": PASSWORD})
   assert response.status_code == 403 and response.get_json()["reason"] == "invalid_setup_token"

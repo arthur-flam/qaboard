@@ -128,6 +128,11 @@ ACTIONS = {
   'collection.version': Action("Saved a version of a collection", 'collections', project=True),
   'collection.pin': Action("Pinned a collection", 'collections', project=True),
   'collection.unpin': Action("Unpinned a collection", 'collections', project=True),
+  # Projects and namespaces (backend/projects.py)
+  'project.create': Action("Created a project", 'projects', project=True),
+  'project.archive': Action("Archived a project", 'projects', project=True),
+  'project.unarchive': Action("Unarchived a project", 'projects', project=True),
+  'namespace.create': Action("Created a namespace", 'projects'),
   # Project settings
   'project_settings.update': Action("Changed the project's settings", 'projects', project=True),
   # Storage

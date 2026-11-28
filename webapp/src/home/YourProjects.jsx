@@ -12,6 +12,7 @@ import { LastActivity } from "../explore/ExplorePage";
 import { Sparkline } from "../explore/Sparkline";
 import { my_projects, my_projects_days } from "./logic";
 import { Empty, LoadError, Section } from "./parts";
+import { NewProjectButton } from "../projects/NewProjectDialog";
 
 
 const shown_first = 8;
@@ -75,6 +76,7 @@ export const YourProjects = ({ query, projects }) => {
     id="projects"
     title="Your projects"
     icon="projects"
+    extra={<NewProjectButton variant="minimal" size="small"/>}
   >
     {query.isPending && <SkeletonItems/>}
     {failed && <LoadError what="the projects" error={query.error} onRetry={() => query.refetch()}/>}

@@ -8,6 +8,7 @@ the site provides.
 | Key | Meaning |
 |---|---|
 | `name` | `group/repo`, the git host's path, lowercase. Subprojects in a monorepo: a `qaboard.yaml` per folder with `project.name: group/repo/sub` (https://samsung.github.io/qaboard/docs/monorepo-subprojects). |
+| `namespace` | For a `name` without namespace (`isp`): where to create it, e.g. your user name: the project is `alice/isp`. Default: `$QABOARD_NAMESPACE`, else none (https://samsung.github.io/qaboard/docs/project-init#the-project-on-the-server). |
 | `url` | The repository's URL. The server reads commit messages and avatars from it when it can (https://samsung.github.io/qaboard/docs/backend-admin/git-hosts). |
 | `entrypoint` | The Python file with `run()`, relative to the project's root. |
 | `reference_branch` | New commits are compared with this branch's latest results. Usually `main`/`master`/`develop`. |

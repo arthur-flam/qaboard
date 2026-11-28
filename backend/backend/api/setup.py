@@ -19,13 +19,18 @@ def setup_status():
     "open": first_admin.setup_open(),
     "default_user_name": first_admin.DEFAULT_ADMIN_USER,
     "min_password_length": first_admin.MIN_PASSWORD_LENGTH,
+    "recommended_settings": first_admin.RECOMMENDED_SETTINGS,
   })
 
 
 @app.route('/api/v1/setup', methods=['POST'])
 @app.route('/api/v1/setup/', methods=['POST'])
 def setup_first_admin():
-  """{token, user_name, password, full_name?, email?}: creates the first admin, and signs them in"""
+  """
+  {token, user_name, password, full_name?, email?, defaults?: recommended (default) | open}: creates the first admin,
+  and signs them in. "recommended" saves first_admin.RECOMMENDED_SETTINGS: projects are created by the members of
+  their namespace, and are internal, with signed-in users as viewers. "open" keeps the defaults, what servers did before.
+  """
   body = request.get_json(silent=True) or {}
   if not first_admin.setup_open():
     return jsonify({"error": "QA-Board is already set up: sign in, or ask an admin for an account.", "reason": "setup_done"}), 409
@@ -52,8 +57,15 @@ def setup_first_admin():
       db_session.rollback()
       return jsonify({"error": problem, "reason": "invalid", "field": field}), 400
 
+  defaults = body.get('defaults') or 'recommended'
+  if defaults not in ('recommended', 'open'):
+    db_session.rollback()
+    return jsonify({"error": "defaults is \"recommended\" or \"open\".", "reason": "invalid", "field": "defaults"}), 400
+
   user = first_admin.new_local_user(user_name, password, full_name=full_name, email=email, is_admin=True)
-  audit('setup.first_admin', 'user', user.id, user.user_name, user=user, meta={"login_type": "LOCAL"})
+  audit('setup.first_admin', 'user', user.id, user.user_name, user=user, meta={"login_type": "LOCAL", "defaults": defaults})
+  if defaults == 'recommended':
+    first_admin.save_recommended_settings(user)
   db_session.commit()
   logger.info("%s set up QA-Board: they're its first admin", user.user_name)
 

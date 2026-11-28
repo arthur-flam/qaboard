@@ -31,6 +31,7 @@ from ..sign_in.accounts import finish as finish_sign_in, new_user_status
 from ..sign_in.profiles import avatar_url, public as public_profile
 from .. import tokens as tokens_lib
 from ..access import can
+from ..access.policy import is_valid_project_id
 
 
 login_manager = LoginManager(app)
@@ -401,15 +402,24 @@ def ingest_access(project_id: str, require_token: bool = False):
   `submitted_by` says who really sent them (a token's user), None for unverified results.
   With ingest.auth "off" or "warn" we accept unverified results, and the X-QABoard-Warning header tells the CLI why.
   `require_token`: for endpoints without legacy anonymous clients, a token with the ingest scope is needed whatever ingest.auth says.
+  Results for a project that doesn't exist create it, if projects.create allows the sender (backend/projects.py):
+  else they're refused, whatever ingest.auth says. Archived projects refuse results.
   """
+  from .. import projects
   mode = 'token' if require_token else setting('ingest.auth')
   actor = g.get('actor')
+  project = _existing_project(project_id)
+  if project is not None and project.archived_at is not None:
+    return None, projects.archived_refusal(project_id)
+  new = project is None and is_valid_project_id(project_id, new=True)
   if actor is None or actor.user is None:
     if mode == 'token':
       return None, (jsonify({
         "error": "This server only accepts results sent with a token." if not require_token else "Sign in to do this: run `qa auth login`, or send a token with the ingest scope.",
         "reason": "ingest_token_required" if not require_token else "login_required",
       }), 401 if require_token else 403)
+    if new and (refused := _create_for_ingest(None, project_id)):
+      return None, refused
     if mode == 'warn':
       g.qaboard_warning = "Your results were saved as unverified, without a token. This server will soon require one: run `qa auth login`, or set QABOARD_TOKEN in CI."
     return None, None
@@ -418,15 +428,49 @@ def ingest_access(project_id: str, require_token: bool = False):
     problem = ("missing_scope", "This token can't send results: it needs the \"ingest\" scope.")
   elif not actor.allows_project(project_id):
     problem = ("token_project", f"This token can't send results to {project_id}.")
+  elif new and (refused := _create_for_ingest(actor, project_id)):
+    return None, refused
   elif not can('runs.ingest', project_id, actor):
     problem = ("missing_role", f"You need the developer role to send results to {project_id}.")
   if problem:
     reason, message = problem
-    if mode == 'token':
+    # unverified results don't create projects
+    if mode == 'token' or (new and projects.check_create(None, project_id).allowed is False):
       return None, (jsonify({"error": message, "reason": reason, **({"required": "ingest"} if reason == "missing_scope" else {})}), 403)
+    if new:
+      _create_for_ingest(None, project_id)
     g.qaboard_warning = f"{message} Your results were saved as unverified."
     return None, None
   return actor.submitted_by(), None
+
+
+def _existing_project(project_id):
+  from ..models import Project
+  if not is_valid_project_id(project_id):
+    return None
+  return db_session.get(Project, project_id)
+
+
+def _create_for_ingest(actor, project_id):
+  """Creates the project of the first results it gets, if the policy allows the sender: None, or the refusal"""
+  from .. import projects
+  body = request.get_json(silent=True) if request.is_json else None
+  root = body.get('project_root') if isinstance(body, dict) else None
+  check = projects.check_create(actor, project_id, root=root if isinstance(root, str) else None)
+  if check.reason == 'exists':
+    return None
+  if not check.allowed:
+    return projects.refusal(check)
+  config = (body or {}).get('qaboard_config') if isinstance(body, dict) else None
+  project_config = (config or {}).get('project') if isinstance(config, dict) else None
+  url = project_config.get('url') if isinstance(project_config, dict) else None
+  repository = projects.repo_from_url(url)
+  if repository is not None:
+    root = (body.get('project_root') or (project_config or {}).get('name') or '') if isinstance(body, dict) else ''
+    root = root if isinstance(root, str) else ''
+    repository['subdir'] = project_id[len(root):].strip('/') if root and (project_id == root or project_id.startswith(root.rstrip('/') + '/')) else ''
+  projects.create(actor, project_id, via='ingest', repository=repository, check=check)
+  return None
 
 
 @app.route('/api/v1/user/logout/', methods=['POST'])

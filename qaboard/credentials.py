@@ -301,7 +301,7 @@ def json_body(r) -> dict[str, Any]:
 def refusal(r) -> dict[str, Any] | None:
   """
   For a 401 or 403 that says why (JSON with a `reason`): {status, reason, error (the server's sentence), required?,
-  project?, owners? (whom to ask for a role)}.
+  project?, owners? (whom to ask for a role), hint? (what to do, when the server says it)}.
   None otherwise: callers keep their usual error handling, e.g. for older servers or proxies.
   """
   status = getattr(r, 'status_code', None)
@@ -315,9 +315,12 @@ def refusal(r) -> dict[str, Any] | None:
     error = f"QA-Board refused the request ({status} {reason})."
   required = body.get('required')
   owners = [o.get('name') for o in body.get('owners') or [] if isinstance(o, dict) and isinstance(o.get('name'), str)]
+  hint = body.get('hint')
   return {
     'status': status, 'reason': reason, 'error': error.strip(), 'required': required if isinstance(required, str) else None,
     'project': body.get('project') if isinstance(body.get('project'), str) else None, 'owners': owners,
+    # what to do, when the server knows better than us (e.g. whom to ask to create a project)
+    'hint': hint.strip() if isinstance(hint, str) and hint.strip() else None,
   }
 
 
@@ -330,6 +333,9 @@ def fix_for(refused: dict[str, Any], token_source: str | None = None, ci: bool =
   env_name = token_source if token_source in ENV_TOKENS else 'QABOARD_TOKEN'
   if reason == 'token_in_url':
     return None
+  from .conventions import SERVER_HINTED_REFUSALS
+  if reason in SERVER_HINTED_REFUSALS:
+    return refused.get('hint')
   if reason == 'token_project':
     return f"Create a token for {project or 'this project'} in {ACCESS_TOKENS_PAGE}."
   if reason == 'missing_scope':

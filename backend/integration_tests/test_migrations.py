@@ -261,3 +261,24 @@ def test_outputs_metrics_become_jsonb(alembic):
   assert leftovers() == ([], [], [])
   assert [r[0] for r in sql("SELECT metrics FROM outputs ORDER BY id LIMIT 2")] == [{"kept": 1}, {}]
   sql("DROP INDEX ix_outputs_loss")
+
+
+def test_namespaces_and_repository_links_are_backfilled(alembic):
+  """e2f4a6c8b0d1: a legacy namespace per first segment, without members; repository links from data.git or the id"""
+  alembic('downgrade', 'd6f8a0c2e4b7')
+  assert not sql("SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'namespace_id'")
+  sql("""INSERT INTO projects (id, data) VALUES
+         ('dvs/psp_swip', '{"git": {"path_with_namespace": "dvs/psp_swip", "host": "GitLab.example.com"}}'),
+         ('dvs/psp_swip/libs/isp', '{"git": {"path_with_namespace": "dvs/psp_swip"}}'),
+         ('solo', '{}'),
+         ('cde/x_y/sub', '{"git": {"path_with_namespace": "cde/x"}}')""")
+  alembic('upgrade', 'head')
+  assert sql("SELECT path, kind, legacy FROM namespaces ORDER BY path") == [('cde', 'org', True), ('dvs', 'org', True), ('solo', 'org', True)]
+  assert sql("SELECT count(*) FROM projects p JOIN namespaces n ON n.id = p.namespace_id AND n.path = split_part(p.id, '/', 1)") == [(4,)]
+  assert sql("SELECT project_id, git_host, repo_path, subdir FROM project_repos ORDER BY project_id") == [
+    ('cde/x_y/sub', '', 'cde/x_y', 'sub'),
+    ('dvs/psp_swip', 'gitlab.example.com', 'dvs/psp_swip', ''),
+    ('dvs/psp_swip/libs/isp', '', 'dvs/psp_swip', 'libs/isp'),
+  ]
+  # nobody got a role
+  assert sql("SELECT count(*) FROM role_grants") == [(0,)]
