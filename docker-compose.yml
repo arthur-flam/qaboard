@@ -136,6 +136,11 @@ services:
     # The backend's logs (website/docs/backend-admin/logs.mdx): DEBUG/INFO/WARNING (default INFO), and text or json (default text)
     - QABOARD_LOG_LEVEL=${QABOARD_LOG_LEVEL:-}
     - QABOARD_LOG_FORMAT=${QABOARD_LOG_FORMAT:-}
+    # Metrics for Prometheus at /metrics on port 3001, which isn't published nor served by the proxy: QABOARD_METRICS=1
+    # in .env. See website/docs/backend-admin/monitoring.mdx and deployments/prometheus.example.yml
+    - QABOARD_METRICS
+    - QABOARD_METRICS_TOKEN
+    - QABOARD_METRICS_ALLOWED_NETWORKS
     # Used by docker and deployments/deploy.py to know when a replica is ready to serve traffic
     healthcheck:
       # Never through the http_proxy of the environment, it may not bypass localhost

@@ -23,6 +23,10 @@ services:
       # Observability with Sentry (set to enable), see https://samsung.github.io/qaboard/docs/backend-admin/monitoring
       # - SENTRY_DSN=https://...@sentry.example.com/1
       # - SENTRY_ENVIRONMENT=production
+      # Metrics for Prometheus, at /metrics on the backend's own port (3001): deployments/prometheus.example.yml
+      # scrapes it. With a token, only who sends it reads them
+      # - QABOARD_METRICS=1
+      # - QABOARD_METRICS_TOKEN=...
 
       # Output path user (for multi-user environments)
       # - QABOARD_DEFAULT_USER=qaboard

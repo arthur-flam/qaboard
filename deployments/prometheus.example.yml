@@ -1,0 +1,66 @@
+# Example: a Prometheus next to QA-Board that scrapes its metrics and loads its alerts.
+# Docs: https://samsung.github.io/qaboard/docs/backend-admin/monitoring
+#
+# Usage, from the repository's root (paths below are relative to it):
+#   docker compose -f docker-compose.yml -f production.yml -f deployments/prometheus.example.yml up -d
+# or add it to COMPOSE_FILE in your env file (deployments/production.env).
+#
+# You already have a Prometheus? You only need QABOARD_METRICS=1 in .env, and its scrape job below: it must reach
+# the backend's own port (3001), which isn't published. Attach it to this project's network, or publish the port
+# on an address only it reaches and set QABOARD_METRICS_TOKEN.
+
+services:
+  backend:
+    environment:
+      # serves /metrics on the backend's own port (3001): not through the proxy, and only to private addresses
+      # such as this network's. With QABOARD_METRICS_TOKEN (in .env), only to who sends it: see `authorization` below
+      - QABOARD_METRICS=1
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus-data:/prometheus
+      # the alerts that come with QA-Board. To change thresholds, mount your copy
+      - ./charts/qaboard/files/prometheus-rules.yaml:/etc/prometheus/qaboard-rules.yaml:ro
+    ports:
+      # only on this host: Prometheus has no login. Grafana on another host? Publish it there behind your proxy
+      - "127.0.0.1:${QABOARD_PORT_PROMETHEUS:-9090}:9090"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+configs:
+  prometheus:
+    content: |
+      global:
+        scrape_interval: 30s
+      rule_files:
+        - /etc/prometheus/qaboard-rules.yaml
+      # alerting:
+      #   alertmanagers:
+      #     - static_configs: [{targets: ["alertmanager:9093"]}]
+      scrape_configs:
+        - job_name: qaboard
+          metrics_path: /metrics
+          # every replica of the backend (QABOARD_BACKEND_REPLICAS): each has its own counters
+          dns_sd_configs:
+            - names: [backend]
+              type: A
+              port: 3001
+          # with QABOARD_METRICS_TOKEN:
+          # authorization:
+          #   credentials: the-token
+        # Celery workers and tasks, if you run batches with Celery: Flower exports them
+        # - job_name: qaboard-flower
+        #   metrics_path: /flower/metrics
+        #   static_configs: [{targets: ["flower:8888"]}]
+
+volumes:
+  prometheus-data:
