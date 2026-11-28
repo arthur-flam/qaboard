@@ -8,4 +8,4 @@ The Helm chart, `charts/qaboard/`. Images and compose deployments: `deployments/
   (`helm lint`, kubeconform); `helm-e2e` installs the quickstart and runs `.github/scripts/helm_e2e.py`, with
   `--kubernetes` for batches the server starts without a shared storage.
 - Published to `oci://ghcr.io/<owner>/charts/qaboard`; `image.repository` overrides the default images.
-- Site values: `deployments/<site>/values.yaml`.
+- Site values: `<site>/values.yaml` in the site's site directory (the example: `deployments/example/values.yaml`, rendered by CI).

@@ -1,0 +1,29 @@
+# The example site's values for the Helm chart (charts/qaboard):
+#   helm upgrade --install qaboard charts/qaboard -n qaboard -f "$QABOARD_SITE_DIR"/example/values.yaml \
+#        --set image.version=<version> --atomic --wait --timeout 15m
+# CI renders the chart with it (the helm job). The chart doesn't build images: a site package goes in your own image.
+image:
+  repository: registry.example.com/qaboard
+config:
+  QABOARD_URL: https://qaboard.example.com
+  QABOARD_LOGIN_TYPE: LDAP
+  QABOARD_LDAP_HOST: ldap.example.com
+  QABOARD_CLI_REQUIREMENTS: 'qaboard-site-example @ git+https://git.example.com/infra/qaboard-site#subdirectory=example/cli'
+database:
+  embedded:
+    enabled: true
+backend:
+  replicas: 1
+  data:
+    accessMode: ReadWriteOnce
+proxy:
+  # Like nginx/ for docker compose
+  siteConfig:
+    example.conf: |
+      server {
+        listen 5004;
+        location = /site {
+          default_type text/plain;
+          return 200 "example\n";
+        }
+      }

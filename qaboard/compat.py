@@ -92,8 +92,21 @@ def _load_path_mappings():
 
 mappings = _load_path_mappings()
 
-# TODO: ideally parameterizable, but too painful and near-zero chance of name collision
-re_algo_inputs = re.compile(r"\\\\netapp\\vol23_algo\\([^\\]+)[\\_]inputs")
+
+def _load_path_rewrites():
+  """
+  Rewrites of the Windows paths linux_to_windows gives, from site config (QABOARD_PATH_REWRITES, env var or site
+  package): a JSON list of [regex, replacement] pairs (Python's re.sub syntax), the first that matches is applied once.
+  E.g. when a share has a faster or preferred alias for some of its folders.
+  """
+  raw = site_config("QABOARD_PATH_REWRITES", "[]")
+  try:
+    return tuple((re.compile(pattern), replacement) for pattern, replacement in json.loads(raw))
+  except (json.JSONDecodeError, TypeError, ValueError, re.error):
+    ui.warning("QABOARD_PATH_REWRITES is not a JSON list of [regex, replacement] pairs: it's ignored")
+    return ()
+
+rewrites = _load_path_rewrites()
 
 
 def windows_to_linux(path : str) -> str:
@@ -111,11 +124,10 @@ def linux_to_windows(path : str) -> str:
       path = path.replace(path_linux, path_windows)
       break
   path = path.replace('/', '\\')
-  match_algo_inputs = re_algo_inputs.match(path)
-  if match_algo_inputs:
-    # /algo/CIS/inputs is a symlink to /algo/CIS_inputs, we prefer the later
-    # /algo is split into multiple volumes, it is not as transparent on windows as on linux
-    path = rf"\\netapp\vol24_algo\{match_algo_inputs.group(1)}_inputs{path[match_algo_inputs.end():]}"
+  for pattern, replacement in rewrites:
+    if pattern.search(path):
+      path = pattern.sub(replacement, path, count=1)
+      break
   return path
 
 

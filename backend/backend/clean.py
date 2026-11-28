@@ -39,7 +39,6 @@ Notes:
 """
 import logging
 import re
-import sys
 import json
 import glob
 import datetime
@@ -92,177 +91,115 @@ def is_milestone_commit(hexsha, milestone_commits) -> bool:
 # TODO: remove __all__ the output folders for deleted results +3months
 # TODO: remove all files in artifacts by fixing permission issues
 
-@click.command()
-@click.option('--clean-untracked-artifacts', is_flag=True, help="Delete untracked artifacts")
-@click.option('--artifacts-root', 'artifacts_roots', multiple=True, help="Where to look for artifacts")
-@click.option('--use-cache', is_flag=True, help="Cache protected commits from milestones")
-def clean_untracked_hwalg_artifacts(clean_untracked_artifacts, artifacts_roots, use_cache):
-    """
-    WARNING: don't run this unless you know what you are doing
-    """
-    from .git_utils import git_pull
+def _untracked_cleanup_options(roots_help):
+  def decorate(f):
+    for option in reversed([
+      click.option('--project', 'project_id', required=True, help="The project whose repository the folders' commits are in, e.g. group/repo"),
+      click.option('--exclude', 'excluded', multiple=True, help="Projects under --project whose milestones are not protected (prefixes, e.g. group/repo/legacy)"),
+      click.option('--root', 'roots', multiple=True, required=True, help=roots_help),
+      click.option('--older-than', default='3weeks', show_default=True, help="Only delete the folders of commits older than this"),
+      click.option('--use-cache', is_flag=True, help="Reuse the milestones' commits saved in cache.milestones.json by an earlier run"),
+    ]):
+      f = option(f)
+    return f
+  return decorate
+
+
+def _milestone_commits(project_id, excluded, use_cache):
+    """The commits protected by the milestones of a project and its subprojects (they share a clone)"""
     cache_path = Path('cache.milestones.json')
     if cache_path.exists() and use_cache:
         secho("WARNING: Using CACHED MILESTONES commits", fg='yellow')
-        milestone_commits = set(json.loads(cache_path.read_text()))
-    else:
-        milestone_commits = set()
-        projects = (db_session
-                    .query(Project)
-                    .filter(Project.id.startswith('CDE-Users/HW_ALG'))
-                    .filter(not_(Project.id.startswith('CDE-Users/HW_ALG/ALG_GEN')))
-        )
-        with protected_ref_commits_cache():  # the projects share a clone
-            for project in projects:
-                logger.info("Milestones of %s", project.id)
-                milestone_commits.update(set(project.milestone_commits))
-        with cache_path.open('w') as f:
-            json.dump(list(milestone_commits), f)
+        return set(json.loads(cache_path.read_text()))
+    milestone_commits = set()
+    projects = db_session.query(Project).filter(Project.id.startswith(project_id))
+    for prefix in excluded:
+        projects = projects.filter(not_(Project.id.startswith(prefix)))
+    with protected_ref_commits_cache():  # the projects share a clone
+        for project in projects:
+            logger.info("Milestones of %s", project.id)
+            milestone_commits.update(set(project.milestone_commits))
+    with cache_path.open('w') as f:
+        json.dump(list(milestone_commits), f)
+    return milestone_commits
+
+
+def _clean_untracked(kind, project_id, excluded, roots, older_than, use_cache, by):
+    """
+    Deletes the old commit folders (<root>/<2 first characters of the commit>/<the rest>) the database may not know,
+    unless a milestone protects their commit. kind: "artifacts" or "outputs".
+    """
+    from .git_utils import git_pull
+    milestone_commits = _milestone_commits(project_id, excluded, use_cache)
     secho(f"Protecting {len(milestone_commits)} commits", fg='blue')
+    project = db_session.query(Project).filter(Project.id == project_id).one()
+    git_pull(project.repo)
 
-    hwalg = db_session.query(Project).filter(Project.id == 'CDE-Users/HW_ALG').one()
-    git_pull(hwalg.repo)
-
-    if not artifacts_roots:
-        artifacts_roots = [
-            # '/stage/algo_data/ci/CDE-Users/HW_ALG/commits',
-            '/algo/CIS_artifacts/CDE-Users/HW_ALG',
-            '/algo/PSP_2x_artifacts/CDE-Users/HW_ALG',
-            '/algo/KITT_ISP_artifacts/CDE-Users/HW_ALG',
-            # '/stage/algo_data/ci/CDE-Users/HW_ALG',
-        ]
-    for artifacts_root in artifacts_roots:
-        artifacts_root = Path(artifacts_root)
+    roots = [match for root in roots for match in (glob.glob(root) or [root])]
+    for root in roots:
+        root = Path(root)
         def iter_hashsha_dir():
-            for hash2 in artifacts_root.iterdir():
+            for hash2 in root.iterdir():
                 if len(hash2.name) != 2:
                     continue
                 for hash16 in hash2.iterdir():
                     hexsha = hash2.name + hash16.name
                     yield hexsha, hash16
 
-        for hexsha, artifact_dir in iter_hashsha_dir():
+        for hexsha, commit_dir in iter_hashsha_dir():
             try:
-                commit = hwalg.repo.commit(hexsha)
+                commit = project.repo.commit(hexsha)
                 hexsha = commit.hexsha
-            except: # force pushes, rebases... some commits won't be fetched
-                commit = None
-            try:
-                created_datetime = commit.authored_datetime
-            except:
-                ctime = artifact_dir.stat().st_ctime
-                created_datetime = datetime.datetime.fromtimestamp(ctime).astimezone()
-            is_old = created_datetime < now.astimezone() - parse_time('3weeks')
-            if is_old and not is_milestone_commit(hexsha, milestone_commits):
-                logger.info("Deleting %s (%s)", artifact_dir, created_datetime)
-                ci_commit = CiCommit(
-                    hexsha=hexsha,
-                    project=hwalg,
-                )
-                try:
-                    nb_manifests_dir = 0
-                    for qatools_path in artifact_dir.rglob('manifests'):
-                        nb_manifests_dir += 1
-                        ci_commit.commit_dir_override = qatools_path.parent
-                        logger.debug("Deleting the artifacts in %s", ci_commit.commit_dir_override)
-                        ci_commit.delete()
-                    if not nb_manifests_dir:
-                        ci_commit.commit_dir_override = artifact_dir
-                        logger.debug("Deleting the artifacts in %s", ci_commit.commit_dir_override)
-                        ci_commit.delete()
-                except Exception as e: # empty parent folders will be deleted, including the folder we iterate in...
-                    # __pycache__ can be owned by a different user that the one that created the folder...
-                    logger.warning("Could not delete %s: %s", artifact_dir, e)
-                # ci_commit is only a helper, not the commits QA-Board knows: tell them their artifacts are gone
-                mark_artifacts_deleted(hexsha, 'CDE-Users/HW_ALG', artifact_dir, by="clean_untracked_hwalg_artifacts")
-                # return
-
-
-
-@click.command()
-@click.option('--outputs-root', 'outputs_roots', multiple=True, help="Where to look for outputs")
-@click.option('--use-cache', is_flag=True, help="Cache protected commits from milestones")
-@click.option('--user', required=True, help="The user name to delete the quota for")
-def clean_untracked_hwalg_outputs(outputs_roots, user, use_cache):
-    """
-    WARNING: don't run this unless you know what you are doing
-    """
-    from .git_utils import git_pull
-    cache_path = Path('cache.milestones.json')
-    if cache_path.exists() and use_cache:
-        secho("WARNING: Using CACHED MILESTONES commits", fg='yellow')
-        milestone_commits = set(json.loads(cache_path.read_text()))
-    else:
-        milestone_commits = set()
-        projects = (db_session
-                    .query(Project)
-                    .filter(Project.id.startswith('CDE-Users/HW_ALG'))
-                    .filter(not_(Project.id.startswith('CDE-Users/HW_ALG/ALG_GEN')))
-        )
-        with protected_ref_commits_cache():  # the projects share a clone
-            for project in projects:
-                logger.info("Milestones of %s", project.id)
-                milestone_commits.update(set(project.milestone_commits))
-        with cache_path.open('w') as f:
-            json.dump(list(milestone_commits), f)
-
-    secho(f"Protecting {len(milestone_commits)} commits", fg='blue')
-    hwalg = db_session.query(Project).filter(Project.id == 'CDE-Users/HW_ALG').one()
-    git_pull(hwalg.repo)
-    if not outputs_roots:
-        outputs_roots = [
-            f"/algo/CIS/outputs/{user}/CDE-Users/HW_ALG",
-            f"/algo/PSP_2x/outputs/{user}/CDE-Users/HW_ALG",
-            f"/algo/KITT_ISP/outputs/{user}/CDE-Users/HW_ALG",
-        ]
-
-    outputs_roots = [glob.glob(outputs_root) for outputs_root in outputs_roots]
-    outputs_roots = [item for sublist in outputs_roots for item in sublist] # flatten list
-    for outputs_root in outputs_roots:
-        outputs_root = Path(outputs_root)
-        def iter_hashsha_dir():
-            for hash2 in outputs_root.iterdir():
-                if len(hash2.name) != 2:
-                    continue
-                for hash16 in hash2.iterdir():
-                    hexsha = hash2.name + hash16.name
-                    yield hexsha, hash16
-
-        for hexsha, output_dir in iter_hashsha_dir():
-            try:
-                commit = hwalg.repo.commit(hexsha)
-                hexsha = commit.hexsha
-            except: # force pushes, rebases... some commits won't be fetched
+            except Exception: # force pushes, rebases... some commits won't be fetched
                 commit = None
                 logger.info("The commit %s isn't in the git repository", hexsha)
             try:
                 created_datetime = commit.authored_datetime
-            except:
-                ctime = output_dir.stat().st_ctime
+            except Exception:
+                ctime = commit_dir.stat().st_ctime
                 created_datetime = datetime.datetime.fromtimestamp(ctime).astimezone()
+            is_old = created_datetime < now.astimezone() - parse_time(older_than)
+            if not is_old or is_milestone_commit(hexsha, milestone_commits):
+                continue
+            logger.info("Deleting %s (%s)", commit_dir, created_datetime)
+            ci_commit = CiCommit(hexsha=hexsha, project=project)
+            try:
+                nb_manifests_dir = 0
+                for qatools_path in commit_dir.rglob('manifests'):
+                    nb_manifests_dir += 1
+                    ci_commit.commit_dir_override = qatools_path.parent
+                    logger.debug("Deleting the %s in %s", kind, ci_commit.commit_dir_override)
+                    ci_commit.delete()
+                if not nb_manifests_dir:
+                    ci_commit.commit_dir_override = commit_dir
+                    logger.debug("Deleting the %s in %s", kind, ci_commit.commit_dir_override)
+                    ci_commit.delete()
+            except Exception as e: # empty parent folders will be deleted, including the folder we iterate in...
+                # __pycache__ can be owned by a different user that the one that created the folder...
+                logger.warning("Could not delete %s: %s", commit_dir, e)
+            if kind == 'artifacts':
+                # ci_commit is only a helper, not the commits QA-Board knows: tell them their artifacts are gone
+                mark_artifacts_deleted(hexsha, project_id, commit_dir, by=by)
 
-            is_old = created_datetime < now.astimezone() - parse_time('3weeks')
-            if is_old and not is_milestone_commit(hexsha, milestone_commits):
-                logger.info("Deleting %s (%s)", output_dir, created_datetime)
-                ci_commit = CiCommit(
-                    hexsha=hexsha,
-                    project=hwalg,
-                )
-                try:
-                    nb_manifests_dir = 0
-                    for qatools_path in output_dir.rglob('manifests'):
-                        nb_manifests_dir += 1
-                        ci_commit.commit_dir_override = qatools_path.parent
-                        logger.debug("Deleting the outputs in %s", ci_commit.commit_dir_override)
-                        ci_commit.delete()
-                    if not nb_manifests_dir:
-                        ci_commit.commit_dir_override = output_dir
-                        logger.debug("Deleting the outputs in %s", ci_commit.commit_dir_override)
-                        ci_commit.delete()
-                except Exception as e: # empty parent folders will be deleted, including the folder we iterate in...
-                    # __pycache__ can be owned by a different user that the one that created the folder...
-                    logger.warning("Could not delete %s: %s", output_dir, e)
-                # return
+
+@click.command()
+@_untracked_cleanup_options("Where to look for artifacts: folders of commits, e.g. /mnt/artifacts/group/repo")
+def clean_untracked_artifacts(project_id, excluded, roots, older_than, use_cache):
+    """
+    Deletes old commits' artifacts in folders the database may not know about, except the milestones'.
+    WARNING: don't run this unless you know what you are doing
+    """
+    _clean_untracked('artifacts', project_id, excluded, roots, older_than, use_cache, by="clean_untracked_artifacts")
+
+
+@click.command()
+@_untracked_cleanup_options("Where to look for outputs: folders of commits, e.g. /mnt/outputs/alice/group/repo (globs allowed)")
+def clean_untracked_outputs(project_id, excluded, roots, older_than, use_cache):
+    """
+    Deletes old commits' outputs in folders the database may not know about, except the milestones'.
+    WARNING: don't run this unless you know what you are doing
+    """
+    _clean_untracked('outputs', project_id, excluded, roots, older_than, use_cache, by="clean_untracked_outputs")
 
 
 
@@ -535,7 +472,4 @@ def clean(project_ids, before, can_delete_reference_branch, can_delete_outputs, 
 
 
 if __name__ == '__main__':
-    if '--clean-untracked-artifacts' in sys.argv:
-        clean_untracked_hwalg_artifacts()
-    else:
-        clean()
+    clean()

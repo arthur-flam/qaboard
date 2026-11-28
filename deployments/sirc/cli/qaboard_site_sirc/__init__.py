@@ -54,4 +54,9 @@ defaults = {
         ["\\\\mars\\stage", "/stage"],
         ["\\\\netapp\\vol19_data", "/net/netapp/vol/vol19_data"],
     ]),
+    # /algo/CIS/inputs is a symlink to /algo/CIS_inputs, we prefer the later. /algo is split into multiple volumes,
+    # it is not as transparent on windows as on linux (was hard-coded in qaboard/compat.py)
+    "QABOARD_PATH_REWRITES": json.dumps([
+        [r"^\\\\netapp\\vol23_algo\\([^\\]+)[\\_]inputs", r"\\\\netapp\\vol24_algo\\\1_inputs"],
+    ]),
 }

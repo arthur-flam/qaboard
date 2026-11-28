@@ -4,7 +4,7 @@ Run this before calling `docker compose up` at SIRC.
 
 At SIRC we rely on auto-mounted volumes. Attempting to mount them before they are bound leads to "too many levels of symbolic links errors".
 
-It's slow: with --if-stale (used by deployments/deploy.py), it does nothing if it already ran on this host
+It's slow: with --if-stale (used by deploy.py, see QABOARD_DEPLOY_PRE_HOOK in the env files), it does nothing if it already ran on this host
 since the last reboot and in the last day.
 """
 import os
@@ -47,12 +47,13 @@ def construct_untagged(loader, tag_suffix, node):
 
 ComposeLoader.add_multi_constructor('!', construct_untagged)
 
-sirc_config_path = Path(__file__).parent / 'deployments' / 'sirc' / 'sirc.yml'
+sirc_config_path = Path(__file__).parent / 'sirc.yml'
 with sirc_config_path.open() as f:
     sirc_config = yaml.load(f, Loader=ComposeLoader)
 volumes = sirc_config['services']['proxy']['volumes']
 volumes.append("/home:/home")
-volumes = [Path(v.split(':')[0]) for v in volumes]
+# Only the host's absolute paths: not the site directory's (${QABOARD_SITE_DIR}/...)
+volumes = [Path(v.split(':')[0]) for v in volumes if v.startswith('/')]
 
 for v in volumes:
     if "dockermounts" in str(v):

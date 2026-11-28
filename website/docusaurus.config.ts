@@ -7,15 +7,19 @@ import path from 'path';
 // Note: type annotations allow type checking and IDEs autocompletion
 const is_for_webapp = process.env.QABOARD_DOCS_FOR_WEBAPP === "true"
 
-// Docs for the users of one site, in site-docs/<site>/, only built into that site's web app (QABOARD_SITE, see the Dockerfile).
-// site-docs/<site>/_site.json gives its name and its navbar label. Without QABOARD_SITE, nothing changes.
+// Docs for the users of one site, only built into that site's web app (QABOARD_SITE, see the Dockerfile): the site-docs/
+// of its folder in the site directory ($QABOARD_SITE_DIR/<site>/site-docs/, relative to the repository; default
+// deployments/), else website/site-docs/<site>/. Their _site.json gives its name and its navbar label.
+// Without QABOARD_SITE, nothing changes.
 type Site = {id: string, name: string, label: string, path: string}
 function loadSite(id?: string): Site | null {
   if (!id)
     return null
-  const site_dir = path.join(__dirname, 'site-docs', id)
-  if (!/^[a-z0-9_-]+$/.test(id) || !fs.existsSync(site_dir)) {
-    console.warn(`[WARNING] QABOARD_SITE=${id}: no docs in site-docs/${id}/, building without site docs`)
+  const sites_dir = path.resolve(__dirname, '..', process.env.QABOARD_SITE_DIR || 'deployments')
+  const candidates = [path.join(sites_dir, id, 'site-docs'), path.join(__dirname, 'site-docs', id)]
+  const site_dir = candidates.find(dir => fs.existsSync(path.join(dir, '_site.json')))
+  if (!/^[a-z0-9_-]+$/.test(id) || !site_dir) {
+    console.warn(`[WARNING] QABOARD_SITE=${id}: no docs in ${candidates.join(' or ')}, building without site docs`)
     return null
   }
   const meta = JSON.parse(fs.readFileSync(path.join(site_dir, '_site.json'), 'utf8'))

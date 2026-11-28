@@ -258,7 +258,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Install and upgrade',
       collapsed: false,
-      items: ['deploy', 'backend-admin/kubernetes', 'backend-admin/deployment', 'backend-admin/git-hosts', 'backend-admin/settings'],
+      items: ['deploy', 'backend-admin/kubernetes', 'backend-admin/deployment', 'backend-admin/site-directory', 'backend-admin/git-hosts', 'backend-admin/settings'],
     },
     {
       type: 'category',

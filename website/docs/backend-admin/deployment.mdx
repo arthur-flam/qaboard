@@ -17,21 +17,23 @@ It has no dependencies: it runs with `python3` (or `uv run`), from the root of y
 ## Environments
 An environment is a docker compose env file that sets the compose files, the compose project and a few [settings](#settings). Start from `deployments/production.env`, and add your site overlay (see [Starting a server](../start-server.mdx)) to `COMPOSE_FILE`:
 
-```bash title="deployments/mysite/production.env"
+```bash title="../qaboard-site/mysite/production.env"
 COMPOSE_PROJECT_NAME=qaboard
-COMPOSE_FILE=docker-compose.yml:production.yml:deployments/mysite/mysite.yml
+# deploy.py sets QABOARD_SITE_DIR: this default is for plain `docker compose --env-file`, from the qaboard checkout
+QABOARD_SITE_DIR=${QABOARD_SITE_DIR:-../qaboard-site}
+COMPOSE_FILE=docker-compose.yml:production.yml:${QABOARD_SITE_DIR}/mysite/mysite.yml
 QABOARD_BACKEND_REPLICAS=2
 ```
 
 The env file replaces the long `-f docker-compose.yml -f production.yml -f ...` lists:
 
 ```bash
-docker compose --env-file deployments/mysite/production.env ps
+docker compose --env-file ../qaboard-site/mysite/production.env ps
 # or, with the deployed version's images:
-deployments/deploy.py deployments/mysite/production.env compose logs -f backend
+deployments/deploy.py ../qaboard-site/mysite/production.env compose logs -f backend
 ```
 
-Keep secrets out of the env files: put them in `.env` on the host, which the backend reads. `deploy.py` gives docker
+Keep secrets out of the env files: put them in `.env` on the host, next to the env file, which the backend reads. `deploy.py` gives docker
 compose your env file instead of `.env`, so the settings docker compose reads itself, and those that
 *docker-compose.yml* sets from them (`QABOARD_LOGIN_*`, `QABOARD_ADMINS`, `QABOARD_INGEST_AUTH`), go in the env file
 or the overlay: see [where each setting goes](/docs/deploy#4-write-the-env-file-and-the-secrets). The passwords the
@@ -42,11 +44,11 @@ and pgAdmin's, see [Passwords and admin services](/docs/deploy#passwords-and-adm
 ```bash
 # A release's images (ghcr.io/samsung/qaboard:<service>-1.2.0), from a checkout of v1.2.0.
 # The first time, --init allows deploying into a new compose project (with an empty database)
-deployments/deploy.py deployments/mysite/production.env up --version 1.2.0 --init
+deployments/deploy.py ../qaboard-site/mysite/production.env up --version 1.2.0 --init
 # Images built by your CI and pushed to a registry, tagged with a version, e.g. the commit
-deployments/deploy.py deployments/mysite/production.env up --version 1a2b3c4d
+deployments/deploy.py ../qaboard-site/mysite/production.env up --version 1a2b3c4d
 # Or build the images from your checkout
-deployments/deploy.py deployments/mysite/production.env up --build
+deployments/deploy.py ../qaboard-site/mysite/production.env up --build
 ```
 
 `up`:
@@ -75,7 +77,7 @@ Build and push the images in CI, tagged with the commit, then run `deploy.py <en
 3. **Check out the new release, and deploy it:**
    ```bash
    git fetch --tags && git checkout v1.2.1
-   deployments/deploy.py deployments/mysite/production.env up --version 1.2.1
+   deployments/deploy.py ../qaboard-site/mysite/production.env up --version 1.2.1
    ```
 4. **Check it worked:** `status` shows the new version, all the containers running and the backends healthy, and the
    web app opens. If not, [roll back](#rollbacks).
@@ -93,8 +95,8 @@ column by hand already? The migration sees it and does nothing.
 
 ## Rollbacks
 ```bash
-deployments/deploy.py deployments/mysite/production.env status     # deployed version, history
-deployments/deploy.py deployments/mysite/production.env rollback   # back to the previous version
+deployments/deploy.py ../qaboard-site/mysite/production.env status     # deployed version, history
+deployments/deploy.py ../qaboard-site/mysite/production.env rollback   # back to the previous version
 # rollback --no-pull if the registry is down
 ```
 
@@ -103,9 +105,9 @@ Rolling back the code does not roll back database migrations. Write migrations t
 
 Since mid-October 2026, a version that finds migrations it doesn't know (made by a newer version) keeps them and starts. Older versions refuse to start instead: a rollback to them stops before changing anything, with *Can't locate revision*. To go back to such a version, first undo the newer migrations with the running version, down to the latest migration the older version knows (`alembic heads` in its image; `3b7e9c1d4a52` for the versions just before git hosts became configurable):
 ```bash
-deployments/deploy.py deployments/mysite/production.env compose run --rm --no-deps backend \
+deployments/deploy.py ../qaboard-site/mysite/production.env compose run --rm --no-deps backend \
   bash -c 'cd /qaboard/backend/backend && alembic downgrade 3b7e9c1d4a52'
-deployments/deploy.py deployments/mysite/production.env rollback
+deployments/deploy.py ../qaboard-site/mysite/production.env rollback
 ```
 :::
 
@@ -113,8 +115,8 @@ deployments/deploy.py deployments/mysite/production.env rollback
 A staging environment runs the production images and configuration, with **its own database**. To fill it with production's recent data:
 
 ```bash
-deployments/deploy.py deployments/mysite/staging.env seed-db             # last 30 days
-deployments/deploy.py deployments/mysite/staging.env seed-db --days 90
+deployments/deploy.py ../qaboard-site/mysite/staging.env seed-db             # last 30 days
+deployments/deploy.py ../qaboard-site/mysite/staging.env seed-db --days 90
 ```
 
 A production database can be big, so `seed-db` doesn't restore a full backup. It copies the schema and the small tables (projects, users...) in full, but only the **recent commits** (authored, or with outputs, in the last `QABOARD_SEED_DAYS` days) with their batches and outputs, and the test inputs those outputs use. Deleted commits and outputs are skipped. It reads production in a single read-only snapshot, with indexed queries, so only the recent rows are transferred. It replaces staging's database: if production can't be read, staging is left as it was. Older commits referenced by milestones are not copied.
@@ -128,7 +130,7 @@ If staging uses the same storage and task runners as production, runs started fr
 ## Backups
 The `cron-backup-db` service in *production.yml* makes daily backups of the database to `/backups`. Mount a host directory there in your site overlay, in the `db` service too (`restore-db` reads the backups from the database container), and copy the backups off the host:
 
-```yaml title="deployments/mysite/mysite.yml"
+```yaml title="../qaboard-site/mysite/mysite.yml"
 services:
   cron-backup-db:
     volumes:
@@ -147,13 +149,13 @@ secrets ([the encryption key](/docs/backend-admin/settings#secrets-and-the-encry
 
 To restore a backup (the backend is stopped meanwhile):
 ```bash
-deployments/deploy.py deployments/mysite/production.env restore-db 2026-10-01.dump   # or "latest"
+deployments/deploy.py ../qaboard-site/mysite/production.env restore-db 2026-10-01.dump   # or "latest"
 ```
 
 ## Database settings
 PostgreSQL starts with its defaults, sized for a small machine. To tune it, use `services/db/init.sh` as the `db` service's entrypoint, with a file of settings next to it, or set `QABOARD_DB_CONFIG` to your own file. `services/db/qaboard.conf` is an example, sized for an 8-core, 32 GB host shared with other services, with the reason for each value:
 
-```yaml title="deployments/mysite/mysite.yml"
+```yaml title="../qaboard-site/mysite/mysite.yml"
 services:
   db:
     # docker-compose.yml mounts services/db/ at /opt
@@ -180,16 +182,16 @@ Before upgrading the host (CPU, memory, storage, OS...):
 3. Stop the server and make a fresh backup:
    ```bash
    # disconnect clients so that no one writes
-   docker compose --env-file deployments/mysite/production.env stop
+   docker compose --env-file ../qaboard-site/mysite/production.env stop
    # the backup needs the database
-   docker compose --env-file deployments/mysite/production.env up -d db
+   docker compose --env-file ../qaboard-site/mysite/production.env up -d db
    # with deploy.py: it passes the database password from .env
-   deployments/deploy.py deployments/mysite/production.env compose run --rm cron-backup-db /etc/periodic/daily/backup before-upgrade.dump
+   deployments/deploy.py ../qaboard-site/mysite/production.env compose run --rm cron-backup-db /etc/periodic/daily/backup before-upgrade.dump
    ```
 4. After the maintenance, start everything:
    ```bash
-   deployments/deploy.py deployments/mysite/production.env up
-   deployments/deploy.py deployments/mysite/production.env status
+   deployments/deploy.py ../qaboard-site/mysite/production.env up
+   deployments/deploy.py ../qaboard-site/mysite/production.env status
    ```
    Check that you can open the web application, that `status` shows all the containers running and the backends healthy, and that the logs look all right (see [Troubleshooting](troubleshooting.mdx)). Then resume the automatic deploys.
 5. If something went wrong with the data, restore the backup: `restore-db before-upgrade.dump`.

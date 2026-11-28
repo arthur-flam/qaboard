@@ -59,7 +59,7 @@ QABOARD_GIT_HOSTS='[
 With docker compose, a YAML file is easier to maintain: mount it in the backend, and keep the tokens in `.env`, named
 by `token_env` and `webhook_secret_env`. The migrations run in the backend's container, so they see the file too:
 
-```yaml title="deployments/mysite/git-hosts.yaml"
+```yaml title="../qaboard-site/mysite/git-hosts.yaml"
 - type: github
   url: https://github.com
   token_env: GITHUB_ACCESS_TOKEN
@@ -69,11 +69,11 @@ by `token_env` and `webhook_secret_env`. The migrations run in the backend's con
   hostnames: [gitlab]
 ```
 
-```yaml title="deployments/mysite/mysite.yml"
+```yaml title="../qaboard-site/mysite/mysite.yml"
 services:
   backend:
     volumes:
-    - ./deployments/mysite/git-hosts.yaml:/etc/qaboard/git-hosts.yaml:ro
+    - ${QABOARD_SITE_DIR}/mysite/git-hosts.yaml:/etc/qaboard/git-hosts.yaml:ro
     environment:
     - QABOARD_GIT_HOSTS=/etc/qaboard/git-hosts.yaml
 ```

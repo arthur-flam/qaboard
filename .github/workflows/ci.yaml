@@ -224,6 +224,20 @@ jobs:
             proxy.cache-to=type=gha,scope=proxy,mode=max,ignore-error=true
             cantaloupe.cache-from=type=gha,scope=cantaloupe
             cantaloupe.cache-to=type=gha,scope=cantaloupe,mode=max,ignore-error=true
+      - name: A site directory outside the repository
+        # deployments/example/ as a site's own repository, cloned next to this one (website/docs/backend-admin/site-directory.mdx):
+        # its overlay renders, the backend installs its site package, the docs build its site docs. The builder reuses
+        # the layers built above.
+        run: |
+          mkdir -p ../qaboard-site && cp -r deployments/example ../qaboard-site/example
+          ./deployments/deploy.py ../qaboard-site/example/production.env compose config --quiet
+          docker buildx build -f backend/Dockerfile --target site --load -t qaboard-site-example:backend \
+            --build-context site-config=../qaboard-site/example --build-arg QABOARD_EXTRA=example .
+          docker run --rm -e PYTHONPATH=/opt/site-packages qaboard-site-example:backend \
+            python -c "import qaboard_site_example; print(qaboard_site_example.defaults['QABOARD_URL'])"
+          docker buildx build -f website/Dockerfile --target build --load -t qaboard-site-example:website \
+            --build-context site-config=../qaboard-site/example --build-arg QABOARD_SITE=example .
+          docker run --rm qaboard-site-example:website sh -c 'find build/site -name "*.html" | grep installation'
       - name: Deploy
         # Silent runs fail after a minute, not 15: the end-to-end test of uploads kills one (.env: see docker-compose.yml).
         # It also starts a batch from the web app: the server runs it in its container only when asked to (local runner)
@@ -344,7 +358,9 @@ jobs:
           curl -sSfL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
           helm lint charts/qaboard -f charts/qaboard/ci/minimal.yaml
           helm lint charts/qaboard -f charts/qaboard/quickstart.yaml
-          for values in charts/qaboard/ci/*.yaml charts/qaboard/quickstart.yaml; do
+          # A site's values, from its site directory (deployments/example/values.yaml)
+          helm lint charts/qaboard -f deployments/example/values.yaml
+          for values in charts/qaboard/ci/*.yaml charts/qaboard/quickstart.yaml deployments/example/values.yaml; do
             echo "--- $values"
             helm template qaboard charts/qaboard -f "$values" | ./kubeconform -strict -summary -ignore-missing-schemas
           done

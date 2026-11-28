@@ -2,6 +2,7 @@
 The JSON schemas of qaboard.yaml, the batch, metrics and benchmarks files (qaboard/schemas/) are valid, and accept the repository's files.
 The web app checks the batch files with them too (webapp/src/components/tuning/batches_file.js).
 """
+import os
 import re
 import json
 import unittest
@@ -9,7 +10,19 @@ from pathlib import Path
 
 import yaml
 
+from tests import site_dir_under_test
+
 root_dir = Path(__file__).parent.parent.resolve()
+
+
+def site_qaboard_yamls():
+  """The base qaboard.yaml of the site packages: the example site's, and those of $QABOARD_SITE_DIR (relative to the repository)"""
+  site_dirs = {root_dir / 'deployments'}
+  if site_dir_under_test:
+    site_dirs.add((root_dir / site_dir_under_test).resolve())
+  return sorted({path for site_dir in site_dirs for path in site_dir.glob('*/cli/*/qaboard.yaml')})
+
+
 schemas_dir = root_dir / 'qaboard' / 'schemas'
 
 
@@ -44,14 +57,14 @@ class TestSchemas(unittest.TestCase):
 
   def test_repository_files(self):
     files = {
-      'qaboard.schema.json': [*root_dir.glob('examples/*/qaboard.yaml'), *root_dir.glob('qaboard/sample_project/**/qaboard.yaml'), root_dir / 'docs-media/tests/fixture/qaboard.yaml', root_dir / 'deployments/sirc/cli/qaboard_site_sirc/qaboard.yaml'],
+      'qaboard.schema.json': [*root_dir.glob('examples/*/qaboard.yaml'), *root_dir.glob('qaboard/sample_project/**/qaboard.yaml'), root_dir / 'docs-media/tests/fixture/qaboard.yaml', *site_qaboard_yamls()],
       'batches.schema.json': [*root_dir.glob('examples/*/qa/batches.yaml'), root_dir / 'qaboard/sample_project/qa/batches.yaml', root_dir / 'docs-media/tests/fixture/qa/batches.yaml'],
       'metrics.schema.json': [*root_dir.glob('examples/*/qa/metrics.yaml'), root_dir / 'qaboard/sample_project/qa/metrics.yaml', root_dir / 'docs-media/tests/fixture/qa/metrics.yaml'],
     }
     for schema_name, paths in files.items():
       self.assertTrue(paths)
       for path in paths:
-        with self.subTest(str(path.relative_to(root_dir))):
+        with self.subTest(os.path.relpath(path, root_dir)):
           self.assertEqual(self.errors(schema_name, yaml.safe_load(path.read_text())), [])
 
   def test_qa_init_files_declare_their_schema(self):

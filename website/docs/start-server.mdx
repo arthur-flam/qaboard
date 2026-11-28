@@ -82,9 +82,15 @@ anything, see [Accept results over HTTP](/docs/backend-admin/uploads#object-stor
 
 ## 3. Describe your site {/* #3-describe-your-site */}
 A **site overlay** adds your volumes, settings and nginx configuration to *docker-compose.yml*, without changing it.
-Create one in a folder for your site, starting from `deployments/example.yml`:
+Create it in your [site directory](/docs/backend-admin/site-directory): a private repository cloned next to this one, with a folder per site. Start from `deployments/example/`:
 
-```yaml title="deployments/mysite/mysite.yml"
+```bash
+git init ../qaboard-site && cp -r deployments/example ../qaboard-site/mysite  # rename "example" in its files
+```
+
+Paths to your site's own files are `${QABOARD_SITE_DIR}/mysite/...`: `deploy.py` sets it.
+
+```yaml title="../qaboard-site/mysite/mysite.yml"
 services:
   backend:
     volumes:
@@ -121,9 +127,11 @@ images after you upgrade, mount your storage in `cantaloupe` like above.
 `deploy.py` reads an **env file** per environment: the compose files, the compose project, and the settings docker
 compose reads itself. Copy `deployments/production.env` and add your overlay:
 
-```bash title="deployments/mysite/production.env"
+```bash title="../qaboard-site/mysite/production.env"
 COMPOSE_PROJECT_NAME=qaboard
-COMPOSE_FILE=docker-compose.yml:production.yml:deployments/mysite/mysite.yml
+# deploy.py sets QABOARD_SITE_DIR: this default is for plain `docker compose --env-file`, from the qaboard checkout
+QABOARD_SITE_DIR=${QABOARD_SITE_DIR:-../qaboard-site}
+COMPOSE_FILE=docker-compose.yml:production.yml:${QABOARD_SITE_DIR}/mysite/mysite.yml
 QABOARD_BACKEND_REPLICAS=2
 QABOARD_UWSGI_PROCESSES=8
 QABOARD_UWSGI_CHEAPER=4
@@ -131,7 +139,7 @@ QABOARD_UWSGI_CHEAPER_INITIAL=8
 # QABOARD_PORT_HTTP=5151
 ```
 
-Put the secrets in `.env`, at the root of the checkout (`chmod 600 .env`). Generate them with
+Put the secrets in `.env`, next to the env file (`chmod 600 .env`; keep it out of git). Generate them with
 `openssl rand -base64 32`:
 
 ```bash title=".env"
@@ -179,19 +187,19 @@ PGADMIN_DEFAULT_PASSWORD=...
 
 ```bash
 # The first time: --init allows a new compose project, with an empty database
-deployments/deploy.py deployments/mysite/production.env up --version <version> --init
+deployments/deploy.py ../qaboard-site/mysite/production.env up --version <version> --init
 ```
 
 `<version>` is a [release](https://github.com/Samsung/qaboard/releases), like `1.2.0`. `deploy.py` pulls its images
 (`ghcr.io/samsung/qaboard:<service>-<version>`), runs the database migrations, starts the services, and records the
 version, so that `rollback` can come back to it. Without `--version`, it deploys the latest images of `master`;
 with `--build`, it builds the images from your checkout. Plain
-`docker compose --env-file deployments/mysite/production.env up -d` works too, without zero-downtime upgrades.
+`docker compose --env-file ../qaboard-site/mysite/production.env up -d` works too, without zero-downtime upgrades.
 
 **Check it worked:**
 
 ```bash
-deployments/deploy.py deployments/mysite/production.env status
+deployments/deploy.py ../qaboard-site/mysite/production.env status
 curl -fsS http://localhost:5151/api/v1/health
 ```
 
@@ -206,7 +214,7 @@ Admins see **Admin** in the user menu: users, sign-in, settings, and the jobs th
   backend's logs, choose a user name and a password: you're the first admin, signed in.
 
   ```bash
-  deployments/deploy.py deployments/mysite/production.env compose logs backend | grep -A1 "setup token"
+  deployments/deploy.py ../qaboard-site/mysite/production.env compose logs backend | grep -A1 "setup token"
   ```
 - **Or from the environment**, for automated installs: `QABOARD_ADMIN_PASSWORD` in `.env` creates the local admin
   `admin` when the server starts without admins (see [the first admin](/docs/backend-admin/user-management#the-first-admin)).
@@ -317,7 +325,7 @@ Use your own copy of *services/nginx/conf.d/qaboard.conf* in the site overlay (k
 they serve the files and the file browser). Files mounted under `/tmp/deployment/nginx/conf.d/` in the `proxy`
 container are added to (or replace) *services/nginx/conf.d/*:
 
-```nginx title="deployments/mysite/nginx/qaboard.conf (copied from services/nginx/conf.d/qaboard.conf)"
+```nginx title="../qaboard-site/mysite/nginx/qaboard.conf (copied from services/nginx/conf.d/qaboard.conf)"
 server {
   # ...
   listen 443 ssl;
@@ -329,13 +337,13 @@ server {
 
 Mount it, and the key and certificate:
 
-```yaml title="deployments/mysite/mysite.yml"
+```yaml title="../qaboard-site/mysite/mysite.yml"
 services:
   proxy:
     ports:
     - "443:443"
     volumes:
-    - "./deployments/mysite/nginx/qaboard.conf:/tmp/deployment/nginx/conf.d/qaboard.conf:ro"
+    - "${QABOARD_SITE_DIR}/mysite/nginx/qaboard.conf:/tmp/deployment/nginx/conf.d/qaboard.conf:ro"
     - "somewhere/cert.key:/ssl/cert.key"
     - "somewhere/cert.pem:/ssl/cert.pem"
 ```
@@ -387,7 +395,7 @@ The `cron-backup-db` service in *production.yml* makes daily backups of the data
 the last 14 days (`QABOARD_BACKUP_RETENTION_DAYS`). Mount a host directory there, in the `db` service too
 (`restore-db` reads the backups from it), and copy the backups off the host. Without it, the backups fail.
 
-```yaml title="deployments/mysite/mysite.yml"
+```yaml title="../qaboard-site/mysite/mysite.yml"
 services:
   cron-backup-db:
     volumes:
@@ -409,7 +417,7 @@ Or use cron jobs on the host:
 ```cron
 # Weekly cleanup of old results, on Saturdays
 # https://samsung.github.io/qaboard/docs/storage/deleting-old-data
-59 1 * * 6 cd qaboard && docker compose --env-file deployments/mysite/production.env exec -T backend qaboard_clean
+59 1 * * 6 cd qaboard && docker compose --env-file ../qaboard-site/mysite/production.env exec -T backend qaboard_clean
 
 # Weekly removal of unused docker images, on Sundays, so that they don't fill the disk
 59 1 * * 0 docker image prune --force
@@ -490,6 +498,7 @@ When a variable is set, it wins, and the page shows it read-only: see [settings 
 | `QABOARD_IMAGE_CACHE_DIR` | `$QABOARD_DATA_DIR/cache/images` | Where the images whose pixel values users read in the image viewer, or that they compare with "Where they differ", are kept, decoded (16-bit, float, raw...), so that reading them again is fast, and in `regions/` the regions found (removed after a month unused). In `videos/`: what's in the videos, and where two videos differ (removed after a month). Shared by the backend's workers: use local disk |
 | `QABOARD_IMAGE_CACHE_GB` | `20` | The disk space they can use: the least recently used are removed. Decoded images are large (a 12 MP 16-bit RGB image takes 72 MB) |
 | `QABOARD_PATH_MAPPINGS` | `[]` | JSON list of `["windows_prefix", "linux_prefix"]` pairs, used to show Windows paths to results (`qa` reads it too, from the environment or a site package, to convert Windows paths), e.g. `[["\\\\server\\share", "/mnt/share"]]` |
+| `QABOARD_PATH_REWRITES` | `[]` | JSON list of `["regex", "replacement"]` pairs (Python's `re.sub`), applied once to the Windows paths that `QABOARD_PATH_MAPPINGS` gives, e.g. when a share has a preferred alias for some folders. The first that matches is used. `qa` reads it too |
 | `QABOARD_DEFAULT_USER` | qaboard | The user CI runs are saved under (with `{user}` in `storage`). Runs started from the webapp replace it with the logged-in user in output paths |
 | `QABOARD_SKIP_METRICS_AGGREGATION` | _none_ | Comma-separated project ids, or their start (e.g. `group/` for all the projects of a group), whose commit lists don't show the batches' aggregated metrics (their median and average): for projects with so many runs per batch that computing them slows the lists down. Commit pages still show them |
 | `QABOARD_DOCS_ROOT`    | */* | Where the webapp's links to the docs point. By default, the docs served by this server at `/docs/`, which match its version |
@@ -522,7 +531,7 @@ QA-Board can email users when the batches they start end, from the web app or wi
 
 Set the SMTP server in **Admin → Settings → Email**, then click **Send a test email**: it says what the SMTP server answered. Or configure it in your overlay, and the SMTP password, if any, in `.env` (the variables win over the settings page):
 
-```yaml title="deployments/mysite/mysite.yml"
+```yaml title="../qaboard-site/mysite/mysite.yml"
 services:
   backend:
     environment:

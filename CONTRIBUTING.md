@@ -29,10 +29,10 @@ If you want to contribute to the project but do not know where to start, or what
 # see more into in docker-compose.yml and backend/README.md
 docker compose -f docker-compose.yml -f development.yml up -d
 
-# At SIRC: set proxies/dev settings, make sure important folders are mounted, then use the SIRC overlay
-source deployments/sirc/.envrc
-./at-sirc-before-up.py
-docker compose -f docker-compose.yml -f development.yml -f deployments/sirc/sirc.yml up -d
+# With your site's overlay, from its site directory cloned next to this checkout (website/docs/backend-admin/site-directory.mdx):
+# its .envrc may set proxies and dev settings, e.g. QABOARD_SITE_DIR
+export QABOARD_SITE_DIR=../qaboard-site
+docker compose -f docker-compose.yml -f development.yml -f "$QABOARD_SITE_DIR"/mysite/mysite.yml up -d
 ```
 
 ## Before you open a pull request
