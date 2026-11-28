@@ -93,7 +93,7 @@ class TestDecide(unittest.TestCase):
     self.assertTrue(ci_changes.matches("a/b/c.md", ["**.md"]))
     self.assertTrue(ci_changes.matches("Dockerfile", ["**/Dockerfile*"]))
     self.assertTrue(ci_changes.matches("webapp/Dockerfile.dockerignore", ["**/Dockerfile*"]))
-    self.assertFalse(ci_changes.matches("deployments/sirc/sirc.yml", ["deployments/*"]))
+    self.assertFalse(ci_changes.matches("deployments/mysite/mysite.yml", ["deployments/*"]))
     self.assertFalse(ci_changes.matches("webapp/x", ["**", "!webapp/**"]))
     self.assertTrue(ci_changes.matches("charts/qaboard/values.yaml", ["!charts/**", "charts/qaboard/values.yaml"]))
 

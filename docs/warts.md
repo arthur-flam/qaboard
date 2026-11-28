@@ -34,7 +34,7 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   `QABOARD_LOGIN_RESTRICTED_YAML` paths and Unix permissions, not a project's visibility. [S, behaviour]
 - The GitLab "play job" endpoint doesn't check that the job is listed in qaboard.yaml (GitHub workflows do): left out so
   that integrations defined only on branches keep working. [S, behaviour]
-- `deployments/sirc/metabase.yml` has default passwords (`metabase`, its database and backups) and publishes Metabase's
+- `qaboard-site-sirc/sirc/metabase.yml` has default passwords (`metabase`, its database and backups) and publishes Metabase's
   database on 5434 of docker-prod-srv-1. Read the password from `.env` (`MB_DB_PASS`, `POSTGRES_PASSWORD`) after an
   `ALTER USER metabase PASSWORD ...`, and drop the port (or bind it to 127.0.0.1) once nobody connects from elsewhere. [S, behaviour]
 - **pgAdmin** (`dpage/pgadmin4:9`, which pulls 9.19 since October 29): 9.18 only trusts `X-Pgadmin-User` from
@@ -100,7 +100,7 @@ release notes and SECURITY.md); what's below is left, or was found while fixing 
   browser: until then, *Delete old results* doesn't know them. Deleting a user leaves their personal milestones without
   owner (`user_id` `SET NULL`): they are still protected, but nobody sees them in the lists anymore. Re-running a
   milestone's batch with `--action-on-existing run` replaces its runs. [M, behaviour]
-- The HW_ALG cleanup scripts in backend/clean.py (`clean_untracked_hwalg_*`) reuse `cache.milestones.json` with
+- The cleanups of untracked folders in backend/clean.py (`qaboard_clean_untracked_*`) reuse `cache.milestones.json` with
   `--use-cache` however old it is: milestones saved since it was written aren't protected. Use the jobs instead, or
   drop the flag. [S, behaviour]
 - The ci_commits `deleted` column was renamed `artifacts_deleted` (c4e6a8b0d2f3): the API sends both. Drop
@@ -512,7 +512,7 @@ Pod Security, admission policies, Kueue/ResourceQuota) rather than re-implementi
 ### LSF
 - The bridge template wraps `{bsub_command}` in single quotes: a job script containing a single quote breaks on the
   bridge host. Send the script through ssh's stdin instead. [S, behaviour]
-- SIRC's `bsub_su` wrapper isn't in the repo (`deployments/sirc/runbooks/lsf-bridge.md`). The bridge path's
+- SIRC's `bsub_su` wrapper isn't in the repo (`qaboard-site-sirc/sirc/runbooks/lsf-bridge.md`). The bridge path's
   environment isn't scrubbed like local dispatches. [S, no change]
 
 ### System metrics (`qaboard/system_metrics.py`, November 2026)

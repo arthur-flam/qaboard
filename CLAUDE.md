@@ -13,7 +13,7 @@ The `qa` CLI / SDK runs user code and sends results; the backend stores them in 
 | `backend/` | Flask API (uWSGI), PostgreSQL (SQLAlchemy, Alembic in `backend/backend/alembic/`), a jobs worker. Tests in `backend/tests/` | `backend/CLAUDE.md` |
 | `webapp/` | React SPA served by nginx, and the standalone viewers | `webapp/CLAUDE.md` |
 | `website/` | Docusaurus docs site and the release notes | `website/CLAUDE.md` |
-| `deployments/`, `charts/qaboard/` | Compose env files and `deploy.py`, site overlays (`sirc/`, `dsk/`), runbooks; the Helm chart | `deployments/CLAUDE.md` |
+| `deployments/`, `charts/qaboard/` | Compose env files and `deploy.py`, the example site (`example/`; sites' own folders live in their site directory, `QABOARD_SITE_DIR`); the Helm chart | `deployments/CLAUDE.md` |
 | `services/` | Images and config of the infrastructure: nginx, db, cantaloupe (IIIF image server), vips, pgadmin, metabase, flower | |
 | `tests/` | Python tests of `qaboard/`; `tests/fixtures/` are shared with the web app's tests | |
 | `skills/` | Skills for agents working in *users'* projects (`skills/README.md`) | |
@@ -24,7 +24,7 @@ The `qa` CLI / SDK runs user code and sends results; the backend stores them in 
 ## Setup
 Python with `uv` (the backend needs 3.11+; CI tests `qa` on 3.11 and 3.14), `npm` for the web app, `yarn` for the website.
 ```bash
-docker compose -f docker-compose.yml -f development.yml up -d   # full dev stack (SIRC: see deployments/CLAUDE.md)
+docker compose -f docker-compose.yml -f development.yml up -d   # full dev stack (+ -f "$QABOARD_SITE_DIR"/<site>/<site>.yml for a site's)
 uv sync --extra dev        # qaboard + dev tools; runner extras: --extra celery --extra dask --extra kubernetes --extra dask-kubernetes --extra mlflow; `qa mcp`: --extra mcp
 cd webapp && npm install && npm start      # Vite dev server, proxies the API to localhost:5151
 cd website && yarn install && yarn start   # docs site
@@ -65,7 +65,8 @@ CI also checks that merged Alembic migrations are never changed (`.github/script
 - **Audit log**: an endpoint or job that runs code, deletes or changes something records an `audit(...)` event,
   registered in `backend/backend/audit_actions.py` (or listed in `NOT_AUDITED` with why). Details: `backend/CLAUDE.md`.
 - **The repo and website are public**: no internal hostnames, paths, emails, people, commit shas or ticket ids in
-  `website/` or release notes. Site-specific pages: `website/site-docs/<site>/`; runbooks: `deployments/<site>/runbooks/`.
+  `website/` or release notes, nor anywhere else in the repository: a site's configuration, pages and runbooks live in its
+  site directory (`deployments/CLAUDE.md`; SIRC and DSK: `qaboard-site-sirc`, `qaboard-site-dsk`).
 - **Attribution**: end commits and PR descriptions with the attribution lines your session gives. Never put a model
   name in commits or code.
 
