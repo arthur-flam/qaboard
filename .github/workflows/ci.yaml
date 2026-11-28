@@ -127,10 +127,10 @@ jobs:
           git config --global user.name "Arthur Flam"
           git config --global user.email "arthur.flam@samsung.com"
           if [ "${{ matrix.python }}" = "3.14" ]; then
-            # In a random order, in one process, and checks the tests leave nothing in the checkout: finds tests that
-            # depend on others in the PR that adds them. The seed is the run's: a re-run gets the same order, and
-            # `uv run python .github/scripts/shuffled_tests.py --seed N` too (docs/ci.md)
-            uv run --no-sync python .github/scripts/shuffled_tests.py --seed $(( GITHUB_RUN_ID % 100000 ))
+            # In a random order, dealt to 4 processes (the runner's CPUs: the tests mostly wait), and checks the tests
+            # leave nothing in the checkout: finds tests that depend on others in the PR that adds them. The seed is
+            # the run's: a re-run gets the same orders, and `shuffled_tests.py --seed N --jobs 4` too (docs/ci.md)
+            uv run --no-sync python .github/scripts/shuffled_tests.py --seed $(( GITHUB_RUN_ID % 100000 )) --jobs 4
           else
             uv run --no-sync green -vvv --quiet-stdout tests
           fi
@@ -141,11 +141,18 @@ jobs:
           uv build
           uvx twine check dist/*
 
+  # In 3 parallel parts: the unit tests in 2 shards, and lint, types, build and the Playwright tests. One after the
+  # other, they took about 10 minutes, the longest job. ci-ok and the publishing jobs wait for all of them.
   webapp:
+    name: webapp (${{ matrix.part }})
     runs-on: ubuntu-24.04 # playwright 1.56 has no chromium for ubuntu 26.04
     needs: changes
     if: needs.changes.outputs.webapp == 'true'
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ['tests 1/2', 'tests 2/2', 'build and e2e']
     defaults:
       run:
         working-directory: webapp
@@ -159,21 +166,30 @@ jobs:
           cache: npm
           cache-dependency-path: webapp/package-lock.json
       - run: npm ci --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run typecheck
       - name: npm test, in a random order
+        if: startsWith(matrix.part, 'tests')
         # each file's tests in a random order, the files too: finds tests that depend on others in the PR that adds them.
-        # The seed is the run's: a re-run gets the same order, and `npm test -- --run --sequence.shuffle --sequence.seed=N` too
+        # The seed is the run's: a re-run gets the same order. A shard's files are picked before the shuffle, so
+        # `npm test -- --run --sequence.shuffle --sequence.seed=N --shard=K/2` gets the same order too
+        env:
+          SHARD: ${{ matrix.part == 'tests 1/2' && '1/2' || '2/2' }}
         run: |
           seed=$(( GITHUB_RUN_ID % 100000 ))
-          echo "vitest seed: $seed (npm test -- --run --sequence.shuffle --sequence.seed=$seed)"
-          npm test -- --run --sequence.shuffle --sequence.seed=$seed
+          echo "vitest seed: $seed (npm test -- --run --sequence.shuffle --sequence.seed=$seed --shard=$SHARD)"
+          npm test -- --run --sequence.shuffle --sequence.seed=$seed --shard=$SHARD
+      - run: npm run lint
+        if: matrix.part == 'build and e2e'
+      - run: npm run typecheck
+        if: matrix.part == 'build and e2e'
       # The docker image builds it again, but this takes seconds and fails faster
       - run: npm run build
+        if: matrix.part == 'build and e2e'
       - run: npx playwright install --with-deps chromium
+        if: matrix.part == 'build and e2e'
       - run: npm run e2e
+        if: matrix.part == 'build and e2e'
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: failure() && matrix.part == 'build and e2e'
         with:
           name: playwright-results
           path: webapp/test-results/

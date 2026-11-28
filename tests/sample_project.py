@@ -18,15 +18,24 @@ root_repo = Path(__file__).resolve().parent.parent
 source = root_repo / 'qaboard' / 'sample_project'
 
 
+def lsf_tests() -> bool:
+  """
+  Whether the tests that send real jobs to LSF run: with QA_TESTS_LSF=1 and bsub on the PATH. They are slow, and
+  tests/test_runners.py checks the bsub commands without LSF. SIRC's CI sets it when the change needs them
+  (`ci_changes.py --check lsf`), and on master.
+  """
+  return os.environ.get('QA_TESTS_LSF') == '1' and bool(shutil.which('bsub'))
+
+
 def shared_tmp_dir() -> Optional[str]:
   """
-  Where the copies go. Runs on LSF are executed on other hosts, that don't see this machine's /tmp: with LSF (bsub on
-  the PATH), the copies go in the checkout, which CI machines share with the LSF hosts. $QA_TESTS_TMPDIR overrides.
-  None: the system's temporary folder.
+  Where the copies go. Runs on LSF are executed on other hosts, that don't see this machine's /tmp: when the LSF
+  tests run, the copies go in the checkout, which CI machines share with the LSF hosts (slower: it's on NFS).
+  $QA_TESTS_TMPDIR overrides. None: the system's temporary folder.
   """
   if os.environ.get('QA_TESTS_TMPDIR'):
     return os.environ['QA_TESTS_TMPDIR']
-  return str(root_repo) if shutil.which('bsub') else None
+  return str(root_repo) if lsf_tests() else None
 
 
 def git(cwd, *args):

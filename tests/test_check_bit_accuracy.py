@@ -132,6 +132,10 @@ class TestCommitRuns(unittest.TestCase):
     patcher = mock.patch.object(sys.modules['qaboard.config'], 'config', {})
     patcher.start()
     self.addCleanup(patcher.stop)
+    # runs that aren't here would have their manifests fetched from the server (and retried for 5s when none answers)
+    patcher = mock.patch.object(bit_accuracy, 'fetched_manifests', return_value=None)
+    patcher.start()
+    self.addCleanup(patcher.stop)
 
   def storage(self, *users):
     """The commit's outputs directory for each user"""
