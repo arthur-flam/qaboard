@@ -19,7 +19,7 @@ deployments/deploy.py [--site-dir DIR] <env file> status|rollback|restore-db|see
   `site-config` build context (`backend/Dockerfile`, `website/Dockerfile`).
 - `example/` is a complete site using every hook point: keep it working, `tests/test_site_dir.py` and the `docker` and
   `helm` CI jobs check it from outside the repository. A new hook point goes in it, with a check.
-- SIRC and DSK: their site repository, `qaboard-deployments` (`sirc/`, `dsk/`), with their GitLab pipeline and
+- SIRC and DSK: their site repositories, `qaboard-site-sirc` and `qaboard-site-dsk`, with their GitLab pipeline and
   runbooks. Never add a site's data here (hostnames, paths, certificates, people): the repository is public.
 
 ## Images

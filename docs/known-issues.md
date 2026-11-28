@@ -5,7 +5,7 @@ roughly by priority. None of it breaks the open-source version.
 
 ## Deployment configs live in their own repository
 SIRC's and DSK's configuration (overlays, env files, nginx, site packages, certificates, `.envrc`, site docs,
-runbooks, the GitLab pipeline) is in a private repository, `qaboard-deployments` (`sirc/`, `dsk/`), cloned next to
+runbooks, the GitLab pipeline) is in private repositories, `qaboard-site-sirc` and `qaboard-site-dsk`, cloned next to
 this one: their *site directory* (`QABOARD_SITE_DIR`, website/docs/backend-admin/site-directory.mdx). Its README has
 the day-to-day commands and the migration runbook. `deployments/example/` is the template, checked by CI.
 - **Still in this repository's git history**: removing the folders from HEAD doesn't purge them. Paths to purge, if

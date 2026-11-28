@@ -66,7 +66,7 @@ CI also checks that merged Alembic migrations are never changed (`.github/script
   registered in `backend/backend/audit_actions.py` (or listed in `NOT_AUDITED` with why). Details: `backend/CLAUDE.md`.
 - **The repo and website are public**: no internal hostnames, paths, emails, people, commit shas or ticket ids in
   `website/` or release notes, nor anywhere else in the repository: a site's configuration, pages and runbooks live in its
-  site directory (`deployments/CLAUDE.md`; SIRC and DSK: `qaboard-deployments`).
+  site directory (`deployments/CLAUDE.md`; SIRC and DSK: `qaboard-site-sirc`, `qaboard-site-dsk`).
 - **Attribution**: end commits and PR descriptions with the attribution lines your session gives. Never put a model
   name in commits or code.
 
