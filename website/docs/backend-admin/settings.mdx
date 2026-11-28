@@ -151,6 +151,8 @@ write to. Runs that send their files to the server can't get around it.
 |---|---|---|---|
 | `projects.default_visibility` | `QABOARD_DEFAULT_VISIBILITY` | `public` | Who can see the projects whose owners didn't choose: "public" (anyone who can open QA-Board), "internal" (signed-in users), "private" (only their members). |
 | `projects.signed_in_role` | `QABOARD_SIGNED_IN_ROLE` | `developer` | The role of signed-in users on public and internal projects: "developer" (they can send results and act on runs, as before project roles) or "viewer". Members of a project, and private projects, follow their grants. |
+| `projects.create` | `QABOARD_PROJECTS_CREATE` | `anywhere` | Who creates new projects, explicitly or with their first results: "anywhere" (anyone who can send results, in any namespace: as before namespaces), "namespace-members" (developers and owners of the namespace, or its owner for a personal namespace), "admins". Existing projects aren't affected. New servers' setup page chooses "namespace-members". |
+| `namespaces.create` | `QABOARD_NAMESPACES_CREATE` | `anyone` | Who claims new top-level names (namespaces, the first part of project ids): "anyone" signed in (they become its owner), or "admins". Signed-in users always have their own namespace, named like their user name. |
 | `storage.others_visible_to` | `QABOARD_STORAGE_OTHERS_VISIBLE_TO` | `members` | Who sees other people's storage usage (Storage usage > Everyone's, Users): "members" (the project's developers and owners, from a grant, a group or qaboard.yaml: not every signed-in user) or "signed_in" (everyone who can see the project). Admins see everything. |
 
 **API tokens and results**
