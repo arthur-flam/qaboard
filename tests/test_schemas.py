@@ -2,6 +2,7 @@
 The JSON schemas of qaboard.yaml, the batch, metrics and benchmarks files (qaboard/schemas/) are valid, and accept the repository's files.
 The web app checks the batch files with them too (webapp/src/components/tuning/batches_file.js).
 """
+import os
 import re
 import json
 import unittest
@@ -63,7 +64,7 @@ class TestSchemas(unittest.TestCase):
     for schema_name, paths in files.items():
       self.assertTrue(paths)
       for path in paths:
-        with self.subTest(str(path.relative_to(root_dir))):
+        with self.subTest(os.path.relpath(path, root_dir)):
           self.assertEqual(self.errors(schema_name, yaml.safe_load(path.read_text())), [])
 
   def test_qa_init_files_declare_their_schema(self):

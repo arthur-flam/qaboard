@@ -88,6 +88,8 @@ class TestSiteFolders(unittest.TestCase):
       for overlay in folder.glob('*.yml'):
         code = '\n'.join(line for line in overlay.read_text().splitlines() if not line.lstrip().startswith('#'))
         for path in re.findall(r'\$\{QABOARD_SITE_DIR[^}]*\}/' + re.escape(folder.name) + r'/([^\s:"\']+)', code):
+          if path == '.env':  # the secrets: on the hosts only
+            continue
           with self.subTest(overlay=f'{folder.name}/{overlay.name}', path=path):
             self.assertTrue((folder / path).exists(), f'{folder.name}/{path}')
 
