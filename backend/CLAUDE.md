@@ -22,6 +22,13 @@ The Flask API (`backend/backend/`), served by uWSGI. Cross-directory rules ("Cha
 tokens, passwords, cookies, query strings or bodies; usernames are fine. Requests are already logged, one line each.
 Docs: `website/docs/backend-admin/logs.mdx`.
 
+## Metrics
+`backend/monitoring.py`: `/metrics` for Prometheus (`QABOARD_METRICS`), answered before the hooks that authenticate.
+Count where things already pass (audit events, `Output.set_status`, `jobs/queue.py`); what needs a query goes in
+`database_samples`, computed in the background. Labels stay bounded: route templates, no users or run ids, projects
+through `project_label()`. A new metric is listed in `website/docs/backend-admin/monitoring.mdx` (a test checks it,
+with the alerts and the dashboard in `charts/qaboard/files/`).
+
 ## Audit log
 An endpoint or job that runs code, deletes or changes something records an event with `audit('category.verb', ...)`
 (`backend/audit.py`), in the same transaction as the change, and registers it in `backend/audit_actions.py` (label,

@@ -77,4 +77,7 @@ Base = declarative_base() # prints (no name)
 # QABOARD_AUDIT_STDOUT: audit events are also printed once committed
 from .audit import install_stdout
 install_stdout()
+# Counts runs and the pool's connections, for Prometheus (backend/monitoring.py)
+from .monitoring import install_database
+install_database(engine)
 Base.query = db_session.query_property()

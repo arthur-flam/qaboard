@@ -598,6 +598,13 @@ def _database():
   return f"{e('QABOARD_DB_USER') or 'qaboard'}@{e('QABOARD_DB_HOST') or 'db'}:{e('QABOARD_DB_PORT') or '5432'}/{e('QABOARD_DB_NAME') or 'qaboard'}"
 
 
+def _metrics():
+  from . import monitoring
+  if not monitoring.enabled():
+    return None
+  return "on, with a token" if monitoring.token() else "on, without a token"
+
+
 def _secret_key():
   return "set" if os.environ.get('SECRET_KEY') else None
 
@@ -618,6 +625,8 @@ SERVER_VARIABLES = [
                  RUNS_COMMANDS, _env('QA_RUNNERS_LSF_BRIDGE')),
   ServerVariable('SENTRY_DSN', "Sentry", 'server', "Where errors and performance data are reported (SENTRY_DSN, SENTRY_FRONTEND_DSN, SENTRY_ENVIRONMENT...).",
                  BOOTSTRAP, lambda: (urlparse(os.environ['SENTRY_DSN']).hostname or "set") if os.environ.get('SENTRY_DSN') else None, docs="/docs/backend-admin/monitoring"),
+  ServerVariable('QABOARD_METRICS', "Metrics for Prometheus", 'server', "Serves /metrics on the backend's own port, to private networks, or to who sends QABOARD_METRICS_TOKEN (also QABOARD_METRICS_ALLOWED_NETWORKS).",
+                 BOUNDARY, _metrics, default_text="Off", docs="/docs/backend-admin/monitoring#prometheus-metrics"),
   ServerVariable('QABOARD_VERSION', "Version", 'server', "The deployed version.", "Set by the deployment.", _env('QABOARD_VERSION')),
 
   ServerVariable('QABOARD_LOGIN_TYPE', "Sign-in method", 'sign_in', "LOCAL, LDAP or SAML. Single sign-on providers (Admin → Sign-in) come on top of any of them.",

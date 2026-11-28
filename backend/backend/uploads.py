@@ -383,10 +383,14 @@ def save_file(directory: Path, path: str, source: BinaryIO, length: int, sha256:
     check_inside(target, directory)
     if shutil.disk_usage(target.parent).free - length < config.upload_min_free_space:
       raise UploadError(507, "The server's storage for uploaded files is full: tell its administrators.", Reason.STORAGE_FULL)
+    from .monitoring import uploaded
     if offset is None:
       _replace(target, source, length, sha256)
+      uploaded(length)
       return length
-    return _append(target, source, length, sha256, offset)
+    size = _append(target, source, length, sha256, offset)
+    uploaded(length)
+    return size
   except UnsafePathError:
     raise UploadError(400, f"{path!r} is not a path inside the run's folder.", Reason.INVALID_PATH) from None
   except (IsADirectoryError, NotADirectoryError, FileExistsError):

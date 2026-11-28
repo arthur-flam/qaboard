@@ -50,6 +50,8 @@ dependencies = [
     "joserfc>=1.0",
     # Swagger UI's files, for the API docs page at /api/v1/docs (api/openapi.py)
     "flask-swagger-ui>=5.17",
+    # /metrics for Prometheus (backend/monitoring.py)
+    "prometheus-client>=0.21",
 ]
 
 [tool.setuptools.packages.find]

@@ -306,6 +306,8 @@ def resolve_actor():
     return error(401, 'token_in_url', "Tokens in URLs are only accepted to read: send it in the Authorization header.")
   if token_str is not None:
     token, response = resolve_token(token_str)
+    from .monitoring import token_authentication
+    token_authentication(response is None)
     if response is not None:
       return response
     g.actor = Actor(token.user, token)

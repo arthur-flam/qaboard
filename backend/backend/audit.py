@@ -151,6 +151,8 @@ def audit(action: str, target_type: Optional[str] = None, target_id=None, target
     meta=without_secrets(meta or {}),
   )
   db_session.add(event)
+  from .monitoring import audit_event
+  audit_event(action, project_id)
   return event
 
 

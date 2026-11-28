@@ -554,6 +554,9 @@ def backend_env(state: dict) -> Dict[str, str]:
     'QABOARD_HOST': f"localhost:{ports['web']}",
     # audit() refuses actions missing from backend/audit_actions.py, as in the integration tests
     'QABOARD_AUDIT_STRICT': '1',
+    # metrics for Prometheus, at the backend's /metrics (backend/monitoring.py)
+    'QABOARD_METRICS': '1',
+    'QABOARD_METRICS_DIR': str(STATE_DIR / 'metrics'),
   }
   if state.get('redis_port'):
     env.update({'REDIS_HOST': '127.0.0.1', 'REDIS_PORT': str(state['redis_port'])})

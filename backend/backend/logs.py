@@ -27,7 +27,7 @@ from typing import Mapping, Optional
 LEVEL_VARIABLE = 'QABOARD_LOG_LEVEL'
 FORMAT_VARIABLE = 'QABOARD_LOG_FORMAT'
 # Requests logged at debug level, unless they fail: the healthchecks, and nginx asking whether users can read a file
-QUIET_ENDPOINTS = {'health', 'authorize_files'}
+QUIET_ENDPOINTS = {'health', 'authorize_files', 'metrics'}
 REQUEST_ID_HEADER = 'X-Request-ID'
 # What we keep of a client's X-Request-ID: else it could forge log lines or fill them. nginx's $request_id is 32 hex
 REQUEST_ID_RE = re.compile(r'[A-Za-z0-9._:-]{1,64}')
